@@ -10,7 +10,7 @@ The platform is *AI-first*, designed to develop and deploy algorithmic trading s
 and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment consistent with the production live trading environment.
 
-NautilusTrader's design, architecture, and implementation philosophy holds software correctness and safety at the
+NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
