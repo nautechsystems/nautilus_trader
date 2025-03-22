@@ -230,7 +230,7 @@ class BinanceTimeInForce(Enum):
     GTC = "GTC"
     IOC = "IOC"
     FOK = "FOK"
-    GTX = "GTX"  # FUTURES only, Good-Till-Crossing (Post Only)
+    GTX = "GTX"  # FUTURES only, Good Till Crossing (Post Only)
     GTD = "GTD"  # FUTURES only
     GTE_GTC = "GTE_GTC"  # Undocumented
 

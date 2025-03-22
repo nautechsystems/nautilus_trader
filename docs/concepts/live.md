@@ -99,9 +99,9 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
 **Settings**:
  - `manage_contingent_orders`: (default False) If enabled, the strategy will automatically manage contingent orders, reducing the need for manual intervention.
 
-#### GTD (Good-Till-Date) expiry management
+#### Good Till Date (GTD) expiry management
 
-**Purpose**: Ensures that orders with GTD time-in-force instructions are managed properly, with timers reactivated as necessary.
+**Purpose**: Ensures that orders with GTD time in force instructions are managed properly, with timers reactivated as necessary.
 
 **Settings**:
  - `manage_gtd_expiry`: (default False) If enabled, the strategy will manage GTD expirations, ensuring that orders remain active as intended.
