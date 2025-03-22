@@ -82,7 +82,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.1
+    rev: v0.11.2
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -133,6 +133,6 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.6.8  # uv version
+    rev: 0.6.9  # uv version
     hooks:
       - id: uv-lock
