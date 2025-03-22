@@ -17,7 +17,8 @@ runs:
     # > OS
     - name: Free disk space (Ubuntu)
       if: inputs.free-disk-space == 'true' && runner.os == 'Linux'
-      uses: jlumbroso/free-disk-space@main
+      # https://github.com/jlumbroso/free-disk-space/releases/tag/v1.3.1
+      uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
         tool-cache: true
         android: true
@@ -34,16 +35,16 @@ runs:
         rm -rf "/c/Program Files/dotnet"
         rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
-    # TODO: Temporarily fix-missing to sync outdated package index
     - name: Install runner dependencies
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update --fix-missing
+        sudo apt-get update
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
     - name: Install mold
-      uses: rui314/setup-mold@v1
+      # https://github.com/rui314/setup-mold
+      uses: rui314/setup-mold@565a5a945b82f5759c6148485163f6ecd90da653 # v1
 
     # > --------------------------------------------------
     # > Rust
@@ -105,7 +106,8 @@ runs:
 
     - name: Cached sccache
       id: cached-sccache
-      uses: actions/cache@v4
+      # https://github.com/actions/cache/releases/tag/v4.2.3
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.SCCACHE_DIR }}
         key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/poetry.lock') }}
@@ -115,12 +117,14 @@ runs:
           sccache-${{ runner.os }}-
 
     - name: Run sccache
-      uses: mozilla-actions/sccache-action@v0.0.7
+      # https://github.com/Mozilla-Actions/sccache-action/releases/tag/v0.0.8
+      uses: mozilla-actions/sccache-action@65101d47ea8028ed0c98a1cdea8dd9182e9b5133 # v0.0.8
 
     # > --------------------------------------------------
     # > Python
     - name: Set up Python environment
-      uses: actions/setup-python@v5
+      # https://github.com/actions/setup-python/releases/tag/v5.4.0
+      uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -131,7 +135,8 @@ runs:
 
     - name: Cache Python site-packages
       id: cached-site-packages
-      uses: actions/cache@v4
+      # https://github.com/actions/cache/releases/tag/v4.2.3
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
         key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
@@ -161,7 +166,8 @@ runs:
 
     - name: Cached uv
       id: cached-uv
-      uses: actions/cache@v4
+      # https://github.com/actions/cache/releases/tag/v4.2.3
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.UV_CACHE_DIR }}
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
@@ -170,7 +176,8 @@ runs:
     # > pre-commit
     - name: Cached pre-commit
       id: cached-pre-commit
-      uses: actions/cache@v4
+      # https://github.com/actions/cache/releases/tag/v4.2.3
+      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
