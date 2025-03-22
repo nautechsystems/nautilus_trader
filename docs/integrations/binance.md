@@ -21,9 +21,21 @@ uv sync --extra binance
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
 
 ## Overview
+
+The Binance integration supports the following product types:
+
+- Spot markets (including Binance US)
+- USDT-Margined Futures
+- Coin-Margined Futures
+
+:::note
+Margin accounts are not fully supported at this time due to limited developer testing.
+Contributions via [GitHub issue](https://github.com/nautechsystems/nautilus_trader/issues) reports
+or pull requests to enhance margin account functionality are encouraged.
+:::
 
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Binance adapter includes multiple components, which can be used together or separately depending
@@ -69,11 +81,11 @@ E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would 
 |------------------------|---------------------------------|---------------------------------|-------------------|
 | `MARKET`               | ✓                               | ✓                               | ✓                 |
 | `LIMIT`                | ✓                               | ✓                               | ✓                 |
-| `STOP_MARKET`          |                                 | ✓                               | ✓                 |
+| `STOP_MARKET`          | Not supported                   | ✓                               | ✓                 |
 | `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
-| `MARKET_IF_TOUCHED`    |                                 |                                 | ✓                 |
+| `MARKET_IF_TOUCHED`    | Not supported                   | Not supported                   | ✓                 |
 | `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
-| `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
+| `TRAILING_STOP_MARKET` | Not supported                   | Not supported                   | ✓                 |
 
 ### Trailing stops
 
@@ -86,7 +98,7 @@ The activated price is simply the price at which the order will begin trailing b
 When submitting trailing stop orders from your strategy, you have two options:
 
 1. Use the `trigger_price` to manually set the activation price.
-2. Leave the `trigger_price` as `None`, making the trailing action immediately "active".
+2. Leave the `trigger_price` as `None`, activating the trailing mechanism immediately.
 
 You must also have at least *one* of the following:
 

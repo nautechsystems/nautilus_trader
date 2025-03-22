@@ -25,7 +25,7 @@ uv sync --extra bybit
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/).
 
 ## Overview
 
@@ -99,7 +99,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 | `STOP_LIMIT`           | ✓                    | ✓                                       |
 | `MARKET_IF_TOUCHED`    | ✓                    | ✓                                       |
 | `LIMIT_IF_TOUCHED`     | ✓                    | ✓                                       |
-| `TRAILING_STOP_MARKET` |                      | ✓                                       |
+| `TRAILING_STOP_MARKET` | Not supported        | ✓                                       |
 
 ### Limitations for SPOT
 
