@@ -896,26 +896,6 @@ async def test_generate_order_status_report_venue_order_id(
     assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
 
 
-@pytest.mark.skip(reason="No longer raising exception (just logging error)")
-def test_check_cache_against_order_image_raises(exec_client, venue_order_id):
-    # Arrange
-    ocm = BetfairStreaming.generate_order_change_message(
-        price=5.8,
-        size=20,
-        side="B",
-        status="E",
-        sm=16.19,
-        sr=3.809999999999999,
-        avp=1.50,
-        order_id=int(venue_order_id.value),
-        mb=[MatchedOrder(5.0, 100)],
-    )
-
-    # Act, Assert
-    with pytest.raises(RuntimeError):
-        exec_client.check_cache_against_order_image(ocm)
-
-
 @pytest.mark.asyncio
 async def test_check_cache_against_order_image_passes(
     exec_client,
