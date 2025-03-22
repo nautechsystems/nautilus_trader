@@ -25,7 +25,7 @@ Exercise caution and report any issues on GitHub.
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase_intx).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase_intx).
 
 ## Overview
 
@@ -57,9 +57,8 @@ and won't necessarily need to work with the above components directly.
 
 ## Coinbase International documentation
 
-Coinbase International provides extensive API documentation for users which can be found in the [Coinbase Developer Docs](https://docs.cdp.coinbase.com/intx/docs/welcome).
+Coinbase International provides extensive API documentation for users which can be found in the [Coinbase Developer Platform](https://docs.cdp.coinbase.com/intx/docs/welcome).
 We recommend also referring to the Coinbase International documentation in conjunction with this NautilusTrader integration guide.
-
 
 ## Order types
 
@@ -84,7 +83,7 @@ To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment varia
 portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
 execution configuration for each client.
 
-**Coinbase International** does not currently provide a `USER` websocket channel that would provide
+Coinbase International does not currently provide a `USER` websocket channel that would provide
 execution and account messages. As a temporary workaround, we must poll the REST API to retrieve
 new order fills. This polling is configured to operate within API rate limits and optimize for
 minimum HTTP request round-trip latency.
