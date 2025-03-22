@@ -35,12 +35,12 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.97"
-arrow = "54.2.1"  # Keep major version in line with datafusion
+arrow = "54.3.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
 bytes = { version = "1.10.1", features = ["serde"] }
-chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
+chrono = { version = "0.4.40", features = ["serde"] }
 chrono-tz = { version = "0.10.1" }
 derive_builder = "0.20.2"
 enum_dispatch = "0.3.13"
@@ -52,7 +52,7 @@ indexmap = { version = "2.8.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "54.2.1"  # Keep major version in line with datafusion
+parquet = "54.3.0"  # Keep major version in line with datafusion
 pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
