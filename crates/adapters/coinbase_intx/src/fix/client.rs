@@ -406,6 +406,11 @@ impl CoinbaseIntxFixClient {
             task.abort();
         }
 
+        // Cancel heartbeat task
+        if let Some(task) = self.heartbeat_task.take() {
+            task.abort();
+        }
+
         self.connected.store(false, Ordering::SeqCst);
         self.logged_on.store(false, Ordering::SeqCst);
 
