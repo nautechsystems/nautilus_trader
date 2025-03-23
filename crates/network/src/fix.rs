@@ -62,13 +62,13 @@ pub(crate) fn process_fix_buffer(buf: &mut Vec<u8>, handler: &Arc<TcpMessageHand
             break;
         }
 
-        // Find the potential start of a FIX message using `memchr` for efficiency
+        // Find the potential start of a FIX message
         let start_idx = memchr(START_CHAR, &buf[processed_to..]).map(|i| processed_to + i);
         if let Some(idx) = start_idx {
             if idx + START_PATTERN.len() <= buf.len()
                 && &buf[idx..idx + START_PATTERN.len()] == START_PATTERN
             {
-                // Search for the message end
+                // Search for message end
                 if let Some(end_pos) = find_message_end(&buf[idx..]) {
                     let message_end = idx + end_pos;
                     if message_end - idx > MAX_MESSAGE_SIZE {

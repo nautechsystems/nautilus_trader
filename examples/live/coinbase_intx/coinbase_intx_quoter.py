@@ -16,6 +16,8 @@
 
 from decimal import Decimal
 
+import pandas as pd
+
 from nautilus_trader.adapters.coinbase_intx.config import CoinbaseIntxDataClientConfig
 from nautilus_trader.adapters.coinbase_intx.config import CoinbaseIntxExecClientConfig
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
@@ -290,8 +292,8 @@ class TOBQuoter(Strategy):
             order_side=OrderSide.BUY,
             quantity=quantity,
             price=price,
-            # time_in_force=TimeInForce.GTD,
-            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
             post_only=True,
         )
 
@@ -308,8 +310,8 @@ class TOBQuoter(Strategy):
             order_side=OrderSide.SELL,
             quantity=quantity,
             price=price,
-            # time_in_force=TimeInForce.GTD,
-            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
             post_only=True,
         )
 

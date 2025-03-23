@@ -1,23 +1,23 @@
 # Coinbase International
 
-[Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
-The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
-
-This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading.
-
 :::warning
 The Coinbase International integration is currently in a beta testing phase.
 Exercise caution and report any issues on GitHub.
 :::
 
+[Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
+The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
+
+This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading.
+
 Coinbase International brings a high standard of customer protection, a robust risk management framework and high-performance trading technology, including:
 
-- Real-time 24/7/365 risk management
-- Liquidity from external market makers (no proprietary trading)
-- Dynamic margin requirements and collateral assessments
-- Liquidation framework that meets rigorous compliance standards
-- Well-capitalized exchange to support tail market events
-- Collaboration with top-tier global regulators
+- Real-time 24/7/365 risk management.
+- Liquidity from external market makers (no proprietary trading).
+- Dynamic margin requirements and collateral assessments.
+- Liquidation framework that meets rigorous compliance standards.
+- Well-capitalized exchange to support tail market events.
+- Collaboration with top-tier global regulators.
 
 See the [Introducing Coinbase International Exchange](https://www.coinbase.com/en-au/blog/introducing-coinbase-international-exchange) blog article for more details.
 
@@ -119,11 +119,17 @@ Coinbase International supports several advanced order features that can be acce
 The Coinbase International adapter includes a FIX (Financial Information eXchange) [drop copy](https://docs.cdp.coinbase.com/intx/docs/fix-msg-drop-copy) client.
 This provides reliable, low-latency execution updates directly from Coinbase's matching engine.
 
-- Establishes the TCP/TLS connection then logs on when the execution client starts.
-- Handles automatic reconnections.
-- Properly logs out and closes the TCP/TLS connection when the client disconnects.
+:::note
+This approach is necessary because execution messages are not provided over the WebSocket feed, and delivers faster and more reliable order execution updates than polling the REST API.
+:::
 
-The FIX client processes several types of execution messages:
+The FIX client:
+
+- Establishes a secure TCP/TLS connection and logs on automatically when the trading node starts.
+- Handles connection monitoring and automatic reconnection if the connection is interrupted.
+- Properly logs out and closes the connection when the trading node stops.
+
+The client processes several types of execution messages:
 
 - Order status reports (canceled, expired, triggered).
 - Fill reports (both partial fills and complete fills).
@@ -131,13 +137,13 @@ The FIX client processes several types of execution messages:
 The FIX credentials are automatically managed using the same API credentials as the REST and WebSocket clients.
 No additional configuration is required beyond providing valid API credentials, as the FIX connection is fully set up and managed by the adapter.
 
-### Account and Position Management
+### Account and position management
 
 On startup, the execution client loads your current account and execution state including:
 
 - Available balances across all assets.
 - Open positions.
-- Active orders.
+- Open orders.
 
 This provides your trading strategies with a complete picture of your account before placing new orders.
 Position status reports are generated both on startup and periodically to ensure accurate risk management.
@@ -219,6 +225,10 @@ Or, set the following environment variables:
 - `COINBASE_INTX_API_SECRET`
 - `COINBASE_INTX_API_PASSPHRASE`
 - `COINBASE_INTX_PORTFOLIO_ID`
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.

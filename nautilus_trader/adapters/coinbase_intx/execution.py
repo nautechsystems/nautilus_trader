@@ -23,6 +23,7 @@ from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_SUPPORTED_ORDER_TYPES
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_SUPPORTED_TIF
 from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX_VENUE
+from nautilus_trader.adapters.coinbase_intx.functions import convert_expire_time_to_pydatetime
 from nautilus_trader.adapters.coinbase_intx.providers import CoinbaseIntxInstrumentProvider
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
@@ -474,51 +475,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             return
 
         self._log.error(
-            "Cannot modify order (not yet implemented, use cancel then replace instead)",
+            "Cannot modify order: modifying orders on Coinbase International requires a new client order ID, "
+            "this could be handled but doesn't map well to the Nautilus domain model so for now we use a "
+            "cancel and replace approach",
         )
-        # TODO: Modifying orders on Coinbase International under development.
-        # Requires a new client order ID (this suggests they cancel and replace on their end)
-
-        # try:
-        #     report = await self._http_client.modify_order(
-        #         account_id=self.pyo3_account_id,
-        #         client_order_id=nautilus_pyo3.ClientOrderId(command.client_order_id.value),
-        #         new_client_order_id=nautilus_pyo3.ClientOrderId(new_client_order_id_value),
-        #         price=nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None,
-        #         trigger_price=(
-        #             nautilus_pyo3.Price.from_str(str(command.trigger_price))
-        #             if command.trigger_price
-        #             else None
-        #         ),
-        #         quantity=(
-        #             nautilus_pyo3.Quantity.from_str(str(command.quantity))
-        #             if command.trigger_price
-        #             else None
-        #         ),
-        #     )
-        # except Exception as e:
-        #     self.generate_order_modify_rejected(
-        #         order.strategy_id,
-        #         order.instrument_id,
-        #         order.client_order_id,
-        #         order.venue_order_id,
-        #         str(e),
-        #         self._clock.timestamp_ns(),
-        #     )
-        #     return
-        #
-        # self.generate_order_updated(
-        #     strategy_id=order.strategy_id,
-        #     instrument_id=order.instrument_id,
-        #     client_order_id=order.client_order_id,
-        #     venue_order_id=order.venue_order_id,
-        #     quantity=Quantity.from_str(str(report.quantity)),
-        #     price=Price.from_str(str(report.price)),
-        #     trigger_price=(
-        #         Price.from_str(str(report.trigger_price)) if report.trigger_price else None
-        #     ),
-        #     ts_event=report.ts_last,
-        # )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -550,7 +510,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         try:
             if order.order_type == OrderType.MARKET:
                 report = await self._submit_market_order(order)
-                return
+                return  # Do not generate accepted event
             elif order.order_type == OrderType.LIMIT:
                 report = await self._submit_limit_order(order)
             elif order.order_type == OrderType.STOP_MARKET:
@@ -559,7 +519,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 report = await self._submit_stop_limit_order(order)
             else:
                 self._log.error(f"Submitting {order.type_string()} orders not currently supported")
-                return
+                return  # Do not generate accepted event
 
             self.generate_order_accepted(
                 instrument_id=order.instrument_id,
@@ -604,10 +564,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         self,
         order: LimitOrder,
     ) -> nautilus_pyo3.OrderStatusReport:
-        expire_time = (
-            order.expire_time.tz_convert("UTC").to_pydatetime() if order.expire_time else None
-        )
-
         return await self._http_client.submit_order(
             account_id=self.pyo3_account_id,
             client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
@@ -615,7 +571,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.LIMIT,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=expire_time,
+            expire_time=convert_expire_time_to_pydatetime(order),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             post_only=order.is_post_only if order.is_post_only else None,
@@ -626,10 +582,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         self,
         order: StopMarketOrder,
     ) -> nautilus_pyo3.OrderStatusReport:
-        expire_time = (
-            order.expire_time.tz_convert("UTC").to_pydatetime() if order.expire_time else None
-        )
-
         return await self._http_client.submit_order(
             account_id=self.pyo3_account_id,
             client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
@@ -637,7 +589,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.STOP_MARKET,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=expire_time,
+            expire_time=convert_expire_time_to_pydatetime(order),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
@@ -647,10 +599,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         self,
         order: StopMarketOrder,
     ) -> nautilus_pyo3.OrderStatusReport:
-        expire_time = (
-            order.expire_time.tz_convert("UTC").to_pydatetime() if order.expire_time else None
-        )
-
         return await self._http_client.submit_order(
             account_id=self.pyo3_account_id,
             client_order_id=nautilus_pyo3.ClientOrderId(order.client_order_id.value),
@@ -658,7 +606,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             order_side=order_side_to_pyo3(order.side),
             order_type=nautilus_pyo3.OrderType.STOP_LIMIT,
             time_in_force=time_in_force_to_pyo3(order.time_in_force),
-            expire_time=expire_time,
+            expire_time=convert_expire_time_to_pydatetime(order),
             quantity=nautilus_pyo3.Quantity.from_str(str(order.quantity)),
             price=nautilus_pyo3.Price.from_str(str(order.price)),
             trigger_price=nautilus_pyo3.Price.from_str(str(order.trigger_price)),
@@ -666,12 +614,10 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         )
 
     def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
-        # TODO: Uncomment for development
-        # self._log.debug(f"Received FIX msg: {msg}", LogColor.MAGENTA)
-
-        # Note: These execution reports are using a default precision of 8 for now - to avoid
-        # the need to track a separate cache down in Rust. Ensure all price and quantity
-        # values are reinitialized using the instruments `make_price` and `make_qty` helper methods.
+        # Note: These FIX execution reports are using a default precision of 8 for now,
+        # this avoids the need to track a separate cache down in Rust. Ensure all price
+        # and quantity values are reinitialized using the instruments `make_price` and
+        # `make_qty` helper methods.
 
         if isinstance(msg, nautilus_pyo3.OrderStatusReport):
             report = OrderStatusReport.from_pyo3(msg)
