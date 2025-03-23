@@ -392,3 +392,7 @@ node.build()
 - `instrument_ids`: The instrument IDs to request instrument definitions for on start.
 - `timeout_initial_load`: The timeout (seconds) to wait for instruments to load (concurrently per dataset).
 - `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the initial snapshot and then all deltas.
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::

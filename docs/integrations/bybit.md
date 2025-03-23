@@ -202,5 +202,9 @@ For Bybit testnet clients, you can set:
 - `BYBIT_TESTNET_API_KEY`
 - `BYBIT_TESTNET_API_SECRET`
 
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
+
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.

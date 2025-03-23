@@ -193,6 +193,10 @@ For dYdX testnet clients, you can set:
 - `DYDX_TESTNET_WALLET_ADDRESS`
 - `DYDX_TESTNET_MNEMONIC`
 
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
+
 The data client is using the wallet address to determine the trading fees. The trading fees are used during back tests only.
 
 ### Testnets
