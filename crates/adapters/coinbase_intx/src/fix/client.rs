@@ -72,7 +72,7 @@ pub struct CoinbaseIntxFixClient {
 }
 
 impl CoinbaseIntxFixClient {
-    /// Create a new Coinbase International FIX client
+    /// Creates a new [`CoinbaseIntxFixClient`] instance.
     pub fn new(
         endpoint: Option<String>,
         api_key: Option<String>,
@@ -107,8 +107,8 @@ impl CoinbaseIntxFixClient {
         })
     }
 
-    /// Creates a new authenticated [`CoinbaseIntxFixClient`] using environment variables and
-    /// the default Coinbase International FIX drop copy endpoint.
+    /// Creates a new authenticated [`CoinbaseIntxFixClient`] instance using
+    /// environment variables and the default Coinbase International FIX drop copy endpoint.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::new(None, None, None, None, None)
     }
@@ -148,7 +148,7 @@ impl CoinbaseIntxFixClient {
         self.logged_on.load(Ordering::SeqCst)
     }
 
-    /// Connect to the Coinbase International FIX Drop Copy endpoint
+    /// Connects to the Coinbase International FIX Drop Copy endpoint.
     pub async fn connect(&mut self, handler: PyObject) -> anyhow::Result<()> {
         let config = SocketConfig {
             url: self.endpoint.clone(),
@@ -271,69 +271,30 @@ impl CoinbaseIntxFixClient {
         self.send_logon().await?;
 
         // Create task to monitor connection and send logon after reconnect
-        let socket_clone = self.socket.clone().unwrap();
-        let sender_comp_id = self.sender_comp_id.clone();
-        let target_comp_id = self.target_comp_id.clone();
-        let api_key = self.api_key.clone();
-        let api_secret = self.api_secret.clone();
-        let api_passphrase = self.api_passphrase.clone();
         let connected_clone = self.connected.clone();
         let logged_on_clone = self.logged_on.clone();
-        let seq_num_clone = self.seq_num.clone();
         let heartbeat_secs = self.heartbeat_secs;
+        let client_clone = self.clone();
 
         self.processing_task = Some(Arc::new(tokio::spawn(async move {
             tracing::debug!("Started task 'maintain FIX connection'");
 
-            let mut last_reconnect = std::time::Instant::now();
+            let mut last_logon_attempt = std::time::Instant::now() - Duration::from_secs(10);
 
             loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::time::sleep(Duration::from_millis(100)).await;
 
                 // Check if connected but not logged on
                 if connected_clone.load(Ordering::SeqCst) && !logged_on_clone.load(Ordering::SeqCst)
                 {
-                    tracing::warn!("Logging on again..."); // TODO: Consolidate logons
+                    // Rate limit logon attempts
+                    if last_logon_attempt.elapsed() > Duration::from_secs(5) {
+                        tracing::info!("Connected without logon");
+                        last_logon_attempt = std::time::Instant::now();
 
-                    // TODO: Extract this whole sequence
-                    // Avoid sending logon too frequently
-                    if last_reconnect.elapsed() > Duration::from_secs(5) {
-                        tracing::info!("Detected connection without logon, sending logon message");
-
-                        // Reset sequence number
-                        seq_num_clone.store(1, Ordering::SeqCst);
-
-                        // Create logon message
-                        let now = chrono::Utc::now();
-                        let timestamp = now.format("%Y%m%d-%H:%M:%S.%3f").to_string();
-
-                        // Create signature
-                        let message =
-                            format!("{timestamp}{api_key}{target_comp_id}{api_passphrase}");
-                        let decoded_secret =
-                            BASE64_STANDARD.decode(&api_secret).unwrap_or_default();
-                        let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &decoded_secret);
-                        let signature = hmac::sign(&hmac_key, message.as_bytes());
-                        let encoded_signature = BASE64_STANDARD.encode(signature);
-
-                        // Create logon message
-                        let msg = FixMessage::create_logon(
-                            1, // Always 1 for new logon
-                            &sender_comp_id,
-                            &target_comp_id,
-                            heartbeat_secs,
-                            &api_key,
-                            &api_passphrase,
-                            &encoded_signature,
-                            &now,
-                        );
-
-                        // Send logon message
-                        if let Err(e) = socket_clone.send_bytes(msg.to_bytes()).await {
-                            tracing::error!("Failed to send logon message: {e}");
+                        if let Err(e) = client_clone.send_logon().await {
+                            tracing::error!("Failed to send logon: {e}");
                         }
-
-                        last_reconnect = std::time::Instant::now();
                     }
                 }
 
@@ -387,7 +348,7 @@ impl CoinbaseIntxFixClient {
         Ok(())
     }
 
-    /// Close the connection
+    /// Closes the connection.
     pub async fn close(&mut self) -> anyhow::Result<()> {
         // Send logout message if connected
         if self.is_logged_on() {
@@ -480,7 +441,7 @@ impl CoinbaseIntxFixClient {
         Ok(())
     }
 
-    /// Send a logout message
+    /// Sends a logout message.
     async fn send_logout(&self, text: &str) -> anyhow::Result<()> {
         if self.socket.is_none() {
             anyhow::bail!("Socket not connected".to_string());
@@ -510,6 +471,7 @@ impl CoinbaseIntxFixClient {
     }
 }
 
+// Can't be moved to core because we don't want to depend on tracing there
 pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
         tracing::error!("Error calling Python: {e}");
