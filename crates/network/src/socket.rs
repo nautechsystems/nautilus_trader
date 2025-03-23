@@ -51,13 +51,14 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    fix::process_fix_buffer,
     mode::ConnectionMode,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
-type MessageHandler = dyn Fn(&[u8]) + Send + Sync;
+pub type TcpMessageHandler = dyn Fn(&[u8]) + Send + Sync;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -128,13 +129,13 @@ struct SocketClientInner {
     connection_mode: Arc<AtomicU8>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
-    handler: Option<Arc<MessageHandler>>,
+    handler: Option<Arc<TcpMessageHandler>>,
 }
 
 impl SocketClientInner {
     pub async fn connect_url(
         config: SocketConfig,
-        handler: Option<Arc<MessageHandler>>,
+        handler: Option<Arc<TcpMessageHandler>>,
     ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
@@ -312,7 +313,7 @@ impl SocketClientInner {
     fn spawn_read_task(
         connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
-        handler: Option<Arc<MessageHandler>>, // FIX handler
+        handler: Option<Arc<TcpMessageHandler>>,
         py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
@@ -519,58 +520,6 @@ impl Drop for SocketClientInner {
     }
 }
 
-fn process_fix_buffer(buf: &mut Vec<u8>, handler: &Arc<MessageHandler>) {
-    // FIX messages must start with 8=FIXT.1.1 (or another FIX version) and end with a checksum tag
-    if buf.len() < 10 {
-        return; // Not enough data yet
-    }
-
-    // Look for a complete FIX message
-    let mut start_idx = 0;
-
-    // Find the beginning of a FIX message (8=FIX)
-    while start_idx + 5 < buf.len() {
-        if buf[start_idx] == b'8' && buf[start_idx + 1] == b'=' && buf[start_idx + 2] == b'F' {
-            break;
-        }
-        start_idx += 1;
-    }
-
-    if start_idx + 5 >= buf.len() {
-        // No start of message found, clear buffer
-        buf.clear();
-        return;
-    }
-
-    // From the start position, look for a checksum tag (10=) followed by 3 digits and SOH
-    let mut end_idx = start_idx;
-
-    while end_idx + 7 < buf.len() {
-        if buf[end_idx] == b'1'
-            && buf[end_idx + 1] == b'0'
-            && buf[end_idx + 2] == b'='
-            && buf[end_idx + 6] == b'\x01'
-            && buf[end_idx + 3].is_ascii_digit()
-            && buf[end_idx + 4].is_ascii_digit()
-            && buf[end_idx + 5].is_ascii_digit()
-        {
-            // We found a complete message
-            let message = buf[start_idx..end_idx + 7].to_vec();
-
-            handler(&message);
-
-            // Remove processed data
-            buf.drain(0..end_idx + 7);
-            return;
-        }
-
-        end_idx += 1;
-    }
-
-    // If we didn't find a complete message but found the start,
-    // keep the buffer as is for more data to arrive
-}
-
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -589,7 +538,7 @@ impl SocketClient {
     /// Returns any error connecting to the server.
     pub async fn connect(
         config: SocketConfig,
-        handler: Option<Arc<MessageHandler>>,
+        handler: Option<Arc<TcpMessageHandler>>,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
