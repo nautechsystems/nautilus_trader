@@ -625,8 +625,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
     }
 
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
-        // self.load()
-        Ok(HashMap::new()) // TODO
+        todo!()
     }
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {

@@ -540,7 +540,6 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(code, "code")
 
-        # TODO: Format is Different?
         currency_pyo3 = self._backing.load_currency(code)
         if currency_pyo3:
             return transform_currency_from_pyo3(currency_pyo3)

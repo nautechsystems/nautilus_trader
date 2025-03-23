@@ -79,6 +79,7 @@ impl DatabaseQueries {
                 )
             }),
             SerializationEncoding::MsgPack => {
+                // TODO: Implement MsgPack or clearly document this limitation
                 anyhow::bail!("MsgPack serialization not implemented")
             }
         }
@@ -631,7 +632,7 @@ impl DatabaseQueries {
         };
 
         let mut position = Position::new(&instrument, initial_fill);
-        // then loop through rest of the events(orderfill) present in reult expect first one
+
         for event in result.iter().skip(1) {
             let order_filled: OrderFilled = Self::deserialize_payload(encoding, event)?;
 
@@ -767,11 +768,8 @@ fn transform_market_order(order: OrderAny, ts_init: UnixNanos) -> anyhow::Result
         order.tags().map(|tags| tags.to_vec()),
     );
 
-    let original_events = order.events();
-    // Create diff func for hyhdration: TODO
-    for event in original_events.into_iter().rev() {
-        transformed.events.insert(0, event.clone());
-    }
+    // Apply the original events in reverse order to maintain history
+    hydrate_order_events(&mut transformed.events, order.events());
 
     Ok(OrderAny::from(transformed))
 }
@@ -796,7 +794,7 @@ fn transform_limit_order(
         order.is_quote_quantity(),
         order.display_qty(),
         Some(TriggerType::NoTrigger),
-        None, // Correct?
+        None,
         order.contingency_type(),
         order.order_list_id(),
         order.linked_order_ids().map(|ids| ids.to_vec()),
@@ -815,14 +813,26 @@ fn transform_limit_order(
 
     // TODO: fix
     // let triggered_price = order.trigger_price();
-    // if triggered_price.is_some() {
-    //     transformed.trigger_price() = (triggered_price.unwrap());
+    // if let Some(price) = triggered_price {
+    //     transformed.set_trigger_price(price);
     // }
 
-    let original_events = order.events();
-    for event in original_events.into_iter().rev() {
-        transformed.events.insert(0, event.clone());
-    }
+    // Apply the original events in reverse order to maintain history
+    hydrate_order_events(&mut transformed.events, order.events());
 
     Ok(OrderAny::from(transformed))
+}
+
+/// Hydrates an order with events from the original order in the correct sequence.
+///
+/// This specialized function handles the `Vec<&OrderEventAny>` returned by `order.events()`,
+/// inserting them in reverse order to maintain the proper historical sequence.
+fn hydrate_order_events(
+    target_events: &mut Vec<OrderEventAny>,
+    original_events: Vec<&OrderEventAny>,
+) {
+    // Insert events in reverse order to maintain the correct historical sequence
+    for &event in original_events.iter().rev() {
+        target_events.insert(0, event.clone());
+    }
 }
