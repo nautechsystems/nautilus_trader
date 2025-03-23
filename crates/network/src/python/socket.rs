@@ -50,7 +50,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            handler: Arc::new(handler),
+            py_handler: Some(Arc::new(handler)),
             heartbeat,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -82,6 +82,7 @@ impl SocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
+                None, // Rust handler
                 post_connection,
                 post_reconnection,
                 post_disconnection,

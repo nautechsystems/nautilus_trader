@@ -57,6 +57,7 @@ use crate::{
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
+type MessageHandler = dyn Fn(&[u8]) + Send + Sync;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -71,8 +72,8 @@ pub struct SocketConfig {
     pub mode: Mode,
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
-    /// The Python function to handle incoming messages.
-    pub handler: Arc<PyObject>,
+    /// The optional Python function to handle incoming messages.
+    pub py_handler: Option<Arc<PyObject>>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
     /// The timeout (milliseconds) for reconnection attempts.
@@ -91,7 +92,7 @@ pub struct SocketConfig {
 
 /// Represents a command for the writer task.
 #[derive(Debug)]
-pub(crate) enum WriterCommand {
+pub enum WriterCommand {
     /// Update the writer reference with a new one after reconnection.
     Update(TcpWriter),
     /// Send data to the server.
@@ -127,10 +128,14 @@ struct SocketClientInner {
     connection_mode: Arc<AtomicU8>,
     reconnect_timeout: Duration,
     backoff: ExponentialBackoff,
+    handler: Option<Arc<MessageHandler>>,
 }
 
 impl SocketClientInner {
-    pub async fn connect_url(config: SocketConfig) -> anyhow::Result<Self> {
+    pub async fn connect_url(
+        config: SocketConfig,
+        handler: Option<Arc<MessageHandler>>,
+    ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
         let SocketConfig {
@@ -138,7 +143,7 @@ impl SocketClientInner {
             mode,
             heartbeat,
             suffix,
-            handler,
+            py_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
             reconnect_delay_max_ms,
@@ -154,14 +159,15 @@ impl SocketClientInner {
         };
 
         let (reader, writer) = Self::tls_connect_with_server(url, *mode, connector.clone()).await?;
+        tracing::debug!("Connected");
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
-        let handler = Python::with_gil(|py| handler.clone_ref(py));
         let read_task = Arc::new(Self::spawn_read_task(
             connection_mode.clone(),
             reader,
-            handler,
+            handler.clone(),
+            py_handler.clone(),
             suffix.clone(),
         ));
 
@@ -198,6 +204,7 @@ impl SocketClientInner {
             connection_mode,
             reconnect_timeout,
             backoff,
+            handler,
         })
     }
 
@@ -206,13 +213,22 @@ impl SocketClientInner {
         mode: Mode,
         connector: Option<Connector>,
     ) -> Result<(TcpReader, TcpWriter), Error> {
-        tracing::debug!("Connecting to server");
-        let stream = TcpStream::connect(url).await?;
-        tracing::debug!("Making TLS connection");
-        let request = url.into_client_request()?;
-        tcp_tls(&request, mode, stream, connector)
-            .await
-            .map(tokio::io::split)
+        tracing::debug!("Connecting to {url}");
+        let tcp_result = TcpStream::connect(url).await;
+
+        match tcp_result {
+            Ok(stream) => {
+                tracing::debug!("TCP connection established, proceeding with TLS");
+                let request = url.into_client_request()?;
+                tcp_tls(&request, mode, stream, connector)
+                    .await
+                    .map(tokio::io::split)
+            }
+            Err(e) => {
+                tracing::error!("TCP connection failed: {e:?}");
+                Err(Error::Io(e))
+            }
+        }
     }
 
     /// Reconnect with server.
@@ -228,7 +244,7 @@ impl SocketClientInner {
                 mode,
                 heartbeat: _,
                 suffix,
-                handler,
+                py_handler,
                 reconnect_timeout_ms: _,
                 reconnect_delay_initial_ms: _,
                 reconnect_backoff_factor: _,
@@ -239,6 +255,7 @@ impl SocketClientInner {
             // Create a fresh connection
             let connector = self.connector.clone();
             let (reader, new_writer) = Self::tls_connect_with_server(url, *mode, connector).await?;
+            tracing::debug!("Connected");
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
                 tracing::error!("{e}");
@@ -256,11 +273,11 @@ impl SocketClientInner {
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
             // Spawn new read task
-            let handler_for_read = Python::with_gil(|py| handler.clone_ref(py));
             self.read_task = Arc::new(Self::spawn_read_task(
                 self.connection_mode.clone(),
                 reader,
-                handler_for_read,
+                self.handler.clone(),
+                py_handler.clone(),
                 suffix.clone(),
             ));
 
@@ -295,7 +312,8 @@ impl SocketClientInner {
     fn spawn_read_task(
         connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
-        handler: PyObject,
+        handler: Option<Arc<MessageHandler>>, // FIX handler
+        py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
@@ -325,21 +343,29 @@ impl SocketClientInner {
                     Ok(Ok(bytes)) => {
                         tracing::trace!("Received <binary> {bytes} bytes");
 
-                        // While received data has a line break
-                        // drain it and pass it to the handler
-                        while let Some((i, _)) = &buf
-                            .windows(suffix.len())
-                            .enumerate()
-                            .find(|(_, pair)| pair.eq(&suffix))
-                        {
-                            let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
-                            data.truncate(data.len() - suffix.len());
-
-                            if let Err(e) =
-                                Python::with_gil(|py| handler.call1(py, (data.as_slice(),)))
+                        if let Some(handler) = &handler {
+                            process_fix_buffer(&mut buf, handler);
+                        } else {
+                            while let Some((i, _)) = &buf
+                                .windows(suffix.len())
+                                .enumerate()
+                                .find(|(_, pair)| pair.eq(&suffix))
                             {
-                                tracing::error!("Call to handler failed: {e}");
-                                break;
+                                let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
+                                data.truncate(data.len() - suffix.len());
+
+                                if let Some(handler) = &handler {
+                                    handler(&data)
+                                }
+
+                                if let Some(py_handler) = &py_handler {
+                                    if let Err(e) = Python::with_gil(|py| {
+                                        py_handler.call1(py, (data.as_slice(),))
+                                    }) {
+                                        tracing::error!("Call to handler failed: {e}");
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -369,34 +395,19 @@ impl SocketClientInner {
             let mut active_writer = writer;
 
             loop {
-                match ConnectionMode::from_atomic(&connection_state) {
-                    ConnectionMode::Disconnect => {
-                        if let Err(e) = active_writer.shutdown().await {
-                            tracing::error!("Failed to shutdown writer: {e}");
-                        } else {
-                            tracing::debug!("Sent close message");
-                        }
-                        break;
-                    }
-                    ConnectionMode::Closed => break,
-                    _ => {}
+                if matches!(
+                    ConnectionMode::from_atomic(&connection_state),
+                    ConnectionMode::Disconnect | ConnectionMode::Closed
+                ) {
+                    break;
                 }
 
                 match tokio::time::timeout(check_interval, writer_rx.recv()).await {
                     Ok(Some(msg)) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
-                        match mode {
-                            ConnectionMode::Disconnect => {
-                                if let Err(e) = active_writer.shutdown().await {
-                                    tracing::error!("Failed to shutdown writer: {e}");
-                                } else {
-                                    tracing::debug!("Sent close message");
-                                }
-                                break;
-                            }
-                            ConnectionMode::Closed => break,
-                            _ => {}
+                        if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                            break;
                         }
 
                         match msg {
@@ -406,11 +417,9 @@ impl SocketClientInner {
                                 // Delay before closing connection
                                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                                if let Err(e) = active_writer.shutdown().await {
-                                    tracing::error!("Failed to send close message: {e}");
-                                } else {
-                                    tracing::debug!("Sent close message");
-                                }
+                                // Attempt to shutdown the writer gracefully before updating,
+                                // we ignore any error as the writer may already be closed.
+                                _ = active_writer.shutdown().await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
@@ -510,6 +519,58 @@ impl Drop for SocketClientInner {
     }
 }
 
+fn process_fix_buffer(buf: &mut Vec<u8>, handler: &Arc<MessageHandler>) {
+    // FIX messages must start with 8=FIXT.1.1 (or another FIX version) and end with a checksum tag
+    if buf.len() < 10 {
+        return; // Not enough data yet
+    }
+
+    // Look for a complete FIX message
+    let mut start_idx = 0;
+
+    // Find the beginning of a FIX message (8=FIX)
+    while start_idx + 5 < buf.len() {
+        if buf[start_idx] == b'8' && buf[start_idx + 1] == b'=' && buf[start_idx + 2] == b'F' {
+            break;
+        }
+        start_idx += 1;
+    }
+
+    if start_idx + 5 >= buf.len() {
+        // No start of message found, clear buffer
+        buf.clear();
+        return;
+    }
+
+    // From the start position, look for a checksum tag (10=) followed by 3 digits and SOH
+    let mut end_idx = start_idx;
+
+    while end_idx + 7 < buf.len() {
+        if buf[end_idx] == b'1'
+            && buf[end_idx + 1] == b'0'
+            && buf[end_idx + 2] == b'='
+            && buf[end_idx + 6] == b'\x01'
+            && buf[end_idx + 3].is_ascii_digit()
+            && buf[end_idx + 4].is_ascii_digit()
+            && buf[end_idx + 5].is_ascii_digit()
+        {
+            // We found a complete message
+            let message = buf[start_idx..end_idx + 7].to_vec();
+
+            handler(&message);
+
+            // Remove processed data
+            buf.drain(0..end_idx + 7);
+            return;
+        }
+
+        end_idx += 1;
+    }
+
+    // If we didn't find a complete message but found the start,
+    // keep the buffer as is for more data to arrive
+}
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -517,7 +578,7 @@ impl Drop for SocketClientInner {
 pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
-    pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+    pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
 }
 
 impl SocketClient {
@@ -528,11 +589,12 @@ impl SocketClient {
     /// Returns any error connecting to the server.
     pub async fn connect(
         config: SocketConfig,
+        handler: Option<Arc<MessageHandler>>,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> anyhow::Result<Self> {
-        let inner = SocketClientInner::connect_url(config).await?;
+        let inner = SocketClientInner::connect_url(config, handler).await?;
         let writer_tx = inner.writer_tx.clone();
         let connection_mode = inner.connection_mode.clone();
 
@@ -894,7 +956,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler()),
+            py_handler: Some(Arc::new(create_handler())),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -904,7 +966,7 @@ counter = Counter()
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::connect(config, None, None, None, None)
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -930,7 +992,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler()),
+            py_handler: Some(Arc::new(create_handler())),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -940,7 +1002,7 @@ counter = Counter()
             certs_dir: None,
         };
 
-        let client_res = SocketClient::connect(config, None, None, None).await;
+        let client_res = SocketClient::connect(config, None, None, None, None).await;
         assert!(
             client_res.is_err(),
             "Should fail quickly with no server listening"
@@ -966,7 +1028,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler()),
+            py_handler: Some(Arc::new(create_handler())),
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -976,7 +1038,7 @@ counter = Counter()
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::connect(config, None, None, None, None)
             .await
             .unwrap();
 
@@ -1021,7 +1083,7 @@ counter = Counter()
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler()),
+            py_handler: Some(Arc::new(create_handler())),
             heartbeat,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -1031,7 +1093,7 @@ counter = Counter()
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::connect(config, None, None, None, None)
             .await
             .unwrap();
 
@@ -1075,17 +1137,17 @@ def handler(bytes_data):
         let filename = CString::new("test".to_string()).unwrap();
         let module = CString::new("test".to_string()).unwrap();
 
-        let handler = Python::with_gil(|py| {
+        let py_handler = Some(Python::with_gil(|py| {
             let pymod = PyModule::from_code(py, &code, &filename, &module).unwrap();
             let func = pymod.getattr("handler").unwrap();
             Arc::new(func.into_py_any_unwrap(py))
-        });
+        }));
 
         let config = SocketConfig {
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler,
+            py_handler,
             heartbeat: None,
             reconnect_timeout_ms: None,
             reconnect_delay_initial_ms: None,
@@ -1095,7 +1157,7 @@ def handler(bytes_data):
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::connect(config, None, None, None, None)
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -1142,7 +1204,7 @@ def handler(bytes_data):
             url: format!("127.0.0.1:{port}"),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
-            handler: Arc::new(create_handler()),
+            py_handler: Some(Arc::new(create_handler())),
             heartbeat: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: Some(500),
@@ -1152,7 +1214,7 @@ def handler(bytes_data):
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None, None, None)
+        let client = SocketClient::connect(config, None, None, None, None)
             .await
             .expect("Client connect failed unexpectedly");
 

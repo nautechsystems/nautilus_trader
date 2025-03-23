@@ -371,11 +371,9 @@ impl WebSocketClientInner {
             loop {
                 match ConnectionMode::from_atomic(&connection_state) {
                     ConnectionMode::Disconnect => {
-                        if let Err(e) = active_writer.close().await {
-                            tracing::error!("Failed to send close message: {e}");
-                        } else {
-                            tracing::debug!("Sent close message");
-                        }
+                        // Attempt to close the writer gracefully before exiting,
+                        // we ignore any error as the writer may already be closed.
+                        _ = active_writer.close().await;
                         break;
                     }
                     ConnectionMode::Closed => break,
@@ -386,17 +384,8 @@ impl WebSocketClientInner {
                     Ok(Some(msg)) => {
                         // Re-check connection mode after receiving a message
                         let mode = ConnectionMode::from_atomic(&connection_state);
-                        match mode {
-                            ConnectionMode::Disconnect => {
-                                if let Err(e) = active_writer.close().await {
-                                    tracing::error!("Failed to close on disconnect: {e}");
-                                } else {
-                                    tracing::debug!("Sent close message");
-                                }
-                                break;
-                            }
-                            ConnectionMode::Closed => break,
-                            _ => {}
+                        if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
+                            break;
                         }
 
                         match msg {
@@ -406,11 +395,9 @@ impl WebSocketClientInner {
                                 // Delay before closing connection
                                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                                if let Err(e) = active_writer.close().await {
-                                    tracing::error!("Failed to close on writer update: {e}");
-                                } else {
-                                    tracing::debug!("Sent close message");
-                                }
+                                // Attempt to close the writer gracefully on update,
+                                // we ignore any error as the writer may already be closed.
+                                _ = active_writer.close().await;
 
                                 active_writer = new_writer;
                                 tracing::debug!("Updated writer");
