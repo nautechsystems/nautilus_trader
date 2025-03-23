@@ -53,6 +53,12 @@ impl MarginAccount {
     }
 
     #[getter]
+    #[pyo3(name = "events")]
+    fn py_events(&self) -> Vec<AccountState> {
+        self.events.clone()
+    }
+
+    #[getter]
     fn default_leverage(&self) -> f64 {
         self.default_leverage
     }

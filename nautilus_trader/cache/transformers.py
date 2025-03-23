@@ -216,14 +216,11 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
 
 def from_order_initialized_pyo3_to_order_cython(order_event):
     order_event_dict = order_event.to_dict()
-    print("order_event_dict: ", order_event_dict)
-
     if "expire_time" in order_event_dict:
         expire_time = order_event_dict.get("expire_time")
         order_event_dict["expire_time_ns"] = 0 if expire_time is None else expire_time
 
     order_event_cython = OrderInitialized.from_dict(order_event_dict)
-    print("order_event_dict: ", order_event_dict)
     option_keys = [
         "price",
         "expire_time_ns",
@@ -231,12 +228,13 @@ def from_order_initialized_pyo3_to_order_cython(order_event):
         "trigger_price",
         "limit_offset",
         "trigger_type",
+        "trailing_offset",
+        "trailing_offset_type",
     ]
     for key in option_keys:
         if key in order_event_dict:
             order_event_cython.options[key] = order_event_dict[key]
 
-    print("order_event_cython: ", order_event_cython)
     return OrderUnpacker.from_init(order_event_cython)
 
 

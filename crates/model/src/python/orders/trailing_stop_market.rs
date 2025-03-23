@@ -138,6 +138,18 @@ impl TrailingStopMarketOrder {
             .collect()
     }
 
+    #[getter]
+    #[pyo3(name = "trigger_price")]
+    fn py_trigger_price(&self) -> Price {
+        self.trigger_price
+    }
+
+    #[getter]
+    #[pyo3(name = "trailing_offset")]
+    fn py_trailing_offset(&self) -> Decimal {
+        self.trailing_offset
+    }
+
     #[pyo3(name = "signed_decimal_qty")]
     fn py_signed_decimal_qty(&self) -> Decimal {
         self.signed_decimal_qty()

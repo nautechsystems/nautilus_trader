@@ -748,7 +748,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         let client_order_id = order.client_order_id().to_string();
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
         let value = DatabaseQueries::serialize_payload(self.encoding, order.last_event())?;
-        println!("last_event: {:?}", order.last_event());
+
         self.insert(key, Some(vec![Bytes::from(value)]))?;
         tracing::debug!("Added {client_order_id}");
 
@@ -908,13 +908,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         let client_order_id = order_event.client_order_id().to_string();
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
         let value = DatabaseQueries::serialize_payload(self.encoding, order_event)?;
-        println!("update_order: {:?}", value);
-        // Append the new event to the existing list
+
         self.update(key, Some(vec![Bytes::from(value)]))?;
         tracing::debug!("Updated {client_order_id} with event: {:?}", order_event);
 
         // todo: update index
-
         Ok(())
     }
 

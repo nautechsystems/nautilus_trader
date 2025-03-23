@@ -604,8 +604,6 @@ impl DatabaseQueries {
             }
         }
 
-        println!("order_final: {:?}", order);
-
         Ok(Some(order))
     }
 
