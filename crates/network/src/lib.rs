@@ -33,6 +33,7 @@
 #![deny(clippy::missing_errors_doc)]
 
 pub mod backoff;
+pub mod fix;
 pub mod http;
 pub mod mode;
 pub mod ratelimiter;

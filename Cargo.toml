@@ -52,6 +52,7 @@ indexmap = { version = "2.8.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
 log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
+memchr = "2.7.4"
 parquet = "54.3.0"  # Keep major version in line with datafusion
 pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }

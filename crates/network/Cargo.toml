@@ -27,6 +27,7 @@ bytes = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
+memchr = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 rand = { workspace = true }
