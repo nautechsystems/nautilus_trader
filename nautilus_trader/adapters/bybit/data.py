@@ -695,14 +695,14 @@ class BybitDataClient(LiveMarketDataClient):
             bar_type = self._topic_bar_type.get(msg.topic)
 
             if bar_type is None:
-                self._log.error(f"Cannot parse trade data: no bar_type for {msg.topic}")
+                self._log.error(f"Cannot parse bar data: no bar_type for {msg.topic}")
                 return
 
             instrument_id = bar_type.instrument_id
             instrument = self._cache.instrument(instrument_id)
 
             if instrument is None:
-                self._log.error(f"Cannot parse trade data: no instrument for {instrument_id}")
+                self._log.error(f"Cannot parse bar data: no instrument for {instrument_id}")
                 return
 
             for data in msg.data:
