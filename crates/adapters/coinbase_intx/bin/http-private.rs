@@ -23,7 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let mut client = CoinbaseIntxHttpClient::authed_from_env().unwrap();
+    let mut client = CoinbaseIntxHttpClient::from_env().unwrap();
 
     // The direct Coinbase REST API can be accessed through the inner client,
     // these methods are prefixed with "http_" for clarity that a HTTP request is

@@ -22,7 +22,6 @@ from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
 from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveDataClientFactory
 from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -50,7 +49,7 @@ from nautilus_trader.trading.strategy import Strategy
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 instrument_id = InstrumentId.from_str("BTC-PERP.COINBASE_INTX")
-offset_ticks = 100  # Number of ticks to offset limit orders from the market
+offset_ticks = 10  # Number of ticks to offset limit orders from the market
 trade_size = Decimal("0.01")
 dry_run = False  # Set this to True to prevent trading
 
@@ -65,7 +64,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),
+        # database=DatabaseConfig(),
         encoding="msgpack",
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
@@ -89,14 +88,13 @@ config_node = TradingNodeConfig(
     exec_clients={
         COINBASE_INTX: CoinbaseIntxExecClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            poll_fills_min_interval_ms=100,
         ),
     },
     timeout_connection=60.0,
     timeout_reconciliation=20.0,
     timeout_portfolio=10.0,
     timeout_disconnection=5.0,
-    timeout_post_stop=2.0,
+    timeout_post_stop=5.0,
 )
 
 # Instantiate the node with a configuration

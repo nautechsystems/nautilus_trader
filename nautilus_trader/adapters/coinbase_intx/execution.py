@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
 from typing import Any
 
 from nautilus_trader.adapters.coinbase_intx.config import CoinbaseIntxExecClientConfig
@@ -117,7 +116,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         # Configuration
         self._config = config
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.poll_fills_min_interval_ms=}", LogColor.BLUE)
 
         self._portfolio_id: str = config.portfolio_id or get_env_key("COINBASE_INTX_PORTFOLIO_ID")
         account_id = AccountId(f"{name or COINBASE_INTX}-{self._portfolio_id}")
@@ -130,17 +128,15 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         self._http_client = client
         self._log.info(f"REST API key {self._http_client.api_key}", LogColor.BLUE)
 
-        # WebSocket API
-        self._ws_client = nautilus_pyo3.CoinbaseIntxWebSocketClient(
-            url=config.base_url_ws,
+        # FIX API
+        self._fix_client = nautilus_pyo3.CoinbaseIntxFixClient(
+            endpoint=None,  # Uses production endpoint by default
             api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
+            portfolio_id=self._portfolio_id,
         )
-        self._ws_client_futures: set[asyncio.Future] = set()
-
-        # Tasks
-        self._poll_fills_task: asyncio.Task | None = None
+        self._fix_client_futures: set[asyncio.Future] = set()
 
     @property
     def coinbase_intx_instrument_provider(self) -> CoinbaseIntxInstrumentProvider:
@@ -150,35 +146,39 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         await self._cache_instruments()
         await self._update_account_state()
 
-        self._poll_fills_task = self.create_task(
-            self._poll_fills(self._config.poll_fills_min_interval_ms),
+        self._log.info(
+            f"Logging on to FIX Drop Copy server: endpoint={self._fix_client.endpoint}, "
+            f"target_comp_id={self._fix_client.target_comp_id}, "
+            f"sender_comp_id={self._fix_client.sender_comp_id}",
+            LogColor.BLUE,
         )
-
         future = asyncio.ensure_future(
-            self._ws_client.connect(
-                instruments=self.coinbase_intx_instrument_provider.instruments_pyo3(),
-                callback=self._handle_msg,
+            self._fix_client.connect(
+                handler=self._handle_fix_msg,
             ),
         )
-        self._ws_client_futures.add(future)
-        self._log.info(f"Connected to {self._ws_client.url}", LogColor.BLUE)
-        self._log.info(f"WebSocket API key {self._ws_client.api_key}", LogColor.BLUE)
-        self._log.info("Coinbase Intx API key authenticated", LogColor.GREEN)
+        self._fix_client_futures.add(future)
+
+        try:
+            await asyncio.wait_for(self._wait_for_logon(), 30.0)
+        except TimeoutError:
+            self._log.error("Timed out logging on to FIX Drop Copy server")
+            await self._fix_client.close()
+            raise
+
+        self._log.info("Logon successful", LogColor.GREEN)
+
+    async def _wait_for_logon(self):
+        while not self._fix_client.is_logged_on():
+            await asyncio.sleep(0.01)
 
     async def _disconnect(self) -> None:
-        if self._poll_fills_task:
-            self._log.debug("Canceling task 'poll_fills'")
-            self._poll_fills_task.cancel()
-            self._poll_fills_task = None
+        if not self._fix_client.is_logged_on():
+            self._log.info("Disconnecting FIX client")
+            await self._fix_client.close()
+            self._log.info("Disconnected from FIX Drop Copy server", LogColor.BLUE)
 
-        # Shutdown websockets
-        if not self._ws_client.is_closed():
-            self._log.info("Disconnecting websocket")
-            await self._ws_client.close()
-            self._log.info(f"Disconnected from {self._ws_client.url}", LogColor.BLUE)
-
-        # Cancel all client futures
-        for future in self._ws_client_futures:
+        for future in self._fix_client_futures:
             if not future.done():
                 future.cancel()
 
@@ -208,86 +208,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             reported=True,
             ts_event=account_state.ts_event,
         )
-
-    # This is a simple and robust work around due no 'user' channel currently available for the
-    # Coinbase International websocket API. We continually poll the REST API at the defined minimum
-    # poll interval, incrementing the `start` filter param, and only process new fills.
-    async def _poll_fills(self, interval_ms: int) -> None:
-        try:
-            self._log.debug(
-                f"Started task 'poll_fills' to request fill reports "
-                f"with a minimum interval of {interval_ms}ms",
-            )
-            last_request_ms = self._clock.timestamp_ms()
-
-            while True:
-                # Calculate time since last request
-                current_time_ms = self._clock.timestamp_ms()
-                elapsed_ms = current_time_ms - last_request_ms
-
-                # Ensure minimum request interval
-                if elapsed_ms < interval_ms:
-                    remaining_secs = (interval_ms - elapsed_ms) / 1000.0
-                    await asyncio.sleep(remaining_secs)
-
-                # Update start time for this request
-                start = dt.datetime.fromtimestamp(last_request_ms / 1000.0, tz=dt.UTC)
-                last_request_ms = self._clock.timestamp_ms()
-
-                self._log.debug(f"Requesting order fills since {start}")
-
-                pyo3_fill_reports = await self._http_client.request_fill_reports(
-                    account_id=self.pyo3_account_id,
-                    start=start,
-                )
-
-                for pyo3_fill_report in pyo3_fill_reports:
-                    fill_report = FillReport.from_pyo3(pyo3_fill_report)
-                    if fill_report.client_order_id is None:
-                        self._log.warning(f"No ClientOrderId to process fill {fill_report}")
-                        continue
-
-                    order = self._cache.order(fill_report.client_order_id)
-                    if order is None:
-                        self._log.error(
-                            f"Cannot process fill - order for {fill_report.client_order_id!r} not found",
-                        )
-                        continue
-
-                    if fill_report.trade_id in order.trade_ids:
-                        self._log.debug(
-                            f"Already processed fill for {fill_report}",
-                            LogColor.MAGENTA,
-                        )
-                        continue
-
-                    instrument = self._cache.instrument(order.instrument_id)
-                    if instrument is None:
-                        raise ValueError(
-                            f"Cannot process fill - instrument {order.instrument_id} not found",
-                        )
-
-                    self.generate_order_filled(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=fill_report.venue_order_id,
-                        venue_position_id=fill_report.venue_position_id,
-                        trade_id=fill_report.trade_id,
-                        order_side=fill_report.order_side,
-                        order_type=order.order_type,
-                        last_qty=fill_report.last_qty,
-                        last_px=fill_report.last_px,
-                        quote_currency=instrument.quote_currency,
-                        commission=fill_report.commission,
-                        liquidity_side=fill_report.liquidity_side,
-                        ts_event=fill_report.ts_event,
-                    )
-
-                if pyo3_fill_reports:
-                    await self._update_account_state()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'poll_fills'")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -777,3 +697,42 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
 
     def _handle_msg(self, msg: Any) -> None:
         self._log.warning(f"Received {msg}")
+
+    def _handle_fix_msg(self, msg: Any) -> None:
+        self._log.info(f"Received FIX msg: {msg}", LogColor.MAGENTA)  # TODO: Set to debug
+
+        if isinstance(msg, nautilus_pyo3.FillReport):
+            fill_report = FillReport.from_pyo3(msg)
+            if fill_report.client_order_id is None:
+                self._log.warning(f"No ClientOrderId to process fill {fill_report}")
+                return
+
+            order = self._cache.order(fill_report.client_order_id)
+            if order is None:
+                self._log.error(
+                    f"Cannot process fill - order for {fill_report.client_order_id!r} not found",
+                )
+                return
+
+            instrument = self._cache.instrument(order.instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot process fill - instrument {order.instrument_id} not found",
+                )
+
+            self.generate_order_filled(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=fill_report.venue_order_id,
+                venue_position_id=fill_report.venue_position_id,
+                trade_id=fill_report.trade_id,
+                order_side=fill_report.order_side,
+                order_type=order.order_type,
+                last_qty=fill_report.last_qty,
+                last_px=fill_report.last_px,
+                quote_currency=instrument.quote_currency,
+                commission=fill_report.commission,
+                liquidity_side=fill_report.liquidity_side,
+                ts_event=fill_report.ts_event,
+            )

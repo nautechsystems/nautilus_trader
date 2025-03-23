@@ -15,6 +15,7 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod fix;
 pub mod http;
 pub mod websocket;
 
@@ -25,5 +26,6 @@ use pyo3::prelude::*;
 pub fn coinbase_intx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::http::CoinbaseIntxHttpClient>()?;
     m.add_class::<super::websocket::CoinbaseIntxWebSocketClient>()?;
+    m.add_class::<super::fix::CoinbaseIntxFixClient>()?;
     Ok(())
 }

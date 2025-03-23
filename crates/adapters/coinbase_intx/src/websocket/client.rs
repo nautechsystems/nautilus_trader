@@ -107,6 +107,12 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
+    /// Creates a new authenticated [`CoinbaseIntxWebSocketClient`] using environment variables and
+    /// the default Coinbase International production websocket url.
+    pub fn from_env() -> anyhow::Result<Self> {
+        Self::new(None, None, None, None, None)
+    }
+
     /// Returns the websocket url being used by the client.
     pub fn url(&self) -> &str {
         self.url.as_str()
