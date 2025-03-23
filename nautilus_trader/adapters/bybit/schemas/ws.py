@@ -128,15 +128,17 @@ class BybitWsKline(msgspec.Struct):
     def parse_to_bar(
         self,
         bar_type: BarType,
+        price_precision: int,
+        size_precision: int,
         ts_init: int,
     ) -> Bar:
         return Bar(
             bar_type=bar_type,
-            open=Price.from_str(self.open),
-            high=Price.from_str(self.high),
-            low=Price.from_str(self.low),
-            close=Price.from_str(self.close),
-            volume=Quantity.from_str(self.volume),
+            open=Price(float(self.open), price_precision),
+            high=Price(float(self.high), price_precision),
+            low=Price(float(self.low), price_precision),
+            close=Price(float(self.close), price_precision),
+            volume=Quantity(float(self.volume), size_precision),
             ts_event=millis_to_nanos(int(self.end) + 1),
             ts_init=ts_init,
         )
@@ -283,27 +285,30 @@ class BybitWsOrderbookDepth(msgspec.Struct):
         if top_ask_size == "0":
             top_ask_size = None
 
+        # Convert the previous quote to new price and sizes to ensure that the precision
+        # of the new Quote is consistent with the instrument definition even after
+        # updates of the instrument.
         return QuoteTick(
             instrument_id=instrument_id,
             bid_price=(
                 Price(float(top_bid_price), price_precision)
                 if top_bid_price
-                else last_quote.bid_price
+                else Price(last_quote.bid_price.as_double(), price_precision)
             ),
             ask_price=(
                 Price(float(top_ask_price), price_precision)
                 if top_ask_price
-                else last_quote.ask_price
+                else Price(last_quote.ask_price.as_double(), price_precision)
             ),
             bid_size=(
                 Quantity(float(top_bid_size), size_precision)
                 if top_bid_size
-                else last_quote.bid_size
+                else Quantity(last_quote.bid_size.as_double(), size_precision)
             ),
             ask_size=(
                 Quantity(float(top_ask_size), size_precision)
                 if top_ask_size
-                else last_quote.ask_size
+                else Quantity(last_quote.ask_size.as_double(), size_precision)
             ),
             ts_event=ts_event,
             ts_init=ts_init,
@@ -433,15 +438,17 @@ class BybitWsTickerOption(msgspec.Struct):
     def parse_to_quote_tick(
         self,
         instrument_id: InstrumentId,
+        price_precision: int,
+        size_precision: int,
         ts_event: int,
         ts_init: int,
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id=instrument_id,
-            bid_price=Price.from_str(self.bidPrice),
-            ask_price=Price.from_str(self.askPrice),
-            bid_size=Quantity.from_str(self.bidSize),
-            ask_size=Quantity.from_str(self.askSize),
+            bid_price=Price(float(self.bidPrice), price_precision),
+            ask_price=Price(float(self.askPrice), price_precision),
+            bid_size=Quantity(float(self.bidSize), size_precision),
+            ask_size=Quantity(float(self.askSize), size_precision),
             ts_event=ts_event,
             ts_init=ts_init,
         )
