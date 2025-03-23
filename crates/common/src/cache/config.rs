@@ -37,6 +37,10 @@ pub struct CacheConfig {
     pub flush_on_start: bool,
     /// If instrument data should be dropped from the cache's memory on reset.
     pub drop_instruments_on_reset: bool,
+    /// If account data should be dropped from the cache's memory on reset.
+    pub drop_accounts_on_reset: bool,
+    /// If position data should be dropped from the cache's memory on reset.
+    pub drop_positions_on_reset: bool,
     /// The maximum length for internal tick deques.
     pub tick_capacity: usize,
     /// The maximum length for internal bar deques.
@@ -57,6 +61,8 @@ impl Default for CacheConfig {
             use_instance_id: false,
             flush_on_start: false,
             drop_instruments_on_reset: true,
+            drop_accounts_on_reset: true,
+            drop_positions_on_reset: true,
             tick_capacity: 10_000,
             bar_capacity: 10_000,
             save_market_data: false,
@@ -77,6 +83,8 @@ impl CacheConfig {
         use_instance_id: bool,
         flush_on_start: bool,
         drop_instruments_on_reset: bool,
+        drop_accounts_on_reset: bool,
+        drop_positions_on_reset: bool,
         tick_capacity: usize,
         bar_capacity: usize,
         save_market_data: bool,
@@ -90,6 +98,8 @@ impl CacheConfig {
             use_instance_id,
             flush_on_start,
             drop_instruments_on_reset,
+            drop_accounts_on_reset,
+            drop_positions_on_reset,
             tick_capacity,
             bar_capacity,
             save_market_data,
