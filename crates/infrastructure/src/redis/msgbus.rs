@@ -91,7 +91,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
-                log::error!("Failed to spawn task '{}': {}", MSGBUS_PUBLISH, e);
+                log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
             };
         }));
 
@@ -108,7 +108,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                         stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
                             .await
                     {
-                        log::error!("Failed to spawn task '{}': {}", MSGBUS_STREAM, e);
+                        log::error!("Error in task '{MSGBUS_STREAM}': {e}");
                     }
                 })),
             )
@@ -421,7 +421,7 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
         let topic = match &stream_msg[1] {
             redis::Value::BulkString(bytes) => match String::from_utf8(bytes.clone()) {
                 Ok(topic) => topic,
-                Err(e) => anyhow::bail!("Error parsing topic: {}", e),
+                Err(e) => anyhow::bail!("Error parsing topic: {e}"),
             },
             _ => {
                 anyhow::bail!("Invalid topic format: {stream_msg:?}");

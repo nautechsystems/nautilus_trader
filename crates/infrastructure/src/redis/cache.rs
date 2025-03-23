@@ -163,7 +163,7 @@ impl RedisCacheDatabase {
         let encoding = config.encoding;
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
-                log::error!("Failed to spawn task '{CACHE_WRITE}': {e}");
+                log::error!("Error in task '{CACHE_WRITE}': {e}");
             }
         });
 
