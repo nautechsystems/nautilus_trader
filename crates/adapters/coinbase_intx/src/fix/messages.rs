@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Some constants not used
+// Some constants not used (retained for completeness)
 #![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
