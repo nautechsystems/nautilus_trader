@@ -54,13 +54,13 @@ serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-time = "0.3.40"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }

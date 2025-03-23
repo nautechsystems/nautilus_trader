@@ -59,8 +59,9 @@ rand = "0.9.0"
 reqwest = { version = "0.12.15", features = ["blocking"] }
 ring = "0.17.14"
 rmp-serde = "1.3.0"
-rust_decimal = "1.37.0"
-rust_decimal_macros = "1.37.0"
+rust_decimal = "1.37.1"
+rust_decimal_macros = "1.37.1"
+time = "0.3.40"
 semver = "1.0.25"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
