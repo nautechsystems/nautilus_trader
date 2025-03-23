@@ -177,7 +177,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
   - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
 
 :::tip
-We recommend you use environment variables for API credentials.
+We recommend using environment variables to manage your credentials.
 :::
 
 ## Orders

@@ -59,7 +59,7 @@ When starting the trading node, you'll receive immediate confirmation of whether
 credentials are valid and have trading permissions.
 
 :::tip
-Best practice is to manage your credentials using environment variables.
+We recommend using environment variables to manage your credentials.
 :::
 
 ## Overview

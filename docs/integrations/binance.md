@@ -194,6 +194,10 @@ using the `BinanceAccountType` enum. The account type options are:
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
+
 ### Base url overrides
 
 It's possible to override the default base URLs for both HTTP Rest and
