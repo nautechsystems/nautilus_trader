@@ -37,13 +37,13 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
 ahash = "0.8.11"
 databento = "0.20.0"
 fallible-streaming-iterator = "0.1.9"
-time = "0.3.40"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }

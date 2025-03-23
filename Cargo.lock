@@ -4491,9 +4491,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.29.1"
+version = "0.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8034fb926579ff49d3fe58d288d5dcb580bf11e9bccd33224b45adebf0fd0c23"
+checksum = "b110459d6e323b7cda23980c46c77157601199c9da6241552b284cd565a7a133"
 dependencies = [
  "arc-swap",
  "backon",
@@ -4750,9 +4750,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.37.0"
+version = "1.37.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c24af6e7ac43c88a8a458d1139d0246fdce2f6cd2f1ac6cb51eb88b29c978af"
+checksum = "faa7de2ba56ac291bd90c6b9bece784a52ae1411f9506544b3eae36dd2356d50"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -4766,9 +4766,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal_macros"
-version = "1.37.0"
+version = "1.37.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dde81640648b810262386d671ad939ca2b138c89e5cf5d91af31f17c9832e8d"
+checksum = "f6268b74858287e1a062271b988a0c534bf85bbeb567fe09331bf40ed78113d5"
 dependencies = [
  "quote",
  "syn 2.0.100",
