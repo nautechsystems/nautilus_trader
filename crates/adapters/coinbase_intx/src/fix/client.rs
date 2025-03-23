@@ -13,14 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
-//! Provides a FIX client for the Coinbase International Drop Copy endpoint.
+//! FIX Client for the Coinbase International Drop Copy Endpoint.
 //!
-//! This implementation focuses specifically on receiving and processing execution reports
+//! This implementation focuses specifically on processing execution reports
 //! via the FIX protocol, leveraging the existing `SocketClient` for TCP/TLS connectivity.
+//!
+//! # Warning
+//!
+//! **Not a full FIX engine**: This client supports only the Coinbase International Drop Copy
+//! endpoint and lacks general-purpose FIX functionality.
 use std::{
     sync::{
         Arc,
@@ -38,7 +39,10 @@ use ring::hmac;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
-use super::messages::{FIX_DELIMITER, FixMessage};
+use super::{
+    messages::{FIX_DELIMITER, FixMessage},
+    parse::convert_to_order_status_report,
+};
 use crate::{
     common::{consts::COINBASE_INTX, credential::get_env_var},
     fix::{
@@ -46,8 +50,6 @@ use crate::{
         parse::convert_to_fill_report,
     },
 };
-
-type MessageHandler = dyn Fn(&[u8]) + Send + Sync;
 
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")]
 #[derive(Clone)]
@@ -162,7 +164,6 @@ impl CoinbaseIntxFixClient {
             certs_dir: None,
         };
 
-        let connected = self.connected.clone();
         let logged_on = self.logged_on.clone();
         let seq_num = self.seq_num.clone();
         let received_seq_num = self.received_seq_num.clone();
@@ -187,10 +188,42 @@ impl CoinbaseIntxFixClient {
                             logged_on.store(false, Ordering::SeqCst);
                         }
                         fix_message_type::EXECUTION_REPORT => {
-                            tracing::trace!("Received execution {message:?}");
-
                             if let Some(exec_type) = message.get_field(fix_tag::EXEC_TYPE) {
-                                if exec_type == fix_exec_type::PARTIAL_FILL
+                                if matches!(
+                                    exec_type,
+                                    fix_exec_type::REJECTED
+                                        | fix_exec_type::NEW
+                                        | fix_exec_type::PENDING_NEW
+                                ) {
+                                    // These order events are already handled by the client
+                                    tracing::debug!(
+                                        "Received execution report for EXEC_TYPE {exec_type} (not handling here)"
+                                    );
+                                } else if matches!(
+                                    exec_type,
+                                    fix_exec_type::CANCELED
+                                        | fix_exec_type::EXPIRED
+                                        | fix_exec_type::REPLACED
+                                ) {
+                                    let clock = get_atomic_clock_realtime(); // TODO: Optimize
+                                    let ts_init = clock.get_time_ns();
+                                    match convert_to_order_status_report(
+                                        &message, account_id, ts_init,
+                                    ) {
+                                        Ok(report) => Python::with_gil(|py| {
+                                            call_python(
+                                                py,
+                                                &handler,
+                                                report.into_py_any_unwrap(py),
+                                            );
+                                        }),
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Failed to parse FIX execution report: {e}"
+                                            );
+                                        }
+                                    }
+                                } else if exec_type == fix_exec_type::PARTIAL_FILL
                                     || exec_type == fix_exec_type::FILL
                                 {
                                     let clock = get_atomic_clock_realtime(); // TODO: Optimize
@@ -205,14 +238,12 @@ impl CoinbaseIntxFixClient {
                                         }),
                                         Err(e) => {
                                             tracing::error!(
-                                                "Failed to convert execution report to fill report: {e}"
+                                                "Failed to parse FIX execution report: {e}"
                                             );
                                         }
                                     }
                                 } else {
-                                    tracing::debug!(
-                                        "UNHANDLED EXECUTION TYPE: {exec_type}, {message:?}"
-                                    );
+                                    tracing::warn!("Unhandled EXEC_TYPE {exec_type}: {message:?}");
                                 }
                             }
                         }
@@ -324,7 +355,7 @@ impl CoinbaseIntxFixClient {
         let target_comp_id = self.target_comp_id.clone();
 
         self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'FIX heartbeat' at {heartbeat_secs}sec intervals");
+            tracing::debug!("Started task 'FIX heartbeat' at {heartbeat_secs}s intervals");
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {

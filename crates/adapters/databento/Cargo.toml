@@ -28,6 +28,7 @@ python = [
 [dependencies]
 nautilus-core = { path = "../../core" }
 nautilus-model = { path = "../../model" }
+ahash = { workspace = true }
 anyhow = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
@@ -41,7 +42,6 @@ time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-ahash = "0.8.11"
 databento = "0.20.0"
 fallible-streaming-iterator = "0.1.9"
 

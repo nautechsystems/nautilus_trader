@@ -47,6 +47,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import AccountState
@@ -54,7 +55,6 @@ from nautilus_trader.model.functions import order_side_to_pyo3
 from nautilus_trader.model.functions import time_in_force_to_pyo3
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
@@ -154,7 +154,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
         )
         future = asyncio.ensure_future(
             self._fix_client.connect(
-                handler=self._handle_fix_msg,
+                handler=self._handle_msg,
             ),
         )
         self._fix_client_futures.add(future)
@@ -415,7 +415,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             return
 
         try:
-            report = await self._http_client.cancel_order(
+            await self._http_client.cancel_order(
                 account_id=self.pyo3_account_id,
                 client_order_id=nautilus_pyo3.ClientOrderId(command.client_order_id.value),
             )
@@ -428,15 +428,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 str(e),
                 self._clock.timestamp_ns(),
             )
-            return
-
-        self.generate_order_canceled(
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            ts_event=report.ts_last,
-        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         pyo3_order_side: nautilus_pyo3.OrderSide | None = None
@@ -450,7 +441,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             raise ValueError(f"Instrument {command.instrument_id} not found")
 
         try:
-            reports = await self._http_client.cancel_orders(
+            await self._http_client.cancel_orders(
                 account_id=self.pyo3_account_id,
                 symbol=nautilus_pyo3.Symbol(command.instrument_id.symbol.value),
                 order_side=pyo3_order_side,
@@ -468,27 +459,6 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     str(e),
                     self._clock.timestamp_ns(),
                 )
-            return
-
-        for report in reports:
-            if report.client_order_id is None:
-                self._log.error("Cannot process cancel: no ClientOrderId for order")
-                continue
-
-            order: Order | None = self._cache.order(ClientOrderId(report.client_order_id.value))
-            if order is None:
-                self._log.error(
-                    f"Cannot process cancel: {command.client_order_id!r} not found in cache",
-                )
-                continue
-
-            self.generate_order_canceled(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=report.ts_last,
-            )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -695,44 +665,106 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
         )
 
-    def _handle_msg(self, msg: Any) -> None:
-        self._log.warning(f"Received {msg}")
+    def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
+        # TODO: Uncomment for development
+        # self._log.debug(f"Received FIX msg: {msg}", LogColor.MAGENTA)
 
-    def _handle_fix_msg(self, msg: Any) -> None:
-        self._log.info(f"Received FIX msg: {msg}", LogColor.MAGENTA)  # TODO: Set to debug
+        # Note: These execution reports are using a default precision of 8 for now - to avoid
+        # the need to track a separate cache down in Rust. Ensure all price and quantity
+        # values are reinitialized using the instruments `make_price` and `make_qty` helper methods.
 
-        if isinstance(msg, nautilus_pyo3.FillReport):
-            fill_report = FillReport.from_pyo3(msg)
-            if fill_report.client_order_id is None:
-                self._log.warning(f"No ClientOrderId to process fill {fill_report}")
+        if isinstance(msg, nautilus_pyo3.OrderStatusReport):
+            report = OrderStatusReport.from_pyo3(msg)
+            if report.order_status is None:
+                self._log.warning(f"No ClientOrderId to process {report}")
                 return
 
-            order = self._cache.order(fill_report.client_order_id)
+            order = self._cache.order(report.client_order_id)
             if order is None:
                 self._log.error(
-                    f"Cannot process fill - order for {fill_report.client_order_id!r} not found",
+                    f"Cannot process execution report - order for {report.client_order_id!r} not found",
                 )
                 return
 
             instrument = self._cache.instrument(order.instrument_id)
             if instrument is None:
                 raise ValueError(
-                    f"Cannot process fill - instrument {order.instrument_id} not found",
+                    f"Cannot process execution report - instrument {order.instrument_id} not found",
+                )
+
+            if report.order_status == OrderStatus.CANCELED:
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+            elif report.order_status == OrderStatus.EXPIRED:
+                self.generate_order_expired(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+            elif report.order_status == OrderStatus.TRIGGERED:
+                self.generate_order_triggered(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    ts_event=report.ts_last,
+                )
+            elif order.status == OrderStatus.PENDING_UPDATE:
+                self.generate_order_updated(
+                    strategy_id=order.strategy_id,
+                    instrument_id=report.instrument_id,
+                    client_order_id=report.client_order_id,
+                    venue_order_id=report.venue_order_id,
+                    quantity=instrument.make_qty(report.quantity),
+                    price=instrument.make_price(report.price) if report.price else None,
+                    trigger_price=(
+                        instrument.make_price(report.trigger_price)
+                        if report.trigger_price
+                        else None
+                    ),
+                    ts_event=report.ts_last,
+                )
+            else:
+                self._log.warning(f"Received unhandled execution report {report}")
+        elif isinstance(msg, nautilus_pyo3.FillReport):
+            report = FillReport.from_pyo3(msg)
+            if report.client_order_id is None:
+                self._log.warning(f"No ClientOrderId to process {report}")
+                return
+
+            order = self._cache.order(report.client_order_id)
+            if order is None:
+                self._log.error(
+                    f"Cannot process execution report - order for {report.client_order_id!r} not found",
+                )
+                return
+
+            instrument = self._cache.instrument(order.instrument_id)
+            if instrument is None:
+                raise ValueError(
+                    f"Cannot process execution report - instrument {order.instrument_id} not found",
                 )
 
             self.generate_order_filled(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
-                venue_order_id=fill_report.venue_order_id,
-                venue_position_id=fill_report.venue_position_id,
-                trade_id=fill_report.trade_id,
-                order_side=fill_report.order_side,
+                venue_order_id=report.venue_order_id,
+                venue_position_id=report.venue_position_id,
+                trade_id=report.trade_id,
+                order_side=report.order_side,
                 order_type=order.order_type,
-                last_qty=fill_report.last_qty,
-                last_px=fill_report.last_px,
+                last_qty=instrument.make_qty(report.last_qty),
+                last_px=instrument.make_price(report.last_px),
                 quote_currency=instrument.quote_currency,
-                commission=fill_report.commission,
-                liquidity_side=fill_report.liquidity_side,
-                ts_event=fill_report.ts_event,
+                commission=report.commission,
+                liquidity_side=report.liquidity_side,
+                ts_event=report.ts_event,
             )
