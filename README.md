@@ -51,7 +51,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST API or WebSocket feed can be integrated.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTC`, `GTD`, `DAY`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency orders including `OCO`, `OUO`, `OTO`.
-- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus.
+- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the [cache](https://nautilustrader.io/docs/latest/concepts/cache) and [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
 - **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Live**: Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
@@ -312,7 +312,8 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Redis
 
-Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a
+[cache](https://nautilustrader.io/docs/latest/concepts/cache) database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
 See the **Redis** section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Makefile
