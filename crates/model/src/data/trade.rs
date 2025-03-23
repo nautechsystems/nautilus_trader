@@ -15,11 +15,7 @@
 
 //! A `TradeTick` data type representing a single trade in a market.
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
@@ -33,7 +29,7 @@ use crate::{
     types::{Price, Quantity, fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
 };
 
-/// Represents a single trade tick in a market.
+/// Represents a trade tick in a market.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
@@ -148,7 +144,7 @@ impl TradeTick {
 }
 
 impl Display for TradeTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{}",

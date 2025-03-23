@@ -15,11 +15,7 @@
 
 //! An `InstrumentStatus` data type representing a change in an instrument market status.
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use derive_builder::Builder;
 use nautilus_core::{UnixNanos, serialization::Serializable};
@@ -96,7 +92,7 @@ impl InstrumentStatus {
 
 // TODO: Revisit this
 impl Display for InstrumentStatus {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{}",

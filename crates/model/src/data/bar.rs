@@ -17,7 +17,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display, Formatter},
+    fmt::{Debug, Display},
     hash::Hash,
     num::NonZeroUsize,
     str::FromStr,
@@ -329,7 +329,7 @@ impl BarSpecification {
 }
 
 impl Display for BarSpecification {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}-{}-{}", self.step, self.aggregation, self.price_type)
     }
 }
@@ -597,7 +597,7 @@ impl From<&str> for BarType {
 }
 
 impl Display for BarType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             BarType::Standard {
                 instrument_id,
@@ -777,7 +777,7 @@ impl Bar {
 }
 
 impl Display for Bar {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{},{}",

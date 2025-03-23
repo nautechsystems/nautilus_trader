@@ -15,11 +15,7 @@
 
 //! An `OrderBookDelta` data type intended to carry book state information.
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
@@ -174,7 +170,7 @@ impl OrderBookDelta {
 }
 
 impl Display for OrderBookDelta {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{},{}",
