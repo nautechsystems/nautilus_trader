@@ -22,13 +22,10 @@ use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 pub struct StateSnapshot {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
-
     /// The "burst capacity" of the bucket.
     tau: Nanos,
-
     /// The time at which the measurement was taken.
     pub(crate) time_of_measurement: Nanos,
-
     /// The next time a cell is expected to arrive
     pub(crate) tat: Nanos,
 }
