@@ -634,10 +634,13 @@ class BybitDataClient(LiveMarketDataClient):
             ask_size = None
 
             if last_quote is not None:
-                bid_price = last_quote.bid_price
-                ask_price = last_quote.ask_price
-                bid_size = last_quote.bid_size
-                ask_size = last_quote.ask_size
+                # Convert the previous quote to new price and sizes to ensure that the precision
+                # of the new Quote is consistent with the instrument definition even after
+                # updates of the instrument.
+                bid_price = Price(last_quote.bid_price.as_double(), instrument.price_precision)
+                ask_price = Price(last_quote.ask_price.as_double(), instrument.price_precision)
+                bid_size = Quantity(last_quote.bid_size.as_double(), instrument.size_precision)
+                ask_size = Quantity(last_quote.ask_size.as_double(), instrument.size_precision)
 
             if msg.data.bid1Price is not None:
                 bid_price = Price(float(msg.data.bid1Price), instrument.price_precision)
@@ -690,12 +693,26 @@ class BybitDataClient(LiveMarketDataClient):
         msg = self._decoder_ws_kline.decode(raw)
         try:
             bar_type = self._topic_bar_type.get(msg.topic)
+
+            if bar_type is None:
+                self._log.error(f"Cannot parse bar data: no bar_type for {msg.topic}")
+                return
+
+            instrument_id = bar_type.instrument_id
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(f"Cannot parse bar data: no instrument for {instrument_id}")
+                return
+
             for data in msg.data:
                 if not data.confirm:
                     continue  # Bar still building
                 bar: Bar = data.parse_to_bar(
-                    bar_type,
-                    self._clock.timestamp_ns(),
+                    bar_type=bar_type,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                    ts_init=self._clock.timestamp_ns(),
                 )
                 self._handle_data(bar)
         except Exception as e:
