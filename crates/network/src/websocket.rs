@@ -459,9 +459,9 @@ impl WebSocketClientInner {
                         };
 
                         match writer_tx.send(msg) {
-                            Ok(_) => tracing::trace!("Sent heartbeat to writer task"),
+                            Ok(()) => tracing::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
-                                tracing::error!("Failed to send heartbeat to writer task: {e}")
+                                tracing::error!("Failed to send heartbeat to writer task: {e}");
                             }
                         }
                     }
@@ -592,7 +592,7 @@ impl WebSocketClient {
                 Ok(_) => tracing::debug!("Called `post_connection` handler"),
                 Err(e) => tracing::error!("Error calling `post_connection` handler: {e}"),
             });
-        };
+        }
 
         Ok(Self {
             controller_task,
@@ -802,7 +802,7 @@ impl WebSocketClient {
                             if let Some(ref handler) = py_post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => {
-                                        tracing::debug!("Called `post_reconnection` handler")
+                                        tracing::debug!("Called `post_reconnection` handler");
                                     }
                                     Err(e) => tracing::error!(
                                         "Error calling `post_reconnection` handler: {e}"

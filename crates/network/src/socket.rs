@@ -356,7 +356,7 @@ impl SocketClientInner {
                                 data.truncate(data.len() - suffix.len());
 
                                 if let Some(handler) = &handler {
-                                    handler(&data)
+                                    handler(&data);
                                 }
 
                                 if let Some(py_handler) = &py_handler {
@@ -374,7 +374,7 @@ impl SocketClientInner {
                         // Timeout - continue loop and check connection mode
                         continue;
                     }
-                };
+                }
             }
 
             tracing::debug!("Completed task 'read'");
@@ -483,9 +483,9 @@ impl SocketClientInner {
                         let msg = WriterCommand::Send(message.clone().into());
 
                         match writer_tx.send(msg) {
-                            Ok(_) => tracing::trace!("Sent heartbeat to writer task"),
+                            Ok(()) => tracing::trace!("Sent heartbeat to writer task"),
                             Err(e) => {
-                                tracing::error!("Failed to send heartbeat to writer task: {e}")
+                                tracing::error!("Failed to send heartbeat to writer task: {e}");
                             }
                         }
                     }
@@ -765,7 +765,7 @@ impl SocketClient {
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => {
-                                        tracing::debug!("Called `post_reconnection` handler")
+                                        tracing::debug!("Called `post_reconnection` handler");
                                     }
                                     Err(e) => tracing::error!(
                                         "Error calling `post_reconnection` handler: {e}"
