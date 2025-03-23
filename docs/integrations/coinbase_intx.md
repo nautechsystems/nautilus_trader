@@ -83,14 +83,6 @@ To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment varia
 portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
 execution configuration for each client.
 
-Coinbase International does not currently provide a `USER` websocket channel that would provide
-execution and account messages. As a temporary workaround, we must poll the REST API to retrieve
-new order fills. This polling is configured to operate within API rate limits and optimize for
-minimum HTTP request round-trip latency.
-
-For users who are latency sensitive, additional/alternative solutions can be explored.
-If you're interested, please open an issue on GitHub or start a discussion thread in our Discord community.
-
 ## Configuration
 
 ### Strategies
@@ -119,8 +111,7 @@ config = TradingNodeConfig(
     exec_clients={
         COINBASE_INTX: CoinbaseIntxExecClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            http_timeout_secs=2,
-            poll_fills_min_interval_ms=100,
+            http_timeout_secs=10,
         ),
     },
 )

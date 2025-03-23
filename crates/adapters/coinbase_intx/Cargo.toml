@@ -42,6 +42,7 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
@@ -59,6 +60,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+time = "0.3.40"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }

@@ -27,3 +27,4 @@ pub const COINBASE_INTX_REST_URL: &str = "https://api.international.coinbase.com
 pub const COINBASE_INTX_REST_SANDBOX_URL: &str = "https://api-n5e1.coinbase.com";
 pub const COINBASE_INTX_WS_URL: &str = "wss://ws-md.international.coinbase.com";
 pub const COINBASE_INTX_WS_SANDBOX_URL: &str = "wss://ws-md.n5e2.coinbase.com";
+pub const COINBASE_INTX_FIX_DROP_COPY: &str = "fix.international.coinbase.com:6130";

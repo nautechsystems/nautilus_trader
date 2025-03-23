@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(LevelFilter::TRACE)
         .init();
 
-    let client = CoinbaseIntxHttpClient::authed_from_env().unwrap();
+    let client = CoinbaseIntxHttpClient::from_env().unwrap();
 
     // Cache instruments first (required for correct websocket message parsing)
     let resp = client.request_instruments().await?;

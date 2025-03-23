@@ -93,10 +93,6 @@ class CoinbaseIntxExecClientConfig(LiveExecClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
     http_timeout_secs : PositiveInt or None, default 60
         The default timeout (seconds) for HTTP requests.
-    poll_fills_min_interval_ms : PositiveInt, default 100
-        The minimum interval (milliseconds) between polling for user fills.
-        This is a work around due no 'user' channel currently available for the
-        Coinbase International websocket API.
 
     """
 
@@ -108,4 +104,3 @@ class CoinbaseIntxExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     http_timeout_secs: PositiveInt | None = 60
-    poll_fills_min_interval_ms: PositiveInt = 100

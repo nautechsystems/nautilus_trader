@@ -13,13 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Coinbase International](https://www.coinbase.com/en/international-exchange) integration adapter.
+pub mod client;
+pub mod messages;
+mod parse;
 
-pub mod common;
-pub mod config;
-pub mod fix;
-pub mod http;
-pub mod websocket;
-
-#[cfg(feature = "python")]
-pub mod python;
+// Re-exports
+pub use crate::fix::client::CoinbaseIntxFixClient;
