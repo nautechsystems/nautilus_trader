@@ -1269,32 +1269,7 @@ cdef class Cache(CacheFacade):
 
         ticks.appendleft(tick)
 
-    # TODO: Deprecated (will remove for v2 below)
-    cpdef void add_mark_price(self, InstrumentId instrument_id, Price price):
-        """
-        Add the given mark price to the cache.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the mark price.
-        price : Price
-            The mark price.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(price, "price")
-
-        # TODO: Temporary solution to create a `MarkPriceUpdate` to add with default timestamps
-        mark_price = MarkPriceUpdate(
-            instrument_id=instrument_id,
-            value=price,
-            ts_event=0,  # Default
-            ts_init=0,  # Default
-        )
-        self.add_mark_price_v2(mark_price)
-
-    cpdef void add_mark_price_v2(self, MarkPriceUpdate mark_price):
+    cpdef void add_mark_price(self, MarkPriceUpdate mark_price):
         """
         Add the given mark price update to the cache.
 
@@ -2378,7 +2353,7 @@ cdef class Cache(CacheFacade):
         elif price_type == PriceType.MARK:
             mark_price = self.mark_price(instrument_id)
             if mark_price is not None:
-                return Price(float(mark_price.value), mark_price.value.precision)
+                return mark_price.value
 
         # Fall back to bar pricing for bid, ask and last
         cdef Bar bar

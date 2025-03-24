@@ -24,7 +24,7 @@ Released on TBD (UTC).
 - Added `Cache.has_index_prices()`
 
 ### Breaking Changes
-None
+- Changed `Cache.add_mark_price(self, InstrumentId instrument_id, Price price)` to `add_mark_price(self, MarkPriceUpdate mark_price)`
 
 ### Internal Improvements
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel

@@ -26,6 +26,7 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -271,28 +272,40 @@ class TestCache:
     def test_add_mark_price(self):
         # Arrange
         instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
-        mark_price = Price(10_000, 2)
+        value = Price(10_000, 2)
+        mark_price = MarkPriceUpdate(
+            instrument_id=instrument_id,
+            value=value,
+            ts_event=0,
+            ts_init=0,
+        )
 
-        self.cache.add_mark_price(instrument_id, mark_price)
+        self.cache.add_mark_price(mark_price)
 
         # Act
         result = self.cache.price(instrument_id, PriceType.MARK)
 
         # Assert
-        assert result == mark_price
+        assert result == value
 
     def test_add_mark_price_as_map(self):
         # Arrange
         instrument_id = InstrumentId.from_str("ETH-USD-SWAP.OKX")
-        mark_price = Price(10_000, 2)
+        value = Price(10_000, 2)
+        mark_price = MarkPriceUpdate(
+            instrument_id=instrument_id,
+            value=value,
+            ts_event=0,
+            ts_init=0,
+        )
 
-        self.cache.add_mark_price(instrument_id, mark_price)
+        self.cache.add_mark_price(mark_price)
 
         # Act
         result = self.cache.prices(PriceType.MARK)
 
         # Assert
-        assert result == {instrument_id: mark_price}
+        assert result == {instrument_id: value}
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
