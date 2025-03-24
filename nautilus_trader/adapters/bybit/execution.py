@@ -234,6 +234,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
                 ws_trade_timeout_secs=config.ws_trade_timeout_secs,
+                recv_window_ms=config.recv_window_ms,
             )
             self._order_single_client = self._ws_order_client
             if config.use_http_batch_api:
