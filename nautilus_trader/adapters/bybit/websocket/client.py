@@ -85,6 +85,8 @@ class BybitWebSocketClient:
         Whether the client is a trade channel.
     ws_trade_timeout_secs: float, default 5.0
         The timeout for trade websocket messages.
+    recv_window_ms : int, default 5_000
+        The receive window (milliseconds) for Bybit WebSocket order requests.
 
     Raises
     ------
@@ -105,6 +107,7 @@ class BybitWebSocketClient:
         is_private: bool | None = False,
         is_trade: bool | None = False,
         ws_trade_timeout_secs: float | None = 5.0,
+        recv_window_ms: int = 5_000,
     ) -> None:
         if is_private and is_trade:
             raise ValueError("`is_private` and `is_trade` cannot both be True")
@@ -121,6 +124,8 @@ class BybitWebSocketClient:
         self._client: WebSocketClient | None = None
         self._api_key = api_key
         self._api_secret = api_secret
+        self._recv_window_ms: int = recv_window_ms
+
         self._is_running = False
         self._reconnecting = False
 
@@ -437,6 +442,7 @@ class BybitWebSocketClient:
             reqId=req_id,
             header={
                 "X-BAPI-TIMESTAMP": str(self._clock.timestamp_ms()),
+                "X-BAPI-RECV-WINDOW": str(self._recv_window_ms),
             },
             op=op,
             args=args,  # Args array, support one item only for now
