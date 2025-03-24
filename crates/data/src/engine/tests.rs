@@ -39,11 +39,13 @@ use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
         QuoteTick, TradeTick,
+        prices::{IndexPriceUpdate, MarkPriceUpdate},
         stubs::{stub_delta, stub_deltas, stub_depth10},
     },
-    enums::BookType,
+    enums::{BookType, PriceType},
     identifiers::{ClientId, TraderId, Venue},
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+    types::Price,
 };
 use rstest::*;
 
@@ -520,6 +522,126 @@ fn test_execute_subscribe_bars(
 }
 
 #[rstest]
+fn test_execute_subscribe_mark_prices(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus::register(endpoint, handler);
+
+    let metadata = indexmap! {
+        "instrument_id".to_string() => audusd_sim.id.to_string(),
+    };
+    let data_type = DataType::new(stringify!(MarkPriceUpdate), Some(metadata));
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Subscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_mark_prices()
+            .contains(&audusd_sim.id)
+    );
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type,
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_mark_prices()
+            .contains(&audusd_sim.id)
+    );
+}
+
+#[rstest]
+fn test_execute_subscribe_index_prices(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus::register(endpoint, handler);
+
+    let metadata = indexmap! {
+        "instrument_id".to_string() => audusd_sim.id.to_string(),
+    };
+    let data_type = DataType::new(stringify!(IndexPriceUpdate), Some(metadata));
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Subscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(
+        data_engine
+            .borrow()
+            .subscribed_index_prices()
+            .contains(&audusd_sim.id)
+    );
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type,
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(
+        !data_engine
+            .borrow()
+            .subscribed_index_prices()
+            .contains(&audusd_sim.id)
+    );
+}
+
+#[rstest]
 fn test_process_instrument(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -805,6 +927,128 @@ fn test_process_trade_tick(
     assert_eq!(cache.trade(&trade.instrument_id), Some(trade).as_ref());
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&trade));
+}
+
+#[rstest]
+fn test_process_mark_price(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let metadata = indexmap! {
+        "instrument_id".to_string() => audusd_sim.id.to_string(),
+    };
+    let data_type = DataType::new(stringify!(MarkPriceUpdate), Some(metadata));
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type,
+        Action::Subscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus::register(endpoint, handler);
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+
+    let mark_price = MarkPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<MarkPriceUpdate>(None);
+    let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
+    msgbus::subscribe(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process(&mark_price as &dyn Any);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<MarkPriceUpdate>(handler);
+
+    assert_eq!(
+        cache.price(&mark_price.instrument_id, PriceType::Mark),
+        Some(mark_price.value)
+    );
+    assert_eq!(
+        cache.mark_price(&mark_price.instrument_id),
+        Some(&mark_price)
+    );
+    assert_eq!(
+        cache.mark_prices(&mark_price.instrument_id),
+        Some(vec![mark_price])
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&mark_price));
+}
+
+#[rstest]
+fn test_process_index_price(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    data_client: DataClientAdapter,
+) {
+    let client_id = data_client.client_id;
+    let venue = data_client.venue;
+    data_engine.borrow_mut().register_client(data_client, None);
+
+    let metadata = indexmap! {
+        "instrument_id".to_string() => audusd_sim.id.to_string(),
+    };
+    let data_type = DataType::new(stringify!(IndexPriceUpdate), Some(metadata));
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type,
+        Action::Subscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus::register(endpoint, handler);
+    msgbus::send(&endpoint, &cmd as &dyn Any);
+
+    let index_price = IndexPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let handler = get_message_saving_handler::<IndexPriceUpdate>(None);
+    let topic = switchboard::get_index_price_topic(index_price.instrument_id);
+    msgbus::subscribe(topic, handler.clone(), None);
+
+    let mut data_engine = data_engine.borrow_mut();
+    data_engine.process(&index_price as &dyn Any);
+    let cache = &data_engine.get_cache();
+    let messages = get_saved_messages::<IndexPriceUpdate>(handler);
+
+    assert_eq!(
+        cache.index_price(&index_price.instrument_id),
+        Some(&index_price)
+    );
+    assert_eq!(
+        cache.index_prices(&index_price.instrument_id),
+        Some(vec![index_price])
+    );
+    assert_eq!(messages.len(), 1);
+    assert!(messages.contains(&index_price));
 }
 
 #[rstest]

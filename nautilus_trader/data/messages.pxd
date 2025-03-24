@@ -75,6 +75,16 @@ cdef class SubscribeTradeTicks(SubscribeData):
     """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
 
 
+cdef class SubscribeMarkPrices(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class SubscribeIndexPrices(SubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
 cdef class SubscribeBars(SubscribeData):
     cdef readonly BarType bar_type
     """The bar type for the subscription."""
@@ -118,6 +128,16 @@ cdef class UnsubscribeQuoteTicks(UnsubscribeData):
 
 
 cdef class UnsubscribeTradeTicks(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeMarkPrices(UnsubscribeData):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
+
+
+cdef class UnsubscribeIndexPrices(UnsubscribeData):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the subscription.\n\n:returns: `InstrumentId` or ``None``"""
 

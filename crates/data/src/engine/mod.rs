@@ -71,6 +71,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
         TradeTick,
+        prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
@@ -283,6 +284,16 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
+    #[must_use]
+    pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_mark_price)
+    }
+
+    #[must_use]
+    pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_index_price)
+    }
+
     pub fn on_start(self) {
         todo!()
     }
@@ -382,8 +393,13 @@ impl DataEngine {
     }
 
     pub fn process(&mut self, data: &dyn Any) {
+        // TODO: Eventually these could be added to the `Data` enum? process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
+        } else if let Some(mark_price) = data.downcast_ref::<MarkPriceUpdate>() {
+            self.handle_mark_price(*mark_price)
+        } else if let Some(index_price) = data.downcast_ref::<IndexPriceUpdate>() {
+            self.handle_index_price(*index_price)
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -560,6 +576,29 @@ impl DataEngine {
 
         let topic = switchboard::get_bars_topic(bar.bar_type);
         msgbus::publish(&topic, &bar as &dyn Any); // TODO: Optimize
+    }
+
+    fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_mark_price(mark_price) {
+            log::error!("Error on cache insert: {e}");
+        }
+
+        let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
+        msgbus::publish(&topic, &mark_price as &dyn Any); // TODO: Optimize
+    }
+
+    fn handle_index_price(&mut self, index_price: IndexPriceUpdate) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_index_price(index_price)
+        {
+            log::error!("Error on cache insert: {e}");
+        }
+
+        let topic = switchboard::get_index_price_topic(index_price.instrument_id);
+        msgbus::publish(&topic, &index_price as &dyn Any); // TODO: Optimize
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------

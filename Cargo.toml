@@ -34,7 +34,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-ahash = "0.8.11"
+ahash = { version = "0.8.11", features = ["serde"] }
 anyhow = "1.0.97"
 arrow = "54.3.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"

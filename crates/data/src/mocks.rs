@@ -156,6 +156,22 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
+    fn subscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_index_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn unsubscribe(
         &mut self,
         data_type: &DataType,
@@ -229,6 +245,22 @@ impl DataClient for MockDataClient {
     }
 
     fn unsubscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(
         &mut self,
         instrument_id: &InstrumentId,
         params: &Option<HashMap<String, String>>,
