@@ -103,11 +103,13 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
             else Quantity(Decimal("0"), size_precision)
         )
         ts_last = dt_to_unix_nanos(self.updatedAt) if self.updatedAt is not None else ts_init
-        trigger_type = TriggerType.DEFAULT if self.triggerPrice is not None else None
+        trigger_type = (
+            TriggerType.DEFAULT if self.triggerPrice is not None else TriggerType.NO_TRIGGER
+        )
         trigger_price = (
             Price(Decimal(self.triggerPrice), price_precision)
             if self.triggerPrice is not None
-            else TriggerType.NO_TRIGGER
+            else None
         )
 
         return OrderStatusReport(
