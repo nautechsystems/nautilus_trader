@@ -30,6 +30,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -1934,8 +1935,13 @@ class TestPortfolio:
         self.cache.add_instrument(instrument)
         self.portfolio.update_account(state)
 
-        mark = Price(mark_price, GBP.precision)
-        self.cache.add_mark_price(instrument.id, mark)
+        mark = MarkPriceUpdate(
+            instrument_id=instrument.id,
+            value=Price(mark_price, GBP.precision),
+            ts_event=0,
+            ts_init=1,
+        )
+        self.cache.add_mark_price(mark)
 
         # Step 1: Place and fill a BACK bet (BUY)
         order1 = self.order_factory.limit(
@@ -1982,9 +1988,15 @@ class TestPortfolio:
         self.exec_engine.process(fill2)
 
         # Assert
-        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.net_exposure(instrument.id, mark.value) == Money(
+            expected_exposure,
+            GBP,
+        )
         assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
-        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark.value) == Money(
+            expected_unrealized,
+            GBP,
+        )
 
     @pytest.mark.parametrize(
         (
@@ -2043,8 +2055,13 @@ class TestPortfolio:
         self.cache.add_instrument(instrument)
         self.portfolio.update_account(state)
 
-        mark = Price(mark_price, GBP.precision)
-        self.cache.add_mark_price(instrument.id, mark)
+        mark = MarkPriceUpdate(
+            instrument_id=instrument.id,
+            value=Price(mark_price, GBP.precision),
+            ts_event=0,
+            ts_init=1,
+        )
+        self.cache.add_mark_price(mark)
 
         # Step 1: Place and fill a LAY bet (SELL)
         order1 = self.order_factory.limit(
@@ -2089,9 +2106,15 @@ class TestPortfolio:
         self.exec_engine.process(fill2)
 
         # Assert
-        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.net_exposure(instrument.id, mark.value) == Money(
+            expected_exposure,
+            GBP,
+        )
         assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
-        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark.value) == Money(
+            expected_unrealized,
+            GBP,
+        )
 
     @pytest.mark.parametrize(
         (
@@ -2152,8 +2175,13 @@ class TestPortfolio:
         self.cache.add_instrument(instrument)
         self.portfolio.update_account(state)
 
-        mark = Price(mark_price, GBP.precision)
-        self.cache.add_mark_price(instrument.id, mark)
+        mark = MarkPriceUpdate(
+            instrument_id=instrument.id,
+            value=Price(mark_price, GBP.precision),
+            ts_event=0,
+            ts_init=1,
+        )
+        self.cache.add_mark_price(mark)
 
         # Step 1: Place opening bet
         order1 = self.order_factory.limit(
@@ -2200,9 +2228,15 @@ class TestPortfolio:
         self.exec_engine.process(fill2)
 
         # Assert
-        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.net_exposure(instrument.id, mark.value) == Money(
+            expected_exposure,
+            GBP,
+        )
         assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
-        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark.value) == Money(
+            expected_unrealized,
+            GBP,
+        )
 
     @pytest.mark.parametrize(
         (
@@ -2263,8 +2297,13 @@ class TestPortfolio:
         self.cache.add_instrument(instrument)
         self.portfolio.update_account(state)
 
-        mark = Price(mark_price, GBP.precision)
-        self.cache.add_mark_price(instrument.id, mark)
+        mark = MarkPriceUpdate(
+            instrument_id=instrument.id,
+            value=Price(mark_price, GBP.precision),
+            ts_event=0,
+            ts_init=1,
+        )
+        self.cache.add_mark_price(mark)
 
         # Step 1: Place opening bet
         order1 = self.order_factory.limit(
@@ -2309,6 +2348,12 @@ class TestPortfolio:
         self.exec_engine.process(fill2)
 
         # Assert
-        assert self.portfolio.net_exposure(instrument.id, mark) == Money(expected_exposure, GBP)
+        assert self.portfolio.net_exposure(instrument.id, mark.value) == Money(
+            expected_exposure,
+            GBP,
+        )
         assert self.portfolio.realized_pnl(instrument.id) == Money(expected_realized, GBP)
-        assert self.portfolio.unrealized_pnl(instrument.id, mark) == Money(expected_unrealized, GBP)
+        assert self.portfolio.unrealized_pnl(instrument.id, mark.value) == Money(
+            expected_unrealized,
+            GBP,
+        )
