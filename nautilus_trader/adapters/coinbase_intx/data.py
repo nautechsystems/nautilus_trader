@@ -30,18 +30,26 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -219,6 +227,14 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades([pyo3_instrument_id])
 
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_mark_prices([pyo3_instrument_id])
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_index_prices([pyo3_instrument_id])
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
@@ -238,6 +254,14 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades([pyo3_instrument_id])
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_mark_prices([pyo3_instrument_id])
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_index_prices([pyo3_instrument_id])
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
@@ -323,6 +347,16 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             # and eventually be garbage collected. The contained pointer
             # to `Data` is still owned and managed by Rust.
             data = capsule_to_data(msg)
-            self._handle_data(data)
+        elif isinstance(msg, nautilus_pyo3.MarkPriceUpdate):
+            data = MarkPriceUpdate.from_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
+            data = IndexPriceUpdate.from_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.CryptoPerpetual):
+            data = CryptoPerpetual.from_pyo3(msg)
+        elif isinstance(msg, nautilus_pyo3.CurrencyPair):
+            data = CurrencyPair.from_pyo3(msg)
         else:
             self._log.error(f"Cannot handle message {msg}, not implemented")
+            return
+
+        self._handle_data(data)

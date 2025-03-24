@@ -15,7 +15,10 @@
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, BookOrder, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, QuoteTick, TradeTick,
+    },
     enums::{AggregationSource, AggressorSide, BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, Symbol, TradeId},
     instruments::{CryptoPerpetual, CurrencyPair, any::InstrumentAny},
@@ -26,7 +29,7 @@ use rust_decimal::Decimal;
 use super::messages::{
     CoinbaseIntxWsCandleSnapshotMsg, CoinbaseIntxWsInstrumentMsg,
     CoinbaseIntxWsOrderBookSnapshotMsg, CoinbaseIntxWsOrderBookUpdateMsg, CoinbaseIntxWsQuoteMsg,
-    CoinbaseIntxWsTradeMsg,
+    CoinbaseIntxWsRiskMsg, CoinbaseIntxWsTradeMsg,
 };
 use crate::common::{
     enums::CoinbaseIntxInstrumentType,
@@ -378,6 +381,40 @@ pub fn parse_trade_msg(
         size,
         aggressor_side,
         trade_id,
+        ts_event,
+        ts_init,
+    ))
+}
+
+pub fn parse_mark_price_msg(
+    msg: &CoinbaseIntxWsRiskMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<MarkPriceUpdate> {
+    let value = Price::new(msg.mark_price.parse::<f64>()?, price_precision);
+    let ts_event = UnixNanos::from(msg.time);
+
+    Ok(MarkPriceUpdate::new(
+        instrument_id,
+        value,
+        ts_event,
+        ts_init,
+    ))
+}
+
+pub fn parse_index_price_msg(
+    msg: &CoinbaseIntxWsRiskMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<IndexPriceUpdate> {
+    let value = Price::new(msg.index_price.parse::<f64>()?, price_precision);
+    let ts_event = UnixNanos::from(msg.time);
+
+    Ok(IndexPriceUpdate::new(
+        instrument_id,
+        value,
         ts_event,
         ts_init,
     ))

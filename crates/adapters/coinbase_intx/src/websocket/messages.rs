@@ -15,7 +15,7 @@
 
 use chrono::{DateTime, Utc};
 use nautilus_model::{
-    data::{Data, OrderBookDeltas},
+    data::{Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::OrderEventAny,
     instruments::InstrumentAny,
     types::AccountBalance,
@@ -33,6 +33,9 @@ pub enum NautilusWsMessage {
     Deltas(OrderBookDeltas),
     Instrument(InstrumentAny),
     OrderEvent(OrderEventAny),
+    MarkPrice(MarkPriceUpdate),
+    IndexPrice(IndexPriceUpdate),
+    MarkAndIndex((MarkPriceUpdate, IndexPriceUpdate)),
     AccountUpdate(AccountBalance),
 }
 

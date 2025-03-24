@@ -31,6 +31,8 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -136,6 +138,8 @@ class DataSubscriber(Strategy):
             # self.subscribe_order_book_deltas(instrument_id=instrument_id)
             self.subscribe_quote_ticks(instrument_id)
             self.subscribe_trade_ticks(instrument_id)
+            self.subscribe_mark_prices(instrument_id)
+            # self.subscribe_index_prices(instrument_id)
 
             # bar_type = BarType(instrument_id, self.bar_spec, AggregationSource.EXTERNAL)
             # self.subscribe_bars(bar_type)
@@ -166,6 +170,8 @@ class DataSubscriber(Strategy):
             # self.unsubscribe_order_book_deltas(instrument_id=instrument_id)
             self.unsubscribe_quote_ticks(instrument_id)
             self.unsubscribe_trade_ticks(instrument_id)
+            self.unsubscribe_mark_prices(instrument_id)
+            # self.unsubscribe_index_prices(instrument_id)
             # self.unsubscribe_bars(BarType(instrument_id, self.bar_spec, AggregationSource.EXTERNAL))
 
     def on_historical_data(self, data: Any) -> None:
@@ -215,6 +221,32 @@ class DataSubscriber(Strategy):
 
         """
         self.log.info(repr(tick), LogColor.CYAN)
+
+    def on_mark_price(self, mark_price: MarkPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a mark price
+        update.
+
+        Parameters
+        ----------
+        mark_price : MarkPriceUpdate
+            The mark price update received.
+
+        """
+        self.log.info(repr(mark_price), LogColor.CYAN)
+
+    def on_index_price(self, index_price: IndexPriceUpdate) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a index price
+        update.
+
+        Parameters
+        ----------
+        index_price : IndexPriceUpdate
+            The index price update received.
+
+        """
+        self.log.info(repr(index_price), LogColor.CYAN)
 
     def on_bar(self, bar: Bar) -> None:
         """

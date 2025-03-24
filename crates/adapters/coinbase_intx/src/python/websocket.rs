@@ -102,6 +102,18 @@ impl CoinbaseIntxWebSocketClient {
                     NautilusWsMessage::Deltas(deltas) => Python::with_gil(|py| {
                         call_python(py, &callback, deltas.into_py_any_unwrap(py));
                     }),
+                    NautilusWsMessage::MarkPrice(mark_price) => Python::with_gil(|py| {
+                        call_python(py, &callback, mark_price.into_py_any_unwrap(py));
+                    }),
+                    NautilusWsMessage::IndexPrice(index_price) => Python::with_gil(|py| {
+                        call_python(py, &callback, index_price.into_py_any_unwrap(py));
+                    }),
+                    NautilusWsMessage::MarkAndIndex((mark_price, index_price)) => {
+                        Python::with_gil(|py| {
+                            call_python(py, &callback, mark_price.into_py_any_unwrap(py));
+                            call_python(py, &callback, index_price.into_py_any_unwrap(py));
+                        })
+                    }
                     NautilusWsMessage::OrderEvent(msg) => Python::with_gil(|py| {
                         let py_obj =
                             order_event_to_pyobject(py, msg).expect("Failed to create event");
@@ -196,6 +208,38 @@ impl CoinbaseIntxWebSocketClient {
         })
     }
 
+    #[pyo3(name = "subscribe_mark_prices")]
+    fn py_subscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_mark_prices(instrument_ids).await {
+                log::error!("Failed to subscribe to mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_index_prices")]
+    fn py_subscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_index_prices(instrument_ids).await {
+                log::error!("Failed to subscribe to index prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -271,6 +315,38 @@ impl CoinbaseIntxWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_trades(instrument_ids).await {
                 log::error!("Failed to unsubscribe from trades: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_mark_prices")]
+    fn py_unsubscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_mark_prices(instrument_ids).await {
+                log::error!("Failed to unsubscribe from mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_index_prices")]
+    fn py_unsubscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_index_prices(instrument_ids).await {
+                log::error!("Failed to unsubscribe from index prices: {e}");
             }
             Ok(())
         })
