@@ -64,12 +64,36 @@ We recommend also referring to the Coinbase International documentation in conju
 
 ### Instruments
 
-The adapter automatically loads all available instruments from Coinbase International on startup.
-It also supports periodic reloading of instrument definitions (configurable via `update_instruments_interval_mins`) to ensure your trading system always has the latest instrument definitions and status, including:
+The adapter automatically loads all available instruments from Coinbase International on startup with the following instrument provider configuration:
 
-- Updated price/size increments.
-- New instruments.
-- Trading state changes.
+```python
+InstrumentProviderConfig(load_all=True)
+```
+
+It also supports periodic reloading of instrument definitions (configurable via the `update_instruments_interval_mins` config option)
+to ensure your trading system always has the latest instrument definitions.
+
+The following instrument types are available:
+
+- `CurrencyPair` (Spot cryptocurrencies)
+- `CryptoPerpetual`
+
+:::note
+Index products have not yet been implemented.
+:::
+
+The following data types are available:
+
+- `OrderBookDelta` (L2 market-by-price)
+- `QuoteTick` (L1 top-of-book best bid/ask)
+- `TradeTick`
+- `Bar`
+- `MarkPriceUpdate`
+- `IndexPriceUpdate`
+
+:::note
+Historical data requests have not yet been implemented.
+:::
 
 ### WebSocket market data
 
@@ -79,6 +103,8 @@ The data client connects to Coinbase International's WebSocket feed to stream re
 - Quote ticks (top-of-book best bid/ask).
 - Trade ticks.
 - Bar (candlestick) data.
+- Mark prices.
+- Index prices.
 
 The WebSocket client handles automatic reconnection and subscription management, ensuring consistent market data delivery even during temporary connection issues.
 
