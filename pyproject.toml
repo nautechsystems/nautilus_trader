@@ -44,7 +44,7 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-    "setuptools>=76",
+    "setuptools>=77",
     "poetry-core>=2.0.1",
     "numpy>=1.26.4",
     "cython==3.1.0a1",
