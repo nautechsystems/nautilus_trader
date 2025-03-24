@@ -107,7 +107,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
         trigger_price = (
             Price(Decimal(self.triggerPrice), price_precision)
             if self.triggerPrice is not None
-            else None
+            else TriggerType.NO_TRIGGER
         )
 
         return OrderStatusReport(
