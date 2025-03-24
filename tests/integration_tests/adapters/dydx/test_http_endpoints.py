@@ -441,6 +441,8 @@ def test_order_parse_to_order_status_report(order_response: DYDXOrderResponse) -
     assert result.id == expected_result.id
     assert result.ts_accepted == expected_result.ts_accepted
     assert result.ts_init == expected_result.ts_init
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
     assert result == expected_result
 
 

@@ -634,6 +634,8 @@ def test_account_channel_data_new_order_opened() -> None:
     assert result.time_in_force == expected_result.time_in_force
     assert result.order_status == expected_result.order_status
     assert result.price == expected_result.price
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
     assert result.quantity == expected_result.quantity
     assert result.filled_qty == expected_result.filled_qty
     assert result.avg_px == expected_result.avg_px
