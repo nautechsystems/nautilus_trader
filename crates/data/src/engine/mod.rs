@@ -417,7 +417,7 @@ impl DataEngine {
     }
 
     pub fn response(&self, resp: DataResponse) {
-        log::debug!("{}", format!("{RECV}{RES} {resp:?}"));
+        log::debug!("{RECV}{RES} {resp:?}");
 
         match resp.data_type.type_name() {
             stringify!(InstrumentAny) => {
