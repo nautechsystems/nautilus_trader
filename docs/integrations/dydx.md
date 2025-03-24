@@ -127,6 +127,10 @@ order = self.order_factory.market(
 )
 ```
 
+## Stop limit and stop market orders
+Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
+for conditional orders.
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.
