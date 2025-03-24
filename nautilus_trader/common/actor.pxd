@@ -15,6 +15,7 @@
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.enums import UpdateCatalogMode
 
 from nautilus_trader.cache.base cimport CacheFacade
@@ -34,8 +35,10 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.greeks cimport GreeksCalculator
@@ -95,8 +98,8 @@ cdef class Actor(Component):
     cpdef void on_order_book(self, OrderBook order_book)
     cpdef void on_quote_tick(self, QuoteTick tick)
     cpdef void on_trade_tick(self, TradeTick tick)
-    cpdef void on_mark_price(self, mark_price)
-    cpdef void on_index_price(self, index_price)
+    cpdef void on_mark_price(self, MarkPriceUpdate mark_price)
+    cpdef void on_index_price(self, IndexPriceUpdate index_price)
     cpdef void on_bar(self, Bar bar)
     cpdef void on_data(self, data)
     cpdef void on_signal(self, signal)
@@ -284,8 +287,8 @@ cdef class Actor(Component):
     cpdef void handle_quote_ticks(self, list ticks)
     cpdef void handle_trade_tick(self, TradeTick tick)
     cpdef void handle_trade_ticks(self, list ticks)
-    cpdef void handle_mark_price(self, mark_price)
-    cpdef void handle_index_price(self, index_price)
+    cpdef void handle_mark_price(self, MarkPriceUpdate mark_price)
+    cpdef void handle_index_price(self, IndexPriceUpdate index_price)
     cpdef void handle_bar(self, Bar bar)
     cpdef void handle_bars(self, list bars)
     cpdef void handle_data(self, Data data)

@@ -63,8 +63,10 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
@@ -212,8 +214,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
-    cpdef void _handle_mark_price(self, mark_price)
-    cpdef void _handle_index_price(self, index_price)
+    cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price)
+    cpdef void _handle_index_price(self, IndexPriceUpdate index_price)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_custom_data(self, CustomData data)
     cpdef void _handle_instrument_status(self, InstrumentStatus data)

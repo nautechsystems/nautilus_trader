@@ -32,6 +32,7 @@ from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -102,6 +103,7 @@ __all__ = [
     "InstrumentId",
     "InstrumentStatus",
     "MarginBalance",
+    "MarkPriceUpdate",
     "Money",
     "OrderBook",
     "OrderBookDelta",

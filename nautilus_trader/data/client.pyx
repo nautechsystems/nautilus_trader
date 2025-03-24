@@ -534,7 +534,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_mark_prices(self, SubscribeMarkPrices command):
         """
-        Subscribe to `nautilus_pyo3.MarkPriceUpdate` data for the given instrument ID.
+        Subscribe to `MarkPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -545,14 +545,14 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `nautilus_pyo3.MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot subscribe to `MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `subscribe_mark_prices` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_mark_prices` must be implemented in the subclass")
 
     cpdef void subscribe_index_prices(self, SubscribeIndexPrices command):
         """
-        Subscribe to `nautilus_pyo3.IndexPriceUpdate` data for the given instrument ID.
+        Subscribe to `IndexPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -563,7 +563,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `nautilus_pyo3.IndexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot subscribe to `IndexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `subscribe_index_prices` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_index_prices` must be implemented in the subclass")
@@ -747,7 +747,7 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void unsubscribe_mark_prices(self, UnsubscribeMarkPrices command):
         """
-        Unsubscribe from `nautilus_pyo3.MarkPriceUpdate` data for the given instrument ID.
+        Unsubscribe from `MarkPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -758,14 +758,14 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `nautilus_pyo3.MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot unsubscribe from `MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `unsubscribe_mark_prices` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `unsubscribe_mark_prices` must be implemented in the subclass")
 
     cpdef void unsubscribe_index_prices(self, UnsubscribeIndexPrices command):
         """
-        Unsubscribe from `nautilus_pyo3.IndexPriceUpdate` data for the given instrument ID.
+        Unsubscribe from `IndexPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -776,7 +776,7 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `nautilus_pyo3.indexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"Cannot unsubscribe from `IndexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `unsubscribe_index_prices` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `unsubscribe_index_prices` must be implemented in the subclass")

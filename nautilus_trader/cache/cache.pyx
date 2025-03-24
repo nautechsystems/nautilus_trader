@@ -47,6 +47,8 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -121,8 +123,8 @@ cdef class Cache(CacheFacade):
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._xrate_symbols: dict[InstrumentId, str] = {}
         self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
-        self._mark_prices: dict[InstrumentId, nautilus_pyo3.MarkPriceUpdate] = {}
-        self._index_prices: dict[InstrumentId, nautilus_pyo3.IndexPriceUpdate] = {}
+        self._mark_prices: dict[InstrumentId, MarkPriceUpdate] = {}
+        self._index_prices: dict[InstrumentId, IndexPriceUpdate] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -1284,57 +1286,53 @@ cdef class Cache(CacheFacade):
         Condition.not_none(price, "price")
 
         # TODO: Temporary solution to create a `MarkPriceUpdate` to add with default timestamps
-        mark_price = nautilus_pyo3.MarkPriceUpdate(
-            instrument_id=instrument_id.to_pyo3(),
-            value=nautilus_pyo3.Price.from_str(str(price)),
+        mark_price = MarkPriceUpdate(
+            instrument_id=instrument_id,
+            value=price,
             ts_event=0,  # Default
             ts_init=0,  # Default
         )
         self.add_mark_price_v2(mark_price)
 
-    cpdef void add_mark_price_v2(self, mark_price):
+    cpdef void add_mark_price_v2(self, MarkPriceUpdate mark_price):
         """
         Add the given mark price update to the cache.
 
         Parameters
         ----------
-        mark_price : nautilus_pyo3.MarkPriceUpdate
+        mark_price : MarkPriceUpdate
             The mark price update to add.
 
         """
         Condition.not_none(mark_price, "mark_price")
-        Condition.type(mark_price, nautilus_pyo3.MarkPriceUpdate, "mark_price")
 
-        cdef InstrumentId instrument_id = InstrumentId.from_pyo3(mark_price.instrument_id)
-        mark_prices = self._mark_prices.get(instrument_id)
+        mark_prices = self._mark_prices.get(mark_price.instrument_id)
 
         if not mark_prices:
             # The instrument_id was not registered
             mark_prices = deque(maxlen=self.tick_capacity)
-            self._mark_prices[instrument_id] = mark_prices
+            self._mark_prices[mark_price.instrument_id] = mark_prices
 
         mark_prices.appendleft(mark_price)
 
-    cpdef void add_index_price(self, index_price):
+    cpdef void add_index_price(self, IndexPriceUpdate index_price):
         """
         Add the given index price update to the cache.
 
         Parameters
         ----------
-        index_price : nautilus_pyo3.IndexPriceUpdate
+        index_price : IndexPriceUpdate
             The index price update to add.
 
         """
         Condition.not_none(index_price, "index_price")
-        Condition.type(index_price, nautilus_pyo3.IndexPriceUpdate, "index_price")
 
-        cdef InstrumentId instrument_id = InstrumentId.from_pyo3(index_price.instrument_id)
-        index_prices = self._index_prices.get(instrument_id)
+        index_prices = self._index_prices.get(index_price.instrument_id)
 
         if not index_prices:
             # The instrument_id was not registered
             index_prices = deque(maxlen=self.tick_capacity)
-            self._index_prices[instrument_id] = index_prices
+            self._index_prices[index_price.instrument_id] = index_prices
 
         index_prices.appendleft(index_price)
 
@@ -2305,7 +2303,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        list[nautilus_pyo3.MarkPriceUpdate]
+        list[MarkPriceUpdate]
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -2323,7 +2321,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        list[nautilus_pyo3.IndexPriceUpdate]
+        list[IndexPriceUpdate]
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -2596,7 +2594,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef object mark_price(self, InstrumentId instrument_id, int index = 0):
+    cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index = 0):
         """
         Return the mark price for the given instrument ID at the given index (if found).
 
@@ -2611,7 +2609,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        nautilus_pyo3.MarkPriceUpdate or ``None``
+        MarkPriceUpdate or ``None``
             If no mark prices or no mark price at index then returns ``None``.
 
         Notes
@@ -2630,7 +2628,7 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
-    cpdef object index_price(self, InstrumentId instrument_id, int index = 0):
+    cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index = 0):
         """
         Return the index price for the given instrument ID at the given index (if found).
 
@@ -2645,7 +2643,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        nautilus_pyo3.IndexPriceUpdate or ``None``
+        IndexPriceUpdate or ``None``
             If no index prices or no index price at index then returns ``None``.
 
         Notes

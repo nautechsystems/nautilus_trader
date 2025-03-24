@@ -460,3 +460,41 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem)
+
+
+cdef class MarkPriceUpdate(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly Price value
+    """The mark price.\n\n:returns: `Price`"""
+    cdef readonly uint64_t ts_event
+    """UNIX timestamp (nanoseconds) when the update occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+
+    cdef str to_str(self)
+
+    @staticmethod
+    cdef MarkPriceUpdate from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(MarkPriceUpdate obj)
+
+
+cdef class IndexPriceUpdate(Data):
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly Price value
+    """The index price.\n\n:returns: `Price`"""
+    cdef readonly uint64_t ts_event
+    """UNIX timestamp (nanoseconds) when the update occurred.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_init
+    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+
+    cdef str to_str(self)
+
+    @staticmethod
+    cdef IndexPriceUpdate from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(IndexPriceUpdate obj)

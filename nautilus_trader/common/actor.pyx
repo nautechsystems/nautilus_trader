@@ -92,8 +92,10 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -451,13 +453,13 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_mark_price(self, mark_price):
+    cpdef void on_mark_price(self, MarkPriceUpdate mark_price):
         """
         Actions to be performed when running and receives a mark price update.
 
         Parameters
         ----------
-        mark_price : nautilus_pyo3.MarkPriceUpdate
+        mark_price : MarkPriceUpdate
             The mark price update received.
 
         Warnings
@@ -467,13 +469,13 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_index_price(self, index_price):
+    cpdef void on_index_price(self, IndexPriceUpdate index_price):
         """
         Actions to be performed when running and receives an index price update.
 
         Parameters
         ----------
-        index_price : nautilus_pyo3.IndexPriceUpdate
+        index_price : IndexPriceUpdate
             The index price update received.
 
         Warnings
@@ -1528,7 +1530,7 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Subscribe to streaming `nautilus_pyo3.MarkPriceUpdate` data for the given instrument ID.
+        Subscribe to streaming `MarkPriceUpdate` data for the given instrument ID.
 
         Once subscribed, any matching mark price updates published on the message bus are forwarded
         to the `on_mark_price` handler.
@@ -1572,7 +1574,7 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Subscribe to streaming `nautilus_pyo3.IndexPriceUpdate` data for the given instrument ID.
+        Subscribe to streaming `IndexPriceUpdate` data for the given instrument ID.
 
         Once subscribed, any matching index price updates published on the message bus are forwarded
         to the `on_index_price` handler.
@@ -2041,7 +2043,7 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Unsubscribe from streaming `nautilus_pyo3.MarkPriceUpdate` data for the given instrument ID.
+        Unsubscribe from streaming `MarkPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -2082,7 +2084,7 @@ cdef class Actor(Component):
         dict[str, object] params = None,
     ):
         """
-        Unsubscribe from streaming `nautilus_pyo3.IndexPriceUpdate` data for the given instrument ID.
+        Unsubscribe from streaming `IndexPriceUpdate` data for the given instrument ID.
 
         Parameters
         ----------
@@ -3333,7 +3335,7 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
-    cpdef void handle_mark_price(self, mark_price):
+    cpdef void handle_mark_price(self, MarkPriceUpdate mark_price):
         """
         Handle the given mark price update.
 
@@ -3341,7 +3343,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        mark_price : nautilus_pyo3.MarkPriceUpdate
+        mark_price : MarkPriceUpdate
             The mark price update received.
 
         Warnings
@@ -3350,7 +3352,6 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(mark_price, "mark_price")
-        Condition.type(mark_price, nautilus_pyo3.MarkPriceUpdate, "mark_price")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
@@ -3359,7 +3360,7 @@ cdef class Actor(Component):
                 self.log.exception(f"Error on handling {repr(mark_price)}", e)
                 raise
 
-    cpdef void handle_index_price(self, index_price):
+    cpdef void handle_index_price(self, IndexPriceUpdate index_price):
         """
         Handle the given index price update.
 
@@ -3367,7 +3368,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        index_price : nautilus_pyo3.IndexPriceUpdate
+        index_price : IndexPriceUpdate
             The index price update received.
 
         Warnings
@@ -3376,7 +3377,6 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(index_price, "index_price")
-        Condition.type(index_price, nautilus_pyo3.IndexPriceUpdate, "index_price")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
