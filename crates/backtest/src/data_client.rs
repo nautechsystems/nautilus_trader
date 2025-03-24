@@ -122,6 +122,22 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
+    fn subscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_index_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn subscribe_bars(
         &mut self,
         bar_type: &BarType,
@@ -195,6 +211,22 @@ impl DataClient for BacktestDataClient {
     }
 
     fn unsubscribe_trade_ticks(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(
         &mut self,
         instrument_id: &InstrumentId,
         params: &Option<HashMap<String, String>>,

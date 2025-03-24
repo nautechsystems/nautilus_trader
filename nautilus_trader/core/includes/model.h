@@ -1088,7 +1088,7 @@ typedef struct OrderBookDepth10_t {
 } OrderBookDepth10_t;
 
 /**
- * Represents a single quote tick in a market.
+ * Represents a quote tick in a market.
  */
 typedef struct QuoteTick_t {
     /**
@@ -1139,7 +1139,7 @@ typedef struct TradeId_t {
 } TradeId_t;
 
 /**
- * Represents a single trade tick in a market.
+ * Represents a trade tick in a market.
  */
 typedef struct TradeTick_t {
     /**

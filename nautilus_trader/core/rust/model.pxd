@@ -608,7 +608,7 @@ cdef extern from "../includes/model.h":
         # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
-    # Represents a single quote tick in a market.
+    # Represents a quote tick in a market.
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
@@ -637,7 +637,7 @@ cdef extern from "../includes/model.h":
         # The trade match ID value as a fixed-length C string byte array (includes null terminator).
         uint8_t value[TRADE_ID_LEN];
 
-    # Represents a single trade tick in a market.
+    # Represents a trade tick in a market.
     cdef struct TradeTick_t:
         # The trade instrument ID.
         InstrumentId_t instrument_id;

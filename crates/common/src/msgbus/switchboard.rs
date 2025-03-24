@@ -40,11 +40,27 @@ pub fn get_deltas_topic(instrument_id: InstrumentId) -> Ustr {
 }
 
 #[must_use]
+pub fn get_book_snapshots_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_book_snapshots_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_depth_topic(instrument_id: InstrumentId) -> Ustr {
     get_message_bus()
         .borrow_mut()
         .switchboard
         .get_depth_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_quotes_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_quotes_topic(instrument_id)
 }
 
 #[must_use]
@@ -56,27 +72,27 @@ pub fn get_trades_topic(instrument_id: InstrumentId) -> Ustr {
 }
 
 #[must_use]
+pub fn get_mark_price_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_mark_price_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_index_price_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_index_price_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_bars_topic(bar_type: BarType) -> Ustr {
     get_message_bus()
         .borrow_mut()
         .switchboard
         .get_bars_topic(bar_type)
-}
-
-#[must_use]
-pub fn get_book_snapshots_topic(instrument_id: InstrumentId) -> Ustr {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_book_snapshots_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_quotes_topic(instrument_id: InstrumentId) -> Ustr {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_quotes_topic(instrument_id)
 }
 
 #[must_use]
@@ -123,6 +139,8 @@ pub struct MessagingSwitchboard {
     depth_topics: HashMap<InstrumentId, Ustr>,
     quote_topics: HashMap<InstrumentId, Ustr>,
     trade_topics: HashMap<InstrumentId, Ustr>,
+    mark_price_topics: HashMap<InstrumentId, Ustr>,
+    index_price_topics: HashMap<InstrumentId, Ustr>,
     bar_topics: HashMap<BarType, Ustr>,
     order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
     positions_snapshots_topics: HashMap<PositionId, Ustr>,
@@ -139,6 +157,8 @@ impl Default for MessagingSwitchboard {
             depth_topics: HashMap::new(),
             quote_topics: HashMap::new(),
             trade_topics: HashMap::new(),
+            mark_price_topics: HashMap::new(),
+            index_price_topics: HashMap::new(),
             bar_topics: HashMap::new(),
             order_snapshots_topics: HashMap::new(),
             event_orders_topics: HashMap::new(),
@@ -241,6 +261,32 @@ impl MessagingSwitchboard {
                 instrument_id.venue, instrument_id.symbol
             ))
         })
+    }
+
+    #[must_use]
+    pub fn get_mark_price_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .mark_price_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.mark_prices.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
+    }
+
+    #[must_use]
+    pub fn get_index_price_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .index_price_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.index_prices.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
     }
 
     #[must_use]

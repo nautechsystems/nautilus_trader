@@ -58,7 +58,6 @@ pub trait DataClient {
 
     // -- COMMAND HANDLERS ------------------------------------------------------------------------
 
-    /// Parse command and call specific function
     fn subscribe(
         &mut self,
         data_type: &DataType,
@@ -113,6 +112,16 @@ pub trait DataClient {
         instrument_id: &InstrumentId,
         params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()>;
+    fn subscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn subscribe_index_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
     fn unsubscribe(
         &mut self,
         data_type: &DataType,
@@ -159,6 +168,16 @@ pub trait DataClient {
         params: &Option<HashMap<String, String>>,
     ) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_mark_prices(
+        &mut self,
+        instrument_id: &InstrumentId,
+        params: &Option<HashMap<String, String>>,
+    ) -> anyhow::Result<()>;
+    fn unsubscribe_index_prices(
         &mut self,
         instrument_id: &InstrumentId,
         params: &Option<HashMap<String, String>>,
@@ -237,6 +256,8 @@ pub struct DataClientAdapter {
     pub subscriptions_instrument_close: HashSet<InstrumentId>,
     pub subscriptions_instrument: HashSet<InstrumentId>,
     pub subscriptions_instrument_venue: HashSet<Venue>,
+    pub subscriptions_mark_price: HashSet<InstrumentId>,
+    pub subscriptions_index_price: HashSet<InstrumentId>,
 }
 
 impl Deref for DataClientAdapter {
@@ -274,6 +295,8 @@ impl Debug for DataClientAdapter {
             )
             .field("subscriptions_quote_tick", &self.subscriptions_quote_tick)
             .field("subscriptions_trade_tick", &self.subscriptions_trade_tick)
+            .field("subscriptions_mark_price", &self.subscriptions_mark_price)
+            .field("subscriptions_index_price", &self.subscriptions_index_price)
             .field("subscriptions_bar", &self.subscriptions_bar)
             .field(
                 "subscriptions_instrument_status",
@@ -315,6 +338,8 @@ impl DataClientAdapter {
             subscriptions_order_book_snapshot: HashSet::new(),
             subscriptions_quote_tick: HashSet::new(),
             subscriptions_trade_tick: HashSet::new(),
+            subscriptions_mark_price: HashSet::new(),
+            subscriptions_index_price: HashSet::new(),
             subscriptions_bar: HashSet::new(),
             subscriptions_instrument_status: HashSet::new(),
             subscriptions_instrument_close: HashSet::new(),
@@ -343,6 +368,8 @@ impl DataClientAdapter {
             }
             stringify!(QuoteTick) => Self::subscribe_quote_ticks(self, command),
             stringify!(TradeTick) => Self::subscribe_trade_ticks(self, command),
+            stringify!(MarkPriceUpdate) => Self::subscribe_mark_prices(self, command),
+            stringify!(IndexPriceUpdate) => Self::subscribe_index_prices(self, command),
             stringify!(Bar) => Self::subscribe_bars(self, command),
             _ => Self::subscribe(self, command),
         }
@@ -358,6 +385,8 @@ impl DataClientAdapter {
             }
             stringify!(QuoteTick) => Self::unsubscribe_quote_ticks(self, command),
             stringify!(TradeTick) => Self::unsubscribe_trade_ticks(self, command),
+            stringify!(MarkPriceUpdate) => Self::unsubscribe_mark_prices(self, command),
+            stringify!(IndexPriceUpdate) => Self::unsubscribe_index_prices(self, command),
             stringify!(Bar) => Self::unsubscribe_bars(self, command),
             _ => Self::unsubscribe(self, command),
         }
@@ -516,6 +545,20 @@ impl DataClientAdapter {
         self.subscriptions_quote_tick.remove(&instrument_id);
     }
 
+    fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
+        let instrument_id = command
+            .data_type
+            .instrument_id()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if !self.subscriptions_trade_tick.contains(&instrument_id) {
+            self.client
+                .subscribe_trade_ticks(&instrument_id, &command.params)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_trade_tick.insert(instrument_id);
+    }
+
     fn unsubscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
@@ -530,18 +573,60 @@ impl DataClientAdapter {
         self.subscriptions_trade_tick.remove(&instrument_id);
     }
 
-    fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
+    fn subscribe_mark_prices(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-        if !self.subscriptions_trade_tick.contains(&instrument_id) {
+        if !self.subscriptions_mark_price.contains(&instrument_id) {
             self.client
-                .subscribe_trade_ticks(&instrument_id, &command.params)
+                .subscribe_mark_prices(&instrument_id, &command.params)
                 .expect("Error on subscribe");
         }
-        self.subscriptions_trade_tick.insert(instrument_id);
+        self.subscriptions_mark_price.insert(instrument_id);
+    }
+
+    fn unsubscribe_mark_prices(&mut self, command: SubscriptionCommand) {
+        let instrument_id = command
+            .data_type
+            .instrument_id()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self.subscriptions_mark_price.contains(&instrument_id) {
+            self.client
+                .unsubscribe_mark_prices(&instrument_id, &command.params)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_mark_price.remove(&instrument_id);
+    }
+
+    fn subscribe_index_prices(&mut self, command: SubscriptionCommand) {
+        let instrument_id = command
+            .data_type
+            .instrument_id()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if !self.subscriptions_index_price.contains(&instrument_id) {
+            self.client
+                .subscribe_index_prices(&instrument_id, &command.params)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_index_price.insert(instrument_id);
+    }
+
+    fn unsubscribe_index_prices(&mut self, command: SubscriptionCommand) {
+        let instrument_id = command
+            .data_type
+            .instrument_id()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self.subscriptions_index_price.contains(&instrument_id) {
+            self.client
+                .unsubscribe_index_prices(&instrument_id, &command.params)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_index_price.remove(&instrument_id);
     }
 
     fn subscribe_bars(&mut self, command: SubscriptionCommand) {

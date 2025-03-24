@@ -15,6 +15,7 @@
 
 from libc.string cimport strcmp
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
@@ -400,6 +401,34 @@ cdef class InstrumentId(Identifier):
 
         """
         return <bint>instrument_id_is_synthetic(&self._mem)
+
+    @staticmethod
+    def from_pyo3(pyo3_instrument_id) -> InstrumentId:
+        """
+        Return an instrument ID from the given PyO3 instance.
+
+        Parameters
+        ----------
+        value : nautilus_pyo3.InstrumentId
+            The PyO3 instrument ID instance.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_str_c(pyo3_instrument_id.value)
+
+    cpdef to_pyo3(self):
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.InstrumentId
+
+        """
+        return nautilus_pyo3.InstrumentId.from_str(self.to_str())
 
 
 cdef class ComponentId(Identifier):

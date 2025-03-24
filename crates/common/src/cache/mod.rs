@@ -41,7 +41,10 @@ use nautilus_core::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, BarType, QuoteTick, TradeTick},
+    data::{
+        Bar, BarType, QuoteTick, TradeTick,
+        prices::{IndexPriceUpdate, MarkPriceUpdate},
+    },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
@@ -63,16 +66,17 @@ pub struct Cache {
     index: CacheIndex,
     database: Option<Box<dyn CacheDatabaseAdapter>>,
     general: HashMap<String, Bytes>,
-    quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
-    trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
-    mark_prices: HashMap<InstrumentId, Price>,
-    mark_xrates: HashMap<(Currency, Currency), f64>,
-    books: HashMap<InstrumentId, OrderBook>,
-    own_books: HashMap<InstrumentId, OwnOrderBook>,
-    bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
+    books: HashMap<InstrumentId, OrderBook>,
+    own_books: HashMap<InstrumentId, OwnOrderBook>,
+    quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
+    trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
+    mark_xrates: HashMap<(Currency, Currency), f64>,
+    mark_prices: HashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
+    index_prices: HashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
+    bars: HashMap<BarType, VecDeque<Bar>>,
     accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
@@ -99,16 +103,17 @@ impl Cache {
             index: CacheIndex::default(),
             database,
             general: HashMap::new(),
-            mark_prices: HashMap::new(),
-            mark_xrates: HashMap::new(),
-            quotes: HashMap::new(),
-            trades: HashMap::new(),
-            books: HashMap::new(),
-            own_books: HashMap::new(),
-            bars: HashMap::new(),
             currencies: HashMap::new(),
             instruments: HashMap::new(),
             synthetics: HashMap::new(),
+            books: HashMap::new(),
+            own_books: HashMap::new(),
+            quotes: HashMap::new(),
+            trades: HashMap::new(),
+            mark_xrates: HashMap::new(),
+            mark_prices: HashMap::new(),
+            index_prices: HashMap::new(),
+            bars: HashMap::new(),
             accounts: HashMap::new(),
             orders: HashMap::new(),
             order_lists: HashMap::new(),
@@ -798,16 +803,17 @@ impl Cache {
         log::debug!("Resetting cache");
 
         self.general.clear();
-        self.mark_prices.clear();
-        self.mark_xrates.clear();
-        self.quotes.clear();
-        self.trades.clear();
-        self.books.clear();
-        self.own_books.clear();
-        self.bars.clear();
         self.currencies.clear();
         self.instruments.clear();
         self.synthetics.clear();
+        self.books.clear();
+        self.own_books.clear();
+        self.quotes.clear();
+        self.trades.clear();
+        self.mark_xrates.clear();
+        self.mark_prices.clear();
+        self.index_prices.clear();
+        self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
         self.order_lists.clear();
@@ -872,11 +878,39 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given mark `price` for the given `instrument_id` to the cache.
-    pub fn add_mark_price(&mut self, instrument_id: &InstrumentId, price: Price) {
-        log::debug!("Adding mark `Price` for {instrument_id}");
+    /// Adds the given `mark_price` update for the given `instrument_id` to the cache.
+    pub fn add_mark_price(&mut self, mark_price: MarkPriceUpdate) -> anyhow::Result<()> {
+        log::debug!("Adding `MarkPriceUpdate` for {}", mark_price.instrument_id);
 
-        self.mark_prices.insert(*instrument_id, price);
+        if self.config.save_market_data {
+            // TODO: Placeholder and return Result for consistency
+        }
+
+        let mark_prices_deque = self
+            .mark_prices
+            .entry(mark_price.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        mark_prices_deque.push_front(mark_price);
+        Ok(())
+    }
+
+    /// Adds the given `index_price` update for the given `instrument_id` to the cache.
+    pub fn add_index_price(&mut self, index_price: IndexPriceUpdate) -> anyhow::Result<()> {
+        log::debug!(
+            "Adding `IndexPriceUpdate` for {}",
+            index_price.instrument_id
+        );
+
+        if self.config.save_market_data {
+            // TODO: Placeholder and return Result for consistency
+        }
+
+        let index_prices_deque = self
+            .index_prices
+            .entry(index_price.instrument_id)
+            .or_insert_with(|| VecDeque::with_capacity(self.config.tick_capacity));
+        index_prices_deque.push_front(index_price);
+        Ok(())
     }
 
     /// Adds the given `quote` tick to the cache.
@@ -2343,7 +2377,10 @@ impl Cache {
                 .trades
                 .get(instrument_id)
                 .and_then(|trades| trades.front().map(|trade| trade.price)),
-            PriceType::Mark => self.mark_prices.get(instrument_id).copied(),
+            PriceType::Mark => self
+                .mark_prices
+                .get(instrument_id)
+                .and_then(|marks| marks.front().map(|mark| mark.value)),
         }
     }
 
@@ -2361,6 +2398,22 @@ impl Cache {
         self.trades
             .get(instrument_id)
             .map(|trades| trades.iter().copied().collect())
+    }
+
+    /// Gets all mark price updates for the given `instrument_id`.
+    #[must_use]
+    pub fn mark_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
+        self.mark_prices
+            .get(instrument_id)
+            .map(|mark_prices| mark_prices.iter().copied().collect())
+    }
+
+    /// Gets all index price updates for the given `instrument_id`.
+    #[must_use]
+    pub fn index_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
+        self.index_prices
+            .get(instrument_id)
+            .map(|index_prices| index_prices.iter().copied().collect())
     }
 
     /// Gets all bars for the given `bar_type`.
@@ -2406,12 +2459,28 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
-    /// Gets a refernece to the latest trade tick for the given `instrument_id`.
+    /// Gets a reference to the latest trade tick for the given `instrument_id`.
     #[must_use]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
             .get(instrument_id)
             .and_then(|trades| trades.front())
+    }
+
+    /// Gets a referenece to the latest mark price update for the given `instrument_id`.
+    #[must_use]
+    pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
+        self.mark_prices
+            .get(instrument_id)
+            .and_then(|mark_prices| mark_prices.front())
+    }
+
+    /// Gets a referenece to the latest index price update for the given `instrument_id`.
+    #[must_use]
+    pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
+        self.index_prices
+            .get(instrument_id)
+            .and_then(|index_prices| index_prices.front())
     }
 
     /// Gets a reference to the latest bar for the given `bar_type`.

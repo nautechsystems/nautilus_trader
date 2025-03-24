@@ -39,19 +39,23 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -134,6 +138,8 @@ cdef class DataEngine(Component):
     cpdef list subscribed_order_book_snapshots(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
+    cpdef list subscribed_mark_prices(self)
+    cpdef list subscribed_index_prices(self)
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
@@ -162,6 +168,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, SubscribeQuoteTicks command)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, SubscribeTradeTicks command)
+    cpdef void _handle_subscribe_mark_prices(self, MarketDataClient client, SubscribeMarkPrices command)
+    cpdef void _handle_subscribe_index_prices(self, MarketDataClient client, SubscribeIndexPrices command)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, SubscribeBars command)
     cpdef void _handle_subscribe_data(self, DataClient client, SubscribeData command)
@@ -173,6 +181,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, UnsubscribeOrderBook command)
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, UnsubscribeQuoteTicks command)
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, UnsubscribeTradeTicks command)
+    cpdef void _handle_unsubscribe_mark_prices(self, MarketDataClient client, UnsubscribeMarkPrices command)
+    cpdef void _handle_unsubscribe_index_prices(self, MarketDataClient client, UnsubscribeIndexPrices command)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, UnsubscribeBars command)
     cpdef void _handle_unsubscribe_data(self, DataClient client, UnsubscribeData command)
     cpdef void _handle_unsubscribe_instrument_status(self, MarketDataClient client, UnsubscribeInstrumentStatus command)
@@ -202,6 +212,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
     cpdef void _handle_quote_tick(self, QuoteTick tick)
     cpdef void _handle_trade_tick(self, TradeTick tick)
+    cpdef void _handle_mark_price(self, mark_price)
+    cpdef void _handle_index_price(self, index_price)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_custom_data(self, CustomData data)
     cpdef void _handle_instrument_status(self, InstrumentStatus data)

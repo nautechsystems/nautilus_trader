@@ -35,19 +35,23 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -81,7 +85,7 @@ cdef class BacktestDataClient(DataClient):
         Cache cache not None,
         Clock clock not None,
         config: NautilusConfig | None = None,
-    ):
+    ) -> None:
         super().__init__(
             client_id=client_id,
             venue=Venue(client_id.to_str()),
@@ -246,6 +250,32 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_trade_ticks(command.instrument_id)
         # Do nothing else for backtest
 
+    cpdef void subscribe_mark_prices(self, SubscribeMarkPrices command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        if not self._cache.instrument(command.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {command.instrument_id} to subscribe for `MarkPriceUpdate` data, "
+                "No data has been loaded for this instrument",
+            )
+            return
+
+        self._add_subscription_mark_prices(command.instrument_id)
+        # Do nothing else for backtest
+
+    cpdef void subscribe_index_prices(self, SubscribeIndexPrices command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        if not self._cache.instrument(command.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {command.instrument_id} to subscribe for `IndexPriceUpdate` data, "
+                "No data has been loaded for this instrument",
+            )
+            return
+
+        self._add_subscription_index_prices(command.instrument_id)
+        # Do nothing else for backtest
+
     cpdef void subscribe_bars(self, SubscribeBars command):
         Condition.not_none(command.bar_type, "bar_type")
 
@@ -303,6 +333,18 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         self._remove_subscription_trade_ticks(command.instrument_id)
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_mark_prices(self, UnsubscribeMarkPrices command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        self._remove_subscription_mark_prices(command.instrument_id)
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_index_prices(self, UnsubscribeIndexPrices command):
+        Condition.not_none(command.instrument_id, "instrument_id")
+
+        self._remove_subscription_index_prices(command.instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, UnsubscribeBars command):
