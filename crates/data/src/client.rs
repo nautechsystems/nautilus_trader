@@ -30,7 +30,7 @@ use std::{
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    clock::{Clock, TestClock},
+    clock::Clock,
     messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -241,7 +241,7 @@ pub trait DataClient {
 
 pub struct DataClientAdapter {
     client: Box<dyn DataClient>,
-    clock: Rc<RefCell<TestClock>>,
+    clock: Rc<RefCell<dyn Clock>>,
     pub client_id: ClientId,
     pub venue: Venue,
     pub handles_order_book_deltas: bool,
@@ -324,7 +324,7 @@ impl DataClientAdapter {
         handles_order_book_deltas: bool,
         handles_order_book_snapshots: bool,
         client: Box<dyn DataClient>,
-        clock: Rc<RefCell<TestClock>>,
+        clock: Rc<RefCell<dyn Clock>>,
     ) -> Self {
         Self {
             client,

@@ -55,6 +55,16 @@ impl BacktestEngineConfig {
     }
 }
 
+impl Default for BacktestEngineConfig {
+    fn default() -> Self {
+        Self {
+            kernel: NautilusKernelConfig::default(),
+            bypass_logging: false,
+            run_analysis: true,
+        }
+    }
+}
+
 /// Represents a venue configuration for one specific backtest engine.
 #[derive(Debug, Clone)]
 pub struct BacktestVenueConfig {

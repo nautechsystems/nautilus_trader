@@ -280,8 +280,11 @@ impl SimulatedExchange {
     }
 
     #[must_use]
-    pub fn get_matching_engine(&self, instrument_id: InstrumentId) -> Option<&OrderMatchingEngine> {
-        self.matching_engines.get(&instrument_id)
+    pub fn get_matching_engine(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&OrderMatchingEngine> {
+        self.matching_engines.get(instrument_id)
     }
 
     #[must_use]
@@ -1188,7 +1191,7 @@ mod tests {
 
         let market_status = exchange
             .borrow()
-            .get_matching_engine(crypto_perpetual_ethusdt.id)
+            .get_matching_engine(&crypto_perpetual_ethusdt.id)
             .unwrap()
             .market_status;
         assert_eq!(market_status, MarketStatus::Closed);

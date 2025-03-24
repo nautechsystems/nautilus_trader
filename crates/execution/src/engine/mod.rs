@@ -145,6 +145,10 @@ impl ExecutionEngine {
         self.default_client = Some(client);
     }
 
+    pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
+        self.clients.get(client_id).cloned()
+    }
+
     pub fn register_venue_routing(
         &mut self,
         client_id: ClientId,
