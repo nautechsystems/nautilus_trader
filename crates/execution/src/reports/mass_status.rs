@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use serde::{Deserialize, Serialize};
 

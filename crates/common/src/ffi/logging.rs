@@ -19,11 +19,11 @@ use std::{
 };
 
 use nautilus_core::{
+    UUID4,
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
         string::{cstr_as_str, cstr_to_ustr, optional_cstr_to_str},
     },
-    UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 
@@ -66,7 +66,7 @@ impl DerefMut for LogGuard_API {
 /// Initializes logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
-/// the components in the main `nautilus_trader` package.
+/// the components in the [nautilus_trader](https://pypi.org/project/nautilus_trader) package.
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
@@ -79,7 +79,7 @@ impl DerefMut for LogGuard_API {
 /// - Assume `file_name_ptr` is either NULL or a valid C string pointer.
 /// - Assume `file_format_ptr` is either NULL or a valid C string pointer.
 /// - Assume `component_level_ptr` is either NULL or a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_init(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn logging_init(
     let level_stdout = map_log_level_to_filter(level_stdout);
     let level_file = map_log_level_to_filter(level_file);
 
-    let component_levels_json = optional_bytes_to_json(component_levels_ptr);
+    let component_levels_json = unsafe { optional_bytes_to_json(component_levels_ptr) };
     let component_levels = parse_component_levels(component_levels_json);
 
     let config = LoggerConfig::new(
@@ -109,10 +109,6 @@ pub unsafe extern "C" fn logging_init(
         u8_as_bool(print_config),
     );
 
-    let directory = optional_cstr_to_str(directory_ptr).map(std::string::ToString::to_string);
-    let file_name = optional_cstr_to_str(file_name_ptr).map(std::string::ToString::to_string);
-    let file_format = optional_cstr_to_str(file_format_ptr).map(std::string::ToString::to_string);
-
     // Configure file rotation if max_file_size > 0
     let file_rotate = if max_file_size > 0 {
         Some((max_file_size, max_backup_count))
@@ -120,18 +116,22 @@ pub unsafe extern "C" fn logging_init(
         None
     };
 
+    let directory =
+        unsafe { optional_cstr_to_str(directory_ptr).map(std::string::ToString::to_string) };
+    let file_name =
+        unsafe { optional_cstr_to_str(file_name_ptr).map(std::string::ToString::to_string) };
+    let file_format =
+        unsafe { optional_cstr_to_str(file_format_ptr).map(std::string::ToString::to_string) };
+
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 
     if u8_as_bool(is_bypassed) {
         logging_set_bypass();
     }
 
-    LogGuard_API(Box::new(logging::init_logging(
-        trader_id,
-        instance_id,
-        config,
-        file_config,
-    )))
+    LogGuard_API(Box::new(
+        logging::init_logging(trader_id, instance_id, config, file_config).unwrap(),
+    ))
 }
 
 /// Creates a new log event.
@@ -140,15 +140,15 @@ pub unsafe extern "C" fn logging_init(
 ///
 /// - Assumes `component_ptr` is a valid C string pointer.
 /// - Assumes `message_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn logger_log(
     level: LogLevel,
     color: LogColor,
     component_ptr: *const c_char,
     message_ptr: *const c_char,
 ) {
-    let component = cstr_to_ustr(component_ptr);
-    let message = cstr_as_str(message_ptr);
+    let component = unsafe { cstr_to_ustr(component_ptr) };
+    let message = unsafe { cstr_as_str(message_ptr) };
 
     logger::log(level, color, component, message);
 }
@@ -159,15 +159,15 @@ pub unsafe extern "C" fn logger_log(
 ///
 /// - Assumes `machine_id_ptr` is a valid C string pointer.
 /// - Assumes `component_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_log_header(
     trader_id: TraderId,
     machine_id_ptr: *const c_char,
     instance_id: UUID4,
     component_ptr: *const c_char,
 ) {
-    let component = cstr_to_ustr(component_ptr);
-    let machine_id = cstr_as_str(machine_id_ptr);
+    let component = unsafe { cstr_to_ustr(component_ptr) };
+    let machine_id = unsafe { cstr_as_str(machine_id_ptr) };
     headers::log_header(trader_id, machine_id, instance_id, component);
 }
 
@@ -176,14 +176,14 @@ pub unsafe extern "C" fn logging_log_header(
 /// # Safety
 ///
 /// - Assumes `component_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
-    let component = cstr_to_ustr(component_ptr);
+    let component = unsafe { cstr_to_ustr(component_ptr) };
     headers::log_sysinfo(component);
 }
 
 /// Flushes global logger buffers of any records.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
     drop(log_guard);
 }

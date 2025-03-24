@@ -22,7 +22,7 @@ use std::{
 };
 
 use nautilus_core::correctness::{
-    check_predicate_false, check_predicate_true, check_slice_not_empty, FAILED,
+    FAILED, check_predicate_false, check_predicate_true, check_slice_not_empty,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 

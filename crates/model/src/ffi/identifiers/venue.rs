@@ -24,17 +24,18 @@ use crate::{identifiers::Venue, venues::VENUE_MAP};
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-    Venue::from(cstr_as_str(ptr))
+    let value = unsafe { cstr_as_str(ptr) };
+    Venue::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn venue_hash(id: &Venue) -> u64 {
     id.inner().precomputed_hash()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
     u8::from(venue.is_synthetic())
 }
@@ -42,17 +43,17 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 /// # Safety
 ///
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_code_exists(code_ptr: *const c_char) -> u8 {
-    let code = cstr_as_str(code_ptr);
+    let code = unsafe { cstr_as_str(code_ptr) };
     u8::from(VENUE_MAP.lock().unwrap().contains_key(code))
 }
 
 /// # Safety
 ///
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_from_cstr_code(code_ptr: *const c_char) -> Venue {
-    let code = cstr_as_str(code_ptr);
+    let code = unsafe { cstr_as_str(code_ptr) };
     Venue::from_code(code).unwrap()
 }

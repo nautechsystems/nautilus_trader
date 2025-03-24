@@ -27,8 +27,8 @@ use std::{
     ops::Add,
     prelude::v1::*,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -169,15 +169,14 @@ impl Clock for MonotonicClock {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod test {
-    use std::{iter::repeat, sync::Arc, thread, time::Duration};
+    use std::{sync::Arc, thread, time::Duration};
 
     use super::*;
 
     #[test]
     fn fake_clock_parallel_advances() {
         let clock = Arc::new(FakeRelativeClock::default());
-        let threads = repeat(())
-            .take(10)
+        let threads = std::iter::repeat_n((), 10)
             .map(move |()| {
                 let clock = Arc::clone(&clock);
                 thread::spawn(move || {

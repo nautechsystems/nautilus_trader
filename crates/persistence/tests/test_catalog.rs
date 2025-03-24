@@ -17,8 +17,8 @@ use std::path::PathBuf;
 
 use nautilus_core::{ffi::cvec::CVec, python::IntoPyObjectNautilusExt};
 use nautilus_model::data::{
-    is_monotonically_increasing_by_init, to_variant, Bar, Data, OrderBookDelta, QuoteTick,
-    TradeTick,
+    Bar, Data, OrderBookDelta, QuoteTick, TradeTick, is_monotonically_increasing_by_init,
+    to_variant,
 };
 use nautilus_persistence::{
     backend::{
@@ -358,7 +358,9 @@ fn test_catalog_serialization_json_round_trip() {
     let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
 
     // Write to JSON using catalog
-    let json_path = catalog.write_to_json(quote_ticks.clone(), None, false);
+    let json_path = catalog
+        .write_to_json(quote_ticks.clone(), None, false)
+        .unwrap();
 
     // Read back from JSON
     let json_str = std::fs::read_to_string(json_path).unwrap();
@@ -459,7 +461,9 @@ fn test_catalog_export_functionality() {
 
     // Export to temporary JSON
     let json_file = temp_dir.path().join("temp.json");
-    let json_path = catalog.write_to_json(quotes.clone(), Some(json_file), false);
+    let json_path = catalog
+        .write_to_json(quotes.clone(), Some(json_file), false)
+        .unwrap();
 
     // Read JSON file and parse back to Vec<QuoteTick>
     let json_content = std::fs::read_to_string(&json_path).expect("Failed to read JSON file");
@@ -468,7 +472,9 @@ fn test_catalog_export_functionality() {
 
     // Write back to parquet
     let parquet_path = temp_dir.path().join("temp.parquet");
-    let parquet_path = catalog.write_to_parquet(quotes_from_json, Some(parquet_path), None, None);
+    let parquet_path = catalog
+        .write_to_parquet(quotes_from_json, Some(parquet_path), None, None, None)
+        .unwrap();
 
     // Read parquet and verify data
     let final_result = catalog

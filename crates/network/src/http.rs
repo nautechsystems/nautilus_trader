@@ -18,13 +18,13 @@
 use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use http::{status::InvalidStatusCode, HeaderValue, StatusCode};
+use http::{HeaderValue, StatusCode, status::InvalidStatusCode};
 use reqwest::{
-    header::{HeaderMap, HeaderName},
     Method, Response, Url,
+    header::{HeaderMap, HeaderName},
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
 /// Represents a HTTP status code.
 ///
@@ -47,6 +47,8 @@ impl HttpStatus {
     }
 
     /// Attempts to construct a [`HttpStatus`] from a `u16`.
+    ///
+    /// # Errors
     ///
     /// Returns an error if the code is not in the valid `100..999` range.
     pub fn from(code: u16) -> Result<Self, InvalidStatusCode> {
@@ -207,6 +209,7 @@ impl HttpClient {
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
+        timeout_secs: Option<u64>,
     ) -> Self {
         // Build default headers
         let mut header_map = HeaderMap::new();
@@ -216,8 +219,12 @@ impl HttpClient {
             header_map.insert(header_name, header_value);
         }
 
-        let client = reqwest::Client::builder()
-            .default_headers(header_map)
+        let mut client_builder = reqwest::Client::builder().default_headers(header_map);
+        if let Some(timeout_secs) = timeout_secs {
+            client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
+        }
+
+        let client = client_builder
             .build()
             .expect("Failed to build reqwest client");
 
@@ -242,7 +249,12 @@ impl HttpClient {
     /// - `keys`: Rate-limit keys to control request frequency.
     /// - `timeout_secs`: Optional request timeout in seconds.
     ///
-    /// # Example
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
+    ///
+    /// # Examples
+    ///
     /// If requesting `/foo/bar`, pass rate-limit keys `["foo/bar", "foo"]`.
     #[allow(clippy::too_many_arguments)]
     pub async fn request(
@@ -285,6 +297,10 @@ impl InnerHttpClient {
     /// - `headers`: Extra headers to send.
     /// - `body`: Optional request body.
     /// - `timeout_secs`: Optional request timeout in seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     pub async fn send_request(
         &self,
         method: Method,
@@ -335,6 +351,10 @@ impl InnerHttpClient {
     }
 
     /// Converts a `reqwest::Response` into an `HttpResponse`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to send request or times out.
     pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         tracing::trace!("{response:?}");
 
@@ -378,8 +398,9 @@ mod tests {
     use std::net::{SocketAddr, TcpListener};
 
     use axum::{
+        Router,
         routing::{delete, get, patch, post},
-        serve, Router,
+        serve,
     };
     use http::status::StatusCode;
 

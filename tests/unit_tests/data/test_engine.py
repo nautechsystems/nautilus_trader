@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -23,6 +24,7 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.enums import UpdateCatalogMode
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.uuid import UUID4
@@ -319,7 +321,7 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=1000,
-            client_id=ClientId("RANDOM"),
+            client_id=ClientId("RANDOM"),  # <-- Will route to non existent client
             venue=None,
             callback=handler.append,
             request_id=UUID4(),
@@ -348,7 +350,7 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             callback=handler.append,
             request_id=UUID4(),
@@ -408,7 +410,7 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         subscribe = SubscribeData(
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             data_type=DataType(NewsEvent),  # NewsEvent data not recognized
             command_id=UUID4(),
@@ -485,7 +487,7 @@ class TestDataEngine:
         self.data_engine.register_client(self.binance_client)
 
         unsubscribe = UnsubscribeData(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             data_type=DataType(Data),
             command_id=UUID4(),
@@ -504,7 +506,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         unsubscribe = UnsubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -520,7 +522,7 @@ class TestDataEngine:
     def test_receive_response_when_no_data_clients_registered_does_nothing(self):
         # Arrange
         response = DataResponse(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             data_type=DataType(QuoteTick),
             data=[],
@@ -561,7 +563,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeInstruments(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -579,7 +581,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeInstruments(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -593,7 +595,7 @@ class TestDataEngine:
         ]
 
         unsubscribe = UnsubscribeInstruments(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -613,7 +615,7 @@ class TestDataEngine:
 
         subscribe = SubscribeInstrument(
             instrument_id=ETHUSDT_BINANCE.id,
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -651,7 +653,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -663,7 +665,7 @@ class TestDataEngine:
         assert self.binance_client.subscribed_instruments() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -683,7 +685,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         unsubscribe = UnsubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=TestIdStubs.synthetic_id(),
             command_id=UUID4(),
@@ -705,7 +707,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -733,7 +735,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.instrument.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = SubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -741,7 +743,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeInstrument(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -764,7 +766,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -788,7 +790,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -812,7 +814,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -836,7 +838,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -852,7 +854,7 @@ class TestDataEngine:
         assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -873,7 +875,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -891,7 +893,7 @@ class TestDataEngine:
         assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -921,7 +923,7 @@ class TestDataEngine:
         )
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -958,7 +960,7 @@ class TestDataEngine:
         )
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -997,7 +999,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
@@ -1030,7 +1032,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.book.deltas.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             book_type=BookType.L3_MBO,
@@ -1071,7 +1073,7 @@ class TestDataEngine:
         es_fut = InstrumentId.from_str("ES.FUT.GLBX")
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=es_fut,
             book_type=BookType.L3_MBO,
@@ -1123,7 +1125,7 @@ class TestDataEngine:
         )
 
         subscribe1 = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -1136,7 +1138,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -1191,7 +1193,7 @@ class TestDataEngine:
         )
 
         subscribe1 = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -1204,7 +1206,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeOrderBook(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             only_deltas=False,
             instrument_id=BTCUSDT_PERP_BINANCE.id,
@@ -1245,7 +1247,7 @@ class TestDataEngine:
         self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
 
         subscribe = SubscribeOrderBook(
-            client_id=ClientId(BETFAIR.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BETFAIR,
             only_deltas=True,
             instrument_id=ETHUSDT_BINANCE.id,
@@ -1282,7 +1284,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
 
         subscribe = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1304,7 +1306,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
 
         subscribe = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1316,7 +1318,7 @@ class TestDataEngine:
         assert self.binance_client.subscribed_quote_ticks() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1339,7 +1341,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1370,7 +1372,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1378,7 +1380,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1403,7 +1405,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         subscribe = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1425,7 +1427,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETH/USD", handler=handler.append)
 
         subscribe = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1437,7 +1439,7 @@ class TestDataEngine:
         assert self.binance_client.subscribed_trade_ticks() == [ETHUSDT_BINANCE.id]
 
         unsubscribe = UnsubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1460,7 +1462,7 @@ class TestDataEngine:
         self.cache.add_synthetic(synthetic)
 
         subscribe = SubscribeQuoteTicks(
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=Venue("SYNTH"),
             instrument_id=synthetic.id,
             command_id=UUID4(),
@@ -1482,7 +1484,7 @@ class TestDataEngine:
         self.cache.add_synthetic(synthetic)
 
         subscribe = SubscribeTradeTicks(
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=Venue("SYNTH"),
             instrument_id=synthetic.id,
             command_id=UUID4(),
@@ -1504,7 +1506,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler.append)
 
         subscribe = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1534,7 +1536,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.BINANCE.ETHUSDT", handler=handler2.append)
 
         subscribe1 = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1542,7 +1544,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1577,7 +1579,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.trades.SYNTH.BTC-ETH", handler=handler2.append)
 
         subscribe1 = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1585,7 +1587,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeTradeTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=synthetic.id.venue,
             instrument_id=synthetic.id,
             command_id=UUID4(),
@@ -1636,7 +1638,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic="data.quotes.SYNTH.BTC-ETH", handler=handler2.append)
 
         subscribe1 = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             instrument_id=ETHUSDT_BINANCE.id,
             command_id=UUID4(),
@@ -1644,7 +1646,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeQuoteTicks(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=synthetic.id.venue,
             instrument_id=synthetic.id,
             command_id=UUID4(),
@@ -1703,7 +1705,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1729,7 +1731,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1742,7 +1744,7 @@ class TestDataEngine:
 
         self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
         unsubscribe = UnsubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1769,7 +1771,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1809,7 +1811,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler2.append)
 
         subscribe1 = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1817,7 +1819,7 @@ class TestDataEngine:
         )
 
         subscribe2 = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1857,7 +1859,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1932,7 +1934,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -1997,7 +1999,7 @@ class TestDataEngine:
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
 
         subscribe = SubscribeBars(
-            client_id=ClientId(BINANCE.value),
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             bar_type=bar_type,
             command_id=UUID4(),
@@ -2046,7 +2048,7 @@ class TestDataEngine:
             instrument_id=ETHUSDT_BINANCE.id,
             start=None,
             end=None,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             callback=handler.append,
             request_id=UUID4(),
@@ -2070,7 +2072,7 @@ class TestDataEngine:
         request = RequestInstruments(
             start=None,
             end=None,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             callback=handler.append,
             request_id=UUID4(),
@@ -2103,7 +2105,7 @@ class TestDataEngine:
             instrument_id=instrument.id,
             start=None,
             end=None,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=idealpro,
             callback=handler.append,
             request_id=UUID4(),
@@ -2166,7 +2168,7 @@ class TestDataEngine:
         request = RequestOrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
             limit=10,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=BINANCE,
             callback=handler.append,
             request_id=UUID4(),
@@ -2209,7 +2211,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2248,7 +2250,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2288,7 +2290,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2341,7 +2343,7 @@ class TestDataEngine:
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2352,9 +2354,8 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        print(handler[0].data)
         assert handler[0].data == [bar, bar2]
-        assert catalog.query_last_timestamp(Bar, bar_type=bar_type) == time_object_to_dt(
+        assert catalog.query_timestamp_bound(Bar, bar_type=bar_type) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
         )
 
@@ -2378,12 +2379,12 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2415,12 +2416,12 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2463,13 +2464,13 @@ class TestDataEngine:
             instrument_id=ETHUSDT_BINANCE.id,
             start=pd.Timestamp("2024-3-24"),
             end=pd.Timestamp("2024-3-25"),
-            client_id=None,
             limit=0,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2481,7 +2482,7 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         # assert handler[0].data == [quote_tick, quote_tick2]
-        assert catalog.query_last_timestamp(
+        assert catalog.query_timestamp_bound(
             QuoteTick,
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(
@@ -2508,12 +2509,12 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         # Act
@@ -2547,12 +2548,12 @@ class TestDataEngine:
             start=None,
             end=None,
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": False},
+            params={"update_catalog_mode": None},
         )
 
         # Act
@@ -2596,12 +2597,12 @@ class TestDataEngine:
             start=pd.Timestamp("2024-3-24"),
             end=pd.Timestamp("2024-3-25"),
             limit=0,
-            client_id=None,
+            client_id=None,  # Will route to the Binance venue
             venue=ETHUSDT_BINANCE.venue,
             callback=handler.append,
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
-            params={"update_catalog": True},
+            params={"update_catalog_mode": UpdateCatalogMode.MODIFY},
         )
 
         self.clock.advance_time(pd.Timestamp("2024-3-25").value)
@@ -2613,11 +2614,72 @@ class TestDataEngine:
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
         # assert handler[0].data == [trade_tick, trade_tick2]
-        assert catalog.query_last_timestamp(
+        assert catalog.query_timestamp_bound(
             TradeTick,
             instrument_id=ETHUSDT_BINANCE.id,
         ) == time_object_to_dt(
             pd.Timestamp("2024-3-25"),
+        )
+
+    def test_request_trade_ticks_when_catalog_and_client_registered_append_with_new_file(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        trade_tick = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-24").value,
+            ts_init=pd.Timestamp("2024-3-24").value,
+        )
+        catalog.write_data([trade_tick])
+        self.data_engine.register_catalog(catalog)
+
+        self.data_engine.register_client(self.mock_market_data_client)
+        trade_tick2 = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-25").value,
+            ts_init=pd.Timestamp("2024-3-25").value,
+        )
+        self.mock_market_data_client.trade_ticks = [trade_tick2]
+
+        handler = []
+        request = RequestTradeTicks(
+            instrument_id=ETHUSDT_BINANCE.id,
+            start=pd.Timestamp("2024-3-24"),
+            end=pd.Timestamp("2024-3-25"),
+            limit=0,
+            client_id=None,  # Will route to the Binance venue
+            venue=ETHUSDT_BINANCE.venue,
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            params={"update_catalog_mode": UpdateCatalogMode.NEWFILE},
+        )
+
+        self.clock.advance_time(pd.Timestamp("2024-3-25").value)
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [trade_tick, trade_tick2]
+        assert catalog.query_timestamp_bound(
+            TradeTick,
+            instrument_id=ETHUSDT_BINANCE.id,
+        ) == time_object_to_dt(
+            pd.Timestamp("2024-3-25"),
+        )
+        assert (
+            len(list((Path(catalog.path) / "data" / "trade_tick" / "ETHUSDT.BINANCE").glob("*")))
+            == 2
         )
 
     def test_request_aggregated_bars_with_bars(self):
@@ -2669,7 +2731,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = True
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "bars"
 
         request = RequestBars(
@@ -2785,7 +2847,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "quote_ticks"
 
         request = RequestQuoteTicks(
@@ -2877,7 +2939,7 @@ class TestDataEngine:
         params["bar_types"] = tuple(bar_types)
         params["include_external_data"] = False
         params["update_subscriptions"] = False
-        params["update_catalog"] = False
+        params["update_catalog_mode"] = None
         params["bars_market_data_type"] = "trade_ticks"
 
         request = RequestTradeTicks(

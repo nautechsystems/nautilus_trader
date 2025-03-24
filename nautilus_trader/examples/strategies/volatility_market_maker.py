@@ -123,7 +123,11 @@ class VolatilityMarketMaker(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.atr)
 
         # Get historical data
-        self.request_bars(self.config.bar_type, client_id=self.client_id)
+        self.request_bars(
+            self.config.bar_type,
+            client_id=self.client_id,
+            start=self.clock.utc_now() - pd.Timedelta(days=1),
+        )
 
         # Subscribe to live data
         self.subscribe_bars(self.config.bar_type, client_id=self.client_id)
@@ -218,6 +222,12 @@ class VolatilityMarketMaker(Strategy):
         """
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
+
+        # own_book = self.cache.own_order_book(tick.instrument_id)
+        # if not own_book:
+        #     return
+        # self.log.info("\n" + repr(own_book), LogColor.MAGENTA)
+        # self.log.info("\n" + own_book.pprint(), LogColor.MAGENTA)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """

@@ -18,17 +18,17 @@
 use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    accounts::{any::AccountAny, base::Account, cash::CashAccount, margin::MarginAccount},
+    accounts::{Account, AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, OrderSide, OrderSideSpecified, PriceType},
     events::{AccountState, OrderFilled},
-    instruments::InstrumentAny,
-    orders::OrderAny,
+    instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderAny},
     position::Position,
     types::{AccountBalance, Money},
 };
-use rust_decimal::{prelude::ToPrimitive, Decimal};
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 pub struct AccountsManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -153,6 +153,12 @@ impl AccountsManager {
                     instrument.make_price(position.avg_px_open),
                     None,
                 ),
+                InstrumentAny::CryptoOption(i) => account.calculate_maintenance_margin(
+                    i,
+                    position.quantity,
+                    instrument.make_price(position.avg_px_open),
+                    None,
+                ),
                 InstrumentAny::CryptoPerpetual(i) => account.calculate_maintenance_margin(
                     i,
                     position.quantity,
@@ -212,7 +218,11 @@ impl AccountsManager {
                 if let Some(xrate) = base_xrate {
                     margin_maint *= xrate;
                 } else {
-                    log::debug!("Cannot calculate maintenance (position) margin: insufficient data for {}/{}", instrument.settlement_currency(), base_currency);
+                    log::debug!(
+                        "Cannot calculate maintenance (position) margin: insufficient data for {}/{}",
+                        instrument.settlement_currency(),
+                        base_currency
+                    );
                     return None;
                 }
             }
@@ -369,6 +379,9 @@ impl AccountsManager {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
                 InstrumentAny::CryptoFuture(i) => {
+                    account.calculate_initial_margin(i, order.quantity(), price?, None)
+                }
+                InstrumentAny::CryptoOption(i) => {
                     account.calculate_initial_margin(i, order.quantity(), price?, None)
                 }
                 InstrumentAny::CryptoPerpetual(i) => {

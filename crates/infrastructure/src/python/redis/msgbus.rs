@@ -17,8 +17,8 @@ use bytes::Bytes;
 use futures::{pin_mut, stream::StreamExt};
 use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
 use nautilus_core::{
-    python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt},
     UUID4,
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;

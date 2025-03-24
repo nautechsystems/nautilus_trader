@@ -15,10 +15,11 @@
 
 use std::collections::HashMap;
 
+use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
+    accounts::{Account, CashAccount, MarginAccount},
     enums::{AccountType, LiquiditySide},
     events::{AccountState, OrderFilled},
     identifiers::AccountId,
@@ -26,7 +27,9 @@ use crate::{
     position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[enum_dispatch(Account)]
 pub enum AccountAny {
     Margin(MarginAccount),
     Cash(CashAccount),

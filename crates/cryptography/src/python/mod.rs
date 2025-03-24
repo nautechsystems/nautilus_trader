@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+//! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod signing;
 

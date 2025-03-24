@@ -23,7 +23,7 @@
 pub mod config;
 
 use std::{
-    cell::RefCell,
+    cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
     rc::Rc,
     time::SystemTime,
@@ -35,7 +35,10 @@ use nautilus_common::{
     clock::Clock,
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
-    msgbus::MessageBus,
+    msgbus::{
+        self, get_message_bus,
+        switchboard::{self},
+    },
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -45,8 +48,9 @@ use nautilus_model::{
         PositionOpened,
     },
     identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
-    instruments::InstrumentAny,
-    orders::{OrderAny, OrderError},
+    instruments::{Instrument, InstrumentAny},
+    orderbook::own::{OwnOrderBook, should_handle_own_book_order},
+    orders::{Order, OrderAny, OrderError},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -62,9 +66,8 @@ use crate::{
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
-    clients: HashMap<ClientId, ExecutionClient>,
-    default_client: Option<ExecutionClient>,
+    clients: HashMap<ClientId, Rc<dyn ExecutionClient>>,
+    default_client: Option<Rc<dyn ExecutionClient>>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
@@ -76,14 +79,12 @@ impl ExecutionEngine {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         config: Option<ExecutionEngineConfig>,
     ) -> Self {
-        let trader_id = msgbus.borrow().trader_id;
+        let trader_id = get_message_bus().borrow().trader_id;
         Self {
             clock: clock.clone(),
             cache,
-            msgbus,
             clients: HashMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
@@ -106,12 +107,12 @@ impl ExecutionEngine {
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|c| c.is_connected)
+        self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|c| !c.is_connected)
+        self.clients.values().all(|c| !c.is_connected())
     }
 
     #[must_use]
@@ -126,21 +127,21 @@ impl ExecutionEngine {
 
     // -- REGISTRATION --------------------------------------------------------
 
-    pub fn register_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
-        if self.clients.contains_key(&client.client_id) {
-            anyhow::bail!("Client already registered with ID {}", client.client_id);
+    pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) -> anyhow::Result<()> {
+        if self.clients.contains_key(&client.client_id()) {
+            anyhow::bail!("Client already registered with ID {}", client.client_id());
         }
 
         // If client has venue, register routing
-        self.routing_map.insert(client.venue, client.client_id);
+        self.routing_map.insert(client.venue(), client.client_id());
 
-        log::info!("Registered client {}", client.client_id);
-        self.clients.insert(client.client_id, client);
+        log::info!("Registered client {}", client.client_id());
+        self.clients.insert(client.client_id(), client);
         Ok(())
     }
 
-    pub fn register_default_client(&mut self, client: ExecutionClient) {
-        log::info!("Registered default client {}", client.client_id);
+    pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
+        log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
 
@@ -176,16 +177,28 @@ impl ExecutionEngine {
     }
 
     // -- COMMANDS ------------------------------------------------------------
+
     #[allow(clippy::await_holding_refcell_ref)]
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
         let ts = SystemTime::now();
 
         {
             let mut cache = self.cache.borrow_mut();
+            cache.clear_index();
             cache.cache_general()?;
             self.cache.borrow_mut().cache_all().await?;
             cache.build_index();
             let _ = cache.check_integrity();
+
+            if self.config.manage_own_order_books {
+                for order in cache.orders(None, None, None, None) {
+                    if order.is_closed() || !should_handle_own_book_order(order) {
+                        continue;
+                    }
+                    let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
+                    own_book.add(order.to_own_book_order());
+                }
+            }
         }
 
         self.set_position_id_counts();
@@ -194,7 +207,7 @@ impl ExecutionEngine {
             "Loaded cache in {}ms",
             SystemTime::now()
                 .duration_since(ts)
-                .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {}", e))?
+                .map_err(|e| anyhow::anyhow!("Failed to calculate duration: {e}"))?
                 .as_millis()
         );
 
@@ -220,7 +233,7 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
-        let client = if let Some(client) = self
+        let client: Rc<dyn ExecutionClient> = if let Some(client) = self
             .clients
             .get(&command.client_id())
             .or_else(|| {
@@ -230,7 +243,7 @@ impl ExecutionEngine {
             })
             .or(self.default_client.as_ref())
         {
-            client
+            client.clone()
         } else {
             log::error!(
                 "No execution client found for command: client_id={:?}, venue={}, command={command:?}",
@@ -251,8 +264,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
-        let mut command = command;
+    fn handle_submit_order(&self, client: Rc<dyn ExecutionClient>, command: SubmitOrder) {
         let mut order = command.order.clone();
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
@@ -307,9 +319,13 @@ impl ExecutionEngine {
             }
         }
 
-        command.order = order;
+        if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
+            let mut own_book = self.get_or_init_own_order_book(&order.instrument_id());
+            own_book.add(order.to_own_book_order());
+        }
 
         // Send the order to the execution client
+        // TODO: Avoid this clone
         if let Err(e) = client.submit_order(command.clone()) {
             log::error!("Error submitting order to client: {e}");
             self.deny_order(
@@ -319,7 +335,11 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order_list(&self, client: &ExecutionClient, mut command: SubmitOrderList) {
+    fn handle_submit_order_list(
+        &self,
+        client: Rc<dyn ExecutionClient>,
+        mut command: SubmitOrderList,
+    ) {
         let orders = command.order_list.orders.clone();
 
         // Cache orders
@@ -386,6 +406,15 @@ impl ExecutionEngine {
             }
         }
 
+        if self.config.manage_own_order_books {
+            let mut own_book = self.get_or_init_own_order_book(&command.instrument_id);
+            for order in &command.order_list.orders {
+                if should_handle_own_book_order(order) {
+                    own_book.add(order.to_own_book_order());
+                }
+            }
+        }
+
         // Send to execution client
         if let Err(e) = client.submit_order_list(command) {
             log::error!("Error submitting order list to client: {e}");
@@ -398,31 +427,35 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
+    fn handle_modify_order(&self, client: Rc<dyn ExecutionClient>, command: ModifyOrder) {
         if let Err(e) = client.modify_order(command) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: &ExecutionClient, command: CancelOrder) {
+    fn handle_cancel_order(&self, client: Rc<dyn ExecutionClient>, command: CancelOrder) {
         if let Err(e) = client.cancel_order(command) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+    fn handle_cancel_all_orders(&self, client: Rc<dyn ExecutionClient>, command: CancelAllOrders) {
         if let Err(e) = client.cancel_all_orders(command) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
+    fn handle_batch_cancel_orders(
+        &self,
+        client: Rc<dyn ExecutionClient>,
+        command: BatchCancelOrders,
+    ) {
         if let Err(e) = client.batch_cancel_orders(command) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: &ExecutionClient, command: QueryOrder) {
+    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, command: QueryOrder) {
         if let Err(e) = client.query_order(command) {
             log::error!("Error querying order: {e}");
         }
@@ -440,12 +473,9 @@ impl ExecutionEngine {
             }
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        if msgbus.has_backing {
-            let topic = msgbus
-                .switchboard
-                .get_order_snapshots_topic(order.client_order_id());
-            msgbus.publish(&topic, order);
+        if get_message_bus().borrow().has_backing {
+            let topic = switchboard::get_order_snapshots_topic(order.client_order_id());
+            msgbus::publish(&topic, order);
         }
     }
 
@@ -459,11 +489,8 @@ impl ExecutionEngine {
         //     position.unrealized_pnl(last)
         // }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_positions_snapshots_topic(position.id);
-        msgbus.publish(&topic, position);
+        let topic = switchboard::get_positions_snapshots_topic(position.id);
+        msgbus::publish(&topic, position);
     }
 
     // -- EVENT HANDLERS ----------------------------------------------------
@@ -548,12 +575,12 @@ impl ExecutionEngine {
         // Use native venue OMS
         if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
             if let Some(client) = self.clients.get(client_id) {
-                return client.oms_type;
+                return client.oms_type();
             }
         }
 
         if let Some(client) = &self.default_client {
-            return client.oms_type;
+            return client.oms_type();
         }
 
         OmsType::Netting // Default fallback
@@ -630,11 +657,8 @@ impl ExecutionEngine {
             log::error!("Error updating order in cache: {e}");
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_orders_topic(event.strategy_id());
-        msgbus.publish(&topic, order);
+        let topic = switchboard::get_event_orders_topic(event.strategy_id());
+        msgbus::publish(&topic, order);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
@@ -664,7 +688,7 @@ impl ExecutionEngine {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
-            log::error!("Cannot handle order fill: no position ID found for fill {fill}",);
+            log::error!("Cannot handle order fill: no position ID found for fill {fill}");
             return;
         };
 
@@ -684,7 +708,7 @@ impl ExecutionEngine {
         if matches!(order.contingency_type(), Some(ContingencyType::Oto)) && position.is_open() {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
-                let contingent_order = cache.mut_order(&client_order_id);
+                let contingent_order = cache.mut_order(client_order_id);
                 if let Some(contingent_order) = contingent_order {
                     if contingent_order.position_id().is_none() {
                         contingent_order.set_position_id(Some(position_id));
@@ -730,11 +754,8 @@ impl ExecutionEngine {
 
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_positions_topic(event.strategy_id);
-        msgbus.publish(&topic, &event);
+        let topic = switchboard::get_event_positions_topic(event.strategy_id);
+        msgbus::publish(&topic, &event);
 
         Ok(position)
     }
@@ -751,18 +772,15 @@ impl ExecutionEngine {
             self.create_position_state_snapshot(position);
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_positions_topic(position.strategy_id);
+        let topic = switchboard::get_event_positions_topic(position.strategy_id);
         let ts_init = self.clock.borrow().timestamp_ns();
 
         if position.is_closed() {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
-            msgbus.publish(&topic, &event);
+            msgbus::publish(&topic, &event);
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
-            msgbus.publish(&topic, &event);
+            msgbus::publish(&topic, &event);
         }
     }
 
@@ -953,7 +971,7 @@ impl ExecutionEngine {
 
         if let Some(linked_order_ids) = order.linked_order_ids() {
             for client_order_id in linked_order_ids {
-                match self.cache.borrow_mut().mut_order(&client_order_id) {
+                match self.cache.borrow_mut().mut_order(client_order_id) {
                     Some(contingent_order) => {
                         if !contingent_order.is_quote_quantity() {
                             continue; // Already base quantity
@@ -1021,15 +1039,22 @@ impl ExecutionEngine {
             return;
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_orders_topic(order.strategy_id());
-        msgbus.publish(&topic, &denied);
+        let topic = switchboard::get_event_orders_topic(order.strategy_id());
+        msgbus::publish(&topic, &denied);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);
         }
+    }
+
+    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<OwnOrderBook> {
+        let mut cache = self.cache.borrow_mut();
+        if cache.own_order_book_mut(instrument_id).is_none() {
+            let own_book = OwnOrderBook::new(*instrument_id);
+            cache.add_own_order_book(own_book).unwrap();
+        }
+
+        RefMut::map(cache, |c| c.own_order_book_mut(instrument_id).unwrap())
     }
 }
 
@@ -1062,12 +1087,11 @@ mod tests {
 
     // Helpers
     fn _get_exec_engine(
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<TestClock>>,
         config: Option<ExecutionEngineConfig>,
     ) -> ExecutionEngine {
-        ExecutionEngine::new(clock, cache, msgbus, config)
+        ExecutionEngine::new(clock, cache, config)
     }
 
     // TODO: After Implementing ExecutionClient & Strategy

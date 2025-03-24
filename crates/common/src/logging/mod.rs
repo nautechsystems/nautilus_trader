@@ -27,7 +27,7 @@ use std::{
 };
 
 use log::LevelFilter;
-use nautilus_core::{time::get_atomic_clock_static, UUID4};
+use nautilus_core::{UUID4, time::get_atomic_clock_static};
 use nautilus_model::identifiers::TraderId;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;
@@ -53,43 +53,43 @@ static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 
 /// Returns whether the core logger is enabled.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_is_initialized() -> u8 {
     u8::from(LOGGING_INITIALIZED.load(Ordering::Relaxed))
 }
 
 /// Sets the logging system to bypass mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
 /// Shuts down the logging system.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_shutdown() {
     todo!()
 }
 
 /// Returns whether the core logger is using ANSI colors.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_is_colored() -> u8 {
     u8::from(LOGGING_COLORED.load(Ordering::Relaxed))
 }
 
 /// Sets the global logging clock to real-time mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock to static mode.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns.into());
@@ -105,7 +105,11 @@ pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
-pub fn init_tracing() {
+///
+/// # Errors
+///
+/// Returns an error if tracing subscriber fails to initialize.
+pub fn init_tracing() -> anyhow::Result<()> {
     // Skip tracing initialization if `RUST_LOG` is not set
     if let Ok(v) = env::var("RUST_LOG") {
         let env_filter = EnvFilter::new(v.clone());
@@ -113,17 +117,17 @@ pub fn init_tracing() {
         tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .try_init()
-            .unwrap_or_else(|e| {
-                tracing::error!("Cannot set tracing subscriber because of error: {e}");
-            });
+            .map_err(|e| anyhow::anyhow!("Failed to initialize tracing subscriber: {e}"))?;
+
         println!("Initialized tracing logs with RUST_LOG={v}");
     }
+    Ok(())
 }
 
 /// Initialize logging.
 ///
 /// Logging should be used for Python and sync Rust logic which is most of
-/// the components in the main `nautilus_trader` package.
+/// the components in the [nautilus_trader](https://pypi.org/project/nautilus_trader) package.
 /// Logging can be configured to filter components and write up to a specific level only
 /// by passing a configuration using the `NAUTILUS_LOG` environment variable.
 ///
@@ -136,7 +140,7 @@ pub fn init_logging(
     instance_id: UUID4,
     config: LoggerConfig,
     file_config: FileWriterConfig,
-) -> LogGuard {
+) -> anyhow::Result<LogGuard> {
     LOGGING_INITIALIZED.store(true, Ordering::Relaxed);
     LOGGING_COLORED.store(config.is_colored, Ordering::Relaxed);
     Logger::init_with_config(trader_id, instance_id, config, file_config)

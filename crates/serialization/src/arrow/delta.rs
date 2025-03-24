@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array, UInt8Array},
+    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt8Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -25,16 +25,16 @@ use nautilus_model::{
     data::{BookOrder, OrderBookDelta},
     enums::{BookAction, FromU8, OrderSide},
     identifiers::InstrumentId,
-    types::{fixed::PRECISION_BYTES, Price, Quantity},
+    types::{Price, Quantity, fixed::PRECISION_BYTES},
 };
 
 use super::{
-    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION, extract_column,
 };
 use crate::arrow::{
-    get_raw_price, get_raw_quantity, ArrowSchemaProvider, Data, DecodeFromRecordBatch,
-    EncodeToRecordBatch,
+    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
+    get_raw_quantity,
 };
 
 impl ArrowSchemaProvider for OrderBookDelta {

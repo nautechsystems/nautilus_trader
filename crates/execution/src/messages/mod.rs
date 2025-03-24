@@ -20,9 +20,11 @@ pub mod cancel_all;
 pub mod cancel_batch;
 pub mod modify;
 pub mod query;
+pub mod reports;
 pub mod submit;
 pub mod submit_list;
 
+use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::{ClientId, InstrumentId};
 use strum::Display;
 
@@ -34,7 +36,7 @@ pub use self::{
 
 // TODO
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug, Eq, PartialEq, Display)]
 pub enum TradingCommand {
     SubmitOrder(SubmitOrder),
     SubmitOrderList(SubmitOrderList),
@@ -69,6 +71,19 @@ impl TradingCommand {
             Self::CancelAllOrders(command) => command.instrument_id,
             Self::BatchCancelOrders(command) => command.instrument_id,
             Self::QueryOrder(command) => command.instrument_id,
+        }
+    }
+
+    #[must_use]
+    pub const fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::SubmitOrder(command) => command.ts_init,
+            Self::SubmitOrderList(command) => command.ts_init,
+            Self::ModifyOrder(command) => command.ts_init,
+            Self::CancelOrder(command) => command.ts_init,
+            Self::CancelAllOrders(command) => command.ts_init,
+            Self::BatchCancelOrders(command) => command.ts_init,
+            Self::QueryOrder(command) => command.ts_init,
         }
     }
 }

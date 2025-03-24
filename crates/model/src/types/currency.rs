@@ -23,12 +23,12 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_nonempty_string, check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_nonempty_string, check_valid_string};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 #[allow(unused_imports)] // FIXED_PRECISION used in docs
-use super::fixed::{check_fixed_precision, FIXED_PRECISION};
+use super::fixed::{FIXED_PRECISION, check_fixed_precision};
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
@@ -256,7 +256,7 @@ mod tests {
     fn test_debug() {
         let currency = Currency::AUD();
         assert_eq!(
-            format!("{:?}", currency),
+            format!("{currency:?}"),
             format!(
                 "Currency(code='AUD', precision=2, iso4217=36, name='Australian dollar', currency_type=FIAT)"
             )

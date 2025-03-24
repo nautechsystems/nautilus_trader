@@ -59,7 +59,7 @@ impl DerefMut for BookLevel_API {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {
     let CVec { ptr, len, cap } = orders;
@@ -73,40 +73,40 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
     BookLevel_API::new(level)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn level_drop(level: BookLevel_API) {
     drop(level); // Memory freed here
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn level_clone(level: &BookLevel_API) -> BookLevel_API {
     level.clone()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_price(level: &BookLevel_API) -> Price {
     level.price.value
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn level_orders(level: &BookLevel_API) -> CVec {
     let orders_vec: Vec<BookOrder> = level.orders.values().copied().collect();
     orders_vec.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn level_size(level: &BookLevel_API) -> f64 {
     level.size()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn level_exposure(level: &BookLevel_API) -> f64 {
     level.exposure()
 }
 
 #[allow(clippy::drop_non_drop)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vec_levels_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let data: Vec<BookLevel_API> =
@@ -115,7 +115,7 @@ pub extern "C" fn vec_levels_drop(v: CVec) {
 }
 
 #[allow(clippy::drop_non_drop)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vec_orders_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };

@@ -22,23 +22,24 @@
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,
 //! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the main `nautilus_trader` Python package, or as part of a Rust only build.
+//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+//! or as part of a Rust only build.
 //!
-//! - `python`: Enables Python bindings from `pyo3`.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// #![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_errors_doc)]
 
 pub mod backoff;
+pub mod fix;
 pub mod http;
 pub mod mode;
+pub mod ratelimiter;
 pub mod socket;
 pub mod websocket;
 
-#[allow(dead_code)]
-mod ratelimiter;
 mod tls;
 
 #[cfg(feature = "python")]

@@ -18,7 +18,6 @@ from decimal import Decimal
 from uuid import UUID
 
 import msgspec
-import pandas as pd
 
 from nautilus_trader.adapters.okx.common.constants import OKX_VENUE
 from nautilus_trader.adapters.okx.common.credentials import get_api_key
@@ -57,12 +56,17 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
@@ -78,7 +82,6 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -304,15 +307,12 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(  # noqa: C901
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         reports: list[OrderStatusReport] = []
         ordIds: list[str] = []  # for possible pagination in fetch order history
 
-        _symbol = instrument_id.symbol.value if instrument_id is not None else None
+        _symbol = command.instrument_id.symbol.value if command.instrument_id is not None else None
         symbol = OKXSymbol(_symbol) if _symbol is not None else None
         try:
             if symbol:
@@ -362,9 +362,9 @@ class OKXExecutionClient(LiveExecutionClient):
                     self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
                     return reports
 
-                if start:
+                if command.start:
                     # Maybe paginate to get the remaining history
-                    while unix_nanos_to_dt(reports[-1].ts_event) > start:  # -1 is oldest
+                    while unix_nanos_to_dt(reports[-1].ts_event) > command.start:  # -1 is oldest
                         hist_order_response = await self._http_trade.fetch_orders_pending(
                             instType=symbol.instrument_type,
                             instId=symbol.raw_symbol,
@@ -440,9 +440,11 @@ class OKXExecutionClient(LiveExecutionClient):
                     if not _reports:
                         continue
 
-                    if start:
+                    if command.start:
                         # Maybe paginate to get the remaining history
-                        while unix_nanos_to_dt(_reports[-1].ts_event) > start:  # -1 is oldest
+                        while (
+                            unix_nanos_to_dt(_reports[-1].ts_event) > command.start
+                        ):  # -1 is oldest
                             hist_order_response = await self._http_trade.fetch_orders_pending(
                                 instType=instrument_type,
                                 after=_ordIds[-1],
@@ -489,43 +491,50 @@ class OKXExecutionClient(LiveExecutionClient):
         # Sort and filter by `ts_accepted` because `cTime` (order creation/acceptance time) is the
         # basis of OKX's chronological sorting of orders
         reports = sorted(dedup_report_dict.values(), key=lambda r: r.ts_accepted)
-        if start:
-            reports = list(filter(lambda r: start <= unix_nanos_to_dt(r.ts_accepted), reports))
-        if end:
-            reports = list(filter(lambda r: unix_nanos_to_dt(r.ts_accepted) <= end, reports))
+        if command.start:
+            reports = list(
+                filter(lambda r: command.start <= unix_nanos_to_dt(r.ts_accepted), reports),
+            )
+        if command.end:
+            reports = list(
+                filter(lambda r: unix_nanos_to_dt(r.ts_accepted) <= command.end, reports),
+            )
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
         PyCondition.is_false(
-            client_order_id is None and venue_order_id is None,
+            command.client_order_id is None and command.venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
-        okx_symbol = OKXSymbol(instrument_id.symbol.value)
+        okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
         okx_client_order_id = self._client_order_id_generator.get_okx_client_order_id(
-            client_order_id,
+            command.client_order_id,
         )
 
-        id_str = f"{instrument_id!r}"
-        id_str += f", {client_order_id!r}" if client_order_id else ""
-        id_str += f", {venue_order_id!r}" if venue_order_id else ""
+        id_str = f"{command.instrument_id!r}"
+        id_str += f", {command.client_order_id!r}" if command.client_order_id else ""
+        id_str += f", {command.venue_order_id!r}" if command.venue_order_id else ""
         id_str += f", {okx_client_order_id=!r}" if okx_client_order_id else ""
         self._log.info(f"Generating OrderStatusReport for {id_str}")
 
         try:
             order_details = await self._http_trade.fetch_order_details(
                 instId=okx_symbol.raw_symbol,
-                ordId=venue_order_id.value if venue_order_id else None,
+                ordId=command.venue_order_id.value if command.venue_order_id else None,
                 clOrdId=okx_client_order_id,
             )
             if len(order_details.data) == 0:
@@ -546,7 +555,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
             order_report = target_order.parse_to_order_status_report(
                 account_id=self.account_id,
-                instrument_id=instrument_id,
+                instrument_id=command.instrument_id,
                 report_id=UUID4(),
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
@@ -561,16 +570,13 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def generate_fill_reports(  # noqa: C901
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
         billIds: list[str] = []  # for possible pagination
 
-        _symbol = instrument_id.symbol.value if instrument_id is not None else None
+        _symbol = command.instrument_id.symbol.value if command.instrument_id is not None else None
         symbol = OKXSymbol(_symbol) if _symbol is not None else None
         try:
             if symbol:
@@ -578,7 +584,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 fills_response = await self._http_trade.fetch_fills_history(
                     instType=symbol.instrument_type,
                     instId=symbol.raw_symbol,
-                    ordId=venue_order_id.value if venue_order_id else None,
+                    ordId=command.venue_order_id.value if command.venue_order_id else None,
                 )
                 for fill_data in fills_response.data:
                     client_order_id = self._client_order_id_generator.get_client_order_id(
@@ -602,13 +608,13 @@ class OKXExecutionClient(LiveExecutionClient):
                     self._log.info(f"Received {len(reports)} FillReport{plural}")
                     return reports
 
-                if start:
+                if command.start:
                     # Maybe paginate to get the remaining history
-                    while unix_nanos_to_dt(reports[-1].ts_event) > start:  # -1 is oldest
+                    while unix_nanos_to_dt(reports[-1].ts_event) > command.start:  # -1 is oldest
                         fills_response = await self._http_trade.fetch_fills_history(
                             instType=symbol.instrument_type,
                             instId=symbol.raw_symbol,
-                            ordId=venue_order_id.value if venue_order_id else None,
+                            ordId=command.venue_order_id.value if command.venue_order_id else None,
                             after=billIds[-1],
                         )
                         for fill_data in fills_response.data:
@@ -633,7 +639,7 @@ class OKXExecutionClient(LiveExecutionClient):
                     # Gets latest 3 months of fills, up to a max of 100 records per request
                     fills_response = await self._http_trade.fetch_fills_history(
                         instType=instrument_type,
-                        ordId=venue_order_id.value if venue_order_id else None,
+                        ordId=command.venue_order_id.value if command.venue_order_id else None,
                     )
                     for fill_data in fills_response.data:
                         okx_symbol = OKXSymbol.from_raw_symbol(
@@ -659,12 +665,16 @@ class OKXExecutionClient(LiveExecutionClient):
                     if not _reports:
                         continue
 
-                    if start:
+                    if command.start:
                         # Maybe paginate to get the remaining history
-                        while unix_nanos_to_dt(_reports[-1].ts_event) > start:  # -1 is oldest
+                        while (
+                            unix_nanos_to_dt(_reports[-1].ts_event) > command.start
+                        ):  # -1 is oldest
                             fills_response = await self._http_trade.fetch_fills_history(
                                 instType=instrument_type,
-                                ordId=venue_order_id.value if venue_order_id else None,
+                                ordId=(
+                                    command.venue_order_id.value if command.venue_order_id else None
+                                ),
                                 after=_billIds[-1],
                             )
                             for fill_data in fills_response.data:
@@ -692,10 +702,10 @@ class OKXExecutionClient(LiveExecutionClient):
             self._log.exception("Failed to generate FillReports", e)
 
         reports = sorted(reports, key=lambda report: report.ts_event)
-        if start:
-            reports = list(filter(lambda r: start <= unix_nanos_to_dt(r.ts_event), reports))
-        if end:
-            reports = list(filter(lambda r: unix_nanos_to_dt(r.ts_event) <= end, reports))
+        if command.start:
+            reports = list(filter(lambda r: command.start <= unix_nanos_to_dt(r.ts_event), reports))
+        if command.end:
+            reports = list(filter(lambda r: unix_nanos_to_dt(r.ts_event) <= command.end, reports))
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -705,16 +715,14 @@ class OKXExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
 
         try:
-            if instrument_id:
-                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
-                okx_symbol = OKXSymbol(instrument_id.symbol.value)
+            if command.instrument_id:
+                self._log.debug(f"Requesting PositionStatusReport for {command.instrument_id}")
+                okx_symbol = OKXSymbol(command.instrument_id.symbol.value)
                 positions_response = await self._http_account.fetch_positions(
                     instType=okx_symbol.instrument_type,
                     instId=okx_symbol.raw_symbol,
@@ -722,7 +730,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 for position in positions_response.data:
                     position_report = position.parse_to_position_status_report(
                         account_id=self.account_id,
-                        instrument_id=instrument_id,
+                        instrument_id=command.instrument_id,
                         report_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )

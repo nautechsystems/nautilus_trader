@@ -258,7 +258,7 @@ class OrderBuilder:
             The price of the limit order. Set to 0 for market orders.
         time_in_force : Order.TimeInForce
             Time in force setting for the order.
-            Options: GTT (Good-Til-Time), FOK (Fill-Or-Kill), IOC (Immediate-Or-Cancel)
+            Options: GTT (Good Till Time), FOK (Fill or Kill), IOC (Immediate or Cancel)
         post_only : bool, default False
             Ensures that the order will only be added to the order book if it does
             not immediately fill against an existing order in the order book.

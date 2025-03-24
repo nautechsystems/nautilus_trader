@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{ffi::string::cstr_to_ustr, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, ffi::string::cstr_to_ustr};
 
 use crate::{
     events::{
@@ -28,7 +28,7 @@ use crate::{
 /// # Safety
 ///
 /// - Assumes `reason_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_denied_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -44,14 +44,14 @@ pub unsafe extern "C" fn order_denied_new(
         strategy_id,
         instrument_id,
         client_order_id,
-        reason: cstr_to_ustr(reason_ptr),
+        reason: unsafe { cstr_to_ustr(reason_ptr) },
         event_id,
         ts_event,
         ts_init,
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn order_emulated_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -72,7 +72,7 @@ pub extern "C" fn order_emulated_new(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn order_released_new(
     trader_id: TraderId,
@@ -96,7 +96,7 @@ pub extern "C" fn order_released_new(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn order_submitted_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -119,7 +119,7 @@ pub extern "C" fn order_submitted_new(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn order_accepted_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -149,7 +149,7 @@ pub extern "C" fn order_accepted_new(
 /// # Safety
 ///
 /// - Assumes `reason_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_rejected_new(
     trader_id: TraderId,
     strategy_id: StrategyId,
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn order_rejected_new(
         instrument_id,
         client_order_id,
         account_id,
-        reason: cstr_to_ustr(reason_ptr),
+        reason: unsafe { cstr_to_ustr(reason_ptr) },
         event_id,
         ts_event,
         ts_init,

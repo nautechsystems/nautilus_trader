@@ -33,6 +33,7 @@ from nautilus_trader.config import register_config_decoding
 from nautilus_trader.config import register_config_encoding
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -277,6 +278,29 @@ def test_decoding_instrument_id() -> None:
 
     # Assert
     assert result == InstrumentId.from_str(obj)
+
+
+def test_encoding_bar_spec() -> None:
+    # Arrange
+    obj = BarSpecification.from_str("1-DAY-LAST")
+
+    # Act
+    result = msgspec_encoding_hook(obj)
+
+    # Assert
+    assert result == str(obj)
+
+
+def test_decoding_bar_spec() -> None:
+    # Arrange
+    obj_type = BarSpecification
+    obj = "1-DAY-LAST"
+
+    # Act
+    result = msgspec_decoding_hook(obj_type, obj)
+
+    # Assert
+    assert result == BarSpecification.from_str(obj)
 
 
 def test_encoding_bar_type() -> None:

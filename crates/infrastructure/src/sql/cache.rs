@@ -29,18 +29,18 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
-    events::{position::snapshot::PositionSnapshot, OrderEventAny, OrderSnapshot},
+    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::Currency,
 };
-use sqlx::{postgres::PgConnectOptions, PgPool};
+use sqlx::{PgPool, postgres::PgConnectOptions};
 use tokio::try_join;
 use ustr::Ustr;
 
@@ -848,12 +848,10 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         let result: anyhow::Result<()> = match cmd {
             DatabaseQuery::Close => Ok(()),
-            DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value)
-                .await
-                .map_err(anyhow::Error::from),
-            DatabaseQuery::AddCurrency(currency) => DatabaseQueries::add_currency(pool, currency)
-                .await
-                .map_err(anyhow::Error::from),
+            DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value).await,
+            DatabaseQuery::AddCurrency(currency) => {
+                DatabaseQueries::add_currency(pool, currency).await
+            }
             DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
                 InstrumentAny::Betting(instrument) => {
                     DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument)).await
@@ -864,6 +862,10 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                 }
                 InstrumentAny::CryptoFuture(instrument) => {
                     DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::CryptoOption(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_OPTION", Box::new(instrument))
                         .await
                 }
                 InstrumentAny::CryptoPerpetual(instrument) => {

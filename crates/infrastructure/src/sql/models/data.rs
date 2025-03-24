@@ -19,7 +19,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{Price, Quantity},
 };
-use sqlx::{postgres::PgRow, Error, FromRow, Row};
+use sqlx::{Error, FromRow, Row, postgres::PgRow};
 
 use crate::sql::models::enums::{
     AggregationSourceModel, AggressorSideModel, BarAggregationModel, PriceTypeModel,

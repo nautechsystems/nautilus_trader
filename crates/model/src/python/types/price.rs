@@ -21,7 +21,7 @@ use std::{
 };
 
 use nautilus_core::python::{
-    get_pytype_name, to_pytype_err, to_pyvalue_err, IntoPyObjectNautilusExt,
+    IntoPyObjectNautilusExt, get_pytype_name, to_pytype_err, to_pyvalue_err,
 };
 use pyo3::{
     conversion::IntoPyObjectExt,
@@ -31,10 +31,10 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-#[cfg(feature = "high-precision")]
-use crate::types::fixed::fixed_i128_to_f64;
 #[cfg(not(feature = "high-precision"))]
 use crate::types::fixed::fixed_i64_to_f64;
+#[cfg(feature = "high-precision")]
+use crate::types::fixed::fixed_i128_to_f64;
 use crate::types::price::{Price, PriceRaw};
 
 #[pymethods]

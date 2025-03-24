@@ -75,7 +75,7 @@ def test_order_book(book: nautilus_pyo3.OrderBook) -> None:
 
     assert book.instrument_id == nautilus_pyo3.InstrumentId.from_str("AAPL.XNAS")
     assert book.book_type == nautilus_pyo3.BookType.L2_MBP
-    assert book.count == 4
+    assert book.update_count == 4
     assert len(book.bids()) == 2
     assert len(book.asks()) == 2
     assert book.best_bid_price() == 100

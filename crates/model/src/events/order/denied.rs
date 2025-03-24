@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -93,7 +93,8 @@ impl OrderDenied {
 
 impl Debug for OrderDenied {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,
+        write!(
+            f,
             "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, reason='{}', event_id={}, ts_init={})",
             stringify!(OrderDenied),
             self.trader_id,
@@ -303,6 +304,9 @@ mod tests {
     #[rstest]
     fn test_order_denied_display(order_denied_max_submitted_rate: OrderDenied) {
         let display = format!("{order_denied_max_submitted_rate}");
-        assert_eq!(display, "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, reason='Exceeded MAX_ORDER_SUBMIT_RATE')");
+        assert_eq!(
+            display,
+            "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, reason='Exceeded MAX_ORDER_SUBMIT_RATE')"
+        );
     }
 }

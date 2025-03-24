@@ -15,9 +15,7 @@
 
 //! Common data and time functions.
 
-use std::time::{Duration, UNIX_EPOCH};
-
-use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Utc, Weekday};
 
 use crate::UnixNanos;
 
@@ -44,49 +42,49 @@ pub const WEEKDAYS: [Weekday; 5] = [
 
 /// Converts seconds to nanoseconds (ns).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
     (secs * NANOSECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts seconds to milliseconds (ms).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
     (secs * MILLISECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
     (millis * NANOSECONDS_IN_MILLISECOND as f64) as u64
 }
 
 /// Converts microseconds (μs) to nanoseconds (ns).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
     (micros * NANOSECONDS_IN_MICROSECOND as f64) as u64
 }
 
 /// Converts nanoseconds (ns) to seconds.
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
     nanos as f64 / NANOSECONDS_IN_SECOND as f64
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub const extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
 #[inline]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
@@ -95,7 +93,7 @@ pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
-    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    let datetime = unix_nanos.to_datetime_utc();
     datetime.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
@@ -104,7 +102,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601_millis(unix_nanos: UnixNanos) -> String {
-    let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(unix_nanos.as_u64()));
+    let datetime = unix_nanos.to_datetime_utc();
     datetime.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
@@ -181,7 +179,7 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
 /// Subtract `n` months from a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let datetime = Utc.timestamp_nanos(unix_nanos.as_i64());
+    let datetime = unix_nanos.to_datetime_utc();
     (subtract_n_months(datetime, n)
         .timestamp_nanos_opt()
         .expect("Months should be within 584 years") as u64)
@@ -191,7 +189,7 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
 /// Add `n` months to a given UNIX nanoseconds timestamp.
 #[must_use]
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let date = Utc.timestamp_nanos(unix_nanos.as_i64());
+    let date = unix_nanos.to_datetime_utc();
     (add_n_months(date, n)
         .timestamp_nanos_opt()
         .expect("Months should be within 584 years") as u64)

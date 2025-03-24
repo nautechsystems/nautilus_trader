@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
+from nautilus_trader.common.config import NonNegativeInt
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -78,11 +79,18 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
         The local directory that contains the Betfair certificates.
     instrument_config : BetfairInstrumentProviderConfig, None
         The Betfair instrument provider config.
-    request_account_state_secs : PositiveInt, default 300 (5 minutes)
+    calculate_account_state : bool, default True
+        If the Betfair account state should be calculated from events.
+    request_account_state_secs : NonNegativeInt, default 300 (5 minutes)
         The request interval (seconds) for account state checks.
+        If zero, then will not request account state from Betfair.
     reconcile_market_ids_only : bool, default False
         If True, reconciliation only requests orders matching the market IDs listed
         in the `instrument_config`. If False, all orders are reconciled.
+    ignore_external_orders : bool, default False
+        If True, orders received over the stream that aren't found in the cache
+        will be silently ignored. This is useful when multiple trading nodes
+        share the same Betfair account across different markets.
 
     """
 
@@ -92,5 +100,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key: str | None = None
     certs_dir: str | None = None
     instrument_config: BetfairInstrumentProviderConfig | None = None
-    request_account_state_secs: PositiveInt = 300
+    calculate_account_state: bool = True
+    request_account_state_secs: NonNegativeInt = 300
     reconcile_market_ids_only: bool = False
+    ignore_external_orders: bool = False

@@ -19,7 +19,6 @@ from collections.abc import Coroutine
 from typing import Any
 
 import msgspec
-import pandas as pd
 from py_clob_client.client import BalanceAllowanceParams
 from py_clob_client.client import ClobClient
 from py_clob_client.client import OpenOrderParams
@@ -58,6 +57,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.stats import basis_points_as_percentage
@@ -65,6 +65,10 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
+from nautilus_trader.execution.messages import GeneratePositionStatusReports
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -252,35 +256,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._active_markets.add(condition_id)
 
-    async def _update_allowances(self, instrument_ids: list[InstrumentId]) -> None:
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.COLLATERAL,
-            signature_type=self._config.signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-        for instrument_id in instrument_ids:
-            token_id = get_polymarket_token_id(instrument_id)
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            self._log.info(f"Updating {params}")
-            await asyncio.to_thread(self._http_client.update_balance_allowance, params)
-
-            params = BalanceAllowanceParams(
-                asset_type=AssetType.CONDITIONAL,
-                token_id=token_id,
-                signature_type=self._config.signature_type,
-            )
-            response: dict[str, Any] = await asyncio.to_thread(
-                self._http_client.get_balance_allowance,
-                params,
-            )
-            self._log.info(str(response))
-
     async def _update_account_state(self) -> None:
         self._log.info("Checking account balance")
 
@@ -308,19 +283,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
-    async def generate_order_status_reports(  # noqa: C901 (too complex)
+    async def generate_order_status_reports(  # noqa: C901
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
-        open_only: bool = False,
+        command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
-        if instrument_id is not None:
-            condition_id = get_polymarket_condition_id(instrument_id)
-            asset_id = get_polymarket_token_id(instrument_id)
+        if command.instrument_id is not None:
+            condition_id = get_polymarket_condition_id(command.instrument_id)
+            asset_id = get_polymarket_token_id(command.instrument_id)
             params = OpenOrderParams(market=condition_id, asset_id=asset_id)
         else:
             params = None
@@ -329,7 +301,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         async with self._retry_manager_pool as retry_manager:
             response: list[JSON] | None = await retry_manager.run(
                 "generate_order_status_reports",
-                [instrument_id],
+                [command.instrument_id],
                 asyncio.to_thread,
                 self._http_client.get_orders,
                 params=params,
@@ -348,7 +320,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
-                        self._log.error(
+                        self._log.warning(
                             f"Cannot handle order report: instrument {instrument_id} not found",
                         )
                         continue
@@ -374,11 +346,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
             for order in self._cache.orders_open(venue=POLYMARKET_VENUE):
                 if order.client_order_id in reported_client_order_ids:
                     continue  # Already reported
-                maybe_report = await self.generate_order_status_report(
+
+                command = GenerateOrderStatusReport(
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
                 )
+                maybe_report = await self.generate_order_status_report(command)
                 if maybe_report:
                     reports.append(maybe_report)
 
@@ -388,7 +364,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
             known_venue_order_ids.update({r.venue_order_id for r in reports})
 
             # Check fills to generate order reports
-            fill_reports = await self.generate_fill_reports(instrument_id)
+            command = GenerateFillReports(
+                instrument_id=instrument_id,
+                venue_order_id=None,
+                start=None,
+                end=None,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            fill_reports = await self.generate_fill_reports(command)
             if fill_reports and not known_venue_order_ids:
                 self._log.warning(
                     "No previously known venue order IDs found in cache or from active orders",
@@ -404,7 +388,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 first_fill = fill_reports[0]
                 instrument = self._cache.instrument(first_fill.instrument_id)
                 if instrument is None:
-                    self._log.error(
+                    self._log.warning(
                         f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
                     )
                     continue
@@ -465,20 +449,23 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+        receipt_log = f"Received {len(reports)} OrderStatusReport{plural}"
+
+        if command.log_receipt_level == LogLevel.INFO:
+            self._log.info(receipt_log)
+        else:
+            self._log.debug(receipt_log)
 
         return reports
 
     async def generate_order_status_report(
         self,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
-        await self._maintain_active_market(instrument_id)
+        await self._maintain_active_market(command.instrument_id)
 
-        if venue_order_id is None:
-            venue_order_id = self._cache.venue_order_id(client_order_id)
+        if command.venue_order_id is None:
+            venue_order_id = self._cache.venue_order_id(command.client_order_id)
             if venue_order_id is None:
                 self._log.error(
                     "Cannot generate an order status report for Polymarket without the venue order ID",
@@ -487,14 +474,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         self._log.info(
             f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''} "
+            f"{repr(command.client_order_id) if command.client_order_id else ''} "
             f"{repr(venue_order_id) if venue_order_id else ''}",
         )
 
         async with self._retry_manager_pool as retry_manager:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [client_order_id, venue_order_id],
+                [command.client_order_id, venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
                 order_id=venue_order_id.value,
@@ -511,7 +498,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
-                self._log.error(
+                self._log.warning(
                     f"Cannot handle order report: instrument {instrument_id} not found",
                 )
                 return None
@@ -519,30 +506,27 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return polymarket_order.parse_to_order_status_report(
                 account_id=self.account_id,
                 instrument=instrument,
-                client_order_id=client_order_id,
+                client_order_id=command.client_order_id,
                 ts_init=self._clock.timestamp_ns(),
             )
 
     async def generate_fill_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         params = TradeParams()
-        if instrument_id:
-            condition_id = get_polymarket_condition_id(instrument_id)
-            asset_id = get_polymarket_token_id(instrument_id)
+        if command.instrument_id:
+            condition_id = get_polymarket_condition_id(command.instrument_id)
+            asset_id = get_polymarket_token_id(command.instrument_id)
             params.market = condition_id
             params.asset_id = asset_id
 
         details = []
-        if instrument_id:
-            details.append(instrument_id)
+        if command.instrument_id:
+            details.append(command.instrument_id)
 
         async with self._retry_manager_pool as retry_manager:
             response: JSON | None = await retry_manager.run(
@@ -566,7 +550,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
-                        self._log.error(
+                        self._log.warning(
                             f"Cannot handle trade report: instrument {instrument_id} not found",
                         )
                         continue
@@ -595,14 +579,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: InstrumentId | None = None,
-        start: pd.Timestamp | None = None,
-        end: pd.Timestamp | None = None,
+        command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
 
-        if instrument_id is not None:
-            instrument_ids = [instrument_id]
+        if command.instrument_id is not None:
+            instrument_ids = [command.instrument_id]
         else:
             instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
 
@@ -709,7 +691,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 
@@ -748,7 +730,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_ids=order_ids,
             )
             if not response or not retry_manager.result:
-                reason_map = {order_id: retry_manager.message for order_id in order_ids}
+                reason_map = dict.fromkeys(order_ids, retry_manager.message)
             else:
                 reason_map = response.get("not_canceled", {})
 

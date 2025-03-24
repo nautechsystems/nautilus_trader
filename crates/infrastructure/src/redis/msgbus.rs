@@ -16,8 +16,8 @@
 use std::{
     collections::{HashMap, VecDeque},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -26,21 +26,21 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
         CLOSE_TOPIC,
+        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     },
     runtime::get_runtime,
 };
 use nautilus_core::{
-    time::{duration_since_unix_epoch, get_atomic_clock_realtime},
     UUID4,
+    time::{duration_since_unix_epoch, get_atomic_clock_realtime},
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
 
-use super::{await_handle, REDIS_MINID, REDIS_XTRIM};
+use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
 use crate::redis::{create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
@@ -91,7 +91,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
-                log::error!("Failed to spawn task '{}': {}", MSGBUS_PUBLISH, e);
+                log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
             };
         }));
 
@@ -108,7 +108,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                         stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
                             .await
                     {
-                        log::error!("Failed to spawn task '{}': {}", MSGBUS_STREAM, e);
+                        log::error!("Error in task '{MSGBUS_STREAM}': {e}");
                     }
                 })),
             )
@@ -403,7 +403,7 @@ pub async fn stream_messages(
                 }
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("Error reading from stream: {e:?}"));
+                anyhow::bail!("Error reading from stream: {e:?}");
             }
         }
     }
@@ -421,7 +421,7 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
         let topic = match &stream_msg[1] {
             redis::Value::BulkString(bytes) => match String::from_utf8(bytes.clone()) {
                 Ok(topic) => topic,
-                Err(e) => anyhow::bail!("Error parsing topic: {}", e),
+                Err(e) => anyhow::bail!("Error parsing topic: {e}"),
             },
             _ => {
                 anyhow::bail!("Invalid topic format: {stream_msg:?}");

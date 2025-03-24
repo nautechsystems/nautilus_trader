@@ -25,6 +25,7 @@ from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 from nautilus_trader.adapters.dydx.http.errors import DYDXError
 from nautilus_trader.adapters.dydx.http.errors import should_retry
 from nautilus_trader.common.component import Logger
+from nautilus_trader.core.nautilus_pyo3 import HttpError
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpTimeoutError
 from nautilus_trader.live.retry import RetryManagerPool
@@ -63,7 +64,7 @@ class DYDXHttpEndpoint:
             max_retries=5,
             retry_delay_secs=1.0,
             logger=Logger(name="DYDXHttpEndpoint"),
-            exc_types=(HttpTimeoutError, DYDXError),
+            exc_types=(HttpTimeoutError, HttpError, DYDXError),
             retry_check=should_retry,
         )
 

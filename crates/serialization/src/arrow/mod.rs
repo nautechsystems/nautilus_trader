@@ -35,8 +35,8 @@ use arrow::{
 };
 use nautilus_model::{
     data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        trade::TradeTick, Data,
+        Data, bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick,
     },
     types::{price::PriceRaw, quantity::QuantityRaw},
 };

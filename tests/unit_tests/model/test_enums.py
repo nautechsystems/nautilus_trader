@@ -910,6 +910,7 @@ class TestPriceType:
     @pytest.mark.parametrize(
         ("string", "expected"),
         [
+            ["BID", PriceType.BID],
             ["ASK", PriceType.ASK],
             ["MID", PriceType.MID],
             ["LAST", PriceType.LAST],

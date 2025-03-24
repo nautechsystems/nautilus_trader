@@ -17,10 +17,8 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, OnceLock},
+    sync::{LazyLock, Mutex, OnceLock},
 };
-
-use once_cell::sync::Lazy;
 
 use crate::identifiers::Venue;
 
@@ -68,7 +66,7 @@ impl Venue {
     }
 }
 
-pub static VENUE_MAP: Lazy<Mutex<HashMap<&str, Venue>>> = Lazy::new(|| {
+pub static VENUE_MAP: LazyLock<Mutex<HashMap<&str, Venue>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(Venue::CBCM().inner().as_str(), Venue::CBCM());
     map.insert(Venue::GLBX().inner().as_str(), Venue::GLBX());

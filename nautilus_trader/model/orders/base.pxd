@@ -127,9 +127,13 @@ cdef class Order:
     cdef readonly UUID4 init_id
     """The event ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
     cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the order was initialized.\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_accepted
+    """UNIX timestamp (nanoseconds) when the order was accepted or first filled (zero unless accepted or filled).\n\n:returns: `uint64_t`"""
+    cdef readonly uint64_t ts_submitted
+    """UNIX timestamp (nanoseconds) when the order was submitted (zero unless submitted).\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last
-    """UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the last order event occurred.\n\n:returns: `uint64_t`"""
 
     cpdef str info(self)
     cpdef str status_string(self)

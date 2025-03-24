@@ -1,9 +1,9 @@
 use std::env;
 
 use databento::{
+    LiveClient,
     dbn::{Dataset::GlbxMdp3, MboMsg, SType, Schema, TradeMsg},
     live::Subscription,
-    LiveClient,
 };
 use time::OffsetDateTime;
 

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+//! Python bindings from [PyO3](https://pyo3.rs).
 
 // We need to allow `unexpected_cfgs` because the PyO3 macros internally check for
 // the `gil-refs` feature. We don’t define or enable `gil-refs` ourselves (due to a
@@ -25,7 +25,7 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use pyo3::{prelude::*, PyTypeCheck};
+use pyo3::{PyTypeCheck, prelude::*};
 
 use crate::python::{
     http::{HttpError, HttpTimeoutError},

@@ -71,10 +71,10 @@ summary of the different execution instructions available.
 The order's time in force specifies how long the order will remain open or active before any
 remaining quantity is canceled.
 
-- `GTC` **(Good-Till-Canceled)**: The order remains active until canceled by the trader or the exchange.
-- `IOC` **(Immediate-Or-Cancel / Fill-And-Kill)**: The order executes immediately, with any unfilled portion canceled.
-- `FOK` **(Fill-Or-Kill)**: The order executes immediately in full or not at all.
-- `GTD` **(Good-Till-Date/Time)**: The order remains active until a specified expiration date and time.
+- `GTC` **(Good Till Cancel)**: The order remains active until canceled by the trader or the exchange.
+- `IOC` **(Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any unfilled portion canceled.
+- `FOK` **(Fill or Kill)**: The order executes immediately in full or not at all.
+- `GTD` **(Good Till Date)**: The order remains active until a specified expiration date and time.
 - `DAY` **(Good for session/day)**: The order remains active until the end of the current trading session.
 - `AT_THE_OPEN` **(OPG)**: The order is only active at the open of the trading session.
 - `AT_THE_CLOSE`: The order is only active at the close of the trading session.
@@ -366,7 +366,7 @@ See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#
 A *Limit-If-Touched* order is a conditional order which once triggered will immediately place
 a *Limit* order at the specified price.
 
-In the following example we create a *Stop-Limit* order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
+In the following example we create a *Limit-If-Touched* order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
 Binance Futures exchange at a limit price of 30,100 USDT (once the market hits the trigger price of 30,150 USDT),
 active until midday 6th June, 2022 (UTC):
 

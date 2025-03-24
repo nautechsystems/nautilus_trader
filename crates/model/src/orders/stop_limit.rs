@@ -19,26 +19,23 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{
-    any::OrderAny,
-    base::{Order, OrderCore, OrderError},
-};
+use super::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    types::{Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -210,7 +207,7 @@ impl Order for StopLimitOrder {
         self.last_trade_id
     }
 
-    fn side(&self) -> OrderSide {
+    fn order_side(&self) -> OrderSide {
         self.side
     }
 
@@ -256,6 +253,10 @@ impl Order for StopLimitOrder {
 
     fn is_quote_quantity(&self) -> bool {
         self.is_quote_quantity
+    }
+
+    fn has_price(&self) -> bool {
+        true
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -334,12 +335,20 @@ impl Order for StopLimitOrder {
         self.init_id
     }
 
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     fn ts_last(&self) -> UnixNanos {
         self.ts_last
+    }
+
+    fn ts_accepted(&self) -> Option<UnixNanos> {
+        self.ts_accepted
+    }
+
+    fn ts_submitted(&self) -> Option<UnixNanos> {
+        self.ts_submitted
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     fn events(&self) -> Vec<&OrderEventAny> {
@@ -348,6 +357,10 @@ impl Order for StopLimitOrder {
 
     fn venue_order_ids(&self) -> Vec<&VenueOrderId> {
         self.venue_order_ids.iter().collect()
+    }
+
+    fn commissions(&self) -> &IndexMap<Currency, Money> {
+        &self.commissions
     }
 
     fn trade_ids(&self) -> Vec<&TradeId> {
@@ -383,19 +396,41 @@ impl Order for StopLimitOrder {
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
     }
-}
 
-impl From<OrderAny> for StopLimitOrder {
-    fn from(order: OrderAny) -> StopLimitOrder {
-        match order {
-            OrderAny::StopLimit(order) => order,
-            _ => {
-                panic!(
-                    "Invalid `OrderAny` not `{}`, was {order:?}",
-                    stringify!(StopLimitOrder),
-                )
-            }
-        }
+    fn is_triggered(&self) -> Option<bool> {
+        Some(self.is_triggered)
+    }
+
+    fn set_position_id(&mut self, position_id: Option<PositionId>) {
+        self.position_id = position_id;
+    }
+
+    fn set_quantity(&mut self, quantity: Quantity) {
+        self.quantity = quantity;
+    }
+
+    fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
+        self.leaves_qty = leaves_qty;
+    }
+
+    fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+        self.emulation_trigger = emulation_trigger;
+    }
+
+    fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
+        self.is_quote_quantity = is_quote_quantity;
+    }
+
+    fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
+        self.liquidity_side = Some(liquidity_side)
+    }
+
+    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.core.would_reduce_only(side, position_qty)
+    }
+
+    fn previous_status(&self) -> Option<OrderStatus> {
+        self.core.previous_status
     }
 }
 
@@ -454,9 +489,17 @@ impl Display for StopLimitOrder {
             self.time_in_force,
             self.status,
             self.client_order_id,
-            self.venue_order_id.map_or("None".to_string(), |venue_order_id| format!("{venue_order_id}")),
-            self.position_id.map_or("None".to_string(), |position_id| format!("{position_id}")),
-            self.tags.clone().map_or("None".to_string(), |tags| tags.iter().map(|s| s.to_string()).collect::<Vec<String>>().join(", ")),
+            self.venue_order_id
+                .map_or("None".to_string(), |venue_order_id| format!(
+                    "{venue_order_id}"
+                )),
+            self.position_id
+                .map_or("None".to_string(), |position_id| format!("{position_id}")),
+            self.tags.clone().map_or("None".to_string(), |tags| tags
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")),
         )
     }
 }

@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 use super::Venue;
@@ -89,14 +89,14 @@ impl AccountId {
     #[must_use]
     pub fn get_issuer(&self) -> Venue {
         // SAFETY: Account ID is guaranteed to have chars either side of a hyphen
-        Venue::from_str_unchecked(self.0.split('-').collect::<Vec<&str>>().first().unwrap())
+        Venue::from_str_unchecked(self.0.split_once('-').unwrap().0)
     }
 
     /// Returns the account ID assigned by the issuer.
     #[must_use]
     pub fn get_issuers_id(&self) -> &str {
         // SAFETY: Account ID is guaranteed to have chars either side of a hyphen
-        self.0.split('-').collect::<Vec<&str>>().last().unwrap()
+        self.0.split_once('-').unwrap().1
     }
 }
 

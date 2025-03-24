@@ -22,7 +22,7 @@ use crate::{
 
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
 #[cfg(feature = "ffi")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
     str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns.into()))
 }
@@ -30,7 +30,7 @@ pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char
 /// Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer
 /// with millisecond precision.
 #[cfg(feature = "ffi")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn unix_nanos_to_iso8601_millis_cstr(timestamp_ns: u64) -> *const c_char {
     str_to_cstr(&unix_nanos_to_iso8601_millis(timestamp_ns.into()))
 }

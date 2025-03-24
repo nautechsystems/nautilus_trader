@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::{statistic::PortfolioStatistic, Returns};
+use crate::{Returns, statistic::PortfolioStatistic};
 
 #[repr(C)]
 #[derive(Debug)]

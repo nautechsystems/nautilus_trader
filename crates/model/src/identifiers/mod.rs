@@ -87,7 +87,7 @@ impl_as_ref_for_identifier!(trader_id::TraderId);
 impl_as_ref_for_identifier!(venue::Venue);
 impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn interned_string_stats() {
     dbg!(ustr::total_allocated());
     dbg!(ustr::total_capacity());

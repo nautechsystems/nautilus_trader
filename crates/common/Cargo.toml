@@ -10,6 +10,17 @@ documentation.workspace = true
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
 
+[features]
+default = ["rstest"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
+"clock_v2" = []
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
@@ -32,24 +43,18 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-bincode = "1.3.3"
 regex = "1.11.1"
 sysinfo = "0.33.1"
 
 [dev-dependencies]
 proptest = { workspace = true }
 tempfile = { workspace = true }
+criterion = {workspace = true}
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
-[features]
-default = ["rstest"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-  "nautilus-model/extension-module",
-]
-ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
-"clock_v2" = []
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+[[bench]]
+name = "cache_orders"
+path = "benches/cache/orders.rs"
+harness = false

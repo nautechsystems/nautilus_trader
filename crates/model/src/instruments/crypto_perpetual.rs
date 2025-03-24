@@ -16,8 +16,8 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, FAILED},
     UnixNanos,
+    correctness::{FAILED, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -31,8 +31,8 @@ use crate::{
     types::{
         currency::Currency,
         money::Money,
-        price::{check_positive_price, Price},
-        quantity::{check_positive_quantity, Quantity},
+        price::{Price, check_positive_price},
+        quantity::{Quantity, check_positive_quantity},
     },
 };
 
@@ -139,8 +139,8 @@ impl CryptoPerpetual {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_quantity(size_increment.raw, stringify!(size_increment.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
+        check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         Ok(Self {
             id,
@@ -383,7 +383,7 @@ impl Instrument for CryptoPerpetual {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{stubs::*, CryptoPerpetual};
+    use crate::instruments::{CryptoPerpetual, stubs::*};
 
     #[rstest]
     fn test_equality(crypto_perpetual_ethusdt: CryptoPerpetual) {

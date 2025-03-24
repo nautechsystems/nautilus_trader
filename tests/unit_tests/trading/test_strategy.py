@@ -190,6 +190,7 @@ class TestStrategy:
         assert result.config == {
             "strategy_id": None,
             "order_id_tag": None,
+            "use_uuid_client_order_ids": False,
             "oms_type": None,
             "external_order_claims": None,
             "manage_contingent_orders": False,
@@ -219,9 +220,10 @@ class TestStrategy:
         assert result.strategy_path == "nautilus_trader.trading.strategy:Strategy"
         assert result.config_path == "nautilus_trader.trading.config:StrategyConfig"
         assert result.config == {
-            "oms_type": None,
-            "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
+            "order_id_tag": "001",
+            "use_uuid_client_order_ids": False,
+            "oms_type": None,
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
             "manage_contingent_orders": True,
             "manage_gtd_expiry": True,

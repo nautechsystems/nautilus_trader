@@ -23,14 +23,14 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::FAILED, serialization::Serializable, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity, Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
 };
 
 /// Represents a single trade tick in a market.
@@ -78,7 +78,7 @@ impl TradeTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_positive_quantity(size.raw, "size.raw")?;
+        check_positive_quantity(size, stringify!(size))?;
 
         Ok(Self {
             instrument_id,
@@ -175,12 +175,12 @@ impl GetTsInit for TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{serialization::Serializable, UnixNanos};
+    use nautilus_core::{UnixNanos, serialization::Serializable};
     use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::stub_trade_ethusdt_buyer, TradeTick},
+        data::{TradeTick, stubs::stub_trade_ethusdt_buyer},
         enums::AggressorSide,
         identifiers::{InstrumentId, TradeId},
         types::{Price, Quantity},
@@ -188,7 +188,7 @@ mod tests {
 
     #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
-    #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
+    #[should_panic(expected = "invalid `Quantity` for 'size' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");

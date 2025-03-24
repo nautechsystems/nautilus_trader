@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid ticker symbol ID for a tradable instrument.
@@ -146,7 +146,7 @@ impl From<Ustr> for Symbol {
 mod tests {
     use rstest::rstest;
 
-    use crate::identifiers::{stubs::*, Symbol};
+    use crate::identifiers::{Symbol, stubs::*};
 
     #[rstest]
     fn test_string_reprs(symbol_eth_perp: Symbol) {

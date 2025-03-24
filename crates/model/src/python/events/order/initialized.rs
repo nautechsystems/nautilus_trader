@@ -15,8 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use pyo3::{
     basic::CompareOp,
@@ -32,7 +32,7 @@ use crate::{
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::base::str_indexmap_to_ustr,
+    orders::str_indexmap_to_ustr,
     types::{Price, Quantity},
 };
 
@@ -122,7 +122,7 @@ impl OrderInitialized {
     }
 
     fn __repr__(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     fn __str__(&self) -> String {

@@ -10,24 +10,45 @@ runs:
   using: "composite"
   steps:
     - name: Update version in pyproject.toml
+      if: github.ref != 'refs/heads/master'
       shell: bash
       run: |
         bash ./scripts/ci/update-pyproject-version.sh
 
     - name: Generate updated lock file
+      if: github.ref != 'refs/heads/master'
       shell: bash
-      run: poetry lock --no-update
+      run: uv lock --no-upgrade
 
-    - name: Build Python wheel
+    - name: Build Python wheel (Linux & Windows)
+      if: runner.os != 'macOS'
       shell: bash
       run: |
-        poetry build --format wheel
+        uv build --wheel
+        ls -lh dist/
+
+    - name: Build Python wheel (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        export PATH="$pythonLocation/bin:$PATH"
+        export PYO3_PYTHON=$(which python${{ inputs.python-version }} || echo "$pythonLocation/bin/python${{ inputs.python-version }}")
+        export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
+
+        PYTHON_LIB_DIR=$(dirname $(dirname $PYO3_PYTHON))/lib
+        export LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$LIBRARY_PATH"
+        export LD_LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$LD_LIBRARY_PATH"
+        export DYLD_LIBRARY_PATH="$pythonLocation/lib:$PYTHON_LIB_DIR:$DYLD_LIBRARY_PATH"
+
+        echo "PYO3_PYTHON: $PYO3_PYTHON"
+        echo "PYTHON_LIB_DIR: $PYTHON_LIB_DIR"
+        echo "RUSTFLAGS: $RUSTFLAGS"
+
+        uv build --wheel
         ls -lh dist/
 
     - name: Install Python wheel
       shell: bash
       run: |
-        python -m pip install --upgrade poetry-plugin-export
-        poetry export --with test --all-extras --format requirements.txt --output requirements-test.txt
-        python -m pip install -r requirements-test.txt
-        pip install "$(ls dist/*.whl)"
+        uv sync --all-groups --all-extras --no-install-package nautilus_trader
+        uv pip install dist/*.whl

@@ -16,22 +16,22 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_valid_string, check_valid_string_optional, FAILED},
     UnixNanos,
+    correctness::{FAILED, check_equal_u8, check_valid_string, check_valid_string_optional},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{any::InstrumentAny, Instrument};
+use super::{Instrument, any::InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
         money::Money,
-        price::{check_positive_price, Price},
-        quantity::{check_positive_quantity, Quantity},
+        price::{Price, check_positive_price},
+        quantity::{Quantity, check_positive_quantity},
     },
 };
 
@@ -132,9 +132,9 @@ impl FuturesContract {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_quantity(multiplier.raw, stringify!(multiplier.raw))?;
-        check_positive_quantity(lot_size.raw, stringify!(lot_size.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
+        check_positive_quantity(multiplier, stringify!(multiplier))?;
+        check_positive_quantity(lot_size, stringify!(lot_size))?;
 
         Ok(Self {
             id,

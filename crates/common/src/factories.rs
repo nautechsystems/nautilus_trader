@@ -146,9 +146,10 @@ pub mod tests {
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
         identifiers::{
-            stubs::{strategy_id_ema_cross, trader_id},
             ClientOrderId, InstrumentId, OrderListId,
+            stubs::{strategy_id_ema_cross, trader_id},
         },
+        orders::Order,
     };
     use rstest::{fixture, rstest};
 

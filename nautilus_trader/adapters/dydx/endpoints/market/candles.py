@@ -43,7 +43,7 @@ class DYDXCandlesGetParams(msgspec.Struct, omit_defaults=True):
 
 class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=True):
     """
-    Represent the dYdX list perpetual markets response object.
+    Represent the dYdX candles response object.
     """
 
     candles: list[DYDXCandle]
@@ -51,12 +51,12 @@ class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=True):
 
 class DYDXCandlesEndpoint(DYDXHttpEndpoint):
     """
-    Define the instrument info endpoint.
+    Define the bars endpoint.
     """
 
     def __init__(self, client: DYDXHttpClient) -> None:
         """
-        Define the instrument info endpoint.
+        Define the bars endpoint.
         """
         url_path = "/candles/perpetualMarkets/"
         super().__init__(
@@ -70,7 +70,7 @@ class DYDXCandlesEndpoint(DYDXHttpEndpoint):
 
     async def get(self, symbol: str, params: DYDXCandlesGetParams) -> DYDXCandlesResponse | None:
         """
-        Call the endpoint to list the instruments.
+        Call the bars endpoint.
         """
         url_path = f"/candles/perpetualMarkets/{symbol}"
         raw = await self._method(self.method_type, params=params, url_path=url_path)

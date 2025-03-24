@@ -19,12 +19,14 @@ use std::{
     rc::Rc,
 };
 
-use anyhow::Result;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{handler::ShareableMessageHandler, MessageBus},
+    msgbus::{
+        handler::ShareableMessageHandler,
+        {self},
+    },
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -32,6 +34,7 @@ use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
+    instruments::Instrument,
     orders::{LimitOrder, MarketOrder, Order, OrderAny, PassiveOrderAny},
     types::{Price, Quantity},
 };
@@ -39,9 +42,9 @@ use nautilus_model::{
 use crate::{
     matching_core::OrderMatchingCore,
     messages::{
+        CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         cancel::CancelOrderHandlerAny, modify::ModifyOrderHandlerAny,
-        submit::SubmitOrderHandlerAny, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
+        submit::SubmitOrderHandlerAny,
     },
     order_manager::manager::OrderManager,
     trailing::trailing_stop_calculate,
@@ -50,7 +53,6 @@ use crate::{
 pub struct OrderEmulator {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     manager: OrderManager,
     matching_cores: HashMap<InstrumentId, OrderMatchingCore>,
     subscribed_quotes: HashSet<InstrumentId>,
@@ -61,29 +63,17 @@ pub struct OrderEmulator {
 }
 
 impl OrderEmulator {
-    pub fn new(
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) -> Self {
+    pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         // TODO: Impl Actor Trait
         // self.register_base(portfolio, msgbus, cache, clock);
 
         let active_local = true;
-        let manager = OrderManager::new(
-            clock.clone(),
-            msgbus.clone(),
-            cache.clone(),
-            active_local,
-            None,
-            None,
-            None,
-        );
+        let manager =
+            OrderManager::new(clock.clone(), cache.clone(), active_local, None, None, None);
 
         Self {
             clock,
             cache,
-            msgbus,
             manager,
             matching_cores: HashMap::new(),
             subscribed_quotes: HashSet::new(),
@@ -134,7 +124,7 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
-    pub fn on_start(&mut self) -> Result<()> {
+    pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
             .borrow()
@@ -248,7 +238,7 @@ impl OrderEmulator {
             TradingCommand::ModifyOrder(command) => self.handle_modify_order(command),
             TradingCommand::CancelOrder(command) => self.handle_cancel_order(command),
             TradingCommand::CancelAllOrders(command) => self.handle_cancel_all_orders(command),
-            _ => log::error!("Cannot handle command: unrecognized {:?}", command),
+            _ => log::error!("Cannot handle command: unrecognized {command:?}"),
         }
     }
 
@@ -261,7 +251,7 @@ impl OrderEmulator {
             OrderMatchingCore::new(instrument_id, price_increment, None, None, None);
         self.matching_cores
             .insert(instrument_id, matching_core.clone());
-        log::info!("Creating matching core for {:?}", instrument_id);
+        log::info!("Creating matching core for {instrument_id:?}");
         matching_core
     }
 
@@ -285,10 +275,7 @@ impl OrderEmulator {
             emulation_trigger,
             Some(TriggerType::Default | TriggerType::BidAsk | TriggerType::LastPrice)
         ) {
-            log::error!(
-                "Cannot emulate order: `TriggerType` {:?} not supported",
-                emulation_trigger
-            );
+            log::error!("Cannot emulate order: `TriggerType` {emulation_trigger:?} not supported");
             self.manager.cancel_order(&order);
             return;
         }
@@ -386,7 +373,7 @@ impl OrderEmulator {
                 }
             }
             _ => {
-                log::error!("Invalid TriggerType: {:?}", emulation_trigger);
+                log::error!("Invalid TriggerType: {emulation_trigger:?}");
                 return;
             }
         }
@@ -402,7 +389,7 @@ impl OrderEmulator {
 
         // Hold in matching core
         if let Err(e) = matching_core.add_order(PassiveOrderAny::from(order.clone())) {
-            log::error!("Cannot add order: {:?}", e);
+            log::error!("Cannot add order: {e:?}");
             return;
         }
 
@@ -419,18 +406,18 @@ impl OrderEmulator {
             );
 
             if let Err(e) = order.apply(OrderEventAny::Emulated(event)) {
-                log::error!("Cannot apply order event: {:?}", e);
+                log::error!("Cannot apply order event: {e:?}");
                 return;
             }
 
             if let Err(e) = self.cache.borrow_mut().update_order(&order) {
-                log::error!("Cannot update order: {:?}", e);
+                log::error!("Cannot update order: {e:?}");
                 return;
             }
 
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
-            self.msgbus.borrow().publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
@@ -517,7 +504,7 @@ impl OrderEmulator {
             }
         } else {
             log::error!("Cannot modify order: {} not found", command.client_order_id);
-        };
+        }
     }
 
     pub fn handle_cancel_order(&mut self, command: CancelOrder) {
@@ -603,11 +590,11 @@ impl OrderEmulator {
         );
 
         if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
-            log::error!("Cannot apply order event: {:?}", e);
+            log::error!("Cannot apply order event: {e:?}");
             return;
         }
         if let Err(e) = self.cache.borrow_mut().update_order(order) {
-            log::error!("Cannot update order: {:?}", e);
+            log::error!("Cannot update order: {e:?}");
             return;
         }
 
@@ -725,7 +712,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Cannot delete order: {:?}", e);
+                log::error!("Cannot delete order: {e:?}");
             }
         }
 
@@ -755,12 +742,8 @@ impl OrderEmulator {
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             if let Some(handler) = &self.on_event_handler {
-                self.msgbus.borrow_mut().subscribe(
-                    format!("events.order.{strategy_id}"),
-                    handler.clone(),
-                    None,
-                );
-                self.msgbus.borrow_mut().subscribe(
+                msgbus::subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
+                msgbus::subscribe(
                     format!("events.position.{strategy_id}"),
                     handler.clone(),
                     None,
@@ -813,7 +796,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Error deleting order: {:?}", e);
+                log::error!("Error deleting order: {e:?}");
             }
 
             let emulation_trigger = TriggerType::NoTrigger;
@@ -837,12 +820,12 @@ impl OrderEmulator {
                 Some(trigger_instrument_id),
                 order.contingency_type(),
                 order.order_list_id(),
-                order.linked_order_ids(),
+                order.linked_order_ids().map(Vec::from),
                 order.parent_order_id(),
                 order.exec_algorithm_id(),
-                order.exec_algorithm_params(),
+                order.exec_algorithm_params().cloned(),
                 order.exec_spawn_id(),
-                order.tags(),
+                order.tags().map(Vec::from),
                 UUID4::new(),
                 self.clock.borrow().timestamp_ns(),
             ) {
@@ -877,7 +860,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Limit(transformed.clone());
 
-            self.msgbus.borrow().publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -918,7 +901,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            self.msgbus.borrow().publish(
+            msgbus::publish(
                 &format!("events.order.{}", transformed.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
@@ -953,7 +936,7 @@ impl OrderEmulator {
 
         if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
             if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Cannot delete order: {:?}", e);
+                log::error!("Cannot delete order: {e:?}");
             }
 
             order.set_emulation_trigger(Some(TriggerType::NoTrigger));
@@ -973,12 +956,12 @@ impl OrderEmulator {
                 order.is_quote_quantity(),
                 order.contingency_type(),
                 order.order_list_id(),
-                order.linked_order_ids(),
+                order.linked_order_ids().map(Vec::from),
                 order.parent_order_id(),
                 order.exec_algorithm_id(),
-                order.exec_algorithm_params(),
+                order.exec_algorithm_params().cloned(),
                 order.exec_spawn_id(),
-                order.tags(),
+                order.tags().map(Vec::from),
             );
 
             let original_events = order.events();
@@ -999,7 +982,7 @@ impl OrderEmulator {
             // Replace commands order with transformed order
             command.order = OrderAny::Market(transformed.clone());
 
-            self.msgbus.borrow().publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
@@ -1041,7 +1024,7 @@ impl OrderEmulator {
             log::info!("Releasing order {}", order.client_order_id());
 
             // Publish event
-            self.msgbus.borrow().publish(
+            msgbus::publish(
                 &format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );

@@ -15,7 +15,7 @@
 
 use nautilus_core::{
     ffi::cvec::CVec,
-    python::{to_pyruntime_err, IntoPyObjectNautilusExt},
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
 use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
 use pyo3::{prelude::*, types::PyCapsule};

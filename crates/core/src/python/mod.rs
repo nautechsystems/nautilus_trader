@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+//! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod casing;
 pub mod datetime;
@@ -30,12 +30,12 @@ use pyo3::{
 };
 
 use crate::{
-    consts::{NAUTILUS_VERSION, USER_AGENT},
+    UUID4,
+    consts::{NAUTILUS_USER_AGENT, NAUTILUS_VERSION},
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
     },
-    UUID4,
 };
 
 /// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.
@@ -85,6 +85,16 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 
+#[pyfunction]
+fn is_pycapsule(obj: PyObject) -> PyResult<bool> {
+    let result = unsafe {
+        // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
+        pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0
+    };
+
+    Ok(result)
+}
+
 /// Loaded as nautilus_pyo3.core
 ///
 /// # Errors
@@ -94,12 +104,13 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 #[rustfmt::skip]
 pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NAUTILUS_VERSION), NAUTILUS_VERSION)?;
-    m.add(stringify!(USER_AGENT), USER_AGENT)?;
+    m.add(stringify!(NAUTILUS_USER_AGENT), NAUTILUS_USER_AGENT)?;
     m.add(stringify!(MILLISECONDS_IN_SECOND), MILLISECONDS_IN_SECOND)?;
     m.add(stringify!(NANOSECONDS_IN_SECOND), NANOSECONDS_IN_SECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;
     m.add(stringify!(NANOSECONDS_IN_MICROSECOND), NANOSECONDS_IN_MICROSECOND)?;
     m.add_class::<UUID4>()?;
+    m.add_function(wrap_pyfunction!(is_pycapsule, m)?)?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;

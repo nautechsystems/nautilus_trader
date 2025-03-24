@@ -23,21 +23,17 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "high-precision")]
-use nautilus_core::correctness::check_positive_i128;
-#[cfg(not(feature = "high-precision"))]
-use nautilus_core::correctness::check_positive_i64;
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, FAILED},
+    correctness::{FAILED, check_in_range_inclusive_f64},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 #[cfg(feature = "high-precision")]
-use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64, PRECISION_DIFF_SCALAR};
+use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
@@ -47,11 +43,11 @@ pub type PriceRaw = i128;
 pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
 
 /// The sentinel value for an unset or null price.
@@ -77,28 +73,6 @@ pub const ERROR_PRICE: Price = Price {
     raw: 0,
     precision: 255,
 };
-
-#[cfg(feature = "high-precision")]
-pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_i128(value, param)
-}
-
-#[cfg(not(feature = "high-precision"))]
-pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_i64(value, param)
-}
-
-#[cfg(feature = "high-precision")]
-/// The raw i64 price has already been scaled by 10^9. Further scale
-/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
-pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
-}
-
-#[cfg(not(feature = "high-precision"))]
-pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    value
-}
 
 /// Represents a price in a market.
 ///
@@ -465,6 +439,25 @@ impl<'de> Deserialize<'de> for Price {
         let price: Self = price_str.into();
         Ok(price)
     }
+}
+
+pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
+    if !value.is_positive() {
+        anyhow::bail!("{FAILED}: invalid `Price` for '{param}' not positive, was {value}")
+    }
+    Ok(())
+}
+
+#[cfg(feature = "high-precision")]
+/// The raw i64 price has already been scaled by 10^9. Further scale
+/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
+}
+
+#[cfg(not(feature = "high-precision"))]
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value
 }
 
 ////////////////////////////////////////////////////////////////////////////////

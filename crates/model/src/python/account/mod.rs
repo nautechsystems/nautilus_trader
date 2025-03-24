@@ -18,10 +18,10 @@ pub mod margin;
 pub mod transformer;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{conversion::IntoPyObjectExt, PyObject, PyResult, Python};
+use pyo3::{PyObject, PyResult, Python, conversion::IntoPyObjectExt};
 
 use crate::{
-    accounts::{any::AccountAny, cash::CashAccount, margin::MarginAccount},
+    accounts::{AccountAny, CashAccount, MarginAccount},
     enums::AccountType,
 };
 

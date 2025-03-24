@@ -25,7 +25,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
 ///
 /// - Assumes `code_ptr` is a valid C string pointer.
 /// - Assumes `name_ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *const c_char,
     precision: u8,
@@ -34,35 +34,35 @@ pub unsafe extern "C" fn currency_from_py(
     currency_type: CurrencyType,
 ) -> Currency {
     Currency::new(
-        cstr_as_str(code_ptr),
+        unsafe { cstr_as_str(code_ptr) },
         precision,
         iso4217,
-        cstr_as_str(name_ptr),
+        unsafe { cstr_as_str(name_ptr) },
         currency_type,
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
     str_to_cstr(format!("{currency:?}").as_str())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
     str_to_cstr(&currency.code)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
     str_to_cstr(&currency.name)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
     currency.code.precomputed_hash()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
     CURRENCY_MAP
         .lock()
@@ -73,18 +73,18 @@ pub extern "C" fn currency_register(currency: Currency) {
 /// # Safety
 ///
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
-    let code = cstr_as_str(code_ptr);
+    let code = unsafe { cstr_as_str(code_ptr) };
     u8::from(CURRENCY_MAP.lock().unwrap().contains_key(code))
 }
 
 /// # Safety
 ///
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
-    let code = cstr_as_str(code_ptr);
+    let code = unsafe { cstr_as_str(code_ptr) };
     Currency::from_str(code).unwrap()
 }
 

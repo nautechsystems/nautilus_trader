@@ -15,8 +15,8 @@
 
 use std::{collections::HashMap, path::Path, sync::Arc};
 
-use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_core::python::{to_pyruntime_err, IntoPyObjectNautilusExt};
+use futures_util::{Stream, StreamExt, pin_mut};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
 use nautilus_model::{
     data::{Bar, Data},
     python::data::data_to_pycapsule,
@@ -25,7 +25,8 @@ use pyo3::{prelude::*, types::PyList};
 
 use crate::{
     machine::{
-        client::{determine_instrument_info, TardisMachineClient},
+        Error,
+        client::{TardisMachineClient, determine_instrument_info},
         message::WsMessage,
         parse::parse_tardis_ws_message,
         replay_normalized, stream_normalized,
@@ -33,7 +34,6 @@ use crate::{
             InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
             TardisInstrumentKey,
         },
-        Error,
     },
     replay::run_tardis_machine_replay_from_config,
 };

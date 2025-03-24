@@ -26,15 +26,15 @@ use std::{
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use nautilus_core::{
+    AtomicTime, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     time::get_atomic_clock_realtime,
-    AtomicTime, UnixNanos,
 };
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
 use crate::timer::{
-    create_valid_interval, LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
+    LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2, create_valid_interval,
 };
 
 /// Represents a type of clock.
@@ -102,6 +102,8 @@ pub trait Clock {
     fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
+
+    fn reset(&mut self);
 }
 
 /// A static test clock.
@@ -298,28 +300,29 @@ impl Clock for TestClock {
         callback: Option<TimeEventCallback>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
-        let name_ustr = Ustr::from(name);
+
+        let name = Ustr::from(name);
 
         check_predicate_true(
             callback.is_some()
-                | self.callbacks.contains_key(&name_ustr)
+                | self.callbacks.contains_key(&name)
                 | self.default_callback.is_some(),
             "No callbacks provided",
         )?;
 
         match callback {
-            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
+            Some(callback_py) => self.callbacks.insert(name, callback_py),
             None => None,
         };
 
-        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts.
-        self.cancel_timer(name);
+        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts
+        self.cancel_timer(name.as_str());
 
         // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
         let ts_now = self.time.get_time_ns();
         let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
         let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns));
-        self.timers.insert(name_ustr, timer);
+        self.timers.insert(name, timer);
 
         Ok(())
     }
@@ -339,15 +342,16 @@ impl Clock for TestClock {
             "No callbacks provided",
         )?;
 
-        let name_ustr = Ustr::from(name);
+        let name = Ustr::from(name);
+
         match callback {
-            Some(callback_py) => self.callbacks.insert(name_ustr, callback_py),
+            Some(callback_py) => self.callbacks.insert(name, callback_py),
             None => None,
         };
 
         let interval_ns = create_valid_interval(interval_ns);
         let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
-        self.timers.insert(name_ustr, timer);
+        self.timers.insert(name, timer);
 
         Ok(())
     }
@@ -373,6 +377,13 @@ impl Clock for TestClock {
             timer.cancel();
         }
         self.timers = BTreeMap::new();
+    }
+
+    fn reset(&mut self) {
+        self.time = AtomicTime::new(false, UnixNanos::default());
+        self.timers = BTreeMap::new();
+        self.heap = BinaryHeap::new();
+        self.callbacks = HashMap::new();
     }
 }
 
@@ -494,11 +505,12 @@ impl Clock for LiveClock {
         callback: Option<TimeEventCallback>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
-        let name_ustr = Ustr::from(name);
+
+        let name = Ustr::from(name);
 
         check_predicate_true(
             callback.is_some()
-                | self.callbacks.contains_key(&name_ustr)
+                | self.callbacks.contains_key(&name)
                 | self.default_callback.is_some(),
             "No callbacks provided",
         )?;
@@ -506,7 +518,7 @@ impl Clock for LiveClock {
         #[cfg(feature = "clock_v2")]
         {
             match callback.clone() {
-                Some(callback) => self.callbacks.insert(name_ustr, callback),
+                Some(callback) => self.callbacks.insert(name, callback),
                 None => None,
             };
         }
@@ -514,8 +526,8 @@ impl Clock for LiveClock {
         let callback = match callback {
             Some(callback) => callback,
             None => {
-                if self.callbacks.contains_key(&name_ustr) {
-                    self.callbacks.get(&name_ustr).unwrap().clone()
+                if self.callbacks.contains_key(&name) {
+                    self.callbacks.get(&name).unwrap().clone()
                 } else {
                     self.default_callback.clone().unwrap()
                 }
@@ -523,7 +535,7 @@ impl Clock for LiveClock {
         };
 
         // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts.
-        self.cancel_timer(name);
+        self.cancel_timer(name.as_str());
 
         // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
         let ts_now = self.get_time_ns();
@@ -546,7 +558,7 @@ impl Clock for LiveClock {
         timer.start();
 
         self.clear_expired_timers();
-        self.timers.insert(Ustr::from(name), timer);
+        self.timers.insert(name, timer);
 
         Ok(())
     }
@@ -566,6 +578,8 @@ impl Clock for LiveClock {
             "No callbacks provided",
         )?;
 
+        let name = Ustr::from(name);
+
         let callback = match callback {
             Some(callback) => callback,
             None => self.default_callback.clone().unwrap(),
@@ -573,7 +587,6 @@ impl Clock for LiveClock {
 
         #[cfg(feature = "clock_v2")]
         {
-            let name = Ustr::from(name);
             self.callbacks.insert(name, callback.clone());
         }
 
@@ -601,7 +614,7 @@ impl Clock for LiveClock {
         timer.start();
 
         self.clear_expired_timers();
-        self.timers.insert(Ustr::from(name), timer);
+        self.timers.insert(name, timer);
 
         Ok(())
     }
@@ -629,6 +642,12 @@ impl Clock for LiveClock {
             timer.cancel();
         }
         self.timers.clear();
+    }
+
+    fn reset(&mut self) {
+        self.timers = HashMap::new();
+        self.heap = Arc::new(Mutex::new(BinaryHeap::new()));
+        self.callbacks = HashMap::new();
     }
 }
 

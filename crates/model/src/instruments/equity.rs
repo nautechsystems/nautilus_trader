@@ -16,21 +16,21 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_valid_string_optional, FAILED},
     UnixNanos,
+    correctness::{FAILED, check_equal_u8, check_valid_string_optional},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{any::InstrumentAny, Instrument};
+use super::{Instrument, any::InstrumentAny};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
     types::{
         currency::Currency,
         money::Money,
-        price::{check_positive_price, Price},
+        price::{Price, check_positive_price},
         quantity::Quantity,
     },
 };
@@ -112,7 +112,7 @@ impl Equity {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
 
         Ok(Self {
             id,
@@ -321,7 +321,7 @@ impl Instrument for Equity {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{stubs::*, Equity};
+    use crate::instruments::{Equity, stubs::*};
 
     #[rstest]
     fn test_equality(equity_aapl: Equity) {

@@ -17,8 +17,8 @@
 
 use bytes::Bytes;
 use serde::{
-    de::{Unexpected, Visitor},
     Deserializer,
+    de::{Unexpected, Visitor},
 };
 
 struct BoolVisitor;

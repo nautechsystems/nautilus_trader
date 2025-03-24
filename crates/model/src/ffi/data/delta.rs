@@ -26,7 +26,7 @@ use crate::{
     identifiers::InstrumentId,
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_delta_new(
     instrument_id: InstrumentId,
@@ -48,12 +48,12 @@ pub extern "C" fn orderbook_delta_new(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_delta_eq(lhs: &OrderBookDelta, rhs: &OrderBookDelta) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn orderbook_delta_hash(delta: &OrderBookDelta) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);

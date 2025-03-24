@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(feature = "ffi")]
 use std::env;
 
 #[allow(clippy::expect_used)]

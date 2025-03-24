@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+from nautilus_trader.core import nautilus_pyo3
+
 # This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
 
@@ -46,9 +48,13 @@ from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.functions cimport contingency_type_to_str
+from nautilus_trader.model.functions cimport order_side_to_pyo3
 from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_status_to_pyo3
+from nautilus_trader.model.functions cimport order_type_to_pyo3
 from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.functions cimport time_in_force_to_pyo3
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Currency
@@ -212,6 +218,8 @@ cdef class Order:
         # Timestamps
         self.init_id = init.id
         self.ts_init = init.ts_init
+        self.ts_submitted = 0
+        self.ts_accepted = 0
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
@@ -424,6 +432,35 @@ cdef class Order:
 
     cdef bint is_pending_cancel_c(self):
         return self._fsm.state == OrderStatus.PENDING_CANCEL
+
+    def to_own_book_order(self) -> nautilus_pyo3.OwnBookOrder:
+        """
+        Returns an own/user order representation of this order.
+
+        Returns
+        -------
+        nautilus_pyo3.OwnBookOrder
+
+        """
+        if not self.has_price_c():
+            raise TypeError(f"Cannot initialize {self.type_string_c()} order as `nautilus_pyo3.OwnBookOrder`, no price")
+
+        cdef Price price = self.price
+        return nautilus_pyo3.OwnBookOrder(
+            trader_id=nautilus_pyo3.TraderId(self.trader_id.value),
+            client_order_id=nautilus_pyo3.ClientOrderId(self.client_order_id.value),
+            venue_order_id=nautilus_pyo3.VenueOrderId(self.venue_order_id.value) if self.venue_order_id else None,
+            side=order_side_to_pyo3(self.side),
+            price=nautilus_pyo3.Price(price.as_f64_c(), price._mem.precision),
+            size=nautilus_pyo3.Quantity(self.leaves_qty.as_f64_c(), self.leaves_qty._mem.precision),
+            order_type=order_type_to_pyo3(self.order_type),
+            time_in_force=time_in_force_to_pyo3(self.time_in_force),
+            status=order_status_to_pyo3(<OrderStatus>self._fsm.state),
+            ts_last=self.ts_last,
+            ts_accepted=self.ts_accepted,
+            ts_submitted=self.ts_submitted,
+            ts_init=self.ts_init,
+        )
 
     @property
     def symbol(self):
@@ -1034,12 +1071,14 @@ cdef class Order:
 
     cdef void _submitted(self, OrderSubmitted event):
         self.account_id = event.account_id
+        self.ts_submitted = event.ts_event
 
     cdef void _rejected(self, OrderRejected event):
         pass  # Do nothing else
 
     cdef void _accepted(self, OrderAccepted event):
         self.venue_order_id = event.venue_order_id
+        self.ts_accepted = event.ts_event
 
     cdef void _updated(self, OrderUpdated event):
         """Abstract method (implement in subclass)."""
@@ -1066,6 +1105,10 @@ cdef class Order:
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
+        if self.ts_accepted == 0:
+            # Set ts_accepted to time of first fill if not previously set
+            self.ts_accepted = fill.ts_event
+
         cdef QuantityRaw raw_filled_qty = self.filled_qty._mem.raw + fill.last_qty._mem.raw
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented

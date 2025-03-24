@@ -1,0 +1,17 @@
+{
+  "channel": "CANDLES_ONE_MINUTE",
+  "type": "SNAPSHOT",
+  "product_id": "ETH-PERP",
+  "sequence": 0,
+  "granularity": "ONE_MINUTE",
+  "candles": [
+    {
+      "start": "2025-03-14T23:14:00Z",
+      "open": "1921.71",
+      "high": "1921.71",
+      "low": "1919.87",
+      "close": "1919.87",
+      "volume": "11.2803"
+    }
+  ]
+}

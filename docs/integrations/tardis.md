@@ -20,7 +20,7 @@ A Tardis API key is required for the adapter to operate correctly. See also [env
 ## Overview
 
 This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
-It also does not require any external Tardis client library dependencies.
+It does not require any external Tardis client library dependencies.
 
 :::info
 There is **no** need for additional installation steps for `tardis`.
@@ -30,7 +30,7 @@ The core components of the adapter are compiled as static libraries and automati
 ## Tardis documentation
 
 Tardis provides extensive user [documentation](https://docs.tardis.dev/).
-It's recommended you also refer to the Tardis documentation in conjunction with this NautilusTrader integration guide.
+We recommend also referring to the Tardis documentation in conjunction with this NautilusTrader integration guide.
 
 ## Supported formats
 

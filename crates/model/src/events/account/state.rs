@@ -15,7 +15,7 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -89,10 +89,21 @@ impl Display for AccountState {
             stringify!(AccountState),
             self.account_id,
             self.account_type,
-            self.base_currency.map_or_else(|| "None".to_string(), |base_currency | format!("{}", base_currency.code)),
+            self.base_currency.map_or_else(
+                || "None".to_string(),
+                |base_currency| format!("{}", base_currency.code)
+            ),
             self.is_reported,
-            self.balances.iter().map(|b| format!("{b}")).collect::<Vec<String>>().join(","),
-            self.margins.iter().map(|m| format!("{m}")).collect::<Vec<String>>().join(","),
+            self.balances
+                .iter()
+                .map(|b| format!("{b}"))
+                .collect::<Vec<String>>()
+                .join(","),
+            self.margins
+                .iter()
+                .map(|m| format!("{m}"))
+                .collect::<Vec<String>>()
+                .join(","),
             self.event_id
         )
     }
@@ -114,8 +125,8 @@ mod tests {
     use rstest::rstest;
 
     use crate::events::{
-        account::stubs::{cash_account_state, margin_account_state},
         AccountState,
+        account::stubs::{cash_account_state, margin_account_state},
     };
 
     #[rstest]

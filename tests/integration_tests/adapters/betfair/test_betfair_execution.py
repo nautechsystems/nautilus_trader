@@ -36,6 +36,10 @@ from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_i
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.core.rust.model import OrderStatus
 from nautilus_trader.core.rust.model import TimeInForce
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import GenerateFillReports
+from nautilus_trader.execution.messages import GenerateOrderStatusReport
+from nautilus_trader.execution.messages import GenerateOrderStatusReports
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import LiquiditySide
@@ -842,11 +846,14 @@ async def test_generate_order_status_report_client_id(
     instrument_provider.add(instrument)
 
     # Act
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+    command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
-        venue_order_id=VenueOrderId("1"),
         client_order_id=None,
+        venue_order_id=VenueOrderId("1"),
+        command_id=UUID4(),
+        ts_init=0,
     )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(command)
 
     # Assert
     assert report
@@ -872,11 +879,14 @@ async def test_generate_order_status_report_venue_order_id(
     venue_order_id = VenueOrderId("323427122115")
 
     # Act
-    report: OrderStatusReport | None = await exec_client.generate_order_status_report(
+    command = GenerateOrderStatusReport(
         instrument_id=instrument.id,
-        venue_order_id=venue_order_id,
         client_order_id=client_order_id,
+        venue_order_id=venue_order_id,
+        command_id=UUID4(),
+        ts_init=0,
     )
+    report: OrderStatusReport | None = await exec_client.generate_order_status_report(command)
 
     # Assert
     assert report
@@ -884,25 +894,6 @@ async def test_generate_order_status_report_venue_order_id(
     assert report.price == Price(5.0, BETFAIR_PRICE_PRECISION)
     assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
     assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
-
-
-def test_check_cache_against_order_image_raises(exec_client, venue_order_id):
-    # Arrange
-    ocm = BetfairStreaming.generate_order_change_message(
-        price=5.8,
-        size=20,
-        side="B",
-        status="E",
-        sm=16.19,
-        sr=3.809999999999999,
-        avp=1.50,
-        order_id=int(venue_order_id.value),
-        mb=[MatchedOrder(5.0, 100)],
-    )
-
-    # Act, Assert
-    with pytest.raises(RuntimeError):
-        exec_client.check_cache_against_order_image(ocm)
 
 
 @pytest.mark.asyncio
@@ -988,7 +979,15 @@ async def test_generate_order_status_reports_executable(exec_client):
     mock_betfair_request(exec_client._client, BetfairResponses.list_current_orders_executable())
 
     # Act
-    reports = await exec_client.generate_order_status_reports()
+    command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=False,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_order_status_reports(command)
 
     # Assert
     assert len(reports) == 2
@@ -1016,7 +1015,15 @@ async def test_generate_order_status_reports_executable_limit_on_close(exec_clie
     )
 
     # Act
-    reports = await exec_client.generate_order_status_reports()
+    command = GenerateOrderStatusReports(
+        instrument_id=None,
+        start=None,
+        end=None,
+        open_only=False,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_order_status_reports(command)
 
     # Assert
     assert len(reports) == 2
@@ -1047,7 +1054,15 @@ async def test_generate_fill_reports(exec_client):
     )
 
     # Act
-    reports = await exec_client.generate_fill_reports()
+    command = GenerateFillReports(
+        instrument_id=None,
+        venue_order_id=None,
+        start=None,
+        end=None,
+        command_id=UUID4(),
+        ts_init=0,
+    )
+    reports = await exec_client.generate_fill_reports(command)
 
     # Assert
     assert len(reports) == 2

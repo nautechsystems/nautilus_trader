@@ -41,14 +41,14 @@ cdef class DataCommand(Command):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     data_type : type
         The data type for the command.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -66,11 +66,11 @@ cdef class DataCommand(Command):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         DataType data_type not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
@@ -105,14 +105,14 @@ cdef class SubscribeData(DataCommand):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     data_type : type
         The data type for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -127,18 +127,18 @@ cdef class SubscribeData(DataCommand):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         DataType data_type not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             data_type,
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -150,12 +150,12 @@ cdef class SubscribeInstruments(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -170,17 +170,17 @@ cdef class SubscribeInstruments(SubscribeData):
 
     def __init__(
         self,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         UUID4 command_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Instrument),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -207,14 +207,14 @@ cdef class SubscribeInstrument(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -229,18 +229,18 @@ cdef class SubscribeInstrument(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Instrument),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -270,26 +270,26 @@ cdef class SubscribeOrderBook(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     book_type : BookType
         The order book type.
-    depth : int
-        The maximum depth for the subscription.
-    managed: bool
-        If an order book should be managed by the data engine based on the subscribed feed.
-    interval_ms : int
-        The interval (milliseconds) between snapshots.
-    only_deltas : bool
-        If the subscription is for OrderBookDeltas or OrderBook snapshots.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    depth : int, optional, default 0
+        The maximum depth for the subscription.
+    managed: bool, optional, default True
+        If an order book should be managed by the data engine based on the subscribed feed.
+    interval_ms : int, optional, default 1000
+        The interval (milliseconds) between snapshots.
+    only_deltas : bool, optional, default True
+        If the subscription is for OrderBookDeltas or OrderBook snapshots.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -303,24 +303,24 @@ cdef class SubscribeOrderBook(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
         BookType book_type,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         int depth = 0,
         bint managed = True,
         int interval_ms = 1000,
         bint only_deltas = True,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
     ) -> None:
         Condition.positive_int(interval_ms, "interval_ms")
         super().__init__(
-            command_id,
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -365,14 +365,14 @@ cdef class SubscribeQuoteTicks(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -387,18 +387,18 @@ cdef class SubscribeQuoteTicks(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(QuoteTick),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -428,14 +428,14 @@ cdef class SubscribeTradeTicks(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -450,18 +450,18 @@ cdef class SubscribeTradeTicks(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(TradeTick),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -491,18 +491,18 @@ cdef class SubscribeBars(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     bar_type : BarType
         The bar type for the subscription.
-    await_partial : bool
-        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    await_partial : bool
+        If the bar aggregator should await the arrival of a historical partial bar prior to actively aggregating new bars.
     params : dict[str, object], optional
         Additional parameters for the subscription.
 
@@ -515,19 +515,19 @@ cdef class SubscribeBars(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         BarType bar_type not None,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         bint await_partial = False,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Bar),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -560,14 +560,14 @@ cdef class SubscribeInstrumentStatus(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -582,18 +582,18 @@ cdef class SubscribeInstrumentStatus(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(InstrumentStatus),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -623,14 +623,14 @@ cdef class SubscribeInstrumentClose(SubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -645,18 +645,18 @@ cdef class SubscribeInstrumentClose(SubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(InstrumentClose),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -686,14 +686,14 @@ cdef class UnsubscribeData(DataCommand):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     data_type : type
         The data type for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -708,18 +708,18 @@ cdef class UnsubscribeData(DataCommand):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         DataType data_type not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             data_type,
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -731,12 +731,12 @@ cdef class UnsubscribeInstruments(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -751,17 +751,17 @@ cdef class UnsubscribeInstruments(UnsubscribeData):
 
     def __init__(
         self,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
         UUID4 command_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Instrument),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -788,14 +788,14 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -810,18 +810,18 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Instrument),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -851,8 +851,6 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     only_deltas: bool
@@ -861,6 +859,8 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -875,19 +875,19 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
         only_deltas: bool,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -920,14 +920,14 @@ cdef class UnsubscribeQuoteTicks(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -942,18 +942,18 @@ cdef class UnsubscribeQuoteTicks(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(QuoteTick),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -983,14 +983,14 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -1005,18 +1005,18 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(TradeTick),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -1046,14 +1046,14 @@ cdef class UnsubscribeBars(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     bar_type : BarType
         The bar type for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -1068,18 +1068,18 @@ cdef class UnsubscribeBars(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         BarType bar_type not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(Bar),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -1109,14 +1109,14 @@ cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -1131,18 +1131,18 @@ cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(InstrumentStatus),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -1172,14 +1172,14 @@ cdef class UnsubscribeInstrumentClose(UnsubscribeData):
 
     Parameters
     ----------
-    command_id : UUID4
-        The command ID.
     instrument_id : InstrumentId
         The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
         The venue for the command.
+    command_id : UUID4
+        The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     params : dict[str, object], optional
@@ -1194,18 +1194,18 @@ cdef class UnsubscribeInstrumentClose(UnsubscribeData):
 
     def __init__(
         self,
-        UUID4 command_id not None,
         InstrumentId instrument_id not None,
-        ClientId client_id: ClientId | None = None,
-        Venue venue: Venue | None = None,
-        uint64_t ts_init = 0,
+        ClientId client_id: ClientId | None,
+        Venue venue: Venue | None,
+        UUID4 command_id not None,
+        uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
         super().__init__(
-            command_id,
             DataType(InstrumentClose),
             client_id,
             venue,
+            command_id,
             ts_init,
             params,
         )
@@ -1291,6 +1291,20 @@ cdef class RequestData(Request):
         self.client_id = client_id
         self.venue = venue
         self.params = params or {}
+
+    def with_dates(self, datetime start, datetime end):
+        return RequestData(
+            data_type=self.data_type,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
 
     def __str__(self) -> str:
         return (
@@ -1619,6 +1633,20 @@ cdef class RequestQuoteTicks(RequestData):
 
         self.instrument_id = instrument_id
 
+    def with_dates(self, datetime start, datetime end):
+        return RequestQuoteTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
+
     def __str__(self) -> str:
         return (
             f"{type(self).__name__}("
@@ -1706,6 +1734,20 @@ cdef class RequestTradeTicks(RequestData):
         )
 
         self.instrument_id = instrument_id
+
+    def with_dates(self, datetime start, datetime end):
+        return RequestTradeTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
 
     def __str__(self) -> str:
         return (
@@ -1795,6 +1837,20 @@ cdef class RequestBars(RequestData):
         )
 
         self.bar_type = bar_type
+
+    def with_dates(self, datetime start, datetime end):
+        return RequestBars(
+            bar_type=self.bar_type,
+            start=start,
+            end=end,
+            limit=self.limit,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=self.callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=self.params.copy(),
+        )
 
     def __str__(self) -> str:
         return (

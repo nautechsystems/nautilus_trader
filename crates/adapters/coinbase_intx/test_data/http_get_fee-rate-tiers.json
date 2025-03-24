@@ -1,0 +1,24 @@
+[
+  {
+    "fee_tier_type": "REGULAR",
+    "instrument_type": "PERPETUAL_FUTURE",
+    "fee_tier_id": "1",
+    "fee_tier_name": "Public Tier 6",
+    "maker_fee_rate": "0.00020000000000000000958434720477185919662588275969028472900390625",
+    "taker_fee_rate": "0.0004000000000000000191686944095437183932517655193805694580078125",
+    "min_balance": "0",
+    "min_volume": "0",
+    "require_balance_and_volume": false
+  },
+  {
+    "fee_tier_type": "REGULAR",
+    "instrument_type": "PERPETUAL_FUTURE",
+    "fee_tier_id": "2",
+    "fee_tier_name": "Public Tier 5",
+    "maker_fee_rate": "0.00016000000000000001308848862624500952733797021210193634033203125",
+    "taker_fee_rate": "0.0004000000000000000191686944095437183932517655193805694580078125",
+    "min_balance": "50000",
+    "min_volume": "1000000",
+    "require_balance_and_volume": true
+  }
+]

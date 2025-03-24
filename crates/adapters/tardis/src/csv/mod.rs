@@ -15,23 +15,30 @@
 
 mod record;
 
-use std::{error::Error, ffi::OsStr, fs::File, io::BufReader, path::Path};
+use std::{
+    error::Error,
+    ffi::OsStr,
+    fs::File,
+    io::{BufReader, Read, Seek, SeekFrom},
+    path::Path,
+    time::Duration,
+};
 
 use csv::{Reader, ReaderBuilder, StringRecord};
 use flate2::read::GzDecoder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        BookOrder, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick, DEPTH10_LEN, NULL_ORDER,
+        BookOrder, DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{BookAction, OrderSide, RecordFlag},
     identifiers::{InstrumentId, TradeId},
-    types::{fixed::FIXED_PRECISION, Quantity},
+    types::{Quantity, fixed::FIXED_PRECISION},
 };
 
 use super::{
     csv::record::{
-        TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
+        TardisBookUpdateRecord, TardisOrderBookSnapshot5Record, TardisOrderBookSnapshot25Record,
         TardisQuoteRecord, TardisTradeRecord,
     },
     parse::{
@@ -52,24 +59,99 @@ fn infer_precision(value: f64) -> u8 {
 fn create_csv_reader<P: AsRef<Path>>(
     filepath: P,
 ) -> anyhow::Result<Reader<Box<dyn std::io::Read>>> {
-    let file = File::open(filepath.as_ref())?;
-    let buf_reader = BufReader::new(file);
+    let filepath_ref = filepath.as_ref();
+    const MAX_RETRIES: u8 = 3;
+    const DELAY_MS: u64 = 100;
 
-    let is_gzipped = filepath
-        .as_ref()
+    fn open_file_with_retry<P: AsRef<Path>>(
+        path: P,
+        max_retries: u8,
+        delay_ms: u64,
+    ) -> anyhow::Result<File> {
+        let path_ref = path.as_ref();
+        for attempt in 1..=max_retries {
+            match File::open(path_ref) {
+                Ok(file) => return Ok(file),
+                Err(e) => {
+                    if attempt == max_retries {
+                        anyhow::bail!(
+                            "Failed to open file '{path_ref:?}' after {max_retries} attempts: {e}"
+                        );
+                    }
+                    eprintln!(
+                        "Attempt {attempt}/{max_retries} failed to open file '{path_ref:?}': {e}. Retrying after {delay_ms}ms..."
+                    );
+                    std::thread::sleep(Duration::from_millis(delay_ms));
+                }
+            }
+        }
+        unreachable!("Loop should return either Ok or Err");
+    }
+
+    let mut file = open_file_with_retry(filepath_ref, MAX_RETRIES, DELAY_MS)?;
+
+    let is_gzipped = filepath_ref
         .extension()
         .and_then(OsStr::to_str)
         .is_some_and(|ext| ext.eq_ignore_ascii_case("gz"));
 
-    let reader: Box<dyn std::io::Read> = if is_gzipped {
-        // Decompress gzipped file
-        Box::new(GzDecoder::new(buf_reader))
-    } else {
-        // Regular file reader
-        Box::new(buf_reader)
-    };
+    if !is_gzipped {
+        let buf_reader = BufReader::new(file);
+        return Ok(ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(Box::new(buf_reader)));
+    }
 
-    Ok(ReaderBuilder::new().has_headers(true).from_reader(reader))
+    let file_size = file.metadata()?.len();
+    if file_size < 2 {
+        anyhow::bail!("File too small to be a valid gzip file");
+    }
+
+    let mut header_buf = [0u8; 2];
+    for attempt in 1..=MAX_RETRIES {
+        match file.read_exact(&mut header_buf) {
+            Ok(()) => break,
+            Err(e) => {
+                if attempt == MAX_RETRIES {
+                    anyhow::bail!(
+                        "Failed to read gzip header from '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
+                    );
+                }
+                eprintln!(
+                    "Attempt {attempt}/{MAX_RETRIES} failed to read header from '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
+                );
+                std::thread::sleep(Duration::from_millis(DELAY_MS));
+            }
+        }
+    }
+
+    if header_buf[0] != 0x1f || header_buf[1] != 0x8b {
+        anyhow::bail!("File '{filepath_ref:?}' has .gz extension but invalid gzip header");
+    }
+
+    for attempt in 1..=MAX_RETRIES {
+        match file.seek(SeekFrom::Start(0)) {
+            Ok(_) => break,
+            Err(e) => {
+                if attempt == MAX_RETRIES {
+                    anyhow::bail!(
+                        "Failed to reset file position for '{filepath_ref:?}' after {MAX_RETRIES} attempts: {e}"
+                    );
+                }
+                eprintln!(
+                    "Attempt {attempt}/{MAX_RETRIES} failed to seek in '{filepath_ref:?}': {e}. Retrying after {DELAY_MS}ms..."
+                );
+                std::thread::sleep(Duration::from_millis(DELAY_MS));
+            }
+        }
+    }
+
+    let buf_reader = BufReader::new(file);
+    let decoder = GzDecoder::new(buf_reader);
+
+    Ok(ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(Box::new(decoder)))
 }
 
 /// Loads [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`,
@@ -156,7 +238,10 @@ pub fn load_deltas<P: AsRef<Path>>(
             }
         }
 
-        assert!(!(action != BookAction::Delete && size.is_zero()), "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}");
+        assert!(
+            !(action != BookAction::Delete && size.is_zero()),
+            "Invalid delta: action {action} when size zero, check size_precision ({size_precision}) vs data; {record:?}"
+        );
 
         last_ts_event = ts_event;
 
@@ -731,7 +816,7 @@ mod tests {
         types::Price,
     };
     use nautilus_test_kit::common::{
-        ensure_data_exists_tardis_binance_snapshot25, ensure_data_exists_tardis_binance_snapshot5,
+        ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,
         ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
         ensure_data_exists_tardis_huobi_quotes,
     };

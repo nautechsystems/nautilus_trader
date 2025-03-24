@@ -10,16 +10,6 @@ documentation.workspace = true
 name = "nautilus_indicators"
 crate-type = ["rlib", "cdylib"]
 
-[dependencies]
-nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-anyhow = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-strum = { workspace = true }
-
-[dev-dependencies]
-rstest = { workspace = true }
-
 [features]
 default = []
 extension-module = [
@@ -32,3 +22,13 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
 ]
+
+[dependencies]
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model", features = ["stubs"] }
+anyhow = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+strum = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }

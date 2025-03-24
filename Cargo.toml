@@ -12,6 +12,7 @@ members = [
     "crates/execution",
     "crates/indicators",
     "crates/infrastructure",
+    "crates/live",
     "crates/model",
     "crates/network",
     "crates/persistence",
@@ -19,60 +20,65 @@ members = [
     "crates/pyo3",
     "crates/risk",
     "crates/serialization",
+    "crates/system",
     "crates/test_kit",
     "crates/trading",
 ]
 
 [workspace.package]
-rust-version = "1.84.1"
-version = "0.42.0"
-edition = "2021"
+rust-version = "1.85.1"
+version = "0.44.0"
+edition = "2024"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.95"
-arrow = "54.2.0"  # Keep major version in line with datafusion
+ahash = "0.8.11"
+anyhow = "1.0.97"
+arrow = "54.3.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
-async-trait = "0.1.86"
+async-trait = "0.1.88"
 base64 = "0.22.1"
-bytes = { version = "1.10.0", features = ["serde"] }
-chrono = { version = "0.4.39", features = ["serde"] }
-chrono-tz = { version = "0.10.1" }
+bytes = { version = "1.10.1", features = ["serde"] }
+chrono = { version = "0.4.40", features = ["serde"] }
+chrono-tz = "0.10.2"
+deranged = "=0.4.0"
 derive_builder = "0.20.2"
+enum_dispatch = "0.3.13"
 futures = "0.3.31"
 futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
-indexmap = { version = "2.7.1", features = ["serde"] }
-itertools = "0.13.0"
-itoa = "1.0.14"
-once_cell = "1.20.3"
-log = { version = "0.4.25", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "54.2.0"  # Keep major version in line with datafusion
-pyo3 = { version = "0.23.4", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
-pyo3-async-runtimes = { version = "0.23.0", features = ["tokio-runtime", "tokio", "attributes"] }
+indexmap = { version = "2.8.0", features = ["serde"] }
+itertools = "0.14.0"
+itoa = "1.0.15"
+log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
+memchr = "2.7.4"
+parquet = "54.3.0"  # Keep major version in line with datafusion
+pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
+pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
-reqwest = { version = "0.12.12", features = ["blocking"] }
-ring = "0.17.9"
+reqwest = { version = "0.12.15", features = ["blocking"] }
+ring = "0.17.14"
 rmp-serde = "1.3.0"
-rust_decimal = "1.36.0"
-rust_decimal_macros = "1.36.0"
+rust_decimal = "1.37.1"
+rust_decimal_macros = "1.37.1"
 semver = "1.0.25"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
-strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "2.0.11"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+serde_urlencoded = "0.7.1"
+strum = { version = "0.27.1", features = ["derive"] }
+thiserror = "2.0.12"
 thousands = "0.2.0"
 toml = "0.8.20"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.44.0", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.13.2", features = ["v4", "serde"] }
+uuid = { version = "1.16.0", features = ["v4", "serde"] }
 
 # dev-dependencies
 axum = "0.8.1"
@@ -80,8 +86,8 @@ criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
 proptest = "1.6.0"
-rstest = "0.24.0"
-tempfile = "3.17.1"
+rstest = "0.25.0"
+tempfile = "3.19.0"
 tracing-test = "0.2.5"
 
 # build-dependencies
@@ -100,13 +106,18 @@ codegen-units = 256
 
 [profile.test]
 opt-level = 0
-debug = false  # Improves compile times
-debug-assertions = true  # Fails Cython build if true
+debug = true
+debug-assertions = true
 overflow-checks = true
-strip = "debuginfo"  # Improves compile times
+strip = false
 lto = false
 incremental = true
 codegen-units = 256
+
+[profile.nextest]
+inherits = "test"
+debug = false # Improves compile times
+strip = "debuginfo" # Improves compile times
 
 [profile.release]
 opt-level = 3

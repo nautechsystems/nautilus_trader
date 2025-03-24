@@ -13,110 +13,267 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use nautilus_common::{clock::TestClock, timer::TimeEventHandlerV2};
-use nautilus_core::UnixNanos;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
+    rc::Rc,
+};
 
-/// Provides a means of accumulating and draining time event handlers.
-pub struct TimeEventAccumulator {
-    event_handlers: Vec<TimeEventHandlerV2>,
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
+use nautilus_model::{
+    data::Data,
+    enums::{AccountType, BookType, OmsType},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    instruments::InstrumentAny,
+    types::{Currency, Money},
+};
+use nautilus_system::kernel::NautilusKernel;
+use rust_decimal::Decimal;
+use ustr::Ustr;
+
+use crate::{
+    accumulator::TimeEventAccumulator, config::BacktestEngineConfig, exchange::SimulatedExchange,
+    execution_client::BacktestExecutionClient, modules::SimulationModule,
+};
+
+pub struct BacktestEngine {
+    instance_id: UUID4,
+    config: BacktestEngineConfig,
+    kernel: NautilusKernel,
+    accumulator: TimeEventAccumulator,
+    run_config_id: Option<UUID4>,
+    run_id: Option<UUID4>,
+    venues: HashMap<Venue, Rc<RefCell<SimulatedExchange>>>,
+    has_data: HashSet<InstrumentId>,
+    has_book_data: HashSet<InstrumentId>,
+    data: VecDeque<Data>,
+    index: usize,
+    iteration: usize,
+    run_started: Option<UnixNanos>,
+    run_finished: Option<UnixNanos>,
+    backtest_start: Option<UnixNanos>,
+    backtest_end: Option<UnixNanos>,
 }
 
-impl TimeEventAccumulator {
-    /// Creates a new [`TimeEventAccumulator`] instance.
+impl BacktestEngine {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new(config: BacktestEngineConfig) -> Self {
+        let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone());
         Self {
-            event_handlers: Vec::new(),
+            instance_id: kernel.instance_id,
+            config,
+            accumulator: TimeEventAccumulator::new(),
+            kernel,
+            run_config_id: None,
+            run_id: None,
+            venues: HashMap::new(),
+            has_data: HashSet::new(),
+            has_book_data: HashSet::new(),
+            data: VecDeque::new(),
+            index: 0,
+            iteration: 0,
+            run_started: None,
+            run_finished: None,
+            backtest_start: None,
+            backtest_end: None,
         }
     }
 
-    /// Advance the given clock to the `to_time_ns`.
-    pub fn advance_clock(&mut self, clock: &mut TestClock, to_time_ns: UnixNanos, set_time: bool) {
-        let events = clock.advance_time(to_time_ns, set_time);
-        let handlers = clock.match_handlers(events);
-        self.event_handlers.extend(handlers);
-    }
-
-    /// Drain the accumulated time event handlers in sorted order (by the events `ts_event`).
-    pub fn drain(&mut self) -> Vec<TimeEventHandlerV2> {
-        // stable sort is not necessary since there is no relation between
-        // events of the same clock. Only time based ordering is needed.
-        self.event_handlers
-            .sort_unstable_by_key(|v| v.event.ts_event);
-        self.event_handlers.drain(..).collect()
-    }
-}
-
-impl Default for TimeEventAccumulator {
-    /// Creates a new default [`TimeEventAccumulator`] instance.
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use nautilus_common::timer::{TimeEvent, TimeEventCallback};
-    use nautilus_core::UUID4;
-    use pyo3::{prelude::*, types::PyList, Py, Python};
-    use rstest::*;
-    use ustr::Ustr;
-
-    use super::*;
-
-    #[rstest]
-    fn test_accumulator_drain_sorted() {
-        pyo3::prepare_freethreaded_python();
-
-        Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
-            let py_append = Py::from(py_list.getattr("append").unwrap());
-
-            let mut accumulator = TimeEventAccumulator::new();
-
-            let time_event1 = TimeEvent::new(
-                Ustr::from("TEST_EVENT_1"),
-                UUID4::new(),
-                100.into(),
-                100.into(),
-            );
-            let time_event2 = TimeEvent::new(
-                Ustr::from("TEST_EVENT_2"),
-                UUID4::new(),
-                300.into(),
-                300.into(),
-            );
-            let time_event3 = TimeEvent::new(
-                Ustr::from("TEST_EVENT_3"),
-                UUID4::new(),
-                200.into(),
-                200.into(),
-            );
-
-            // Note: as_ptr returns a borrowed pointer. It is valid as long
-            // as the object is in scope. In this case `callback_ptr` is valid
-            // as long as `py_append` is in scope.
-            let callback = TimeEventCallback::from(py_append.into_any());
-
-            let handler1 = TimeEventHandlerV2::new(time_event1.clone(), callback.clone());
-            let handler2 = TimeEventHandlerV2::new(time_event2.clone(), callback.clone());
-            let handler3 = TimeEventHandlerV2::new(time_event3.clone(), callback);
-
-            accumulator.event_handlers.push(handler1);
-            accumulator.event_handlers.push(handler2);
-            accumulator.event_handlers.push(handler3);
-
-            let drained_handlers = accumulator.drain();
-
-            assert_eq!(drained_handlers.len(), 3);
-            assert_eq!(drained_handlers[0].event.ts_event, time_event1.ts_event);
-            assert_eq!(drained_handlers[1].event.ts_event, time_event3.ts_event);
-            assert_eq!(drained_handlers[2].event.ts_event, time_event2.ts_event);
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_venue(
+        &mut self,
+        venue: Venue,
+        oms_type: OmsType,
+        account_type: AccountType,
+        book_type: BookType,
+        starting_balances: Vec<Money>,
+        base_currency: Option<Currency>,
+        default_leverage: Option<Decimal>,
+        leverages: HashMap<InstrumentId, Decimal>,
+        modules: Vec<Box<dyn SimulationModule>>,
+        fill_model: FillModel,
+        fee_model: FeeModelAny,
+        latency_model: Option<LatencyModel>,
+        routing: Option<bool>,
+        frozen_account: Option<bool>,
+        reject_stop_orders: Option<bool>,
+        support_gtd_orders: Option<bool>,
+        support_contingent_orders: Option<bool>,
+        use_position_ids: Option<bool>,
+        use_random_ids: Option<bool>,
+        use_reduce_only: Option<bool>,
+        use_message_queue: Option<bool>,
+        bar_execution: Option<bool>,
+        bar_adaptive_high_low_ordering: Option<bool>,
+        trade_execution: Option<bool>,
+    ) {
+        let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
+            if account_type == AccountType::Margin {
+                Decimal::from(10)
+            } else {
+                Decimal::from(0)
+            }
         });
+
+        let exchange = SimulatedExchange::new(
+            venue,
+            oms_type,
+            account_type,
+            starting_balances,
+            base_currency,
+            default_leverage,
+            leverages,
+            modules,
+            self.kernel.cache.clone(),
+            self.kernel.clock.clone(),
+            fill_model,
+            fee_model,
+            book_type,
+            latency_model,
+            frozen_account,
+            bar_execution,
+            reject_stop_orders,
+            support_gtd_orders,
+            support_contingent_orders,
+            use_position_ids,
+            use_random_ids,
+            use_reduce_only,
+            use_message_queue,
+        )
+        .unwrap();
+        let exchange = Rc::new(RefCell::new(exchange));
+        self.venues.insert(venue, exchange.clone());
+
+        let account_id = AccountId::from(format!("{}-001", venue).as_str());
+        let exec_client = BacktestExecutionClient::new(
+            self.kernel.config.trader_id,
+            account_id,
+            exchange.clone(),
+            self.kernel.cache.clone(),
+            self.kernel.clock.clone(),
+            routing,
+            frozen_account,
+        );
+        let exec_client = Rc::new(exec_client);
+
+        exchange.borrow_mut().register_client(exec_client.clone());
+        self.kernel
+            .exec_engine
+            .register_client(exec_client)
+            .unwrap();
+        log::info!("Adding exchange {} to engine", venue);
+    }
+
+    pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
+        todo!("implement change_fill_model")
+    }
+
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
+        todo!("implement add_instrument")
+    }
+
+    pub fn add_data(
+        &mut self,
+        data: Vec<Data>,
+        client_id: Option<ClientId>,
+        validate: bool,
+        sort: bool,
+    ) {
+        todo!("implement add_data")
+    }
+
+    pub fn add_actor(&mut self) {
+        todo!("implement add_actor")
+    }
+
+    pub fn add_actors(&mut self) {
+        todo!("implement add_actors")
+    }
+
+    pub fn add_strategy(&mut self) {
+        todo!("implement add_strategy")
+    }
+
+    pub fn add_strategies(&mut self) {
+        todo!("implement add_strategies")
+    }
+
+    pub fn add_exec_algorithm(&mut self) {
+        todo!("implement add_exec_algorithm")
+    }
+
+    pub fn add_exec_algorithms(&mut self) {
+        todo!("implement add_exec_algorithms")
+    }
+
+    pub fn reset(&mut self) {
+        todo!("implement reset")
+    }
+
+    pub fn clear_data(&mut self) {
+        todo!("implement clear_data")
+    }
+
+    pub fn clear_strategies(&mut self) {
+        todo!("implement clear_strategies")
+    }
+
+    pub fn clear_exec_algorithms(&mut self) {
+        todo!("implement clear_exec_algorithms")
+    }
+
+    pub fn dispose(&mut self) {
+        todo!("implement dispose")
+    }
+
+    pub fn run(&mut self) {
+        todo!("implement run")
+    }
+
+    pub fn end(&mut self) {
+        todo!("implement end")
+    }
+
+    pub fn get_result(&self) {
+        todo!("implement get_result")
+    }
+
+    pub fn next(&mut self) {
+        todo!("implement next")
+    }
+
+    pub fn advance_time(&mut self) {
+        todo!("implement advance_time")
+    }
+
+    pub fn process_raw_time_event_handlers(&mut self) {
+        todo!("implement process_raw_time_event_handlers")
+    }
+
+    pub fn log_pre_run(&self) {
+        todo!("implement log_pre_run_diagnostics")
+    }
+
+    pub fn log_run(&self) {
+        todo!("implement log_run")
+    }
+
+    pub fn log_post_run(&self) {
+        todo!("implement log_post_run")
+    }
+
+    pub fn add_data_client_if_not_exists(&mut self) {
+        todo!("implement add_data_client_if_not_exists")
+    }
+
+    pub fn add_market_data_client_if_not_exists(&mut self) {
+        todo!("implement add_market_data_client_if_not_exists")
     }
 }

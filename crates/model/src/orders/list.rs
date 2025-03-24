@@ -15,13 +15,13 @@
 
 use std::fmt::Display;
 
-use nautilus_core::{correctness::check_slice_not_empty, UnixNanos};
+use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};
 use serde::{Deserialize, Serialize};
 
-use super::any::OrderAny;
+use super::{Order, OrderAny};
 use crate::identifiers::{InstrumentId, OrderListId, StrategyId};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -91,7 +91,7 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType},
         identifiers::{OrderListId, StrategyId},
-        instruments::{stubs::*, CurrencyPair},
+        instruments::{CurrencyPair, stubs::*},
         orders::OrderTestBuilder,
         types::{Price, Quantity},
     };

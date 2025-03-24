@@ -331,7 +331,15 @@ class DatabentoDataClient(LiveMarketDataClient):
                 return
 
             self._instrument_ids[dataset].add(instrument_id)
-            await self._subscribe_instrument(instrument_id)
+
+            subscribe = SubscribeInstrument(
+                instrument_id=instrument_id,
+                client_id=None,
+                venue=instrument_id.venue,
+                command_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            await self._subscribe_instrument(subscribe)
         except asyncio.CancelledError:
             self._log.warning(
                 "Canceled task 'ensure_subscribed_for_instrument'",
@@ -436,7 +444,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
-            start: int | None = command.params.get("start") if command.params else None
+            start: int | None = command.params.get("start")
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -599,8 +607,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            schema: str | None = command.params.get("schema") if command.params else None
             # allowed schema values: mbp-1, bbo-1s, bbo-1m
+            schema: str | None = command.params.get("schema")
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
                 DatabentoSchema.BBO_1S.value,
@@ -608,7 +616,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             ]:
                 schema = DatabentoSchema.MBP_1.value
 
-            start: int | None = command.params.get("start") if command.params else None
+            start: int | None = command.params.get("start")
 
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
@@ -632,7 +640,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await self._ensure_subscribed_for_instrument(command.instrument_id)
 
-            start: int | None = command.params.get("start") if command.params else None
+            start: int | None = command.params.get("start")
 
             dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
@@ -657,7 +665,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot subscribe: {e}")
                 return
 
-            start: int | None = command.params.get("start") if command.params else None
+            start: int | None = command.params.get("start")
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -889,21 +897,22 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        use_exchange_as_venue = request.params is not None and request.params.get(
-            "use_exchange_as_venue",
-            False,
-        )
+        use_exchange_as_venue = request.params.get("use_exchange_as_venue", False)
+
+        # parent_symbols can be equal to ["ES.OPT", "ES.FUT"] for example in order to not query all instruments of an exchange
+        parent_symbols = request.params.get("parent_symbols") or [ALL_SYMBOLS]
+        pyo3_instrument_ids = [
+            instrument_id_to_pyo3(InstrumentId.from_str(f"{symbol}.{request.venue}"))
+            for symbol in parent_symbols
+        ]
 
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
-            instrument_ids=[
-                instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.{request.venue}")),
-            ],
+            instrument_ids=pyo3_instrument_ids,
             start=start.value,
             end=end.value,
             use_exchange_as_venue=use_exchange_as_venue,
         )
-
         instruments = instruments_from_pyo3(pyo3_instruments)
 
         self._handle_instruments(instruments, request.venue, request.id, request.params)
@@ -925,8 +934,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        schema: str | None = request.params.get("schema") if request.params else None
         # allowed schema values: mbp-1, bbo-1s, bbo-1m
+        schema: str | None = request.params.get("schema")
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
             DatabentoSchema.BBO_1S.value,

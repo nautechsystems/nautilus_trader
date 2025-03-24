@@ -158,7 +158,7 @@ pub fn check_equal<T: PartialEq + Debug + Display>(
     rhs_param: &str,
 ) -> anyhow::Result<()> {
     if lhs != rhs {
-        anyhow::bail!("'{lhs_param}' value of {lhs} was not equal to '{rhs_param}' value of {rhs}",);
+        anyhow::bail!("'{lhs_param}' value of {lhs} was not equal to '{rhs_param}' value of {rhs}");
     }
     Ok(())
 }

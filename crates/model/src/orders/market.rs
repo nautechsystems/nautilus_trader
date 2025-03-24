@@ -20,21 +20,18 @@ use std::{
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    correctness::{check_predicate_false, FAILED},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_false},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{
-    any::OrderAny,
-    base::{Order, OrderCore},
-};
+use super::{Order, OrderAny, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
@@ -42,7 +39,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::OrderError,
-    types::{quantity::check_quantity_positive, Price, Quantity},
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -125,7 +122,7 @@ impl MarketOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
     ) -> anyhow::Result<Self> {
-        check_quantity_positive(quantity)?;
+        check_positive_quantity(quantity, stringify!(quantity))?;
         check_predicate_false(
             time_in_force == TimeInForce::Gtd,
             "GTD not supported for Market orders",
@@ -241,7 +238,7 @@ impl Order for MarketOrder {
         self.last_trade_id
     }
 
-    fn side(&self) -> OrderSide {
+    fn order_side(&self) -> OrderSide {
         self.side
     }
 
@@ -287,6 +284,10 @@ impl Order for MarketOrder {
 
     fn is_quote_quantity(&self) -> bool {
         self.is_quote_quantity
+    }
+
+    fn has_price(&self) -> bool {
+        false
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -365,12 +366,20 @@ impl Order for MarketOrder {
         self.init_id
     }
 
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
     fn ts_last(&self) -> UnixNanos {
         self.ts_last
+    }
+
+    fn ts_accepted(&self) -> Option<UnixNanos> {
+        self.ts_accepted
+    }
+
+    fn ts_submitted(&self) -> Option<UnixNanos> {
+        self.ts_submitted
+    }
+
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
@@ -405,6 +414,46 @@ impl Order for MarketOrder {
 
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
+    }
+
+    fn commissions(&self) -> &IndexMap<Currency, Money> {
+        &self.commissions
+    }
+
+    fn is_triggered(&self) -> Option<bool> {
+        None
+    }
+
+    fn set_position_id(&mut self, position_id: Option<PositionId>) {
+        self.position_id = position_id;
+    }
+
+    fn set_quantity(&mut self, quantity: Quantity) {
+        self.quantity = quantity;
+    }
+
+    fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
+        self.leaves_qty = leaves_qty;
+    }
+
+    fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
+        self.emulation_trigger = emulation_trigger;
+    }
+
+    fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
+        self.is_quote_quantity = is_quote_quantity;
+    }
+
+    fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
+        self.liquidity_side = Some(liquidity_side)
+    }
+
+    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.core.would_reduce_only(side, position_qty)
+    }
+
+    fn previous_status(&self) -> Option<OrderStatus> {
+        self.core.previous_status
     }
 }
 
@@ -446,20 +495,6 @@ impl Display for MarketOrder {
     }
 }
 
-impl From<OrderAny> for MarketOrder {
-    fn from(order: OrderAny) -> MarketOrder {
-        match order {
-            OrderAny::Market(order) => order,
-            _ => {
-                panic!(
-                    "Invalid `OrderAny` not `{}`, was {order:?}",
-                    stringify!(MarketOrder),
-                )
-            }
-        }
-    }
-}
-
 impl From<OrderInitialized> for MarketOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -495,13 +530,15 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
-        instruments::{stubs::*, CurrencyPair},
+        instruments::{CurrencyPair, stubs::*},
         orders::builder::OrderTestBuilder,
         types::Quantity,
     };
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
     fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(audusd_sim.id)

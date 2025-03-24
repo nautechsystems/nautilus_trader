@@ -16,7 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use derive_builder::Builder;
-use nautilus_core::{serialization::from_bool_as_u8, UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos, serialization::from_bool_as_u8};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -99,7 +99,8 @@ impl OrderRejected {
 
 impl Debug for OrderRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,
+        write!(
+            f,
             "{}(trader_id={}, strategy_id={}, instrument_id={}, client_order_id={}, account_id={}, reason='{}', event_id={}, ts_event={}, ts_init={})",
             stringify!(OrderRejected),
             self.trader_id,
@@ -313,7 +314,10 @@ mod tests {
     #[rstest]
     fn test_order_rejected_display(order_rejected_insufficient_margin: OrderRejected) {
         let display = format!("{order_rejected_insufficient_margin}");
-        assert_eq!(display, "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
-        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)");
+        assert_eq!(
+            display,
+            "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
+        account_id=SIM-001, reason='INSUFFICIENT_MARGIN', ts_event=0)"
+        );
     }
 }

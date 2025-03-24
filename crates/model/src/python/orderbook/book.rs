@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashSet;
+
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
@@ -20,9 +22,9 @@ use rust_decimal::Decimal;
 
 use crate::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick},
-    enums::{BookType, OrderSide},
+    enums::{BookType, OrderSide, OrderStatus},
     identifiers::InstrumentId,
-    orderbook::{analysis::book_check_integrity, BookLevel, OrderBook},
+    orderbook::{BookLevel, OrderBook, analysis::book_check_integrity, own::OwnOrderBook},
     types::{Price, Quantity},
 };
 
@@ -79,9 +81,9 @@ impl OrderBook {
     }
 
     #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> u64 {
-        self.count
+    #[pyo3(name = "update_count")]
+    fn py_update_count(&self) -> u64 {
+        self.update_count
     }
 
     #[pyo3(name = "reset")]
@@ -193,6 +195,74 @@ impl OrderBook {
         self.group_asks(group_size, depth)
     }
 
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "bids_filtered_to_dict")]
+    fn py_bids_filtered_to_dict(
+        &self,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.bids_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+    }
+
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "asks_filtered_to_dict")]
+    fn py_asks_filtered_to_dict(
+        &self,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
+    }
+
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_bids_filtered")]
+    fn py_group_bids_filered(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_bids_filtered(
+            group_size,
+            depth,
+            own_book,
+            status,
+            accepted_buffer_ns,
+            ts_now,
+        )
+    }
+
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
+    #[pyo3(name = "group_asks_filtered")]
+    fn py_group_asks_filtered(
+        &self,
+        group_size: Decimal,
+        depth: Option<usize>,
+        own_book: Option<&OwnOrderBook>,
+        status: Option<HashSet<OrderStatus>>,
+        accepted_buffer_ns: Option<u64>,
+        ts_now: Option<u64>,
+    ) -> IndexMap<Decimal, Decimal> {
+        self.group_asks_filtered(
+            group_size,
+            depth,
+            own_book,
+            status,
+            accepted_buffer_ns,
+            ts_now,
+        )
+    }
+
     #[pyo3(name = "best_bid_price")]
     fn py_best_bid_price(&self) -> Option<Price> {
         self.best_bid_price()
@@ -247,6 +317,7 @@ impl OrderBook {
         self.simulate_fills(order)
     }
 
+    #[pyo3(signature = (num_levels=3))]
     #[pyo3(name = "pprint")]
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)

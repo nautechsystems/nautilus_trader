@@ -10,6 +10,17 @@ documentation.workspace = true
 name = "nautilus_cryptography"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[features]
+default = []
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+python = [
+  "pyo3",
+  "nautilus-core/python",
+]
+
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
@@ -19,21 +30,10 @@ pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 ring = { workspace = true }
 tracing = { workspace = true }
-rustls = { version = "0.23.23", features = ["ring"] }
+rustls = { version = "0.23.25", features = ["ring"] }
 rustls-platform-verifier = "0.5.0"
-pem = "3.0.4"
+pem = "3.0.5"
 
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
-
-[features]
-default = ["python"]
-extension-module = [
-  "pyo3/extension-module",
-  "nautilus-core/extension-module",
-]
-python = [
-  "pyo3",
-  "nautilus-core/python",
-]

@@ -150,6 +150,7 @@ cdef class FuturesContract(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.exchange = exchange
         self.underlying = underlying
         self.activation_ns = activation_ns

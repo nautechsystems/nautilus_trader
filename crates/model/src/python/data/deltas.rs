@@ -19,7 +19,7 @@ use std::{
     ops::Deref,
 };
 
-use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
 
 use super::data_to_pycapsule;

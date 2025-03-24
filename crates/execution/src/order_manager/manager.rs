@@ -19,7 +19,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SENT},
-    msgbus::MessageBus,
+    msgbus::{self},
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -28,22 +28,21 @@ use nautilus_model::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, ExecAlgorithmId, PositionId},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     types::Quantity,
 };
 use ustr::Ustr;
 
 use crate::messages::{
+    SubmitOrder, TradingCommand,
     cancel::{CancelOrderHandler, CancelOrderHandlerAny},
     modify::{ModifyOrderHandler, ModifyOrderHandlerAny},
     submit::{SubmitOrderHandler, SubmitOrderHandlerAny},
-    SubmitOrder, TradingCommand,
 };
 
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     active_local: bool,
     submit_order_handler: Option<SubmitOrderHandlerAny>,
     cancel_order_handler: Option<CancelOrderHandlerAny>,
@@ -54,7 +53,6 @@ pub struct OrderManager {
 impl OrderManager {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
         submit_order_handler: Option<SubmitOrderHandlerAny>,
@@ -64,7 +62,6 @@ impl OrderManager {
         Self {
             clock,
             cache,
-            msgbus,
             active_local,
             submit_order_handler,
             cancel_order_handler,
@@ -310,7 +307,7 @@ impl OrderManager {
 
                 for client_order_id in linked_orders {
                     let mut child_order =
-                        if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
+                        if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
                             order
                         } else {
                             panic!(
@@ -355,11 +352,7 @@ impl OrderManager {
                 };
 
                 for client_order_id in linked_orders {
-                    let contingent_order = match self
-                        .cache
-                        .borrow()
-                        .order(&client_order_id)
-                        .cloned()
+                    let contingent_order = match self.cache.borrow().order(client_order_id).cloned()
                     {
                         Some(contingent_order) => contingent_order,
                         None => {
@@ -413,14 +406,14 @@ impl OrderManager {
 
         for client_order_id in linked_orders {
             let mut contingent_order =
-                if let Some(order) = self.cache.borrow().order(&client_order_id).cloned() {
+                if let Some(order) = self.cache.borrow().order(client_order_id).cloned() {
                     order
                 } else {
                     panic!("Cannot find contingent order for client_order_id: {client_order_id}");
                 };
 
             if !self.should_manage_order(&contingent_order)
-                || client_order_id == order.client_order_id()
+                || client_order_id == &order.client_order_id()
             {
                 continue;
             }
@@ -490,7 +483,7 @@ impl OrderManager {
         };
 
         for client_order_id in linked_orders {
-            let mut contingent_order = match self.cache.borrow().order(&client_order_id).cloned() {
+            let mut contingent_order = match self.cache.borrow().order(client_order_id).cloned() {
                 Some(contingent_order) => contingent_order,
                 None => panic!(
                     "Cannot find OCO contingent order for client_order_id: {client_order_id}"
@@ -498,7 +491,7 @@ impl OrderManager {
             };
 
             if !self.should_manage_order(&contingent_order)
-                || client_order_id == order.client_order_id()
+                || client_order_id == &order.client_order_id()
                 || contingent_order.is_closed()
             {
                 continue;
@@ -524,16 +517,14 @@ impl OrderManager {
     pub fn send_emulator_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
 
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("OrderEmulator.execute"), &command);
+        msgbus::send(&Ustr::from("OrderEmulator.execute"), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
         log::info!("{CMD}{SENT} {command}");
 
         let endpoint = format!("{exec_algorithm_id}.execute");
-        self.msgbus.borrow().send(
+        msgbus::send(
             &Ustr::from(&endpoint),
             &TradingCommand::SubmitOrder(command),
         );
@@ -541,31 +532,21 @@ impl OrderManager {
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
-
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("RiskEngine.execute"), &command);
+        msgbus::send(&Ustr::from("RiskEngine.execute"), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SENT} {command}");
-
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("ExecEngine.execute"), &command);
+        msgbus::send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("RiskEngine.process"), &event);
+        msgbus::send(&Ustr::from("RiskEngine.process"), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
         log::info!("{}{} {}", EVT, SENT, event);
-        self.msgbus
-            .borrow()
-            .send(&Ustr::from("ExecEngine.process"), &event);
+        msgbus::send(&Ustr::from("ExecEngine.process"), &event);
     }
 }

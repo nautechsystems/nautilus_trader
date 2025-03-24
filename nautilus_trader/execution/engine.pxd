@@ -55,6 +55,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint manage_own_order_books
+    """If the execution engine should maintain own order books based on commands and events.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_orders
     """If order state snapshots should be persisted.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
@@ -76,6 +78,7 @@ cdef class ExecutionEngine(Component):
     cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id)
     cpdef set get_external_order_claims_instruments(self)
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders)
+    cpdef void set_manage_own_order_books(self, bint value)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -97,6 +100,8 @@ cdef class ExecutionEngine(Component):
     cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side)
     cpdef void _set_order_base_qty(self, Order order, Quantity base_qty)
     cpdef void _deny_order(self, Order order, str reason)
+    cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id)
+    cpdef void _add_own_book_order(self, Order order)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

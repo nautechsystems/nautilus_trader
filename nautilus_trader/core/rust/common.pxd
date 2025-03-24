@@ -218,7 +218,7 @@ cdef extern from "../includes/common.h":
 
     uint64_t test_clock_timestamp_ns(const TestClock_API *clock);
 
-    PyObject *test_clock_timer_names(const TestClock_API *clock);
+    const char *test_clock_timer_names(const TestClock_API *clock);
 
     uintptr_t test_clock_timer_count(TestClock_API *clock);
 
@@ -278,7 +278,7 @@ cdef extern from "../includes/common.h":
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
 
-    PyObject *live_clock_timer_names(const LiveClock_API *clock);
+    const char *live_clock_timer_names(const LiveClock_API *clock);
 
     uintptr_t live_clock_timer_count(LiveClock_API *clock);
 
@@ -365,7 +365,7 @@ cdef extern from "../includes/common.h":
     # Initializes logging.
     #
     # Logging should be used for Python and sync Rust logic which is most of
-    # the components in the main `nautilus_trader` package.
+    # the components in the [nautilus_trader](https://pypi.org/project/nautilus_trader) package.
     # Logging can be configured to filter components and write up to a specific level only
     # by passing a configuration using the `NAUTILUS_LOG` environment variable.
     #

@@ -22,7 +22,7 @@ use std::{
 };
 
 use derive_builder::Builder;
-use nautilus_core::{serialization::Serializable, UnixNanos};
+use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 

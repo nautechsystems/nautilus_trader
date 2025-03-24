@@ -23,15 +23,15 @@ use arrow::{
 };
 use nautilus_model::{
     data::{Bar, BarType},
-    types::{fixed::PRECISION_BYTES, Price, Quantity},
+    types::{Price, Quantity, fixed::PRECISION_BYTES},
 };
 
 use super::{
-    extract_column, get_raw_quantity, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION, extract_column, get_raw_quantity,
 };
 use crate::arrow::{
-    get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
+    ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch, get_raw_price,
 };
 
 impl ArrowSchemaProvider for Bar {

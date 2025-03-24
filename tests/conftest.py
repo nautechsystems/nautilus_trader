@@ -26,7 +26,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 @pytest.fixture(scope="session", autouse=True)
-def bypass_logging() -> None:
+def bypass_logging():
     """
     Fixture to bypass logging for all tests.
 
@@ -34,13 +34,16 @@ def bypass_logging() -> None:
     to debug specific tests, simply comment this out.
 
     """
-    _guard = init_logging(
-        level_stdout=LogLevel.DEBUG,
-        bypass=True,  # Set this to False to see logging in tests
-    )
     # Uncomment below for tracing logs from Rust
     # from nautilus_trader.core import nautilus_pyo3
     # nautilus_pyo3.init_tracing()
+    guard = init_logging(
+        level_stdout=LogLevel.DEBUG,
+        bypass=True,  # Set this to False to see logging in tests
+        # print_config=True,
+    )
+    # Yield guard to keep it alive for the session lifetime, avoiding garbage collection
+    yield guard
 
 
 @pytest.fixture(name="audusd_instrument")

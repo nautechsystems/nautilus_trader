@@ -131,7 +131,6 @@ cdef class OptionContract(Instrument):
         str exchange = None,
         dict info = None,
     ) -> None:
-        Condition.positive_int(multiplier, "multiplier")
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
         super().__init__(
@@ -161,6 +160,7 @@ cdef class OptionContract(Instrument):
             ts_init=ts_init,
             info=info,
         )
+
         self.exchange = exchange
         self.underlying = underlying
         self.option_kind = option_kind
@@ -176,10 +176,10 @@ cdef class OptionContract(Instrument):
             f"asset_class={asset_class_to_str(self.asset_class)}, "
             f"instrument_class={instrument_class_to_str(self.instrument_class)}, "
             f"exchange={self.exchange}, "
-            f"quote_currency={self.quote_currency}, "
             f"underlying={self.underlying}, "
             f"option_kind={option_kind_to_str(self.option_kind)}, "
             f"strike_price={self.strike_price}, "
+            f"quote_currency={self.quote_currency}, "
             f"activation={format_iso8601(self.activation_utc, nanos_precision=False)}, "
             f"expiration={format_iso8601(self.expiration_utc, nanos_precision=False)}, "
             f"price_precision={self.price_precision}, "
@@ -254,7 +254,12 @@ cdef class OptionContract(Instrument):
             "id": obj.id.to_str(),
             "raw_symbol": obj.raw_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
+            "option_kind": option_kind_to_str(obj.option_kind),
+            "strike_price": str(obj.strike_price),
             "currency": obj.quote_currency.code,
+            "underlying": str(obj.underlying),
+            "activation_ns": obj.activation_ns,
+            "expiration_ns": obj.expiration_ns,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
@@ -265,18 +270,13 @@ cdef class OptionContract(Instrument):
             "max_price": str(obj.max_price) if obj.max_price is not None else None,
             "min_price": str(obj.min_price) if obj.min_price is not None else None,
             "lot_size": str(obj.lot_size),
-            "underlying": str(obj.underlying),
-            "option_kind": option_kind_to_str(obj.option_kind),
-            "activation_ns": obj.activation_ns,
-            "expiration_ns": obj.expiration_ns,
-            "strike_price": str(obj.strike_price),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
             "exchange": obj.exchange,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "info": obj.info,
         }
 

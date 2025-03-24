@@ -14,8 +14,8 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt},
     UUID4,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use nautilus_model::{
     enums::PositionSide,
@@ -121,6 +121,24 @@ impl PositionStatusReport {
     #[pyo3(name = "ts_init")]
     const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_flat")]
+    const fn py_is_flat(&self) -> bool {
+        self.is_flat()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_long")]
+    fn py_is_long(&self) -> bool {
+        self.is_long()
+    }
+
+    #[getter]
+    #[pyo3(name = "is_short")]
+    fn py_is_short(&self) -> bool {
+        self.is_short()
     }
 
     #[staticmethod]

@@ -14,20 +14,18 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, UUID4};
+use nautilus_core::{UUID4, python::to_pyruntime_err};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce},
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::order::initialized::OrderInitialized,
     identifiers::{
         ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::{
-        base::{str_indexmap_to_ustr, Order},
-        MarketToLimitOrder,
-    },
+    orders::{MarketToLimitOrder, Order, OrderCore, str_indexmap_to_ustr},
     python::events::order::{order_event_to_pyobject, pyobject_to_order_event},
     types::Quantity,
 };
@@ -88,6 +86,30 @@ impl MarketToLimitOrder {
         )
     }
 
+    #[staticmethod]
+    #[pyo3(name = "create")]
+    fn py_create(init: OrderInitialized) -> PyResult<Self> {
+        Ok(MarketToLimitOrder::from(init))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
+    }
+
+    #[getter]
+    #[pyo3(name = "status")]
+    fn py_status(&self) -> OrderStatus {
+        self.status
+    }
+
     #[getter]
     #[pyo3(name = "order_type")]
     fn py_order_type(&self) -> OrderType {
@@ -103,10 +125,14 @@ impl MarketToLimitOrder {
             .collect()
     }
 
-    #[staticmethod]
-    #[pyo3(name = "create")]
-    fn py_create(init: OrderInitialized) -> PyResult<Self> {
-        Ok(MarketToLimitOrder::from(init))
+    #[pyo3(name = "signed_decimal_qty")]
+    fn py_signed_decimal_qty(&self) -> Decimal {
+        self.signed_decimal_qty()
+    }
+
+    #[pyo3(name = "would_reduce_only")]
+    fn py_would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.would_reduce_only(side, position_qty)
     }
 
     #[pyo3(name = "apply")]

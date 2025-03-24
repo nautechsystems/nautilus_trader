@@ -1,0 +1,11 @@
+{
+  "channel": "MATCH",
+  "type": "UPDATE",
+  "product_id": "BTC-PERP",
+  "sequence": 0,
+  "match_id": "423596942694547460",
+  "trade_price": "84374",
+  "trade_qty": "0.0213",
+  "aggressor_side": "BUY",
+  "time": "2025-03-14T23:03:01.189Z"
+}

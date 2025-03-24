@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
-use anyhow;
 use nautilus_model::{
     enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
-    orders::{base::OrderError, OrderAny},
+    orders::{Order, OrderAny, OrderError},
     types::Price,
 };
-use rust_decimal::{prelude::*, Decimal};
+use rust_decimal::{Decimal, prelude::*};
 
 pub fn trailing_stop_calculate(
     price_increment: Price,

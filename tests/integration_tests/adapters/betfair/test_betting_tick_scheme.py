@@ -13,12 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import pytest
 
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
 from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 class TestBettingTickScheme:
@@ -166,3 +169,62 @@ class TestBitmexSpotTickScheme:
         result = self.tick_scheme.next_bid_price(value=value, n=n)
         expected = Price.from_str(expected)
         assert result == expected
+
+
+def test_betting_instrument_tick_scheme_next_ask_prices() -> None:
+    instrument = betting_instrument()
+
+    result = instrument.next_ask_prices(3, 10)
+
+    assert len(result) == 10
+    assert result == [
+        Decimal("3.00"),
+        Decimal("3.05"),
+        Decimal("3.10"),
+        Decimal("3.15"),
+        Decimal("3.20"),
+        Decimal("3.25"),
+        Decimal("3.30"),
+        Decimal("3.35"),
+        Decimal("3.40"),
+        Decimal("3.45"),
+    ]
+
+
+def test_betting_instrument_tick_scheme_next_bid_prices() -> None:
+    instrument = betting_instrument()
+
+    result = instrument.next_bid_prices(20, 10)
+
+    assert len(result) == 10
+    assert result == [
+        Decimal("20.00"),
+        Decimal("19.50"),
+        Decimal("19.00"),
+        Decimal("18.50"),
+        Decimal("18.00"),
+        Decimal("17.50"),
+        Decimal("17.00"),
+        Decimal("16.50"),
+        Decimal("16.00"),
+        Decimal("15.50"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "instrument, expected_bids, expected_asks",
+    [
+        (betting_instrument(), 10, 20),
+    ],
+)
+def test_next_prices(instrument, expected_bids, expected_asks):
+    bid_price = instrument.next_bid_price(1.102)
+    ask_price = instrument.next_ask_price(1.102)
+    bid_prices = instrument.next_bid_prices(1.102, 20)
+    ask_prices = instrument.next_ask_prices(1.102, 20)
+
+    assert bid_price == bid_prices[0]
+    assert ask_price == ask_prices[0]
+
+    assert len(bid_prices) == expected_bids
+    assert len(ask_prices) == expected_asks

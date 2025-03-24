@@ -70,6 +70,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.common.enums import BybitMarginMode
+    from nautilus_trader.adapters.bybit.common.enums import BybitPositionMode
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
     from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
     from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
@@ -155,7 +156,7 @@ class BybitAccountHttpAPI:
     async def switch_mode(
         self,
         category: BybitProductType,
-        mode: int,
+        mode: BybitPositionMode,
         symbol: str | None = None,
         coin: str | None = None,
     ) -> BybitSwitchModeResponse:

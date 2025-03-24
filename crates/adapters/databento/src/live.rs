@@ -23,7 +23,7 @@ use databento::{
     live::Subscription,
 };
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime, UnixNanos};
+use nautilus_core::{UnixNanos, python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API},
     enums::RecordFlag,
@@ -126,7 +126,7 @@ impl DatabentoFeedHandler {
         } else {
             self.msg_tx.send(LiveMessage::Close).await?;
             self.cmd_rx.close();
-            return Err(anyhow::anyhow!("Timeout connecting to LSG"));
+            anyhow::bail!("Timeout connecting to LSG");
         };
 
         // Timeout awaiting the next record before checking for a command

@@ -23,7 +23,7 @@ use std::{
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol, Venue},
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},

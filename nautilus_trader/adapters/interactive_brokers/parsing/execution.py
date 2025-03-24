@@ -105,5 +105,10 @@ def timestring_to_timestamp(timestring: str) -> pd.Timestamp:
     # Support string conversion not supported directly by pd.to_datetime
     # 20230223 00:43:36 America/New_York
     # 20230223 00:43:36 Universal
-    dt, tz = timestring.rsplit(" ", 1)
+    # When the tz is Universal, and mode is live (not paper) and only in this case, IB can also send it with this format : "20250225-15:15:00"
+    if " " in timestring:
+        dt, tz = timestring.rsplit(" ", 1)
+    else:
+        dt, tz = timestring.replace("-", " "), "Universal"
+
     return pd.Timestamp(dt, tz=tz)

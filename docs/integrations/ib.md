@@ -18,10 +18,10 @@ To install the latest `nautilus_trader` package along with the `ibapi` and optio
 pip install -U "nautilus_trader[ib,docker]"
 ```
 
-To install from source using poetry:
+To install from source using uv:
 
 ```
-poetry install --extras ib --extras docker
+uv sync --extra ib --extra docker
 ```
 
 :::note
@@ -30,7 +30,7 @@ Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](http
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
 
 ## Getting Started
 
@@ -334,7 +334,7 @@ to accommodate IB-specific requirements. A `TradingNode` is then instantiated fr
 and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added.
 Finally, the node is built and run.
 
-For a comprehensive example, refer to this [script](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
+You can find additional examples here: https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers
 
 
 ```python

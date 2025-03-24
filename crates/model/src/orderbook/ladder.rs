@@ -18,7 +18,7 @@
 use std::{
     cmp::Ordering,
     collections::{BTreeMap, HashMap},
-    fmt::{Display, Formatter},
+    fmt::{Debug, Display, Formatter},
 };
 
 use nautilus_core::UnixNanos;
@@ -235,6 +235,16 @@ impl BookLadder {
         }
 
         fills
+    }
+}
+
+impl Display for BookLadder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}(side={})", stringify!(BookLadder), self.side)?;
+        for (price, level) in &self.levels {
+            writeln!(f, "  {} -> {} orders", price, level.len())?;
+        }
+        Ok(())
     }
 }
 

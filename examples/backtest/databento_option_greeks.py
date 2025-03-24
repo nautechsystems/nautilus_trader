@@ -45,6 +45,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
 from nautilus_trader.trading.strategy import Strategy
@@ -121,8 +122,8 @@ class OptionStrategy(Strategy):
         self.subscribe_quote_ticks(self.config.option_id)
         self.subscribe_quote_ticks(self.config.option_id2)
 
-        bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
-        self.subscribe_bars(bar_type)
+        self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
+        self.subscribe_bars(self.bar_type)
 
         if self.config.load_greeks:
             self.greeks.subscribe_greeks("ES")
@@ -154,7 +155,9 @@ class OptionStrategy(Strategy):
         portfolio_greeks = self.greeks.portfolio_greeks(
             use_cached_greeks=self.config.load_greeks,
             publish_greeks=(not self.config.load_greeks),
-            vol_shock=0.0,
+            # underlyings=["ES"],
+            # spot_shock=10.,
+            # vol_shock=0.0,
             # percent_greeks=True,
             # index_instrument_id=self.config.future_id,
             # beta_weights={self.config.future_id: 2.}
@@ -182,6 +185,9 @@ class OptionStrategy(Strategy):
 
     def user_log(self, msg):
         self.log.warning(str(msg), color=LogColor.GREEN)
+
+    def on_stop(self):
+        self.unsubscribe_bars(self.bar_type)
 
 
 # %% [markdown]
@@ -294,14 +300,24 @@ results = node.run(raise_exception=True)
 
 # %%
 if stream_data:
-    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
-        basename_template="part-{i}.parquet",
-        partitioning=["date"],
-        existing_data_behavior="overwrite_or_ignore",
+        mode=CatalogWriteMode.NEWFILE,
     )
+
+    # other possibility, partitioning data by date (because GreeksData contains a date field)
+    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
+    # catalog.convert_stream_to_data(
+    #     results[0].instance_id,
+    #     GreeksData,
+    #     partitioning=["date"],
+    #     existing_data_behavior="overwrite_or_ignore",
+    # )
+
+# %%
+# catalog.consolidate_catalog()
+# catalog.consolidate_data(GreeksData, instrument_id=InstrumentId.from_str("ESM4 P5230.GLBX"))
 
 # %% [markdown]
 # ## backtest results

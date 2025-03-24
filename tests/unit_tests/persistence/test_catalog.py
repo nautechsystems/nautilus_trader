@@ -40,6 +40,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -292,7 +293,7 @@ def test_catalog_append_data(catalog: ParquetDataCatalog) -> None:
     catalog.write_data(stub_bars)
 
     # Act
-    catalog.write_data(stub_bars, mode="append")
+    catalog.write_data(stub_bars, mode=CatalogWriteMode.APPEND)
 
     # Assert
     bars = catalog.bars(bar_types=[str(bar_type)])

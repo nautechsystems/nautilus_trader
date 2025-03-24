@@ -34,6 +34,7 @@ rename_variants = "ScreamingSnakeCase"
 exclude = [
     "BarAggregation",
     "OrderId",
+    "OrderSideSpecified",
 ]
 
 [export.rename]
@@ -48,6 +49,8 @@ exclude = [
 "BarSpecification" = "BarSpecification_t"
 "BarType" = "BarType_t"
 "BookOrder" = "BookOrder_t"
+"OwnBookOrder" = "OwnBookOrder_t"
+"OrderSideSpecified" = "OrderSide"
 "ClientId" = "ClientId_t"
 "ClientOrderId" = "ClientOrderId_t"
 "ComponentId" = "ComponentId_t"

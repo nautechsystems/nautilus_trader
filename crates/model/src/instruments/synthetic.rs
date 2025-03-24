@@ -19,8 +19,8 @@ use std::{
 };
 
 use derive_builder::Builder;
-use evalexpr::{ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node, Value};
-use nautilus_core::{correctness::FAILED, UnixNanos};
+use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
+use nautilus_core::{UnixNanos, correctness::FAILED};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -176,11 +176,11 @@ impl SyntheticInstrument {
 
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
-        evalexpr::build_operator_tree::<DefaultNumericTypes>(formula).is_ok()
+        evalexpr::build_operator_tree(formula).is_ok()
     }
 
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let operator_tree = evalexpr::build_operator_tree::<DefaultNumericTypes>(&formula)?;
+        let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
         Ok(())
@@ -210,7 +210,7 @@ impl SyntheticInstrument {
     /// provided as an array of `f64` values.
     pub fn calculate(&mut self, inputs: &[f64]) -> anyhow::Result<Price> {
         if inputs.len() != self.variables.len() {
-            return Err(anyhow::anyhow!("Invalid number of input values"));
+            anyhow::bail!("Invalid number of input values");
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -222,9 +222,7 @@ impl SyntheticInstrument {
 
         match result {
             Value::Float(price) => Ok(Price::new(price, self.price_precision)),
-            _ => Err(anyhow::anyhow!(
-                "Failed to evaluate formula to a floating point number"
-            )),
+            _ => anyhow::bail!("Failed to evaluate formula to a floating point number"),
         }
     }
 }

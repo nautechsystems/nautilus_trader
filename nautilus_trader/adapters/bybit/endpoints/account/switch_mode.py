@@ -27,6 +27,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.common.enums import BybitPositionMode
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 
 
@@ -34,7 +35,7 @@ class BybitSwitchModePostParams(msgspec.Struct, omit_defaults=True, frozen=True,
     category: BybitProductType
     symbol: str | None = None
     coin: str | None = None
-    mode: int
+    mode: BybitPositionMode
 
 
 class BybitSwitchModeEndpoint(BybitHttpEndpoint):

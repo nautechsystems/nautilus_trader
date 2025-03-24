@@ -16,14 +16,14 @@
 use std::{str::FromStr, sync::Arc};
 
 use nautilus_core::{
-    python::{to_pyvalue_err, IntoPyObjectNautilusExt},
-    UnixNanos, UUID4,
+    UUID4, UnixNanos,
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
 };
 use pyo3::{
+    IntoPyObjectExt,
     basic::CompareOp,
     prelude::*,
     types::{PyInt, PyString, PyTuple},
-    IntoPyObjectExt,
 };
 use ustr::Ustr;
 
@@ -183,11 +183,12 @@ mod tests {
     use tokio::sync::Mutex;
 
     use nautilus_core::{
-        datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
-        time::get_atomic_clock_realtime, UnixNanos,
+        UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND, python::IntoPyObjectNautilusExt,
+        time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
+    use ustr::Ustr;
 
     use crate::{
         testing::wait_until,
@@ -216,7 +217,13 @@ mod tests {
         let interval_ns = NonZeroU64::new(100 * NANOSECONDS_IN_MILLISECOND).unwrap();
 
         #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
+        let mut timer = LiveTimer::new(
+            Ustr::from("TEST_TIMER"),
+            interval_ns,
+            start_time,
+            None,
+            callback,
+        );
 
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {
@@ -255,7 +262,7 @@ mod tests {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
-            "TEST_TIMER",
+            Ustr::from("TEST_TIMER"),
             interval_ns,
             start_time,
             Some(stop_time),
@@ -306,7 +313,7 @@ mod tests {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
-            "TEST_TIMER",
+            Ustr::from("TEST_TIMER"),
             interval_ns,
             start_time,
             Some(stop_time),

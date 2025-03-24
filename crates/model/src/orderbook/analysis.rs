@@ -21,7 +21,7 @@ use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
     enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
-    types::{fixed::FIXED_SCALAR, quantity::QuantityRaw, Price, Quantity},
+    types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
 /// Calculates the estimated fill quantity for a specified price from a set of

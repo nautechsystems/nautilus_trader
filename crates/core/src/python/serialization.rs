@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use pyo3::{prelude::*, types::PyDict};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::python::to_pyvalue_err;
 

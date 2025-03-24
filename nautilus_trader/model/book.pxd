@@ -21,6 +21,9 @@ from nautilus_trader.core.rust.model cimport BookLevel_API
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
@@ -59,7 +62,7 @@ cdef class OrderBook(Data):
     cpdef midpoint(self)
     cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
     cpdef double get_quantity_for_price(self, Price price, OrderSide order_side)
-    cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive)
+    cpdef list simulate_fills(self, Order order, uint8_t price_prec, uint8_t size_prec, bint is_aggressive)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
     cpdef str pprint(self, int num_levels=*)
@@ -74,3 +77,7 @@ cdef class BookLevel:
 
     @staticmethod
     cdef BookLevel from_mem_c(BookLevel_API mem)
+
+
+cdef inline bint should_handle_own_book_order(Order order):
+    return order.has_price_c() and order.time_in_force != TimeInForce.IOC and order.time_in_force != TimeInForce.FOK

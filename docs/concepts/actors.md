@@ -83,7 +83,7 @@ Here's how different data operations map to their handlers:
 | `subscribe_bars()`              | Real-time&nbsp;  | `on_bar()`               | Live bar updates |
 | `subscribe_instrument_status()` | Real-time&nbsp;  | `on_instrument_status()` | Live instrument status updates |
 | `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |
-| `request_data()`                | Historical       | `on_historical_data()`   | Historical data pricessing |
+| `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing |
 | `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates |
 | `request_instruments()`         | Historical       | `on_historical_data()`   | Instrument definition updates |
 | `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing |

@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_core::{UnixNanos, UUID4};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     identifiers::{
         ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
@@ -25,7 +25,7 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub struct SubmitOrderList {
     pub trader_id: TraderId,

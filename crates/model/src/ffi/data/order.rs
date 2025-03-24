@@ -27,7 +27,7 @@ use crate::{
     types::{Price, Quantity},
 };
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn book_order_new(
     order_side: OrderSide,
@@ -38,36 +38,36 @@ pub extern "C" fn book_order_new(
     BookOrder::new(order_side, price, size, order_id)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_eq(lhs: &BookOrder, rhs: &BookOrder) -> u8 {
     u8::from(lhs == rhs)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
     let mut hasher = DefaultHasher::new();
     order.hash(&mut hasher);
     hasher.finish()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_exposure(order: &BookOrder) -> f64 {
     order.exposure()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_signed_size(order: &BookOrder) -> f64 {
     order.signed_size()
 }
 
 /// Returns a [`BookOrder`] display string as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_display_to_cstr(order: &BookOrder) -> *const c_char {
     str_to_cstr(&format!("{order}"))
 }
 
 /// Returns a [`BookOrder`] debug string as a C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn book_order_debug_to_cstr(order: &BookOrder) -> *const c_char {
     str_to_cstr(&format!("{order:?}"))
 }

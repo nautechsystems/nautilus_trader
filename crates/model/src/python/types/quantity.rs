@@ -20,7 +20,7 @@ use std::{
 };
 
 use nautilus_core::python::{
-    get_pytype_name, to_pytype_err, to_pyvalue_err, IntoPyObjectNautilusExt,
+    IntoPyObjectNautilusExt, get_pytype_name, to_pytype_err, to_pyvalue_err,
 };
 use pyo3::{
     conversion::IntoPyObjectExt,
@@ -30,7 +30,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{quantity::QuantityRaw, Quantity};
+use crate::types::{Quantity, quantity::QuantityRaw};
 
 #[pymethods]
 impl Quantity {

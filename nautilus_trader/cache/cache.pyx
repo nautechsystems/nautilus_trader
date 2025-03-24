@@ -18,6 +18,7 @@ import pickle
 import time
 import uuid
 from collections import deque
+from decimal import Decimal
 
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
@@ -37,9 +38,11 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.book cimport should_handle_own_book_order
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
@@ -47,6 +50,7 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport order_status_to_pyo3
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -114,6 +118,7 @@ cdef class Cache(CacheFacade):
         self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
         self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
         self._order_books: dict[InstrumentId, OrderBook] = {}
+        self._own_order_books: dict[InstrumentId, nautilus_pyo3.OwnOrderBook] = {}
         self._bars: dict[BarType, deque[Bar]] = {}
         self._bars_bid: dict[InstrumentId, Bar] = {}
         self._bars_ask: dict[InstrumentId, Bar] = {}
@@ -147,6 +152,7 @@ cdef class Cache(CacheFacade):
         self._index_exec_spawn_orders: dict[ClientOrderId: set[ClientOrderId]] = {}
         self._index_orders: set[ClientOrderId] = set()
         self._index_orders_open: set[ClientOrderId] = set()
+        self._index_orders_open_pyo3: set[nautilus_pyo3.ClientOrderId] = set()
         self._index_orders_closed: set[ClientOrderId] = set()
         self._index_orders_emulated: set[ClientOrderId] = set()
         self._index_orders_inflight: set[ClientOrderId] = set()
@@ -409,10 +415,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void build_index(self):
         """
-        Clear the current cache index and re-build.
+        Build the cache index from objects currently held in memory.
         """
-        self.clear_index()
-
         self._log.debug(f"Building index")
         cdef double ts = time.time()
 
@@ -774,6 +778,7 @@ cdef class Cache(CacheFacade):
         self._index_exec_spawn_orders.clear()
         self._index_orders.clear()
         self._index_orders_open.clear()
+        self._index_orders_open_pyo3.clear()
         self._index_orders_closed.clear()
         self._index_orders_emulated.clear()
         self._index_orders_inflight.clear()
@@ -802,6 +807,7 @@ cdef class Cache(CacheFacade):
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._order_books.clear()
+        self._own_order_books.clear()
         self._bars.clear()
         self._bars_bid.clear()
         self._bars_ask.clear()
@@ -900,6 +906,8 @@ cdef class Cache(CacheFacade):
             # 10: Build _index_orders_open -> {ClientOrderId}
             if order.is_open_c():
                 self._index_orders_open.add(client_order_id)
+                if self._own_order_books:
+                    self._index_orders_open_pyo3.add(nautilus_pyo3.ClientOrderId(client_order_id.value))
 
             # 11: Build _index_orders_closed -> {ClientOrderId}
             if order.is_closed_c():
@@ -1197,6 +1205,21 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_book, "order_book")
 
         self._order_books[order_book.instrument_id] = order_book
+
+    cpdef void add_own_order_book(self, own_order_book):
+        """
+        Add the given own order book to the cache.
+
+        Parameters
+        ----------
+        own_order_book : nautilus_pyo3.OwnOrderBook
+            The own order book to add.
+
+        """
+        Condition.not_none(own_order_book, "own_order_book")
+
+        cdef InstrumentId instrument_id = InstrumentId.from_str(own_order_book.instrument_id.value)
+        self._own_order_books[instrument_id] = own_order_book
 
     cpdef void add_mark_price(self, InstrumentId instrument_id, Price price):
         """
@@ -1974,16 +1997,24 @@ cdef class Cache(CacheFacade):
         if order.is_open_c():
             self._index_orders_closed.discard(order.client_order_id)
             self._index_orders_open.add(order.client_order_id)
+            if self._own_order_books:
+                self._index_orders_open_pyo3.add(nautilus_pyo3.ClientOrderId(order.client_order_id.value))
         elif order.is_closed_c():
             self._index_orders_open.discard(order.client_order_id)
             self._index_orders_pending_cancel.discard(order.client_order_id)
             self._index_orders_closed.add(order.client_order_id)
+            if self._own_order_books:
+                self._index_orders_open_pyo3.discard(nautilus_pyo3.ClientOrderId(order.client_order_id.value))
 
         # Update emulation
         if order.is_closed_c() or order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
+
+        # Update own book
+        if self._own_order_books and should_handle_own_book_order(order):
+            self.update_own_order_book(order)
 
         if self._database is None:
             return
@@ -2004,6 +2035,34 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order, "order")
 
         self._index_orders_pending_cancel.add(order.client_order_id)
+
+    cpdef void update_own_order_book(self, Order order):
+        """
+        Update the own order book for the given order.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+
+        """
+        Condition.not_none(order, "order")
+
+        own_book = self._own_order_books.get(order.instrument_id)
+        if own_book is None:
+            pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
+            own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
+            self._own_order_books[order.instrument_id] = own_book
+            self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
+
+        own_book_order = order.to_own_book_order()
+
+        if order.is_closed_c():
+            own_book.delete(own_book_order)
+            self._log.debug(f"Deleted: {own_book_order!r}", LogColor.MAGENTA)
+        else:
+            own_book.update(own_book_order)
+            self._log.debug(f"Updated: {own_book_order!r}", LogColor.MAGENTA)
 
     cpdef void update_position(self, Position position):
         """
@@ -2237,24 +2296,147 @@ cdef class Cache(CacheFacade):
             if bar is not None:
                 return bar.close
 
-    cpdef OrderBook order_book(self, InstrumentId instrument_id):
+    cpdef dict[InstrumentId, Price] prices(self, PriceType price_type):
         """
-        Return the order book for the given instrument ID.
+        Return a map of latest prices per instrument ID for the given price type.
 
         Parameters
         ----------
         instrument_id : InstrumentId
+            The instrument ID for the price.
+        price_type : PriceType
+            The price type for the query.
+
+        Returns
+        -------
+        dict[InstrumentId, Price]
+            Includes key value pairs for prices which exist.
+
+        """
+        cdef set[InstrumentId] instrument_ids = {b.instrument_id for b in self._bars.keys()}
+
+        if price_type == PriceType.LAST:
+            instrument_ids.update(self._trade_ticks.keys())
+        elif price_type == PriceType.BID or price_type == PriceType.ASK or price_type == PriceType.MID:
+            instrument_ids.update(self._quote_ticks.keys())
+        elif price_type == PriceType.MARK:
+            instrument_ids.update(self._mark_prices.keys())
+        else:
+            # Unreachable unless code changes
+            raise ValueError(f"Invalid `PriceType`, was {price_type}")
+
+        cdef dict[InstrumentId, Price] prices_map = {}
+
+        cdef:
+            InstrumentId instrument_id
+            Price price
+        for instrument_id in sorted(instrument_ids):
+            price = self.price(instrument_id, price_type)
+            if price is not None:
+                prices_map[instrument_id] = price
+
+        return prices_map
+
+    cpdef OrderBook order_book(self, InstrumentId instrument_id):
+        """
+        Return the order book for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book to get.
 
         Returns
         -------
         OrderBook or ``None``
+            If book not found for the instrument ID then returns ``None``.
 
         """
+        Condition.not_none(instrument_id, "instrument_id")
+
         return self._order_books.get(instrument_id)
+
+    cpdef object own_order_book(self, InstrumentId instrument_id):
+        """
+        Return the own order book for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the own order book to get.
+            Note this is the standard Cython `InstumentId`.
+
+        Returns
+        -------
+        nautilus_pyo3.OwnOrderBook or ``None``
+            If own book not found for the instrument ID then returns ``None``.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self._own_order_books.get(instrument_id)
+
+    cpdef dict[Decimal, list[Order]] own_bid_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+        """
+        Return own bid orders for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the own orders to get.
+            Note this is the standard Cython `InstumentId`.
+        status : set[OrderStatus], optional
+            The order status to filter for. Empty price levels after filtering are excluded from the result.
+
+        Returns
+        -------
+        dict[Decimal, list[Order]] or ``None``
+            If own book not found for the instrument ID then returns ``None``.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        own_order_book = self._own_order_books.get(instrument_id)
+        if own_order_book is None:
+            return None
+
+        return process_own_order_map(
+            own_order_book.bids_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            self._orders,
+        )
+
+    cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status = None):
+        """
+        Return own ask orders for the given instrument ID (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the own orders to get.
+            Note this is the standard Cython `InstumentId`.
+        status : set[OrderStatus], optional
+            The order status to filter for. Empty price levels after filtering are excluded from the result.
+
+        Returns
+        -------
+        dict[Decimal, list[Order]] or ``None``
+            If own book not found for the instrument ID then returns ``None``.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        own_order_book = self._own_order_books.get(instrument_id)
+        if own_order_book is None:
+            return None
+
+        return process_own_order_map(
+            own_order_book.asks_to_dict({order_status_to_pyo3(s) for s in status} if status is not None else None),
+            self._orders,
+        )
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index = 0):
         """
-        Return the quote tick for the given instrument ID at the given index.
+        Return the quote tick for the given instrument ID at the given index (if found).
 
         Last quote tick if no index specified.
 
@@ -2288,7 +2470,7 @@ cdef class Cache(CacheFacade):
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index = 0):
         """
-        Return the trade tick for the given instrument ID at the given index
+        Return the trade tick for the given instrument ID at the given index (if found).
 
         Last trade tick if no index specified.
 
@@ -2322,7 +2504,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
-        Return the bar for the given bar type at the given index.
+        Return the bar for the given bar type at the given index (if found).
 
         Last bar if no index specified.
 
@@ -2376,7 +2558,7 @@ cdef class Cache(CacheFacade):
         if book is None:
             return 0
         else:
-            return book.count
+            return book.update_count
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """
@@ -4390,3 +4572,46 @@ cdef class Cache(CacheFacade):
             return
 
         self._database.heartbeat(timestamp)
+
+    cpdef void audit_own_order_books(self):
+        """
+        Audit all own order books against public order books.
+
+        Ensures:
+         - Closed orders are removed from own order books.
+
+        Logs all failures as errors.
+
+        """
+        self._log.debug("Starting own books audit", LogColor.MAGENTA)
+        cdef double start_us = time.time() * 1_000_000
+
+        for own_book in self._own_order_books.values():
+            own_book.audit_open_orders(self._index_orders_open_pyo3)
+
+        cdef double audit_us = (time.time() * 1_000_000) - start_us
+        self._log.debug(f"Completed own books audit in {int(audit_us)}us", LogColor.MAGENTA)
+
+
+cdef inline dict[Decimal, list[Order]] process_own_order_map(
+    dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
+    dict[ClientOrderId, Order] order_cache,
+):
+    cdef dict[Decimal, Order] order_map = {}
+
+    cdef:
+        list[Order] orders = []
+        ClientOrderId client_order_id
+        Order order
+    for level_price, own_orders in own_order_map.items():
+        orders = []
+        for own_order in own_orders:
+            client_order_id = ClientOrderId(own_order.client_order_id.value)
+            order = order_cache.get(client_order_id)
+            if order is None:
+                RuntimeError(f"{client_order_id!r} from own book not found in cache")
+            orders.append(order)
+
+        order_map[level_price] = orders
+
+    return order_map

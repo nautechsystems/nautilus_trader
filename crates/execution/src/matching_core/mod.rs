@@ -24,7 +24,7 @@ pub mod handlers;
 use nautilus_model::{
     enums::OrderSideSpecified,
     identifiers::{ClientOrderId, InstrumentId},
-    orders::{LimitOrderAny, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
+    orders::{LimitOrderAny, Order, OrderAny, OrderError, PassiveOrderAny, StopOrderAny},
     types::Price,
 };
 
@@ -289,7 +289,7 @@ impl OrderMatchingCore {
 mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType},
-        orders::builder::OrderTestBuilder,
+        orders::{Order, builder::OrderTestBuilder},
         types::Quantity,
     };
     use rstest::rstest;

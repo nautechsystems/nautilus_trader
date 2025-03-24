@@ -23,13 +23,14 @@ use std::{
 
 use indexmap::IndexMap;
 use log::{
+    Level, LevelFilter, Log, STATIC_MAX_LEVEL,
     kv::{ToValue, Value},
-    set_boxed_logger, set_max_level, Level, LevelFilter, Log, STATIC_MAX_LEVEL,
+    set_boxed_logger, set_max_level,
 };
 use nautilus_core::{
+    UUID4, UnixNanos,
     datetime::unix_nanos_to_iso8601,
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
-    UnixNanos, UUID4,
 };
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, Serializer};
@@ -93,50 +94,48 @@ impl LoggerConfig {
         }
     }
 
-    #[must_use]
-    pub fn from_spec(spec: &str) -> Self {
-        let Self {
-            mut stdout_level,
-            mut fileout_level,
-            mut component_level,
-            mut is_colored,
-            mut print_config,
-        } = Self::default();
-        spec.split(';').for_each(|kv| {
-            if kv == "is_colored" {
-                is_colored = true;
-            } else if kv == "print_config" {
-                print_config = true;
+    pub fn from_spec(spec: &str) -> anyhow::Result<Self> {
+        let mut config = Self::default();
+        for kv in spec.split(';') {
+            let kv = kv.trim();
+            if kv.is_empty() {
+                continue;
+            }
+            let kv_lower = kv.to_lowercase(); // For case-insensitive comparison
+            if kv_lower == "is_colored" {
+                config.is_colored = true;
+            } else if kv_lower == "print_config" {
+                config.print_config = true;
             } else {
-                let mut kv = kv.split('=');
-                if let (Some(k), Some(Ok(lvl))) = (kv.next(), kv.next().map(LevelFilter::from_str))
-                {
-                    if k == "stdout" {
-                        stdout_level = lvl;
-                    } else if k == "fileout" {
-                        fileout_level = lvl;
-                    } else {
-                        component_level.insert(Ustr::from(k), lvl);
+                let parts: Vec<&str> = kv.split('=').collect();
+                if parts.len() != 2 {
+                    anyhow::bail!("Invalid spec pair: {}", kv);
+                }
+                let k = parts[0].trim(); // Trim key
+                let v = parts[1].trim(); // Trim value
+                let lvl = LevelFilter::from_str(v)
+                    .map_err(|_| anyhow::anyhow!("Invalid log level: {}", v))?;
+                let k_lower = k.to_lowercase(); // Case-insensitive key matching
+                match k_lower.as_str() {
+                    "stdout" => config.stdout_level = lvl,
+                    "fileout" => config.fileout_level = lvl,
+                    _ => {
+                        config.component_level.insert(Ustr::from(k), lvl);
                     }
                 }
             }
-        });
-
-        Self {
-            stdout_level,
-            fileout_level,
-            component_level,
-            is_colored,
-            print_config,
         }
+        Ok(config)
     }
 
-    #[must_use]
-    pub fn from_env() -> Self {
-        match env::var("NAUTILUS_LOG") {
-            Ok(spec) => Self::from_spec(&spec),
-            Err(e) => panic!("Error parsing `LoggerConfig` spec: {e}"),
-        }
+    /// Retrieves the logger configuration from the "`NAUTILUS_LOG`" environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the variable is unset or invalid.
+    pub fn from_env() -> anyhow::Result<Self> {
+        let spec = env::var("NAUTILUS_LOG")?;
+        Self::from_spec(&spec)
     }
 }
 
@@ -164,6 +163,8 @@ pub enum LogEvent {
 /// Represents a log event which includes a message.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogLine {
+    /// The timestamp for the event.
+    pub timestamp: UnixNanos,
     /// The log level for the event.
     pub level: Level,
     /// The color for the log message content.
@@ -193,8 +194,6 @@ pub struct LogLineWrapper {
     cache: Option<String>,
     /// Cached colored string representation of the log line.
     colored: Option<String>,
-    /// The timestamp of when the log event occurred.
-    timestamp: String,
     /// The ID of the trader associated with this log event.
     trader_id: Ustr,
 }
@@ -202,12 +201,11 @@ pub struct LogLineWrapper {
 impl LogLineWrapper {
     /// Creates a new [`LogLineWrapper`] instance.
     #[must_use]
-    pub fn new(line: LogLine, trader_id: Ustr, timestamp: UnixNanos) -> Self {
+    pub const fn new(line: LogLine, trader_id: Ustr) -> Self {
         Self {
             line,
             cache: None,
             colored: None,
-            timestamp: unix_nanos_to_iso8601(timestamp),
             trader_id,
         }
     }
@@ -220,7 +218,7 @@ impl LogLineWrapper {
         self.cache.get_or_insert_with(|| {
             format!(
                 "{} [{}] {}.{}: {}\n",
-                self.timestamp,
+                unix_nanos_to_iso8601(self.line.timestamp),
                 self.line.level,
                 self.trader_id,
                 &self.line.component,
@@ -238,7 +236,7 @@ impl LogLineWrapper {
         self.colored.get_or_insert_with(|| {
             format!(
                 "\x1b[1m{}\x1b[0m {}[{}] {}.{}: {}\x1b[0m\n",
-                self.timestamp,
+                unix_nanos_to_iso8601(self.line.timestamp),
                 &self.line.color.as_ansi(),
                 self.line.level,
                 self.trader_id,
@@ -267,7 +265,8 @@ impl Serialize for LogLineWrapper {
         S: Serializer,
     {
         let mut json_obj = IndexMap::new();
-        json_obj.insert("timestamp".to_string(), self.timestamp.clone());
+        let timestamp = unix_nanos_to_iso8601(self.line.timestamp);
+        json_obj.insert("timestamp".to_string(), timestamp);
         json_obj.insert("trader_id".to_string(), self.trader_id.to_string());
         json_obj.insert("level".to_string(), self.line.level.to_string());
         json_obj.insert("color".to_string(), self.line.color.to_string());
@@ -288,6 +287,11 @@ impl Log for Logger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
+            let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
+                get_atomic_clock_realtime().get_time_ns()
+            } else {
+                get_atomic_clock_static().get_time_ns()
+            };
             let key_values = record.key_values();
             let color = key_values
                 .get("color".into())
@@ -299,6 +303,7 @@ impl Log for Logger {
             );
 
             let line = LogLine {
+                timestamp,
                 level: record.level(),
                 color,
                 component,
@@ -319,13 +324,12 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
-    #[must_use]
     pub fn init_with_env(
         trader_id: TraderId,
         instance_id: UUID4,
         file_config: FileWriterConfig,
-    ) -> LogGuard {
-        let config = LoggerConfig::from_env();
+    ) -> anyhow::Result<LogGuard> {
+        let config = LoggerConfig::from_env()?;
         Self::init_with_config(trader_id, instance_id, config, file_config)
     }
 
@@ -338,13 +342,12 @@ impl Logger {
     /// let file_config = FileWriterConfig::default();
     /// let log_guard = Logger::init_with_config(trader_id, instance_id, config, file_config);
     /// ```
-    #[must_use]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-    ) -> LogGuard {
+    ) -> anyhow::Result<LogGuard> {
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
 
         let logger = Self {
@@ -358,7 +361,7 @@ impl Logger {
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let mut handle: Option<std::thread::JoinHandle<()>> = None;
+        let handle: Option<std::thread::JoinHandle<()>>;
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 handle = Some(
@@ -372,8 +375,7 @@ impl Logger {
                                 file_config,
                                 rx,
                             );
-                        })
-                        .expect("Error spawning thread '{LOGGING}'"),
+                        })?,
                 );
 
                 let max_level = log::LevelFilter::Trace;
@@ -383,11 +385,11 @@ impl Logger {
                 }
             }
             Err(e) => {
-                eprintln!("Cannot set logger because of error: {e}");
+                anyhow::bail!("Cannot initialize logger because of error: {e}");
             }
         }
 
-        LogGuard::new(handle)
+        Ok(LogGuard::new(handle))
     }
 
     fn handle_messages(
@@ -425,12 +427,6 @@ impl Logger {
                     break;
                 }
                 LogEvent::Log(line) => {
-                    let timestamp = if LOGGING_REALTIME.load(Ordering::Relaxed) {
-                        get_atomic_clock_realtime().get_time_ns()
-                    } else {
-                        get_atomic_clock_static().get_time_ns()
-                    };
-
                     let component_level = component_level.get(&line.component);
 
                     // Check if the component exists in level_filters,
@@ -441,7 +437,7 @@ impl Logger {
                         }
                     }
 
-                    let mut wrapper = LogLineWrapper::new(line, trader_id_cache, timestamp);
+                    let mut wrapper = LogLineWrapper::new(line, trader_id_cache);
 
                     if stderr_writer.enabled(&wrapper.line) {
                         if is_colored {
@@ -556,6 +552,7 @@ mod tests {
     #[rstest]
     fn log_message_serialization() {
         let log_message = LogLine {
+            timestamp: UnixNanos::default(),
             level: log::Level::Info,
             color: LogColor::Normal,
             component: Ustr::from("Portfolio"),
@@ -573,7 +570,8 @@ mod tests {
     #[rstest]
     fn log_config_parsing() {
         let config =
-            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Error");
+            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Error")
+                .unwrap();
         assert_eq!(
             config,
             LoggerConfig {
@@ -591,7 +589,7 @@ mod tests {
 
     #[rstest]
     fn log_config_parsing2() {
-        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;");
+        let config = LoggerConfig::from_spec("stdout=Warn;print_config;fileout=Error;").unwrap();
         assert_eq!(
             config,
             LoggerConfig {
@@ -670,7 +668,7 @@ mod tests {
 
     #[rstest]
     fn test_log_component_level_filtering() {
-        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
+        let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error").unwrap();
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_config = FileWriterConfig {
@@ -725,7 +723,8 @@ mod tests {
     #[rstest]
     fn test_logging_to_file_in_json_format() {
         let config =
-            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info");
+            LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info")
+                .unwrap();
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let file_config = FileWriterConfig {
@@ -772,9 +771,9 @@ mod tests {
         );
 
         assert_eq!(
-        log_contents,
-        "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
-    );
+            log_contents,
+            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        );
     }
 
     #[test]

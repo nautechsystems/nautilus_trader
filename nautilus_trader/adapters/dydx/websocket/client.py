@@ -265,7 +265,6 @@ class DYDXWebsocketClient:
     async def subscribe_order_book(
         self,
         symbol: str,
-        bypass_subscription_validation: bool = False,
     ) -> None:
         """
         Subscribe to order book messages.
@@ -274,9 +273,6 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to subscribe to.
-        bypass_subscription_validation : bool, default False
-            Whether to bypass the subscription validation step before sending the
-            subscribe message to the venue.
 
         """
         if self._client is None:
@@ -284,7 +280,7 @@ class DYDXWebsocketClient:
             return
 
         subscription = ("v4_orderbook", symbol)
-        if subscription in self._subscriptions and bypass_subscription_validation is False:
+        if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
@@ -435,7 +431,7 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
         await self._send(msg)
 
-    async def unsubscribe_order_book(self, symbol: str, remove_subscription: bool = True) -> None:
+    async def unsubscribe_order_book(self, symbol: str) -> None:
         """
         Unsubscribe from order book messages.
 
@@ -443,8 +439,6 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to unsubscribe from.
-        remove_subscription : bool, optional default True
-            Whether to remove the symbol from the list of subscriptions for order book updates.
 
         """
         if self._client is None:
@@ -456,8 +450,7 @@ class DYDXWebsocketClient:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
-        if remove_subscription:
-            self._subscriptions.remove(subscription)
+        self._subscriptions.remove(subscription)
 
         msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
         await self._send(msg)

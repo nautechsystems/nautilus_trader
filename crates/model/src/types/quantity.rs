@@ -23,23 +23,19 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(feature = "high-precision")]
-use nautilus_core::correctness::check_positive_u128;
-#[cfg(not(feature = "high-precision"))]
-use nautilus_core::correctness::check_positive_u64;
 use nautilus_core::{
-    correctness::{check_in_range_inclusive_f64, FAILED},
+    correctness::{FAILED, check_in_range_inclusive_f64},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
-#[cfg(feature = "high-precision")]
-use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
+#[cfg(feature = "high-precision")]
+use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
 
 #[cfg(feature = "high-precision")]
 pub type QuantityRaw = u128;
@@ -47,7 +43,7 @@ pub type QuantityRaw = u128;
 pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.
@@ -61,16 +57,6 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
-
-#[cfg(not(feature = "high-precision"))]
-pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_u64(value, param)
-}
-
-#[cfg(feature = "high-precision")]
-pub fn check_positive_quantity(value: QuantityRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_u128(value, param)
-}
 
 /// Represents a quantity with a non-negative value.
 ///
@@ -470,9 +456,14 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
-pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
+/// Checks if the given quantity is positive.
+///
+/// # Errors
+///
+/// Returns an error if the quantity is not positive.
+pub fn check_positive_quantity(value: Quantity, param: &str) -> anyhow::Result<()> {
     if !value.is_positive() {
-        anyhow::bail!("{FAILED}: invalid `Quantity`, should be positive and was {value}")
+        anyhow::bail!("{FAILED}: invalid `Quantity` for '{param}' not positive, was {value}")
     }
     Ok(())
 }
@@ -491,10 +482,10 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    #[should_panic(expected = "Condition failed: invalid `Quantity` for 'qty' not positive, was 0")]
     fn test_check_quantity_positive() {
         let qty = Quantity::new(0.0, 0);
-        check_quantity_positive(qty).unwrap();
+        check_positive_quantity(qty, "qty").unwrap();
     }
 
     #[rstest]
@@ -566,7 +557,7 @@ mod tests {
     #[rstest]
     fn test_check_quantity_positive_ok() {
         let qty = Quantity::new(10.0, 0);
-        check_quantity_positive(qty).unwrap();
+        check_positive_quantity(qty, "qty").unwrap();
     }
 
     #[rstest]

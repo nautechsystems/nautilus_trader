@@ -15,11 +15,14 @@
 
 use std::rc::Rc;
 
-use pyo3::{pymethods, PyObject, PyRefMut};
+use pyo3::{PyObject, pymethods};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
-use crate::msgbus::{database::BusMessage, handler::ShareableMessageHandler, MessageBus};
+use crate::msgbus::{
+    MessageBus, database::BusMessage, deregister, handler::ShareableMessageHandler, register,
+    subscribe, unsubscribe,
+};
 
 #[pymethods]
 impl BusMessage {
@@ -40,7 +43,7 @@ impl BusMessage {
 impl MessageBus {
     /// Sends a message to a an endpoint.
     #[pyo3(name = "send")]
-    pub fn send_py(&self, endpoint: &str, message: PyObject) {
+    pub fn py_send(&self, endpoint: &str, message: PyObject) {
         if let Some(handler) = self.get_endpoint(endpoint) {
             handler.0.handle(&message);
         }
@@ -48,7 +51,7 @@ impl MessageBus {
 
     /// Publish a message to a topic.
     #[pyo3(name = "publish")]
-    pub fn publish_py(&self, topic: &str, message: PyObject) {
+    pub fn py_publish(&self, topic: &str, message: PyObject) {
         let topic = Ustr::from(topic);
         let matching_subs = self.matching_subscriptions(&topic);
 
@@ -59,10 +62,11 @@ impl MessageBus {
 
     /// Registers the given `handler` for the `endpoint` address.
     #[pyo3(name = "register")]
-    pub fn register_py(&mut self, endpoint: &str, handler: PythonMessageHandler) {
+    #[staticmethod]
+    pub fn py_register(endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.register(endpoint, handler);
+        register(endpoint, handler);
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -83,43 +87,41 @@ impl MessageBus {
     /// produce potential side effects for logically sound behavior.
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (topic, handler, priority=None))]
-    pub fn subscribe_py(
-        mut slf: PyRefMut<'_, Self>,
-        topic: &str,
-        handler: PythonMessageHandler,
-        priority: Option<u8>,
-    ) {
+    #[staticmethod]
+    pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        slf.subscribe(topic, handler, priority);
+        subscribe(topic, handler, priority);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     #[pyo3(name = "is_subscribed")]
-    pub fn is_subscribed_py(&self, topic: &str, handler: PythonMessageHandler) -> bool {
+    pub fn py_is_subscribed(&self, topic: &str, handler: PythonMessageHandler) -> bool {
         let handler = ShareableMessageHandler(Rc::new(handler));
         self.is_subscribed(topic, handler)
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
     #[pyo3(name = "unsubscribe")]
-    pub fn unsubscribe_py(&mut self, topic: &str, handler: PythonMessageHandler) {
+    #[staticmethod]
+    pub fn py_unsubscribe(topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.unsubscribe(topic, handler);
+        unsubscribe(topic, handler);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     #[pyo3(name = "is_registered")]
-    pub fn is_registered_py(&self, endpoint: &str) -> bool {
+    pub fn py_is_registered(&self, endpoint: &str) -> bool {
         self.is_registered(endpoint)
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
     #[pyo3(name = "deregister")]
-    pub fn deregister_py(&mut self, endpoint: &str) {
+    #[staticmethod]
+    pub fn py_deregister(endpoint: &str) {
         // Removes entry if it exists for endpoint
-        self.deregister(&Ustr::from(endpoint));
+        deregister(&Ustr::from(endpoint));
     }
 }

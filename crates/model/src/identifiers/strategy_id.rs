@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
+use nautilus_core::correctness::{FAILED, check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// The identifier for all 'external' strategy IDs (not local to this system instance).
@@ -98,7 +98,7 @@ impl StrategyId {
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated
-        self.0.split('-').last().unwrap()
+        self.0.split('-').next_back().unwrap()
     }
 }
 

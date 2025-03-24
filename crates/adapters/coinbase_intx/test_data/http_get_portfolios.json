@@ -1,0 +1,21 @@
+[
+  {
+    "portfolio_id": "9mnk39ap-5-23",
+    "portfolio_uuid": "8f2e3b1d-9a4c-4f67-b523-2c91ae85d7e9",
+    "name": "xyz7891234567",
+    "user_uuid": "a7d9c4b2-3e15-5842-8f60-9b74dc31e562",
+    "maker_fee_rate": "-0.0001",
+    "taker_fee_rate": "0.00012",
+    "trading_lock": false,
+    "withdrawal_lock": false,
+    "borrow_disabled": false,
+    "is_lsp": false,
+    "is_default": false,
+    "cross_collateral_enabled": false,
+    "auto_margin_enabled": true,
+    "pre_launch_trading_enabled": false,
+    "position_offsets_enabled": false,
+    "close_only": false,
+    "forced_liquidation": false
+  }
+]

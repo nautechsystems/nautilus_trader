@@ -33,11 +33,11 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 use index::CacheIndex;
 use nautilus_core::{
-    correctness::{
-        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
-        FAILED,
-    },
     UUID4,
+    correctness::{
+        FAILED, check_key_not_in_map, check_predicate_false, check_slice_not_empty,
+        check_valid_string,
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -47,9 +47,9 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
         OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
-    orderbook::OrderBook,
-    orders::{OrderAny, OrderList},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
+    orderbook::{OrderBook, own::OwnOrderBook},
+    orders::{Order, OrderAny, OrderList},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -68,6 +68,7 @@ pub struct Cache {
     mark_prices: HashMap<InstrumentId, Price>,
     mark_xrates: HashMap<(Currency, Currency), f64>,
     books: HashMap<InstrumentId, OrderBook>,
+    own_books: HashMap<InstrumentId, OwnOrderBook>,
     bars: HashMap<BarType, VecDeque<Bar>>,
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
@@ -103,6 +104,7 @@ impl Cache {
             quotes: HashMap::new(),
             trades: HashMap::new(),
             books: HashMap::new(),
+            own_books: HashMap::new(),
             bars: HashMap::new(),
             currencies: HashMap::new(),
             instruments: HashMap::new(),
@@ -228,7 +230,6 @@ impl Cache {
 
     /// Clears the current cache index and re-build.
     pub fn build_index(&mut self) {
-        self.index.clear();
         log::debug!("Building index");
 
         // Index accounts
@@ -802,6 +803,7 @@ impl Cache {
         self.quotes.clear();
         self.trades.clear();
         self.books.clear();
+        self.own_books.clear();
         self.bars.clear();
         self.currencies.clear();
         self.instruments.clear();
@@ -859,6 +861,14 @@ impl Cache {
         }
 
         self.books.insert(book.instrument_id, book);
+        Ok(())
+    }
+
+    /// Adds the given `own_book` to the cache.
+    pub fn add_own_order_book(&mut self, own_book: OwnOrderBook) -> anyhow::Result<()> {
+        log::debug!("Adding `OwnOrderBook` {}", own_book.instrument_id);
+
+        self.own_books.insert(own_book.instrument_id, own_book);
         Ok(())
     }
 
@@ -1229,7 +1239,7 @@ impl Cache {
     pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
-        _venue: &Venue,
+        venue: &Venue,
         client_order_id: &ClientOrderId,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
@@ -1258,6 +1268,13 @@ impl Cache {
         self.index
             .strategy_positions
             .entry(*strategy_id)
+            .or_default()
+            .insert(*position_id);
+
+        // Index: Venue -> set[PositionId]
+        self.index
+            .venue_positions
+            .entry(*venue)
             .or_default()
             .insert(*position_id);
 
@@ -1405,8 +1422,8 @@ impl Cache {
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
 
-        // Serialize the position
-        let position_serialized = bincode::serialize(&copied_position)?;
+        // Serialize the position (TODO: temporily just to JSON to remove a dependency)
+        let position_serialized = serde_json::to_vec(&copied_position)?;
 
         let snapshots: Option<&Bytes> = self.position_snapshots.get(&position_id);
         let new_snapshots = match snapshots {
@@ -1439,9 +1456,8 @@ impl Cache {
         if let Some(database) = &mut self.database {
             database.snapshot_position_state(position).map_err(|e| {
                 log::error!(
-                    "Failed to snapshot position state for {}: {:?}",
-                    position.id,
-                    e
+                    "Failed to snapshot position state for {}: {e:?}",
+                    position.id
                 );
                 e
             })?;
@@ -1485,7 +1501,8 @@ impl Cache {
                 self.index
                     .venue_orders
                     .get(venue)
-                    .map_or(HashSet::new(), |o| o.iter().copied().collect()),
+                    .cloned()
+                    .unwrap_or_default(),
             );
         }
 
@@ -1494,7 +1511,8 @@ impl Cache {
                 .index
                 .instrument_orders
                 .get(instrument_id)
-                .map_or(HashSet::new(), |o| o.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
@@ -1511,7 +1529,8 @@ impl Cache {
                 .index
                 .strategy_orders
                 .get(strategy_id)
-                .map_or(HashSet::new(), |o| o.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = &mut query {
                 *existing_query = existing_query
@@ -1539,7 +1558,8 @@ impl Cache {
                 self.index
                     .venue_positions
                     .get(venue)
-                    .map_or(HashSet::new(), |p| p.iter().copied().collect()),
+                    .cloned()
+                    .unwrap_or_default(),
             );
         }
 
@@ -1548,7 +1568,8 @@ impl Cache {
                 .index
                 .instrument_positions
                 .get(instrument_id)
-                .map_or(HashSet::new(), |p| p.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = query {
                 query = Some(
@@ -1567,7 +1588,8 @@ impl Cache {
                 .index
                 .strategy_positions
                 .get(strategy_id)
-                .map_or(HashSet::new(), |p| p.iter().copied().collect());
+                .cloned()
+                .unwrap_or_default();
 
             if let Some(existing_query) = query {
                 query = Some(
@@ -2312,7 +2334,7 @@ impl Cache {
             PriceType::Mid => self.quotes.get(instrument_id).and_then(|quotes| {
                 quotes.front().map(|quote| {
                     Price::new(
-                        (quote.ask_price.as_f64() + quote.bid_price.as_f64()) / 2.0,
+                        f64::midpoint(quote.ask_price.as_f64(), quote.bid_price.as_f64()),
                         quote.bid_price.precision + 1,
                     )
                 })
@@ -2361,6 +2383,21 @@ impl Cache {
         self.books.get_mut(instrument_id)
     }
 
+    /// Gets a reference to the own order book for the given `instrument_id`.
+    #[must_use]
+    pub fn own_order_book(&self, instrument_id: &InstrumentId) -> Option<&OwnOrderBook> {
+        self.own_books.get(instrument_id)
+    }
+
+    /// Gets a reference to the own order book for the given `instrument_id`.
+    #[must_use]
+    pub fn own_order_book_mut(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> Option<&mut OwnOrderBook> {
+        self.own_books.get_mut(instrument_id)
+    }
+
     /// Gets a reference to the latest quote tick for the given `instrument_id`.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
@@ -2386,7 +2423,9 @@ impl Cache {
     /// Gets the order book update count for the given `instrument_id`.
     #[must_use]
     pub fn book_update_count(&self, instrument_id: &InstrumentId) -> usize {
-        self.books.get(instrument_id).map_or(0, |book| book.count) as usize
+        self.books
+            .get(instrument_id)
+            .map_or(0, |book| book.update_count) as usize
     }
 
     /// Gets the quote tick count for the given `instrument_id`.
@@ -2571,7 +2610,7 @@ impl Cache {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
-            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(u)))
+            .filter(|i| underlying.is_none_or(|u| i.underlying() == Some(*u)))
             .collect()
     }
 

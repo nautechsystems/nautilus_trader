@@ -18,12 +18,12 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::python::{to_pyvalue_err, IntoPyObjectNautilusExt};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
-    IntoPyObjectExt,
 };
 
 use crate::identifiers::symbol::Symbol;

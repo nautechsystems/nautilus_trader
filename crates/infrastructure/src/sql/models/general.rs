@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::identifiers::{ClientId, ClientOrderId};
-use sqlx::{postgres::PgRow, Error, FromRow, Row};
+use sqlx::{Error, FromRow, Row, postgres::PgRow};
 
 #[derive(Debug, sqlx::FromRow)]
 pub struct GeneralRow {

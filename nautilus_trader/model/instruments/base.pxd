@@ -100,6 +100,8 @@ cdef class Instrument(Data):
     cpdef Price make_price(self, value)
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
+    cpdef list next_bid_prices(self, double value, int num_ticks=*)
+    cpdef list next_ask_prices(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
     cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)

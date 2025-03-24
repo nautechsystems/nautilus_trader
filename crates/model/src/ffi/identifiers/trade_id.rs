@@ -15,7 +15,7 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
-    ffi::{c_char, CStr, CString},
+    ffi::{CStr, CString, c_char},
     hash::{Hash, Hasher},
 };
 
@@ -26,19 +26,20 @@ use crate::identifiers::trade_id::TradeId;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    TradeId::from(CStr::from_ptr(ptr).to_owned())
+    let value = unsafe { CStr::from_ptr(ptr).to_owned() };
+    TradeId::from(value)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
     let mut hasher = DefaultHasher::new();
     id.value.hash(&mut hasher);
     hasher.finish()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
     trade_id.as_cstr().as_ptr()
 }

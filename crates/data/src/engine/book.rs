@@ -23,12 +23,13 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     messages::data::DataResponse,
-    msgbus::{handler::MessageHandler, MessageBus},
+    msgbus::{self, handler::MessageHandler},
     timer::TimeEvent,
 };
 use nautilus_model::{
     data::Data,
     identifiers::{InstrumentId, Venue},
+    instruments::Instrument,
 };
 use ustr::Ustr;
 
@@ -91,16 +92,11 @@ pub struct BookSnapshotter {
     pub timer_name: Ustr,
     pub snap_info: BookSnapshotInfo,
     pub cache: Rc<RefCell<Cache>>,
-    pub msgbus: Rc<RefCell<MessageBus>>,
 }
 
 impl BookSnapshotter {
     /// Creates a new [`BookSnapshotter`] instance.
-    pub fn new(
-        snap_info: BookSnapshotInfo,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-    ) -> Self {
+    pub fn new(snap_info: BookSnapshotInfo, cache: Rc<RefCell<Cache>>) -> Self {
         let id_str = format!(
             "{}-{}",
             stringify!(BookSnapshotter),
@@ -116,46 +112,33 @@ impl BookSnapshotter {
             timer_name: Ustr::from(&timer_name),
             snap_info,
             cache,
-            msgbus,
         }
     }
 
     pub fn snapshot(&self, event: TimeEvent) {
         let cache = self.cache.borrow();
-        let mut msgbus = self.msgbus.borrow_mut();
 
         if self.snap_info.is_composite {
             let topic = self.snap_info.topic;
             let underlying = self.snap_info.root;
             for instrument in cache.instruments(&self.snap_info.venue, Some(&underlying)) {
-                self.publish_order_book(&instrument.id(), &topic, &cache, &mut msgbus);
+                self.publish_order_book(&instrument.id(), &topic, &cache);
             }
         } else {
-            self.publish_order_book(
-                &self.snap_info.instrument_id,
-                &self.snap_info.topic,
-                &cache,
-                &mut msgbus,
-            );
+            self.publish_order_book(&self.snap_info.instrument_id, &self.snap_info.topic, &cache);
         }
     }
 
-    fn publish_order_book(
-        &self,
-        instrument_id: &InstrumentId,
-        topic: &Ustr,
-        cache: &Ref<Cache>,
-        msgbus: &mut MessageBus,
-    ) {
+    fn publish_order_book(&self, instrument_id: &InstrumentId, topic: &Ustr, cache: &Ref<Cache>) {
         let book = cache
             .order_book(instrument_id)
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
 
-        if book.count == 0 {
+        if book.update_count == 0 {
             log::debug!("OrderBook for {instrument_id} not yet updated for snapshot");
             return;
         }
 
-        msgbus.publish(topic, book as &dyn Any);
+        msgbus::publish(topic, book as &dyn Any);
     }
 }

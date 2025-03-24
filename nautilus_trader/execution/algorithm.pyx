@@ -1227,10 +1227,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(
@@ -1394,10 +1395,11 @@ cdef class ExecAlgorithm(Actor):
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
-                self.cache.update_order(order)
             except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
+
+            self.cache.update_order(order)
 
             # Publish event
             self._msgbus.publish_c(

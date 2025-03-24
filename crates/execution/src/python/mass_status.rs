@@ -15,8 +15,8 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{serialization::from_dict_pyo3, IntoPyObjectNautilusExt},
     UUID4,
+    python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};

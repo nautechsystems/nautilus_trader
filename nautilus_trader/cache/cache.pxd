@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
@@ -59,6 +61,7 @@ cdef class Cache(CacheFacade):
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
+    cdef dict _own_order_books
     cdef dict _bars
     cdef dict _bars_bid
     cdef dict _bars_ask
@@ -92,6 +95,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_exec_spawn_orders
     cdef set _index_orders
     cdef set _index_orders_open
+    cdef set _index_orders_open_pyo3
     cdef set _index_orders_closed
     cdef set _index_orders_emulated
     cdef set _index_orders_inflight
@@ -149,6 +153,7 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, Strategy strategy)
 
     cpdef void add_order_book(self, OrderBook order_book)
+    cpdef void add_own_order_book(self, own_order_book)
     cpdef void add_mark_price(self, InstrumentId instrument_id, Price price)
     cpdef void add_quote_tick(self, QuoteTick tick)
     cpdef void add_trade_tick(self, TradeTick tick)
@@ -173,6 +178,7 @@ cdef class Cache(CacheFacade):
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
     cpdef void update_order_pending_cancel_local(self, Order order)
+    cpdef void update_own_order_book(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
@@ -180,6 +186,7 @@ cdef class Cache(CacheFacade):
     cpdef void delete_strategy(self, Strategy strategy)
 
     cpdef void heartbeat(self, datetime timestamp)
+    cpdef void audit_own_order_books(self)
 
     cdef timedelta _get_timedelta(self, BarType bar_type)
 
@@ -189,3 +196,9 @@ cdef class Cache(CacheFacade):
         object price_type=*,
         aggregation_source=*,
     )
+
+
+cdef dict[Decimal, list[Order]] process_own_order_map(
+    dict[Decimal, list[nautilus_pyo3.OwnBookOrder]] own_order_map,
+    dict[ClientOrderId, Order] order_cache,
+)

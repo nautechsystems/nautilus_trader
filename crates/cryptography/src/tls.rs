@@ -19,6 +19,6 @@ use rustls::{self, ClientConfig};
 use rustls_platform_verifier::ConfigVerifierExt;
 
 pub fn create_tls_config() -> Arc<ClientConfig> {
-    tracing::info!("Loading certificates");
+    tracing::debug!("Loading certificates");
     Arc::new(ClientConfig::with_platform_verifier())
 }

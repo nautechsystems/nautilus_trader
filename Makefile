@@ -6,39 +6,31 @@ IMAGE_FULL?=${IMAGE}:${GIT_TAG}
 
 .PHONY: install
 install:
-	BUILD_MODE=release poetry install --with dev,test --all-extras
+	BUILD_MODE=release uv sync --active --all-groups --all-extras
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug poetry install --with dev,test --all-extras --sync
-
-.PHONY: install-docs
-install-docs:
-	BUILD_MODE=debug poetry install --with docs --all-extras
+	BUILD_MODE=debug uv sync --active --all-groups --all-extras
 
 .PHONY: install-just-deps
 install-just-deps:
-	poetry install --with dev,test --all-extras --no-root
-
-.PHONY: install-just-deps-all
-install-just-deps-all:
-	poetry install --with dev,test,docs --all-extras --no-root
+	uv sync --active --all-groups --all-extras --no-install-package nautilus_trader
 
 .PHONY: build
 build:
-	BUILD_MODE=release poetry run python build.py
+	BUILD_MODE=release uv run --active --no-sync build.py
 
 .PHONY: build-debug
 build-debug:
-	BUILD_MODE=debug poetry run python build.py
+	BUILD_MODE=debug uv run --active --no-sync build.py
 
 .PHONY: build-wheel
 build-wheel:
-	BUILD_MODE=release poetry build --format wheel
+	BUILD_MODE=release uv build --wheel
 
 .PHONY: build-wheel-debug
 build-wheel-debug:
-	BUILD_MODE=debug poetry build --format wheel
+	BUILD_MODE=debug uv build --wheel
 
 .PHONY: clean
 clean:
@@ -50,6 +42,7 @@ clean:
 		.pytest_cache/ \
 		.ruff_cache/ \
 		build/ \
+		dist/ \
 		target/
 
 .PHONY: distclean
@@ -62,28 +55,28 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	poetry run pre-commit run --all-files
+	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: ruff
 ruff:
-	ruff check . --fix
+	uv run --active --no-sync ruff check . --fix
 
-# Requires cargo-outdated v0.16.0+
+# Requires cargo-outdated (currently broken waiting for 2024 edition update)
 .PHONY: outdated
 outdated:
-	cargo outdated && poetry show --outdated
+	cargo outdated
 
 .PHONY: update cargo-update
 update: cargo-update
-	poetry update
-	poetry install --with dev,test --all-extras --no-root
+	uv self update
+	uv lock --upgrade
 
 .PHONY: docs
 docs: docs-python docs-rust
 
 .PHONY: docs-python
-docs-python: install-docs
-	poetry run sphinx-build -M markdown ./docs/api_reference ./api_reference
+docs-python:
+	BUILD_MODE=debug uv run --active sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust:
@@ -105,32 +98,44 @@ cargo-build:
 cargo-update:
 	cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov
 
-.PHONY: cargo-test
-cargo-test: RUST_BACKTRACE=1
-cargo-test: HIGH_PRECISION=true
-cargo-test:
+.PHONY: check-nextest
+check-nextest:
 	@if ! cargo nextest --version >/dev/null 2>&1; then \
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision"
+
+.PHONY: cargo-test
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
+cargo-test: check-nextest
+cargo-test:
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision" --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
+cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	@if ! cargo nextest --version >/dev/null 2>&1; then \
-    echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
-    exit 1; \
-	fi
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi" --cargo-profile nextest
+
+.PHONY: cargo-test-debug
+cargo-test-debug: RUST_BACKTRACE=1
+cargo-test-debug: HIGH_PRECISION=true
+cargo-test-debug: check-nextest
+cargo-test-debug:
+	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision"
+
+.PHONY: cargo-test-standard-precision-debug
+cargo-test-standard-precision-debug: RUST_BACKTRACE=1
+cargo-test-standard-precision-debug: HIGH_PRECISION=false
+cargo-test-standard-precision-debug: check-nextest
+cargo-test-standard-precision-debug:
 	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi"
 
 .PHONY: cargo-test-coverage
+cargo-test-coverage: check-nextest
 cargo-test-coverage:
-	@if ! cargo nextest --version >/dev/null 2>&1; then \
-		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
-		exit 1; \
-	fi
 	@if ! cargo llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
@@ -176,24 +181,12 @@ stop-services:
 
 .PHONY: pytest
 pytest:
-	bash scripts/test.sh
-
-.PHONY: pytest-coverage
-pytest-coverage:
-	bash scripts/test-coverage.sh
+	uv run --active --no-sync pytest --new-first --failed-first
 
 .PHONY: test-performance
 test-performance:
-	bash scripts/test-performance.sh
-
-.PHONY: test-examples
-test-examples:
-	bash scripts/test-examples.sh
+	uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
 
 .PHONY: install-cli
 install-cli:
 	cargo install --path crates/cli --bin nautilus --force
-
-.PHONY: install-talib
-install-talib:
-	bash scripts/install-talib.sh

@@ -1,16 +1,111 @@
-# NautilusTrader 1.212.0 Beta
+# NautilusTrader 1.214.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
+- Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
+- Added `time_in_force` parameter for `Strategy.close_position(...)`
+- Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
+- Completed global message bus design in Rust (#2460), thanks @filipmacek
+- Implemented `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
+- Refactored enum dispatch (#2461), thanks @filipmacek
+- Refined catalog file operations in Rust (#2454), thanks @faysou
+- Refined quote ticks and klines for Bybit (#2465), thanks @davidblom
+- Standardized use of `anyhow::bail` (#2459), thanks @faysou
+- Upgraded `redis` crate to v0.29.2
+
+### Fixes
+- Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
+- Fixed position state snapshot `ts_snapshot` value, which was always `ts_last` instead of timestamp when the snapshot was taken
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.213.0 Beta
+
+Released on 16th March 2025 (UTC).
+
+### Enhancements
+- Added `CryptoOption` instrument, supporting inverse and fractional sizes
+- Added `Cache.prices(...)` to return a map of latest price per instrument for a price type
+- Added `use_uuid_client_order_ids` config option for `StrategyConfig`
+- Added catalog consolidation functions of several parquet files into one (#2421), thanks @faysou
+- Added FDUSD (First Digital USD) crypto `Currency` constant
+- Added initial leverage, `margin_mode` and `position_mode` config options for Bybit (#2441), thanks @sunlei
+- Updated parquet catalog in Rust with recent features (#2442), thanks @faysou
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Added `timeout_secs` parameter to `HttpClient` for default timeouts
+- Added additional precision validations for `OrderMatchingEngine`
+- Added symmetric comparison impls between `u64` and `UnixNanos`
+- Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
+- Improved order denied reason message for balance impact
+- Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
+- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidblom
+- Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
+- Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
+- Some minor performance optimizations for Bybit and dYdX adapters (#2448), thanks @sunlei
+- Ported backtest engine and kernel to Rust (#2449), thanks @filipmacek
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.24.0
+- Upgraded `tokio` crate to v1.44.1
+
+### Fixes
+- Fixed source distribution (sdist) packaging
+- Fixed `Clock.timer_names()` memory issue resulting in an empty list
+- Fixed underflow panic when setting a time alert in the past (#2446), thanks for reporting @uxbux
+- Fixed logger name for `Strategy` custom `strategy_id`s
+- Fixed unbound variable for Bybit (#2433), thanks @davidsblom
+
+### Documentation Updates
+- Clarify docs for timestamp properties in `Data` (#2450), thanks @stefansimik
+- Updated environment setup document (#2452), thanks @faysou
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.212.0 Beta
+
+Released on 11th March 2025 (UTC).
+
+This release introduces [uv](https://docs.astral.sh/uv) as the Python project and dependency management tool.
+
+### Enhancements
+- Added `OwnOrderBook` and `OwnBookOrder` to track own orders and prevent self-trades in market making
+- Added `manage_own_order_books` config option for `ExecEngineConfig` to enable own order tracking
+- Added `Cache.own_order_book(...)`, `Cache.own_bid_orders(...)` and `Cache.own_ask_orders(...)` for own order tracking
 - Added optional beta weighting and percent option greeks (#2317), thanks @faysou
+- Added pnl information to greeks data (#2378), thanks @faysou
 - Added precision inference for `TardisCSVDataLoader`, where `price_precision` and `size_precision` are now optional
+- Added `Order.ts_accepted` property
+- Added `Order.ts_submitted` property
 - Added `UnixNanos::to_datetime_utc()` in Rust
 - Added `Mark` variant for `PriceType` enum
 - Added mark price handling for `Cache`
 - Added mark exchange rate handling for `Cache`
 - Added `PortfolioConfig` for configuration settings specific to the `Portfolio`
+- Added `use_mark_prices`, `use_mark_xrates` and `convert_to_account_base_currency` options for `PortfolioConfig`
 - Added mark price calculations and xrate handling for `Portfolio`
+- Added Rust debugging support and refined cargo nextest usage (#2335, #2339), thanks @faysou
+- Added catalog write mode options (#2365), thanks @faysou
+- Added `BarSpecification` to msgspec encoding and decoding hooks (#2373), thanks @pierianeagle
+- Added `ignore_external_orders` config option for `BetfairExecClientConfig`, default `False` to retain current behavior
+- Added requests for order book snapshots with HTTP for dYdX (#2393), thanks @davidsblom
 
 ### Breaking Changes
 - Removed [talib](https://github.com/nautechsystems/nautilus_trader/tree/develop/nautilus_trader/indicators/ta_lib) subpackage (see deprecations for v1.211.0)
@@ -20,22 +115,45 @@ Released on TBD (UTC).
 - Renamed `InterestRateData` to `YieldCurveData`
 - Renamed `Cache.add_interest_rate_curve` to `add_yield_curve`
 - Renamed `Cache.interest_rate_curve` to `yield_curve`
+- Renamed `OrderBook.count` to `update_count` for clarity
 - Moved `ExecEngineConfig.portfolio_bar_updates` config option to `PortfolioConfig.bar_updates`
 
 ### Internal Improvements
+- Added initial `Cache` benchmarking for orders (#2341), thanks @filipmacek
+- Added support for `CARGO_BUILD_TARGET` environment variable in `build.py` (#2385), thanks @sunlei
+- Added test for time-bar aggregation (#2391), thanks @stefansimik and @faysou
+- Implemented actor framework and message bus v3 (#2402), thanks @twitu
+- Implemented latency modeling for SimulatedExchange in Rust (#2423), thanks @filipmacek
 - Implemented exchange rate calculations in Rust
+- Improved handling of `oms_type` for `StrategyConfig` which now correctly handles the `OmsType` enum
+- Improved Binance websocket connections management to allow more than 200 streams (#2369), thanks @lidarbtc
+- Improved log event timestamping to avoid clock or time misalignments when events cross to the logging thread
 - Improved error logging for live engines to now include stacktrace for easier debugging
+- Improved logging initialization error handling to avoid panicking in Rust
 - Improved Redis cache database queries, serialization, error handling and connection management (#2295, #2308, #2318), thanks @Pushkarm029
 - Improved validation for `OrderList` to check all orders are for the same instrument ID
 - Improved `Controller` functionality with ability to create actors and strategies from configs (#2322), thanks @faysou
+- Improved `Controller` creation for more streamlined trader registration, and separate clock for timer namespacing (#2357), thanks @faysou
 - Improved build by adding placeholders to avoid unnecessary rebuilds (#2336), thanks @bartolootrit
+- Improved consistency of `OrderMatchingEngine` between Cython and Rust and fix issues (#2350), thanks @filipmacek
 - Removed obsolete reconnect guard for dYdX (#2334), thanks @davidsblom
 - Refactored data request interfaces into messages (#2260), thanks @faysou
 - Refactored data subscribe interfaces into messages (#2280), thanks @faysou
+- Refactored reconciliation interface into messages (#2375), thanks @faysou
+- Refactored `_handle_query_group` to work with `update_catalog` (#2412), thanks @faysou
 - Refactored execution message handling in Rust (#2291), thanks @filipmacek
+- Refactored repetitive code in backtest examples (#2387, #2395), thanks @stefansimik
 - Refined yield curve data (#2300), thanks @faysou
 - Refined bar aggregators in Rust (#2311), thanks @faysou
 - Refined greeks computation (#2312), thanks @faysou
+- Refined underlying filtering in portfolio_greeks (#2382), thanks @faysou
+- Refined `request_instruments` granularity for Databento (#2347), thanks @faysou
+- Refined Rust date functions (#2356), thanks @faysou
+- Refined parsing of IB symbols (#2388), thanks @faysou
+- Refined `base_template` behaviour in parquet write_data (#2389), thanks @faysou
+- Refined mixed catalog client requests (#2405), thanks @faysou
+- Refined update catalog docstring (#2411), thanks @faysou
+- Refined to use `next_back` instead of `last` for identifier tag functions (#2414), thanks @twitu
 - Refined and optimized `OrderBook` in Rust
 - Cleaned up PyO3 migration artifacts (#2326), thanks @twitu
 - Ported `StreamingFeatherWriter` to Rust (#2292), thanks @twitu
@@ -44,10 +162,17 @@ Released on TBD (UTC).
 - Ported `update_stop_limit_order` for `OrderMatchingEngine` in Rust (#2314), thanks @filipmacek
 - Ported market-if-touched order handling for `OrderMatchingEngine` in Rust (#2329), thanks @filipmacek
 - Ported limit-if-touched order handling for `OrderMatchingEngine` in Rust (#2333), thanks @filipmacek
+- Ported market-to-limit order handling for `OrderMatchingEngine` in Rust (#2354), thanks @filipmacek
+- Ported trailing stop order handling for `OrderMatchingEngine` in Rust (#2366, #2376), thanks @filipmacek
+- Ported contingent orders handling for `OrderMatchingEngine` in Rust (#2404), thanks @filipmacek
 - Updated Databento `publishers.json` mappings file(s)
-- Upgraded `datafusion` crate to v45.0.0
-- Upgraded `arrow` and `parquet` crates to v54.2.0
+- Upgraded `nautilus-ibapi` to 10.30.1 with necessary changes for Interactive Brokers (#2420), thanks @FGU1
+- Upgraded Rust to 1.85.0 and 2024 edition
+- Upgraded `arrow` and `parquet` crates to v54.2.1
 - Upgraded `databento` crate to v0.20.0 (upgrades the `dbn` crate to v0.28.0)
+- Upgraded `datafusion` crate to v46.0.0
+- Upgraded `pyo3` crate to v0.23.5
+- Upgraded `tokio` crate to v1.44.0
 
 ### Fixes
 - Fixed large difference between `Data` enum variants (#2315), thanks @twitu
@@ -58,16 +183,47 @@ Released on TBD (UTC).
 - Fixed contract `activation` for Binance Futures, now based on the `onboardDate` field
 - Fixed hard-coded signature type for `PolymarketExecutionClient`
 - Fixed unsubscribing from quotes for dYdX (#2331), thanks @davidsblom
-- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @fayosu
+- Fixed docstrings for dYdX factories (#2415), thanks @davidsblom
+- Fixed incorrect type annotations in `_request_instrument` signature (#2332), thanks @faysou
 - Fixed composite bars subscription (#2337), thanks @faysou
+- Fixed sub command issue in some adapters (#2343), thanks @faysou
+- Fixed `bypass_logging` fixture to keep log guard alive for entire test session
+- Fixed time parsing for IB adapter (#2360), thanks @faysou
+- Fixed bad `ts_init` value in IB weekly and monthly bar (#2355), thanks @Endura2024
+- Fixed bar timestamps for IB (#2380), thanks @Endura2024
+- Fixed backtest example load bars from custom CSV (#2383), thanks @hanksuper
+- Fixed subscribe composite bars (#2390), thanks @faysou
+- Fixed invalid link in IB docs (#2401), thanks @stefansimik
+- Fixed cache index loading to ensure persisted data remains available after startup, thanks for reporting @Saransh-28
+- Fixed bars pagination, ordering and limit for Bybit
+- Fixed `update_bar` aggregation function to guarantee high and low price invariants (#2430), thanks @hjander and @faysou
 
 ### Documentation Updates
+- Added documentation for messaging styles (#2410), thanks @stefansimik
 - Added backtest clock and timers example (#2327), thanks @stefansimik
+- Added backtest bar aggregation example (#2340), thanks @stefansimik
+- Added backtest portfolio example (#2362), thanks @stefansimik
+- Added backtest cache example (#2370), thanks @stefansimik
+- Added backtest cascaded indicators example (#2398), thanks @stefansimik
+- Added backtest custom event with msgbus example (#2400), thanks @stefansimik
+- Added backtest messaging with msgbus example (#2406), thanks @stefansimik
+- Added backtest messaging with actor & data example (#2407), thanks @stefansimik
+- Added backtest messaging with actor & signal example (#2408), thanks @stefansimik
+- Added indicators example (#2396), thanks @stefansimik
 - Added documentation for debugging with Rust (#2325), thanks @faysou
+- Added MRE strategy example (#2352), thanks @stefansimik
+- Added data catalog example (#2353), thanks @stefansimik
+- Improved and expandd bar aggregation docs (#2384), thanks @stefansimik
 - Improved `emulation_trigger` parameter description in docstrings (#2313), thanks @stefansimik
 - Improved docs for emulated orders (#2316), thanks @stefansimik
 - Improved getting started doc for backtesting API levels (#2324), thanks @faysou
+- Improved FSM example explanations for beginners (#2351), thanks @stefansimik
 - Refined option greeks docstrings (#2320), thanks @faysou
+- Refined adapters concept documentation (#2358), thanks @faysou
+- Fixed typo in docs/concepts/actors.md (#2422), thanks @lsamaciel
+- Fixed singular noun in docs/concepts/instruments.md (#2424), thanks @lsamaciel
+- Fixed typo in docs/concepts/data.md (#2426), thanks @lsamaciel
+- Fixed Limit-If-Touched example in docs/concepts/orders.md (#2429), thanks @lsamaciel
 
 ### Deprecations
 None
