@@ -14,13 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
+    collections::VecDeque,
     fs::{create_dir_all, File},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::PathBuf,
     sync::OnceLock,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use log::LevelFilter;
 use regex::Regex;
 
@@ -114,6 +115,42 @@ impl LogWriter for StderrWriter {
     }
 }
 
+/// File rotation config
+#[derive(Debug, Clone)]
+pub struct FileRotateConfig {
+    /// Maximum file size in bytes before rotating
+    pub max_file_size: u64,
+    /// Maximum number of backup files to keep
+    pub max_backup_count: u32,
+    /// Current file size tracking
+    cur_file_size: u64,
+    /// Queue of backup file paths (oldest first)
+    backup_files: VecDeque<PathBuf>,
+}
+
+impl Default for FileRotateConfig {
+    fn default() -> Self {
+        Self {
+            max_file_size: 10 * 1024 * 1024, // 10MB default
+            max_backup_count: 5,
+            cur_file_size: 0,
+            backup_files: VecDeque::new(),
+        }
+    }
+}
+
+impl From<(u64, u32)> for FileRotateConfig {
+    fn from(value: (u64, u32)) -> Self {
+        let (max_file_size, max_backup_count) = value;
+        Self {
+            max_file_size,
+            max_backup_count,
+            cur_file_size: 0,
+            backup_files: VecDeque::new(),
+        }
+    }
+}
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -123,28 +160,24 @@ pub struct FileWriterConfig {
     pub directory: Option<String>,
     pub file_name: Option<String>,
     pub file_format: Option<String>,
-    /// Maximum file size in bytes before rotating
-    pub max_file_size: Option<u64>,
-    /// Maximum number of backup files to keep
-    pub max_backup_count: Option<u32>,
+    pub file_rotate: Option<FileRotateConfig>,
 }
 
 impl FileWriterConfig {
     /// Creates a new [`FileWriterConfig`] instance.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
-        max_file_size: Option<u64>,
-        max_backup_count: Option<u32>,
+        file_rotate: Option<(u64, u32)>,
     ) -> Self {
+        let file_rotate = file_rotate.map(FileRotateConfig::from);
         Self {
             directory,
             file_name,
             file_format,
-            max_file_size: max_file_size.or(Some(100 * 1024 * 1024)), // Default 100MB
-            max_backup_count: max_backup_count.or(Some(10)), // Default 10 backups
+            file_rotate,
         }
     }
 }
@@ -232,102 +265,71 @@ impl FileWriter {
     }
 
     #[must_use]
-    pub fn should_rotate_file(&self) -> bool {
-        // Check date rotation
-        let current_date_utc = Utc::now().date_naive();
-        let metadata = self
-            .path
-            .metadata()
-            .expect("Failed to read log file metadata");
-        let creation_time = metadata
-            .created()
-            .expect("Failed to get log file creation time");
+    pub fn should_rotate_file(&mut self) -> bool {
+        if self.file_config.file_rotate.is_none() {
+            return false;
+        }
 
-        let creation_time_utc: DateTime<Utc> = creation_time.into();
-        let creation_date_utc = creation_time_utc.date_naive();
+        let rotate_config = self.file_config.file_rotate.as_ref().unwrap();
 
-        // Check size rotation
-        let file_size = metadata.len();
-        let max_size = self.file_config.max_file_size.unwrap_or(100 * 1024 * 1024);
-
-        current_date_utc != creation_date_utc || file_size >= max_size
+        rotate_config.cur_file_size >= rotate_config.max_file_size
     }
 
     fn rotate_file(&mut self) {
+        // Flush current file
         self.flush();
 
-        // Get current file path
-        let current_path = self.path.clone();
-        
-        // Generate new file path
-        let new_path = Self::create_log_file_path(
+        // Create new file
+        let path = Self::create_log_file_path(
             &self.file_config,
             &self.trader_id,
             &self.instance_id,
             self.json_format,
         );
-
-        // Rename current file with timestamp
-        if let Some(max_backups) = self.file_config.max_backup_count {
-            let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-            let backup_path = current_path.with_file_name(format!(
-                "{}.{}.{}",
-                current_path.file_stem().unwrap().to_str().unwrap(),
-                timestamp,
-                current_path.extension().unwrap().to_str().unwrap()
-            ));
-
-            if let Err(e) = std::fs::rename(&current_path, &backup_path) {
-                tracing::error!("Error rotating log file: {e}");
-                return;
-            }
-
-            // Clean up old backups
-            self.cleanup_backups(&current_path, max_backups);
-        }
-
-        // Create new log file
-        match File::options()
-            .create(true)
-            .append(true)
-            .open(new_path.clone())
-        {
+        match File::options().create(true).append(true).open(&path) {
             Ok(file) => {
+                // Rotate existing file
+                if let Some(rotate_config) = &mut self.file_config.file_rotate {
+                    // Add current file to backup queue
+                    rotate_config.backup_files.push_back(self.path.clone());
+                    rotate_config.cur_file_size = 0;
+                    // Clean up old backups if we exceed the limit
+                    self.cleanup_backups();
+                }
+
                 self.buf = BufWriter::new(file);
-                self.path = new_path;
+                self.path = path;
             }
             Err(e) => tracing::error!("Error creating log file: {e}"),
         }
+
+        tracing::info!("Rotated log file, now logging to: {}", self.path.display());
     }
 
-    fn cleanup_backups(&self, base_path: &PathBuf, max_backups: u32) {
-        let dir = base_path.parent().unwrap();
-        let file_stem = base_path.file_stem().unwrap().to_str().unwrap();
+    fn cleanup_backups(&mut self) {
+        let rotate_config = match &mut self.file_config.file_rotate {
+            Some(config) => config,
+            None => return,
+        };
 
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            let mut backups: Vec<_> = entries
-                .filter_map(|entry| {
-                    let entry = entry.ok()?;
-                    let path = entry.path();
-                    if path.file_stem()?.to_str()?.starts_with(file_stem) {
-                        Some((entry.metadata().ok()?.modified().ok()?, path))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+        // Remove oldest files if we exceed the max backup count
+        while rotate_config.backup_files.len() > rotate_config.max_backup_count as usize {
+            let old_path = match rotate_config.backup_files.pop_front() {
+                Some(path) => path,
+                None => break,
+            };
 
-            // Sort by modification time (oldest first)
-            backups.sort_by_key(|(modified, _)| *modified);
+            if !old_path.exists() {
+                continue;
+            }
 
-            // Remove oldest backups if we have too many
-            while backups.len() > max_backups as usize {
-                if let Some((_, path)) = backups.first() {
-                    if let Err(e) = std::fs::remove_file(path) {
-                        tracing::error!("Error removing old log backup: {e}");
-                    }
-                    backups.remove(0);
-                }
+            match std::fs::remove_file(&old_path) {
+                Ok(_) => tracing::debug!("Removed old log file: {}", old_path.display()),
+                Err(e) => tracing::error!(
+                    "Failed to remove old log file {}: {}",
+                    old_path.display(),
+                    e
+                ),
             }
         }
     }
@@ -335,6 +337,7 @@ impl FileWriter {
 
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
+        // Check if we need to rotate the file
         if self.should_rotate_file() {
             self.rotate_file();
         }
@@ -342,7 +345,12 @@ impl LogWriter for FileWriter {
         let line = strip_ansi_codes(line);
 
         match self.buf.write_all(line.as_bytes()) {
-            Ok(()) => {}
+            Ok(()) => {
+                // Update current file size
+                if let Some(rotate_config) = &mut self.file_config.file_rotate {
+                    rotate_config.cur_file_size += line.len() as u64;
+                }
+            }
             Err(e) => tracing::error!("Error writing to file: {e:?}"),
         }
     }

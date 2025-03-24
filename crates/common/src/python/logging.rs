@@ -46,16 +46,15 @@ impl LoggerConfig {
 #[pymethods]
 impl FileWriterConfig {
     #[new]
-    #[pyo3(signature = (directory=None, file_name=None, file_format=None, max_file_size=None, max_backup_count=None))]
+    #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
     #[must_use]
-    pub const fn py_new(
+    pub fn py_new(
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
-        max_file_size: Option<u64>,
-        max_backup_count: Option<u32>,
+        file_rotate: Option<(u64, u32)>,
     ) -> Self {
-        Self::new(directory, file_name, file_format, max_file_size, max_backup_count)
+        Self::new(directory, file_name, file_format, file_rotate)
     }
 }
 
@@ -89,7 +88,7 @@ pub fn py_init_tracing() {
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
-#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, max_file_size=None, max_backup_count=None, is_colored=None, is_bypassed=None, print_config=None))]
+#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, file_rotate=None, is_colored=None, is_bypassed=None, print_config=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -99,8 +98,7 @@ pub fn py_init_logging(
     directory: Option<String>,
     file_name: Option<String>,
     file_format: Option<String>,
-    max_file_size: Option<u64>,
-    max_backup_count: Option<u32>,
+    file_rotate: Option<(u64, u32)>,
     is_colored: Option<bool>,
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
@@ -115,13 +113,7 @@ pub fn py_init_logging(
         print_config.unwrap_or(false),
     );
 
-    let file_config = FileWriterConfig::new(
-        directory,
-        file_name, 
-        file_format,
-        max_file_size,
-        max_backup_count,
-    );
+    let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 
     if is_bypassed.unwrap_or(false) {
         logging_set_bypass();
