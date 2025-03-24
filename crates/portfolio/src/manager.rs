@@ -230,14 +230,10 @@ impl AccountsManager {
             total_margin_maint += margin_maint;
         }
 
-        let margin_maint_money = Money::new(total_margin_maint, currency);
-        account.update_maintenance_margin(instrument.id(), margin_maint_money);
+        let margin_maint = Money::new(total_margin_maint, currency);
+        account.update_maintenance_margin(instrument.id(), margin_maint);
 
-        log::info!(
-            "{} margin_maint={}",
-            instrument.id(),
-            margin_maint_money.to_string()
-        );
+        log::info!("{} margin_maint={margin_maint}", instrument.id());
 
         // Generate and return account state
         Some((
@@ -321,19 +317,15 @@ impl AccountsManager {
             total_locked += locked;
         }
 
-        let locked_money = Money::new(total_locked.to_f64()?, currency);
+        let balance_locked = Money::new(total_locked.to_f64()?, currency);
 
         if let Some(balance) = account.balances.get_mut(&instrument.quote_currency()) {
-            balance.locked = locked_money;
+            balance.locked = balance_locked;
             let currency = balance.currency;
             account.recalculate_balance(currency);
         }
 
-        log::info!(
-            "{} balance_locked={}",
-            instrument.id(),
-            locked_money.to_string()
-        );
+        log::info!("{} balance_locked={balance_locked}", instrument.id());
 
         Some((
             account.clone(),
@@ -435,16 +427,12 @@ impl AccountsManager {
         }
 
         let money = Money::new(total_margin_init, currency);
-        let margin_init_money = {
+        let margin_init = {
             account.update_initial_margin(instrument.id(), money);
             money
         };
 
-        log::info!(
-            "{} margin_init={}",
-            instrument.id(),
-            margin_init_money.to_string()
-        );
+        log::info!("{} margin_init={margin_init}", instrument.id());
 
         Some((
             account.clone(),
