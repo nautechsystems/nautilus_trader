@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
+- Added log file rotation additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
 - Added `time_in_force` parameter for `Strategy.close_position(...)`
 - Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
 - Added `MarkPriceUpdate` data type
@@ -22,6 +23,7 @@ Released on TBD (UTC).
 - Added `Cache.index_price_count(...)`
 - Added `Cache.has_mark_prices()`
 - Added `Cache.has_index_prices()`
+- Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
 
 ### Breaking Changes
 - Changed `Cache.add_mark_price(self, InstrumentId instrument_id, Price price)` to `add_mark_price(self, MarkPriceUpdate mark_price)`
@@ -39,6 +41,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
 - Fixed position state snapshot `ts_snapshot` value, which was always `ts_last` instead of timestamp when the snapshot was taken
+- Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @twitu
 
 ### Documentation Updates
 None
