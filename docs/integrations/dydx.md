@@ -55,12 +55,6 @@ futureproof in case other products become available on dYdX, NautilusTrader appe
 available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified
 as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
 
-## Order types
-
-dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
-However, the execution engine currently only supports submitting market and limit orders. Stop orders
-and trailing stop orders can be implemented later.
-
 ## Short-term and long-term orders
 
 dYdX makes a distinction between short-term orders and long-term orders (or stateful orders).
@@ -126,6 +120,10 @@ order = self.order_factory.market(
     tags=[DYDXOrderTags(is_short_term_order=True, market_order_price=Price.from_str("10_000")).value],
 )
 ```
+
+## Stop limit and stop market orders
+Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
+for conditional orders.
 
 ## Configuration
 
