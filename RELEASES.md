@@ -6,8 +6,8 @@ Released on TBD (UTC).
 - Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
 - Added `time_in_force` parameter for `Strategy.close_position(...)`
 - Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
-- Added `MarkPriceUpdate` data type (caution: `instrument_id` and `value` are the PyO3 versions as there is no Cython wrapper)
-- Added `IndexPriceUpdate` data type (caution: `instrument_id` and `value` are the PyO3 versions as there is no Cython wrapper)
+- Added `MarkPriceUpdate` data type
+- Added `IndexPriceUpdate` data type
 - Added `Actor.subscribe_mark_prices(...)`
 - Added `Actor.subscribe_index_prices(...)`
 - Added `Actor.unsubscribe_mark_prices(...)`

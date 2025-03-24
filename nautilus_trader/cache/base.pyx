@@ -16,6 +16,8 @@
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
@@ -103,11 +105,11 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `trade_tick` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef object mark_price(self, InstrumentId instrument_id, int index=0):
+    cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `mark_price` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef object index_price(self, InstrumentId instrument_id, int index=0):
+    cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `index_price` must be implemented in the subclass")  # pragma: no cover
 

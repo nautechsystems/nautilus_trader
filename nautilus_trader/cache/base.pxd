@@ -20,6 +20,8 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
@@ -64,8 +66,8 @@ cdef class CacheFacade:
     cpdef dict[Decimal, list[Order]] own_ask_orders(self, InstrumentId instrument_id, set[OrderStatus] status=*)
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=*)
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=*)
-    cpdef object mark_price(self, InstrumentId instrument_id, int index=*)
-    cpdef object index_price(self, InstrumentId instrument_id, int index=*)
+    cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=*)
+    cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=*)
     cpdef Bar bar(self, BarType bar_type, int index=*)
     cpdef int book_update_count(self, InstrumentId instrument_id)
     cpdef int quote_tick_count(self, InstrumentId instrument_id)

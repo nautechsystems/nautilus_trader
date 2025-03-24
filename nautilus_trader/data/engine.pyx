@@ -107,8 +107,10 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
@@ -1693,9 +1695,9 @@ cdef class DataEngine(Component):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, nautilus_pyo3.MarkPriceUpdate):
+        elif isinstance(data, MarkPriceUpdate):
             self._handle_mark_price(data)
-        elif isinstance(data, nautilus_pyo3.IndexPriceUpdate):
+        elif isinstance(data, IndexPriceUpdate):
             self._handle_index_price(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
@@ -1838,7 +1840,7 @@ cdef class DataEngine(Component):
             msg=tick,
         )
 
-    cpdef void _handle_mark_price(self, mark_price):
+    cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price):
         self._cache.add_mark_price_v2(mark_price)
 
         self._msgbus.publish_c(
@@ -1848,7 +1850,7 @@ cdef class DataEngine(Component):
             msg=mark_price,
         )
 
-    cpdef void _handle_index_price(self, index_price):
+    cpdef void _handle_index_price(self, IndexPriceUpdate index_price):
         self._cache.add_index_price(index_price)
 
         self._msgbus.publish_c(
