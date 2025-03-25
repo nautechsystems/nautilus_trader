@@ -67,6 +67,12 @@ impl UnixNanos {
         DateTime::from_timestamp_nanos(self.0 as i64)
     }
 
+    /// Converts the underlying value to an ISO 8601 (RFC 3339) string.
+    #[must_use]
+    pub fn to_rfc3339(&self) -> String {
+        self.to_datetime_utc().to_rfc3339()
+    }
+
     /// Calculates the duration in nanoseconds since another [`UnixNanos`] instance.
     ///
     /// Returns `Some(duration)` if `self` is later than `other`, otherwise `None` if `other` is
@@ -377,10 +383,21 @@ mod tests {
     #[case(1_000_000_000_000_000_000, "2001-09-09T01:46:40+00:00")]
     #[case(1_500_000_000_000_000_000, "2017-07-14T02:40:00+00:00")]
     #[case(1_707_577_123_456_789_000, "2024-02-10T14:58:43.456789+00:00")]
-    fn test_as_datetime_utc(#[case] nanos: u64, #[case] expected: &str) {
+    fn test_to_datetime_utc(#[case] nanos: u64, #[case] expected: &str) {
         let nanos = UnixNanos::from(nanos);
         let datetime = nanos.to_datetime_utc();
         assert_eq!(datetime.to_rfc3339(), expected);
+    }
+
+    #[rstest]
+    #[case(0, "1970-01-01T00:00:00+00:00")]
+    #[case(1_000_000_000, "1970-01-01T00:00:01+00:00")]
+    #[case(1_000_000_000_000_000_000, "2001-09-09T01:46:40+00:00")]
+    #[case(1_500_000_000_000_000_000, "2017-07-14T02:40:00+00:00")]
+    #[case(1_707_577_123_456_789_000, "2024-02-10T14:58:43.456789+00:00")]
+    fn test_to_rfc3339(#[case] nanos: u64, #[case] expected: &str) {
+        let nanos = UnixNanos::from(nanos);
+        assert_eq!(nanos.to_rfc3339(), expected);
     }
 
     #[rstest]
