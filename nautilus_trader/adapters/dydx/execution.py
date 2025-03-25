@@ -431,31 +431,34 @@ class DYDXExecutionClient(LiveExecutionClient):
         Create an order status report for a specific order.
         """
         self._log.debug("Requesting OrderStatusReport...")
+
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
         PyCondition.is_false(
-            command.client_order_id is None and command.venue_order_id is None,
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
         max_retries = 3
-        retries = self._generate_order_status_retries.get(command.client_order_id, 0)
+        retries = self._generate_order_status_retries.get(client_order_id, 0)
 
         if retries > max_retries:
             self._log.error(
                 f"Reached maximum retries {retries}/{max_retries} for generating OrderStatusReport for "
-                f"{repr(command.client_order_id) if command.client_order_id else ''} "
-                f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
+                f"{repr(client_order_id) if client_order_id else ''} "
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
 
         self._log.info(
-            f"Generating OrderStatusReport for {repr(command.client_order_id) if command.client_order_id else ''} {repr(command.venue_order_id) if command.venue_order_id else ''}",  # noqa: E501
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
 
         report = None
         order = None
 
-        if command.client_order_id is None:
-            client_order_id = self._cache.client_order_id(command.venue_order_id)
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(venue_order_id)
 
         if client_order_id:
             order = self._cache.order(client_order_id)
@@ -468,7 +471,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return None  # Nothing else to do
 
-        if command.venue_order_id is None:
+        if venue_order_id is None:
             venue_order_id = order.venue_order_id
 
         try:
