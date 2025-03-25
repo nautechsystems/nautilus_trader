@@ -16,6 +16,7 @@
 Define a dYdX exception.
 """
 
+from json import JSONDecodeError
 from typing import Any
 
 from grpc.aio._call import AioRpcError
@@ -62,7 +63,12 @@ def should_retry(error: BaseException) -> bool:
 
     if isinstance(
         error,
-        AioRpcError | DYDXError | HttpError | HttpTimeoutError | WebSocketClientError,
+        AioRpcError
+        | DYDXError
+        | HttpError
+        | HttpTimeoutError
+        | WebSocketClientError
+        | JSONDecodeError,
     ):
         return True
 
