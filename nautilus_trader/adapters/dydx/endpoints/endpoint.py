@@ -16,6 +16,7 @@
 Define the base class for dYdX endpoints.
 """
 
+from json import JSONDecodeError
 from typing import Any
 
 import msgspec
@@ -64,7 +65,7 @@ class DYDXHttpEndpoint:
             max_retries=5,
             retry_delay_secs=1.0,
             logger=Logger(name="DYDXHttpEndpoint"),
-            exc_types=(HttpTimeoutError, HttpError, DYDXError),
+            exc_types=(HttpTimeoutError, HttpError, DYDXError, JSONDecodeError),
             retry_check=should_retry,
         )
 
