@@ -41,6 +41,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
 - Fixed position state snapshot `ts_snapshot` value, which was always `ts_last` instead of timestamp when the snapshot was taken
+- Fixed instrument parsing for Tardis, now correctly applies changes and filters by `effective`
 - Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @twitu
 
 ### Documentation Updates

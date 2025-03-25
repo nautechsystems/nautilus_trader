@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use chrono::{TimeZone, Utc};
 use nautilus_model::instruments::Instrument;
-use nautilus_tardis::{enums::Exchange, http::client::TardisHttpClient};
+use nautilus_tardis::{
+    enums::Exchange,
+    http::{client::TardisHttpClient, query::InstrumentFilterBuilder},
+};
 
 #[tokio::main]
 async fn main() {
@@ -25,11 +29,17 @@ async fn main() {
     let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
-    let resp = client.instruments_info(Exchange::Okex, None, None).await;
+    let resp = client.instruments_info(Exchange::Binance, None, None).await;
     println!("Received: {resp:?}");
 
+    let start = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    let filter = InstrumentFilterBuilder::default()
+        .available_since(Some(start))
+        .build()
+        .unwrap();
+
     let resp = client
-        .instruments_info(Exchange::Okex, Some("ETH-USD"), None)
+        .instruments_info(Exchange::Binance, Some("BTCUSDT"), Some(&filter))
         .await;
     println!("Received: {resp:?}");
 
