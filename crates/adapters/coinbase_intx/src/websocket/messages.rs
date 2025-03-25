@@ -18,7 +18,6 @@ use nautilus_model::{
     data::{Data, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas},
     events::OrderEventAny,
     instruments::InstrumentAny,
-    types::AccountBalance,
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -36,14 +35,14 @@ pub enum NautilusWsMessage {
     MarkPrice(MarkPriceUpdate),
     IndexPrice(IndexPriceUpdate),
     MarkAndIndex((MarkPriceUpdate, IndexPriceUpdate)),
-    AccountUpdate(AccountBalance),
 }
 
 #[derive(Debug, Serialize)]
 pub struct CoinbaseIntxSubscription {
     #[serde(rename = "type")]
     pub op: WsOperation,
-    pub product_ids: Vec<Ustr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub product_ids: Option<Vec<Ustr>>,
     pub channels: Vec<CoinbaseIntxWsChannel>,
     pub time: String,
     pub key: Ustr,
@@ -86,7 +85,7 @@ pub struct CoinbaseIntxWsConfirmationMsg {
 #[derive(Debug, Deserialize)]
 pub struct CoinbaseIntxWsChannelDetails {
     pub name: CoinbaseIntxWsChannel,
-    pub product_ids: Vec<Ustr>,
+    pub product_ids: Option<Vec<Ustr>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,14 +108,14 @@ pub struct CoinbaseIntxWsInstrumentMsg {
     pub total24_hour_volume: String,
     pub base_imf: String,
     pub min_quantity: String,
-    pub position_size_limit: String,
-    pub position_notional_limit: String,
-    pub funding_interval: String,
+    pub position_size_limit: Option<String>,
+    pub position_notional_limit: Option<String>,
+    pub funding_interval: Option<String>,
     pub trading_state: String,
     pub last_updated_time: DateTime<Utc>,
-    pub default_initial_margin: String,
+    pub default_initial_margin: Option<String>,
     pub base_asset_multiplier: String,
-    pub underlying_type: String,
+    pub underlying_type: CoinbaseIntxInstrumentType,
     pub sequence: u64,
     pub time: DateTime<Utc>,
 }
@@ -274,17 +273,17 @@ mod tests {
         assert_eq!(parsed.total24_hour_volume, "2.22252453944151E8");
         assert_eq!(parsed.base_imf, "0.05");
         assert_eq!(parsed.min_quantity, "0.0001");
-        assert_eq!(parsed.position_size_limit, "5841.0594");
-        assert_eq!(parsed.position_notional_limit, "70000000");
-        assert_eq!(parsed.funding_interval, "3600000000000");
+        assert_eq!(parsed.position_size_limit, Some("5841.0594".to_string()));
+        assert_eq!(parsed.position_notional_limit, Some("70000000".to_string()));
+        assert_eq!(parsed.funding_interval, Some("3600000000000".to_string()));
         assert_eq!(parsed.trading_state, "trading");
         assert_eq!(
             parsed.last_updated_time.to_rfc3339(),
             "2025-03-14T22:00:00+00:00"
         );
-        assert_eq!(parsed.default_initial_margin, "0.2");
+        assert_eq!(parsed.default_initial_margin, Some("0.2".to_string()));
         assert_eq!(parsed.base_asset_multiplier, "1.0");
-        assert_eq!(parsed.underlying_type, "SPOT");
+        assert_eq!(parsed.underlying_type, CoinbaseIntxInstrumentType::Spot);
         assert_eq!(parsed.sequence, 0);
         assert_eq!(parsed.time.to_rfc3339(), "2025-03-14T22:59:53.373+00:00");
     }

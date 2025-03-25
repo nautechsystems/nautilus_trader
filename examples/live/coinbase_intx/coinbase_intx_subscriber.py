@@ -139,7 +139,7 @@ class DataSubscriber(Strategy):
             self.subscribe_quote_ticks(instrument_id)
             self.subscribe_trade_ticks(instrument_id)
             self.subscribe_mark_prices(instrument_id)
-            # self.subscribe_index_prices(instrument_id)
+            self.subscribe_index_prices(instrument_id)
 
             # bar_type = BarType(instrument_id, self.bar_spec, AggregationSource.EXTERNAL)
             # self.subscribe_bars(bar_type)
@@ -171,7 +171,7 @@ class DataSubscriber(Strategy):
             self.unsubscribe_quote_ticks(instrument_id)
             self.unsubscribe_trade_ticks(instrument_id)
             self.unsubscribe_mark_prices(instrument_id)
-            # self.unsubscribe_index_prices(instrument_id)
+            self.unsubscribe_index_prices(instrument_id)
             # self.unsubscribe_bars(BarType(instrument_id, self.bar_spec, AggregationSource.EXTERNAL))
 
     def on_historical_data(self, data: Any) -> None:
