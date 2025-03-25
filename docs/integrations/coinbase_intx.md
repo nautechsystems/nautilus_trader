@@ -1,5 +1,7 @@
 # Coinbase International
 
+**This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading**.
+
 :::warning
 The Coinbase International integration is currently in a beta testing phase.
 Exercise caution and report any issues on GitHub.
@@ -7,8 +9,6 @@ Exercise caution and report any issues on GitHub.
 
 [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
 The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
-
-This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading.
 
 Coinbase International brings a high standard of customer protection, a robust risk management framework and high-performance trading technology, including:
 
@@ -68,8 +68,8 @@ We recommend also referring to the Coinbase International documentation in conju
 
 ### Instruments
 
-On startup, the adapter automatically loads all available instruments from Coinbase International
-and subscribes to the `INSTRUMENTS` channel. This ensures that the cache and clients requiring
+On startup, the adapter automatically loads all available instruments from the Coinbase International REST API
+and subscribes to the `INSTRUMENTS` WebSocket channel for updates. This ensures that the cache and clients requiring
 up-to-date definitions for parsing always have the latest instrument data.
 
 Available instrument types include:
