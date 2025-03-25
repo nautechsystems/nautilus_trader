@@ -215,7 +215,6 @@ impl FileWriter {
 
         let file_path =
             Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format);
-        println!("File path: {}", file_path.display());
 
         match File::options()
             .create(true)
@@ -254,10 +253,8 @@ impl FileWriter {
         } else {
             // default base name
             let current_date_utc = Utc::now().format("%Y-%m-%d_%H%M%S:%3f");
-            println!("Current date UTC: {}", current_date_utc);
             format!("{trader_id}_{current_date_utc}_{instance_id}")
         };
-        println!("Basename: {}", basename);
 
         let suffix = if is_json_format { "json" } else { "log" };
         let mut file_path = PathBuf::new();
@@ -267,11 +264,8 @@ impl FileWriter {
             create_dir_all(&file_path).expect("Failed to create directories for log file");
         }
 
-        println!("Basename: {}", basename);
         file_path.push(basename);
-        println!("File path: {}", file_path.display());
         file_path.set_extension(suffix);
-        println!("File path: {}", file_path.display());
         file_path
     }
 
@@ -295,7 +289,6 @@ impl FileWriter {
             &self.instance_id,
             self.json_format,
         );
-        println!("New path: {}", new_path.display());
         match File::options().create(true).append(true).open(&new_path) {
             Ok(new_file) => {
                 // Rotate existing file
@@ -326,8 +319,6 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
         .len()
         .saturating_sub(rotate_config.max_backup_count as usize);
 
-    println!("Files to remove: {}", files_to_remove);
-
     // Remove oldest files if we exceed the max backup count
     rotate_config
         .backup_files
@@ -342,9 +333,7 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
         // Check if we need to rotate the file
-        println!("Should rotate file: {}", self.should_rotate_file());
         if self.should_rotate_file() {
-            println!("Rotating file");
             self.rotate_file();
         }
 
@@ -355,7 +344,6 @@ impl LogWriter for FileWriter {
                 // Update current file size
                 if let Some(rotate_config) = &mut self.file_config.file_rotate {
                     rotate_config.cur_file_size += line.len() as u64;
-                    println!("Current file size: {}", rotate_config.cur_file_size);
                 }
             }
             Err(e) => tracing::error!("Error writing to file: {e:?}"),

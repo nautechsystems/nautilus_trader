@@ -781,7 +781,6 @@ mod tests {
         // Create a temporary directory for log files
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let dir_path = temp_dir.path().to_str().unwrap().to_string();
-        // let dir_path = "./".to_string();
 
         // Configure a small max file size to trigger rotation quickly
         let max_backups = 3;
@@ -807,32 +806,24 @@ mod tests {
             "Test log message with enough content to exceed our small max file size limit"
         );
 
-        // Flush to ensure all data is written
-        log::logger().flush();
         sleep(Duration::from_millis(100));
 
         // Count the number of log files in the directory
         let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
-            .filter(|entry| {
-                println!("Entry: {:?}", entry.path().extension());
-                entry.path().extension().map_or(false, |ext| ext == "log")
-            })
+            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
             .collect();
         dbg!(&files);
 
         // We should have multiple files due to rotation
         assert_eq!(files.len(), 1);
-        println!("Check 1");
 
         log::info!(
             component = "Test";
             "Test log message with enough content to exceed our small max file size limit"
         );
 
-        // Flush to ensure all data is written
-        log::logger().flush();
         sleep(Duration::from_millis(100));
 
         // Count the number of log files in the directory
@@ -853,8 +844,6 @@ mod tests {
             "Test log message with enough content to exceed our small max file size limit"
             );
 
-            // Flush to ensure all data is written
-            log::logger().flush();
             sleep(Duration::from_millis(100));
         }
 
@@ -867,7 +856,7 @@ mod tests {
 
         // We should have at most max_backups + 1 files (current file + backups)
         assert!(
-            files.len() <= max_backups as usize,
+            files.len() == max_backups as usize + 1,
             "Expected at most {} log files, found {}",
             max_backups,
             files.len()
