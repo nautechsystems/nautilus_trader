@@ -26,8 +26,15 @@ from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport position_side_from_str
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport TradeId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -62,46 +69,133 @@ cdef class Position:
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
 
-        self._events: list[OrderFilled] = []
-        self._trade_ids: list[TradeId] = []
-        self._buy_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self._sell_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self._commissions = {}
+        # Create a new position with the opening fill
+        Position._init_(
+            self=self,
+            trader_id=fill.trader_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
+            position_id=fill.position_id,
+            account_id=fill.account_id,
+            opening_order_id=fill.client_order_id,
+            closing_order_id=None,
+            entry=fill.order_side,
+            side=Position.side_from_order_side_c(fill.order_side),
+            signed_qty=0.0,
+            quantity=Quantity.zero_c(precision=instrument.size_precision),
+            peak_qty=Quantity.zero_c(precision=instrument.size_precision),
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+            multiplier=instrument.multiplier,
+            is_inverse=instrument.is_inverse,
+            quote_currency=instrument.quote_currency,
+            base_currency=instrument.get_base_currency(),
+            settlement_currency=instrument.get_settlement_currency(),
+            ts_init=fill.ts_init,
+            ts_opened=fill.ts_event,
+            ts_last=fill.ts_event,
+            ts_closed=0,
+            duration_ns=0,
+            avg_px_open=fill.last_px.as_f64_c(),
+            avg_px_close=0.0,
+            realized_return=0.0,
+            realized_pnl=None,
+            buy_qty=Quantity.zero_c(precision=instrument.size_precision),
+            sell_qty=Quantity.zero_c(precision=instrument.size_precision),
+            commissions_dict={},
+            events=[],
+            trade_ids=[],
+        )
 
+        # Apply the opening fill
+        self.apply(fill)
+
+    @staticmethod
+    cdef Position _init_(
+        Position self,
+        TraderId trader_id,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        PositionId position_id,
+        AccountId account_id,
+        ClientOrderId opening_order_id,
+        ClientOrderId closing_order_id,
+        OrderSide entry,
+        PositionSide side,
+        double signed_qty,
+        Quantity quantity,
+        Quantity peak_qty,
+        uint8_t price_precision,
+        uint8_t size_precision,
+        Quantity multiplier,
+        bint is_inverse,
+        Currency quote_currency,
+        Currency base_currency,
+        Currency settlement_currency,
+        uint64_t ts_init,
+        uint64_t ts_opened,
+        uint64_t ts_last,
+        uint64_t ts_closed,
+        uint64_t duration_ns,
+        double avg_px_open,
+        double avg_px_close,
+        double realized_return,
+        Money realized_pnl,
+        Quantity buy_qty,
+        Quantity sell_qty,
+        dict commissions_dict=None,
+        list events=None,
+        list trade_ids=None,
+    ):
+        """
+        Initialize a Position self with all parameters.
+
+        This is an internal method used for initialization by both the constructor
+        and factory methods.
+        """
         # Identifiers
-        self.trader_id = fill.trader_id
-        self.strategy_id = fill.strategy_id
-        self.instrument_id = fill.instrument_id
-        self.id = fill.position_id
-        self.account_id = fill.account_id
-        self.opening_order_id = fill.client_order_id
-        self.closing_order_id = None
+        self.trader_id = trader_id
+        self.strategy_id = strategy_id
+        self.instrument_id = instrument_id
+        self.id = position_id
+        self.account_id = account_id
+        self.opening_order_id = opening_order_id
+        self.closing_order_id = closing_order_id
 
         # Properties
-        self.entry = fill.order_side
-        self.side = Position.side_from_order_side(fill.order_side)
-        self.signed_qty = 0.0
-        self.quantity = Quantity.zero_c(precision=instrument.size_precision)
-        self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self.ts_init = fill.ts_init
-        self.ts_opened = fill.ts_event
-        self.ts_last = fill.ts_event
-        self.ts_closed = 0
-        self.duration_ns = 0
-        self.avg_px_open = fill.last_px.as_f64_c()
-        self.avg_px_close = 0.0
-        self.price_precision = instrument.price_precision
-        self.size_precision = instrument.size_precision
-        self.multiplier = instrument.multiplier
-        self.is_inverse = instrument.is_inverse
-        self.quote_currency = instrument.quote_currency
-        self.base_currency = instrument.get_base_currency()  # Can be None
-        self.settlement_currency = instrument.get_settlement_currency()
+        self.entry = entry
+        self.side = side
+        self.signed_qty = signed_qty
+        self.quantity = quantity
+        self.peak_qty = peak_qty
+        self.ts_init = ts_init
+        self.ts_opened = ts_opened
+        self.ts_last = ts_last
+        self.ts_closed = ts_closed
+        self.duration_ns = duration_ns
+        self.avg_px_open = avg_px_open
+        self.avg_px_close = avg_px_close
+        self.price_precision = price_precision
+        self.size_precision = size_precision
+        self.multiplier = multiplier
+        self.is_inverse = is_inverse
+        self.quote_currency = quote_currency
+        self.base_currency = base_currency
+        self.settlement_currency = settlement_currency
 
-        self.realized_return = 0.0
-        self.realized_pnl = None
+        self.realized_return = realized_return
+        self.realized_pnl = realized_pnl
 
-        self.apply(fill)
+        # Set quantities
+        self._buy_qty = buy_qty
+        self._sell_qty = sell_qty
+
+        # Set collections
+        self._events = events if events is not None else []
+        self._trade_ids = trade_ids if trade_ids is not None else []
+        self._commissions = commissions_dict if commissions_dict is not None else {}
+
+        return self
 
     def __eq__(self, Position other) -> bool:
         return self.id == other.id
@@ -123,40 +217,6 @@ cdef class Position:
         """
         cdef str quantity = " " if self.quantity._mem.raw == 0 else f" {self.quantity.to_formatted_str()} "
         return f"{position_side_to_str(self.side)}{quantity}{self.instrument_id}"
-
-    @staticmethod
-    cdef Position from_pyo3_c(pyo3_order):
-        return Position(
-            id=PositionId(str(pyo3_order.id)),
-            trader_id=TraderId(str(pyo3_order.trader_id)),
-            strategy_id=StrategyId(str(pyo3_order.strategy_id)),
-            instrument_id=InstrumentId.from_str_c(str(pyo3_order.instrument_id)),
-            account_id=AccountId(str(pyo3_order.account_id)),
-            opening_order_id=ClientOrderId(str(pyo3_order.opening_order_id)),
-            closing_order_id=ClientOrderId(str(pyo3_order.closing_order_id)),
-            entry=order_side_from_str(str(pyo3_order.entry)),
-            side=position_side_from_str(str(pyo3_order.side)),
-            signed_qty=pyo3_order.signed_qty,
-            quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
-            peak_qty=Quantity.from_raw_c(pyo3_order.peak_qty.raw, pyo3_order.peak_qty.precision),
-            ts_init=pyo3_order.ts_init,
-            ts_opened=pyo3_order.ts_opened,
-            ts_last=pyo3_order.ts_last,
-            ts_closed=pyo3_order.ts_closed,
-            duration_ns=pyo3_order.duration_ns,
-            avg_px_open=pyo3_order.avg_px_open,
-            avg_px_close=pyo3_order.avg_px_close,
-            quote_currency=pyo3_order.quote_currency,
-            base_currency=pyo3_order.base_currency,
-            settlement_currency=pyo3_order.settlement_currency,
-            commissions=pyo3_order.commissions,
-            realized_return=pyo3_order.realized_return,
-            realized_pnl=pyo3_order.realized_pnl,
-        )
-
-    @staticmethod
-    def from_pyo3(pyo3_order):
-        return Position.from_pyo3_c(pyo3_order)
 
     cpdef dict to_dict(self):
         """
@@ -193,6 +253,14 @@ cdef class Position:
             "commissions": sorted([str(c) for c in self.commissions()]),
             "realized_return": round(self.realized_return, 5),
             "realized_pnl": str(self.realized_pnl),
+            "buy_qty": str(self._buy_qty),
+            "sell_qty": str(self._sell_qty),
+            "trade_ids": [str(trade_id) for trade_id in self._trade_ids],
+            "events": [OrderFilled.to_dict(event) for event in self._events],
+            "price_precision": self.price_precision,
+            "size_precision": self.size_precision,
+            "multiplier": str(self.multiplier),
+            "is_inverse": self.is_inverse,
         }
 
     cdef list client_order_ids_c(self):
@@ -799,3 +867,183 @@ cdef class Position:
         else:
             # In quote currency
             return quantity * self.multiplier.as_f64_c() * self._calculate_points(avg_px_open, avg_px_close)
+
+    @staticmethod
+    cdef Position from_dict_c(dict values):
+        """
+        Internal cdef implementation of from_dict.
+        """
+        Condition.not_none(values, "values")
+
+        # Create a new self without calling __init__
+        cdef Position position = Position.__new__(Position)
+
+        # Handle opening/closing order IDs
+        cdef ClientOrderId opening_order_id = ClientOrderId(values["opening_order_id"])
+        cdef ClientOrderId closing_order_id = None
+        if values.get("closing_order_id"):
+            closing_order_id = ClientOrderId(values["closing_order_id"])
+
+        # Handle quantity values
+        cdef Quantity quantity = Quantity.from_str(values["quantity"])
+        cdef Quantity peak_qty = Quantity.from_str(values["peak_qty"])
+        cdef int size_precision = int(values.get("size_precision", 8))
+
+        # Handle buy/sell quantities
+        cdef Quantity buy_qty
+        if "buy_qty" in values:
+            buy_qty = Quantity.from_str(values["buy_qty"])
+        else:
+            buy_qty = Quantity.zero_c(precision=size_precision)
+
+        cdef Quantity sell_qty
+        if "sell_qty" in values:
+            sell_qty = Quantity.from_str(values["sell_qty"])
+        else:
+            sell_qty = Quantity.zero_c(precision=size_precision)
+
+        # Handle multiplier
+        cdef Quantity multiplier = Quantity.from_str(values.get("multiplier", "1"))
+
+        # Handle currencies
+        cdef Currency quote_currency = Currency.from_str(values["quote_currency"])
+        cdef Currency base_currency = None
+        if values.get("base_currency"):
+            base_currency = Currency.from_str(values["base_currency"])
+        cdef Currency settlement_currency = Currency.from_str(values["settlement_currency"])
+
+        # Handle timestamps
+        cdef uint64_t ts_closed = 0
+        if values.get("ts_closed") not in (None, "None"):
+            ts_closed = int(values["ts_closed"])
+
+        cdef uint64_t duration_ns = 0
+        if values.get("duration_ns") not in (None, "None"):
+            duration_ns = int(values["duration_ns"])
+
+        # Handle prices
+        cdef double avg_px_close = 0.0
+        if values.get("avg_px_close") not in (None, "None"):
+            avg_px_close = float(values["avg_px_close"])
+
+        # Handle PnL
+        cdef Money realized_pnl = None
+        if values.get("realized_pnl") not in (None, "None"):
+            realized_pnl = Money.from_str(values["realized_pnl"])
+
+        # Handle commissions
+        cdef dict commissions_dict = {}
+        if isinstance(values.get("commissions"), list):
+            # List format
+            for commission_str in values["commissions"]:
+                commission = Money.from_str(commission_str)
+                commissions_dict[commission.currency] = commission
+        elif isinstance(values.get("commissions"), dict):
+            # Dict format
+            for currency_code, commission_str in values["commissions"].items():
+                commission = Money.from_str(commission_str)
+                commissions_dict[commission.currency] = commission
+
+        # Handle events and trade_ids
+        cdef list events = []
+        cdef list trade_ids = []
+
+        if "events" in values and isinstance(values["events"], list):
+            from nautilus_trader.model.events.order import OrderFilled
+
+            for event_values in values["events"]:
+                if event_values.get("type") == "OrderFilled":
+                    fill = OrderFilled.from_dict(event_values)
+                    events.append(fill)
+                    trade_ids.append(fill.trade_id)
+
+        # Handle trade_ids directly if events not present
+        if not trade_ids and "trade_ids" in values and isinstance(values["trade_ids"], list):
+            for trade_id_str in values["trade_ids"]:
+                trade_ids.append(TradeId(trade_id_str))
+
+        # Initialize self with all values
+        return Position._init_(
+            self=position,
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            position_id=PositionId(values["position_id"]),
+            account_id=AccountId(values["account_id"]),
+            opening_order_id=opening_order_id,
+            closing_order_id=closing_order_id,
+            entry=order_side_from_str(values["entry"]),
+            side=position_side_from_str(values["side"]),
+            signed_qty=float(values["signed_qty"]),
+            quantity=quantity,
+            peak_qty=peak_qty,
+            price_precision=int(values.get("price_precision", 8)),
+            size_precision=size_precision,
+            multiplier=multiplier,
+            is_inverse=bool(values.get("is_inverse", False)),
+            quote_currency=quote_currency,
+            base_currency=base_currency,
+            settlement_currency=settlement_currency,
+            ts_init=int(values["ts_init"]),
+            ts_opened=int(values["ts_opened"]),
+            ts_last=int(values["ts_last"]),
+            ts_closed=ts_closed,
+            duration_ns=duration_ns,
+            avg_px_open=float(values["avg_px_open"]),
+            avg_px_close=avg_px_close,
+            realized_return=float(values["realized_return"]),
+            realized_pnl=realized_pnl,
+            buy_qty=buy_qty,
+            sell_qty=sell_qty,
+            commissions_dict=commissions_dict,
+            events=events,
+            trade_ids=trade_ids,
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Create a position from a dictionary representation.
+
+        This method allows recreating a position from a serialized state, without
+        requiring an external Instrument object.
+
+        Parameters
+        ----------
+        values : dict
+            The dictionary containing position values.
+
+        Returns
+        -------
+        Position
+            A new position self.
+        """
+        return Position.from_dict_c(values)
+
+    @staticmethod
+    def create(Instrument instrument, OrderFilled fill):
+        """
+        Create a position from an instrument and fill.
+
+        This factory method provides an alternative to using the constructor directly.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The trading instrument for the position.
+        fill : OrderFilled
+            The order fill event which opened the position.
+
+        Returns
+        -------
+        Position
+            A new position self.
+
+        Raises
+        ------
+        ValueError
+            If `instrument.id` is not equal to `fill.instrument_id`.
+        ValueError
+            If `fill.position_id` is ``None``.
+        """
+        return Position(instrument, fill)

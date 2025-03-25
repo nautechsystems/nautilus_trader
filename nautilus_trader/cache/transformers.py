@@ -139,12 +139,42 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
 # Position
 ################################################################################
 def transform_position_to_pyo3(position: Position):
-    position_dict = Position.to_dict(position)
-    return nautilus_pyo3.Position.from_dict(position_dict)  # fix
+    position_dict = position.to_dict()
+
+    # Handle nullable values for Rust compatibility
+    position_dict["ts_closed"] = position_dict["ts_closed"] or 0
+    position_dict["duration_ns"] = position_dict["duration_ns"] or 0
+    position_dict["avg_px_close"] = position_dict["avg_px_close"] or 0.0
+
+    # Set ID field required by Rust struct
+    position_dict["id"] = position_dict["position_id"]
+
+    # Transform commissions from list to dictionary for Rust
+    commission_list = position_dict.get("commissions", [])
+    commission_dict: dict[str, str] = {}
+
+    for commission_str in commission_list:
+        parts = commission_str.split()
+        if len(parts) == 2:
+            amount, currency = parts
+            if currency in commission_dict:
+                existing_amount = float(commission_dict[currency].split()[0])
+                new_amount = float(amount) + existing_amount
+                commission_dict[currency] = f"{new_amount:.2f} {currency}"
+            else:
+                commission_dict[currency] = commission_str
+
+    position_dict["commissions"] = commission_dict
+
+    return nautilus_pyo3.Position.from_dict(position_dict)
 
 
 def transform_position_from_pyo3(position_pyo3) -> Position | None:
-    return Position.from_pyo3(position_pyo3)
+    if position_pyo3 is None:
+        return None
+
+    position_dict = position_pyo3.to_dict()
+    return Position.from_dict(position_dict)
 
 
 ################################################################################

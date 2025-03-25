@@ -788,7 +788,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
         let position_id = position.id.to_string();
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
-        let value = DatabaseQueries::serialize_payload(self.encoding, position)?;
+        let value = DatabaseQueries::serialize_payload(self.encoding, &position.last_event())?;
         self.insert(key, Some(vec![Bytes::from(value)]))?;
         tracing::debug!("Added {position_id}");
 
