@@ -21,7 +21,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-    clock::Clock,
+    clock::{Clock, TestClock},
+    enums::Environment,
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::DataEngine;
@@ -46,10 +47,11 @@ impl NautilusKernel {
     #[must_use]
     pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
         let instance_id = config.instance_id.unwrap_or_default();
-        let data_engine = Self::initialize_data_engine();
-        let exec_engine = Self::initialize_exec_engine();
+        let clock = Self::initialize_clock(&config.environment);
         let cache = Self::initialize_cache(config.trader_id, &instance_id, config.cache.clone());
-        let clock = Self::initialize_clock();
+        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine.clone());
+        let exec_engine =
+            ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine.clone());
         Self {
             name,
             instance_id,
@@ -61,8 +63,16 @@ impl NautilusKernel {
         }
     }
 
-    fn initialize_clock() -> Rc<RefCell<dyn Clock>> {
-        todo!("initialize_clock")
+    fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
+        match environment {
+            Environment::Backtest => {
+                let test_clock = TestClock::new();
+                Rc::new(RefCell::new(test_clock))
+            }
+            Environment::Live | Environment::Sandbox => {
+                todo!("Initialize clock for Live and Sandbox environments")
+            }
+        }
     }
 
     fn initialize_cache(
@@ -80,14 +90,6 @@ impl NautilusKernel {
 
         let cache = Cache::new(Some(cache_config), cache_database);
         Rc::new(RefCell::new(cache))
-    }
-
-    fn initialize_data_engine() -> DataEngine {
-        todo!("initialize_data_engine")
-    }
-
-    fn initialize_exec_engine() -> ExecutionEngine {
-        todo!("initialize_exec_engine")
     }
 
     fn start(&self) {

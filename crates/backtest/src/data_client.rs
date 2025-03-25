@@ -35,9 +35,19 @@ use nautilus_model::{
 };
 
 pub struct BacktestDataClient {
-    cache: Rc<RefCell<Cache>>,
     pub client_id: ClientId,
     pub venue: Venue,
+    cache: Rc<RefCell<Cache>>,
+}
+
+impl BacktestDataClient {
+    pub fn new(client_id: ClientId, venue: Venue, cache: Rc<RefCell<Cache>>) -> Self {
+        Self {
+            client_id,
+            venue,
+            cache,
+        }
+    }
 }
 
 impl DataClient for BacktestDataClient {
