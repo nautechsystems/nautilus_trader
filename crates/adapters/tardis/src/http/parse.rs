@@ -27,7 +27,7 @@ use rust_decimal_macros::dec;
 
 use super::{
     instruments::{
-        create_crypto_future, create_crypto_perpetual, create_currency_pair, create_option_contract,
+        create_crypto_future, create_crypto_option, create_crypto_perpetual, create_currency_pair,
     },
     models::InstrumentInfo,
 };
@@ -345,18 +345,20 @@ fn parse_option_instrument(
         Decimal::from_str(info.taker_fee.to_string().as_str()).expect("Invalid decimal value");
 
     let mut price_increment = get_price_increment(info.price_increment);
+    let mut size_increment = get_size_increment(info.amount_increment);
     let mut multiplier = get_multiplier(info.contract_multiplier);
     let mut ts_event = UnixNanos::from(info.available_since);
 
     let mut instruments = Vec::new();
 
-    instruments.push(create_option_contract(
+    instruments.push(create_crypto_option(
         &info,
         instrument_id,
         raw_symbol,
         activation,
         expiration,
         price_increment,
+        size_increment,
         multiplier,
         margin_init,
         margin_maint,
@@ -372,20 +374,24 @@ fn parse_option_instrument(
                 Some(value) => get_price_increment(value),
                 None => price_increment,
             };
-
+            size_increment = match change.amount_increment {
+                Some(value) => get_size_increment(value),
+                None => size_increment,
+            };
             multiplier = match change.contract_multiplier {
                 Some(value) => Some(Quantity::from(value.to_string())),
                 None => multiplier,
             };
             ts_event = UnixNanos::from(change.until);
 
-            instruments.push(create_option_contract(
+            instruments.push(create_crypto_option(
                 &info,
                 instrument_id,
                 raw_symbol,
                 activation,
                 expiration,
                 price_increment,
+                size_increment,
                 multiplier,
                 margin_init,
                 margin_maint,
@@ -610,11 +616,11 @@ mod tests {
         assert_eq!(instrument.base_currency(), None);
         assert_eq!(instrument.quote_currency(), Currency::BTC());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
-        // assert!(instrument.is_inverse());  // TODO: Implement inverse options
+        assert!(!instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 4);
-        // assert_eq!(instrument.size_precision(), 1); // from amountIncrement 0.1
+        assert_eq!(instrument.size_precision(), 1); // from amountIncrement 0.1
         assert_eq!(instrument.price_increment(), Price::from("0.0001"));
-        // assert_eq!(instrument.size_increment(), Quantity::from("0.1"));
+        assert_eq!(instrument.size_increment(), Quantity::from("0.1"));
         assert_eq!(instrument.multiplier(), Quantity::from(1));
         assert_eq!(
             instrument.activation_ns(),
