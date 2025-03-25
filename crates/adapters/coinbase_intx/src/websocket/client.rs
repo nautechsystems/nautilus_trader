@@ -124,6 +124,14 @@ impl CoinbaseIntxWebSocketClient {
         self.credential.api_key.as_str()
     }
 
+    /// Returns a value indicating whether the client is active.
+    pub fn is_active(&self) -> bool {
+        match &self.inner {
+            Some(inner) => inner.is_active(),
+            None => false,
+        }
+    }
+
     /// Returns a value indicating whether the client is closed.
     pub fn is_closed(&self) -> bool {
         match &self.inner {
@@ -247,7 +255,7 @@ impl CoinbaseIntxWebSocketClient {
         let signature = self.credential.sign_ws(&time);
         let message = CoinbaseIntxSubscription {
             op: WsOperation::Subscribe,
-            product_ids,
+            product_ids: Some(product_ids),
             channels,
             time,
             key: self.credential.api_key,
@@ -297,7 +305,7 @@ impl CoinbaseIntxWebSocketClient {
         let signature = self.credential.sign_ws(&time);
         let message = CoinbaseIntxSubscription {
             op: WsOperation::Unsubscribe,
-            product_ids,
+            product_ids: Some(product_ids),
             channels,
             time,
             key: self.credential.api_key,
@@ -555,7 +563,7 @@ impl CoinbaseIntxFeedHandler {
                                     tracing::error!("{msg:?}");
                                 }
                                 CoinbaseIntxWsMessage::Confirmation(msg) => {
-                                    tracing::debug!("Subscribed: {msg:?}");
+                                    tracing::debug!("{msg:?}");
                                     continue;
                                 }
                                 CoinbaseIntxWsMessage::Instrument(_) => return Some(event),

@@ -19,12 +19,20 @@ Coinbase International brings a high standard of customer protection, a robust r
 - Well-capitalized exchange to support tail market events.
 - Collaboration with top-tier global regulators.
 
+:::info
 See the [Introducing Coinbase International Exchange](https://www.coinbase.com/en-au/blog/introducing-coinbase-international-exchange) blog article for more details.
+:::
+
+## Installation
+
+:::note
+No additional `coinbase_intx` installation is required; the adapter’s core components, written in Rust, are automatically compiled and linked during the build.
+:::
 
 ## Examples
 
 You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase_intx).
-These examples demonstrate how to set up live market data feeds and execution clients for trading on Coinbase International, providing practical starting points for your integration.
+These examples demonstrate how to set up live market data feeds and execution clients for trading on Coinbase International.
 
 ## Overview
 
@@ -33,22 +41,18 @@ The following products are supported on the Coinbase International exchange:
 - Perpetual Futures contracts
 - Spot cryptocurrencies
 
-:::info
-No additional `coinbase_intx` installation is required; the adapter’s core components, written in Rust, are automatically compiled and linked during the build.
-:::
-
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Coinbase International adapter includes multiple components, which can be used together or
-separately depending on the use case. These components work together to connect to Coinbase International’s APIs,
-fetch market data, manage instruments, and execute trades, all orchestrated through a trading node configuration.
+separately depending on the use case. These components work together to connect to Coinbase International’s APIs
+for market data and execution.
 
 - `CoinbaseIntxHttpClient`: REST API connectivity.
 - `CoinbaseIntxWebSocketClient`: WebSocket API connectivity.
 - `CoinbaseIntxInstrumentProvider`: Instrument parsing and loading functionality.
 - `CoinbaseIntxDataClient`: A market data feed manager.
 - `CoinbaseIntxExecutionClient`: An account management and trade execution gateway.
-- `CoinbaseIntxLiveDataClientFactory`: Factory for Coinbase International data clients (used by the trading node builder).
-- `CoinbaseIntxLiveExecClientFactory`: Factory for Coinbase International execution clients (used by the trading node builder).
+- `CoinbaseIntxLiveDataClientFactory`: Factory for Coinbase International data clients.
+- `CoinbaseIntxLiveExecClientFactory`: Factory for Coinbase International execution clients.
 
 :::note
 Most users will simply define a configuration for a live trading node (described below),
@@ -64,16 +68,11 @@ We recommend also referring to the Coinbase International documentation in conju
 
 ### Instruments
 
-The adapter automatically loads all available instruments from Coinbase International on startup with the following instrument provider configuration:
+On startup, the adapter automatically loads all available instruments from Coinbase International
+and subscribes to the `INSTRUMENTS` channel. This ensures that the cache and clients requiring
+up-to-date definitions for parsing always have the latest instrument data.
 
-```python
-InstrumentProviderConfig(load_all=True)
-```
-
-It also supports periodic reloading of instrument definitions (configurable via the `update_instruments_interval_mins` config option)
-to ensure your trading system always has the latest instrument definitions.
-
-The following instrument types are available:
+Available instrument types include:
 
 - `CurrencyPair` (Spot cryptocurrencies)
 - `CryptoPerpetual`
@@ -97,20 +96,12 @@ Historical data requests have not yet been implemented.
 
 ### WebSocket market data
 
-The data client connects to Coinbase International's WebSocket feed to stream real-time market data, including:
-
-- Order book updates (L2 market-by-price).
-- Quote ticks (top-of-book best bid/ask).
-- Trade ticks.
-- Bar (candlestick) data.
-- Mark prices.
-- Index prices.
-
-The WebSocket client handles automatic reconnection and subscription management, ensuring consistent market data delivery even during temporary connection issues.
+The data client connects to Coinbase International's WebSocket feed to stream real-time market data.
+The WebSocket client handles automatic reconnection and re-subscribes to active subscriptions upon reconnecting.
 
 ## Execution
 
-The adapter is built to trade one Coinbase International portfolio per execution client.
+**The adapter is built to trade one Coinbase International portfolio per execution client**.
 
 To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to the desired
 portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
@@ -119,7 +110,7 @@ execution configuration for each client.
 ### Order types
 
 Coinbase International offers market, limit, and stop order types, enabling a broad range of strategies.
-The table below indicates which order types are supported (✓) for derivatives and spot markets.
+The table below indicates which order types are supported (✓).
 
 |                        | Derivatives          | Spot                     |
 |------------------------|----------------------|--------------------------|
@@ -152,27 +143,30 @@ This approach is necessary because execution messages are not provided over the 
 The FIX client:
 
 - Establishes a secure TCP/TLS connection and logs on automatically when the trading node starts.
-- Handles connection monitoring and automatic reconnection if the connection is interrupted.
+- Handles connection monitoring and automatic reconnection and logon if the connection is interrupted.
 - Properly logs out and closes the connection when the trading node stops.
 
 The client processes several types of execution messages:
 
 - Order status reports (canceled, expired, triggered).
-- Fill reports (both partial fills and complete fills).
+- Fill reports (partial and complete fills).
 
 The FIX credentials are automatically managed using the same API credentials as the REST and WebSocket clients.
-No additional configuration is required beyond providing valid API credentials, as the FIX connection is fully set up and managed by the adapter.
+No additional configuration is required beyond providing valid API credentials.
+
+:::note
+The REST client handles processing `REJECTED` and `ACCEPTED` status execution messages on order submission.
+:::
 
 ### Account and position management
 
-On startup, the execution client loads your current account and execution state including:
+On startup, the execution client requests and loads your current account and execution state including:
 
 - Available balances across all assets.
-- Open positions.
 - Open orders.
+- Open positions.
 
 This provides your trading strategies with a complete picture of your account before placing new orders.
-Position status reports are generated both on startup and periodically to ensure accurate risk management.
 
 ## Configuration
 
@@ -202,7 +196,6 @@ config = TradingNodeConfig(
     exec_clients={
         COINBASE_INTX: CoinbaseIntxExecClientConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            http_timeout_secs=10,
         ),
     },
 )
@@ -259,9 +252,10 @@ We recommend using environment variables to manage your credentials.
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
 
-## Implementation Notes
+## Implementation notes
 
 - **Heartbeats**: The adapter maintains heartbeats on both the WebSocket and FIX connections to ensure reliable connectivity.
+- **Rate Limits**: The REST API client is configured to limit requests to the 40/second, as specified by Coinbase International.
 - **Graceful Shutdown**: The adapter properly handles graceful shutdown, ensuring all pending messages are processed before disconnecting.
 - **Thread Safety**: All adapter components are thread-safe, allowing them to be used from multiple threads concurrently.
 - **Execution Model**: The adapter can be configured with a single Coinbase International portfolio per execution client. For trading multiple portfolios, you can create multiple execution clients.

@@ -58,6 +58,16 @@ impl CoinbaseIntxWebSocketClient {
         self.api_key()
     }
 
+    #[pyo3(name = "is_active")]
+    fn py_is_active(&mut self) -> bool {
+        self.is_active()
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&mut self) -> bool {
+        self.is_closed()
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -119,17 +129,11 @@ impl CoinbaseIntxWebSocketClient {
                             order_event_to_pyobject(py, msg).expect("Failed to create event");
                         call_python(py, &callback, py_obj);
                     }),
-                    _ => panic!("Not implemented"),
                 }
             }
 
             Ok(())
         })
-    }
-
-    #[pyo3(name = "is_closed")]
-    fn py_is_closed(&mut self) -> bool {
-        self.is_closed()
     }
 
     #[pyo3(name = "close")]
@@ -145,12 +149,14 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     #[pyo3(name = "subscribe_instruments")]
+    #[pyo3(signature = (instrument_ids=None))]
     fn py_subscribe_instruments<'py>(
         &self,
         py: Python<'py>,
-        instrument_ids: Vec<InstrumentId>,
+        instrument_ids: Option<Vec<InstrumentId>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let instrument_ids = instrument_ids.unwrap_or_default();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_instruments(instrument_ids).await {

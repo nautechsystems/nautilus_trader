@@ -31,12 +31,16 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeIndexPrices
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeIndexPrices
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
@@ -103,8 +107,6 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.ws_connection_delay_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = client
@@ -119,22 +121,14 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         )
         self._ws_client_futures: set[asyncio.Future] = set()
 
-        # Tasks
-        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
-        self._update_instruments_task: asyncio.Task | None = None
-
     @property
     def coinbase_intx_instrument_provider(self) -> CoinbaseIntxInstrumentProvider:
         return self._instrument_provider
 
     async def _connect(self) -> None:
-        await self._cache_instruments()
+        await self._instrument_provider.initialize()
+        self._cache_instruments()
         self._send_all_instruments_to_data_engine()
-
-        if self._update_instruments_interval_mins:
-            self._update_instruments_task = self.create_task(
-                self._update_instruments(self._update_instruments_interval_mins),
-            )
 
         future = asyncio.ensure_future(
             self._ws_client.connect(
@@ -147,11 +141,11 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         self._log.info(f"WebSocket API key {self._ws_client.api_key}", LogColor.BLUE)
         self._log.info("Coinbase Intx API key authenticated", LogColor.GREEN)
 
+        await self._ws_client.subscribe_instruments()
+
     async def _disconnect(self) -> None:
-        if self._update_instruments_task:
-            self._log.debug("Canceling task 'update_instruments'")
-            self._update_instruments_task.cancel()
-            self._update_instruments_task = None
+        # Delay to allow websocket to send any unsubscribe messages
+        await asyncio.sleep(1.0)
 
         # Shutdown websockets
         if not self._ws_client.is_closed():
@@ -164,40 +158,33 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
             if not future.done():
                 future.cancel()
 
-    async def _cache_instruments(self) -> None:
+    def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct
         # price and size precisions when parsing responses.
-        await self._instrument_provider.initialize()
-
         instruments_pyo3 = self.coinbase_intx_instrument_provider.instruments_pyo3()
         for inst in instruments_pyo3:
             self._http_client.add_instrument(inst)
 
         self._log.debug("Cached instruments", LogColor.MAGENTA)
 
-    def _send_all_instruments_to_data_engine(self) -> None:
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
+    def _cache_instrument(self, instrument: Instrument) -> None:
+        self._instrument_provider.add(instrument)
+        self._http_client.add_instrument(instrument)
 
+        self._log.debug(f"Cached instrument {instrument.id}", LogColor.MAGENTA)
+
+    def _send_all_instruments_to_data_engine(self) -> None:
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    async def _update_instruments(self, interval_mins: int) -> None:
-        try:
-            while True:
-                self._log.debug(
-                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
-                )
-                await asyncio.sleep(interval_mins * 60)
-                await self._instrument_provider.initialize(reload=True)
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
 
-                instruments_pyo3 = self.coinbase_intx_instrument_provider.instruments_pyo3()
-                for inst in instruments_pyo3:
-                    self._http_client.add_instrument(inst)
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        pass  # Do nothing further (subscribed automatically on start)
 
-                self._send_all_instruments_to_data_engine()
-        except asyncio.CancelledError:
-            self._log.debug("Canceled task 'update_instruments'")
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        pass  # Do nothing further (subscribed automatically on start)
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type == BookType.L3_MBO:
@@ -238,6 +225,12 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        pass  # Do nothing further (subscriptions must be maintained for the clients)
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        pass  # Do nothing further (subscriptions must be maintained for the clients)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -342,21 +335,26 @@ class CoinbaseIntxDataClient(LiveMarketDataClient):
         )
 
     def _handle_msg(self, msg: Any) -> None:
-        if nautilus_pyo3.is_pycapsule(msg):
-            # The capsule will fall out of scope at the end of this method,
-            # and eventually be garbage collected. The contained pointer
-            # to `Data` is still owned and managed by Rust.
-            data = capsule_to_data(msg)
-        elif isinstance(msg, nautilus_pyo3.MarkPriceUpdate):
-            data = MarkPriceUpdate.from_pyo3(msg)
-        elif isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
-            data = IndexPriceUpdate.from_pyo3(msg)
-        elif isinstance(msg, nautilus_pyo3.CryptoPerpetual):
-            data = CryptoPerpetual.from_pyo3(msg)
-        elif isinstance(msg, nautilus_pyo3.CurrencyPair):
-            data = CurrencyPair.from_pyo3(msg)
-        else:
-            self._log.error(f"Cannot handle message {msg}, not implemented")
-            return
+        try:
+            if nautilus_pyo3.is_pycapsule(msg):
+                # The capsule will fall out of scope at the end of this method,
+                # and eventually be garbage collected. The contained pointer
+                # to `Data` is still owned and managed by Rust.
+                data = capsule_to_data(msg)
+            elif isinstance(msg, nautilus_pyo3.MarkPriceUpdate):
+                data = MarkPriceUpdate.from_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.IndexPriceUpdate):
+                data = IndexPriceUpdate.from_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.CryptoPerpetual):
+                self._cache_instrument(msg)
+                data = CryptoPerpetual.from_pyo3(msg)
+            elif isinstance(msg, nautilus_pyo3.CurrencyPair):
+                self._cache_instrument(msg)
+                data = CurrencyPair.from_pyo3(msg)
+            else:
+                self._log.error(f"Cannot handle message {msg}, not implemented")
+                return
 
-        self._handle_data(data)
+            self._handle_data(data)
+        except Exception as e:
+            self._log.exception("Error handling websocket message", e)
