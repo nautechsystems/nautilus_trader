@@ -44,6 +44,7 @@ from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 from nautilus_trader.adapters.dydx.grpc.order_builder import MAX_CLIENT_ID
 from nautilus_trader.adapters.dydx.grpc.order_builder import DYDXGRPCOrderType
 from nautilus_trader.adapters.dydx.grpc.order_builder import OrderBuilder
+from nautilus_trader.adapters.dydx.grpc.order_builder import OrderExecution
 from nautilus_trader.adapters.dydx.grpc.order_builder import OrderFlags
 from nautilus_trader.adapters.dydx.http.account import DYDXAccountHttpAPI
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
@@ -1079,7 +1080,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             await self._submit_order_single(order=order)
 
-    async def _submit_order_single(self, order: Order) -> None:
+    async def _submit_order_single(self, order: Order) -> None:  # noqa: C901
         """
         Submit a single order.
         """
@@ -1120,6 +1121,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         order_flags = OrderFlags.SHORT_TERM
         good_til_date_secs: int | None = None
         good_til_block: int | None = None
+        execution = OrderExecution.DEFAULT
 
         if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
             rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
@@ -1147,6 +1149,18 @@ class DYDXExecutionClient(LiveExecutionClient):
             good_til_date_secs = (
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
+
+            if order.order_type == OrderType.STOP_MARKET:
+                execution = OrderExecution.IOC
+
+            if order.is_post_only:
+                execution = OrderExecution.POST_ONLY
+
+            if order.time_in_force == TimeInForce.IOC:
+                execution = OrderExecution.IOC
+
+            if order.time_in_force == TimeInForce.FOK:
+                execution = OrderExecution.FOK
 
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
@@ -1218,6 +1232,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             good_til_block=good_til_block,
             good_til_block_time=good_til_date_secs,
             trigger_price=trigger_price,
+            execution=execution,
         )
 
         await self._place_order(order_msg=order_msg, order=order)
