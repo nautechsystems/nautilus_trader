@@ -1841,7 +1841,7 @@ cdef class DataEngine(Component):
         )
 
     cpdef void _handle_mark_price(self, MarkPriceUpdate mark_price):
-        self._cache.add_mark_price_v2(mark_price)
+        self._cache.add_mark_price(mark_price)
 
         self._msgbus.publish_c(
             topic=f"data.mark_prices"
