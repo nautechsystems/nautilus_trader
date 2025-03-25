@@ -31,11 +31,12 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
 - Completed global message bus design in Rust (#2460), thanks @filipmacek
-- Implemented `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
 - Refactored enum dispatch (#2461), thanks @filipmacek
 - Refined catalog file operations in Rust (#2454), thanks @faysou
 - Refined quote ticks and klines for Bybit (#2465), thanks @davidblom
 - Standardized use of `anyhow::bail` (#2459), thanks @faysou
+- Ported `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
+- Ported `add_instrument` for `BacktestEngine` in Rust (#2469), thanks @filipmacek
 - Upgraded `redis` crate to v0.29.2
 
 ### Fixes
