@@ -781,19 +781,20 @@ mod tests {
         // Create a temporary directory for log files
         let temp_dir = tempdir().expect("Failed to create temporary directory");
         let dir_path = temp_dir.path().to_str().unwrap().to_string();
+        // let dir_path = "./".to_string();
 
         // Configure a small max file size to trigger rotation quickly
         let max_backups = 3;
         let max_file_size = 100;
         let file_config = FileWriterConfig {
             directory: Some(dir_path.clone()),
-            file_name: Some("test_log".to_string()),
+            file_name: None,
             file_format: Some("log".to_string()),
             file_rotate: Some((max_file_size, max_backups).into()), // 100 bytes max size, 3 max backups
         };
 
         // Create the file writer
-        let config = LoggerConfig::from_spec("fileout=Info;Test=Info");
+        let config = LoggerConfig::from_spec("fileout=Info;Test=Info").unwrap();
         let log_guard = Logger::init_with_config(
             TraderId::from("TRADER-001"),
             UUID4::new(),
@@ -801,73 +802,75 @@ mod tests {
             file_config,
         );
 
-        // Write enough data to trigger a few rotations
-        for _ in 0..5 {
-            log::info!(
-                component = "Test";
-                "Test log message with enough content to exceed our small max file size limit"
-            );
-        }
+        log::info!(
+            component = "Test";
+            "Test log message with enough content to exceed our small max file size limit"
+        );
 
         // Flush to ensure all data is written
         log::logger().flush();
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(100));
 
         // Count the number of log files in the directory
         let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
             .filter(|entry| {
+                println!("Entry: {:?}", entry.path().extension());
                 entry.path().extension().map_or(false, |ext| ext == "log")
-                    && entry
-                        .path()
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains("test_log")
             })
             .collect();
+        dbg!(&files);
 
         // We should have multiple files due to rotation
-        assert!(
-            files.len() > 1,
-            "Expected multiple log files due to rotation, found {}",
-            files.len()
-        );
+        assert_eq!(files.len(), 1);
+        println!("Check 1");
 
-        // Now write a lot more data to exceed the backup limit
-        for _ in 0..15 {
-            log::info!(
-                component = "Test";
-                "Additional test log message to trigger more rotations"
-            );
-        }
+        log::info!(
+            component = "Test";
+            "Test log message with enough content to exceed our small max file size limit"
+        );
 
         // Flush to ensure all data is written
         log::logger().flush();
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(100));
 
-        // Count the number of log files in the directory again
-        let files_after_more_writes: Vec<_> = std::fs::read_dir(&dir_path)
+        // Count the number of log files in the directory
+        let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
-            .filter(|entry| {
-                entry.path().extension().map_or(false, |ext| ext == "log")
-                    && entry
-                        .path()
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .contains("test_log")
-            })
+            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
+            .collect();
+        dbg!(&files);
+
+        // We should have multiple files due to rotation
+        assert_eq!(files.len(), 2);
+
+        for _ in 0..5 {
+            // Write enough data to trigger a few rotations
+            log::info!(
+            component = "Test";
+            "Test log message with enough content to exceed our small max file size limit"
+            );
+
+            // Flush to ensure all data is written
+            log::logger().flush();
+            sleep(Duration::from_millis(100));
+        }
+
+        // Count the number of log files in the directory
+        let files: Vec<_> = std::fs::read_dir(&dir_path)
+            .expect("Failed to read directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
             .collect();
 
         // We should have at most max_backups + 1 files (current file + backups)
         assert!(
-            files_after_more_writes.len() <= max_backups as usize,
+            files.len() <= max_backups as usize,
             "Expected at most {} log files, found {}",
             max_backups,
-            files_after_more_writes.len()
+            files.len()
         );
 
         // Clean up

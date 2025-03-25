@@ -215,6 +215,7 @@ impl FileWriter {
 
         let file_path =
             Self::create_log_file_path(&file_config, &trader_id, &instance_id, json_format);
+        println!("File path: {}", file_path.display());
 
         match File::options()
             .create(true)
@@ -244,12 +245,19 @@ impl FileWriter {
         is_json_format: bool,
     ) -> PathBuf {
         let basename = if let Some(file_name) = file_config.file_name.as_ref() {
-            file_name.clone()
+            if file_config.file_rotate.is_some() {
+                let current_date_utc = Utc::now().format("%Y-%m-%d_%H%M%S:%3f");
+                format!("{file_name}_{current_date_utc}")
+            } else {
+                file_name.clone()
+            }
         } else {
             // default base name
-            let current_date_utc = Utc::now().format("%Y-%m-%d");
+            let current_date_utc = Utc::now().format("%Y-%m-%d_%H%M%S:%3f");
+            println!("Current date UTC: {}", current_date_utc);
             format!("{trader_id}_{current_date_utc}_{instance_id}")
         };
+        println!("Basename: {}", basename);
 
         let suffix = if is_json_format { "json" } else { "log" };
         let mut file_path = PathBuf::new();
@@ -259,20 +267,21 @@ impl FileWriter {
             create_dir_all(&file_path).expect("Failed to create directories for log file");
         }
 
+        println!("Basename: {}", basename);
         file_path.push(basename);
+        println!("File path: {}", file_path.display());
         file_path.set_extension(suffix);
+        println!("File path: {}", file_path.display());
         file_path
     }
 
     #[must_use]
     pub fn should_rotate_file(&mut self) -> bool {
-        if self.file_config.file_rotate.is_none() {
-            return false;
-        }
-
-        let rotate_config = self.file_config.file_rotate.as_ref().unwrap();
-
-        rotate_config.cur_file_size >= rotate_config.max_file_size
+        self.file_config
+            .file_rotate
+            .as_ref()
+            .map(|config| config.cur_file_size >= config.max_file_size)
+            .unwrap_or(false)
     }
 
     fn rotate_file(&mut self) {
@@ -280,65 +289,62 @@ impl FileWriter {
         self.flush();
 
         // Create new file
-        let path = Self::create_log_file_path(
+        let new_path = Self::create_log_file_path(
             &self.file_config,
             &self.trader_id,
             &self.instance_id,
             self.json_format,
         );
-        match File::options().create(true).append(true).open(&path) {
-            Ok(file) => {
+        println!("New path: {}", new_path.display());
+        match File::options().create(true).append(true).open(&new_path) {
+            Ok(new_file) => {
                 // Rotate existing file
                 if let Some(rotate_config) = &mut self.file_config.file_rotate {
                     // Add current file to backup queue
                     rotate_config.backup_files.push_back(self.path.clone());
                     rotate_config.cur_file_size = 0;
-                    // Clean up old backups if we exceed the limit
-                    self.cleanup_backups();
+                    cleanup_backups(rotate_config);
                 }
 
-                self.buf = BufWriter::new(file);
-                self.path = path;
+                self.buf = BufWriter::new(new_file);
+                self.path = new_path;
             }
             Err(e) => tracing::error!("Error creating log file: {e}"),
         }
 
         tracing::info!("Rotated log file, now logging to: {}", self.path.display());
     }
+}
 
-    fn cleanup_backups(&mut self) {
-        let rotate_config = match &mut self.file_config.file_rotate {
-            Some(config) => config,
-            None => return,
-        };
+/// Clean up old backup files if we exceed the max backup count
+///
+/// TODO: Minor consider using a more specific version to pop a single file
+/// since normal execution will not create more than 1 excess file
+fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
+    let files_to_remove = rotate_config
+        .backup_files
+        .len()
+        .saturating_sub(rotate_config.max_backup_count as usize);
 
-        // Remove oldest files if we exceed the max backup count
-        while rotate_config.backup_files.len() > rotate_config.max_backup_count as usize {
-            let old_path = match rotate_config.backup_files.pop_front() {
-                Some(path) => path,
-                None => break,
-            };
+    println!("Files to remove: {}", files_to_remove);
 
-            if !old_path.exists() {
-                continue;
-            }
-
-            match std::fs::remove_file(&old_path) {
-                Ok(_) => tracing::debug!("Removed old log file: {}", old_path.display()),
-                Err(e) => tracing::error!(
-                    "Failed to remove old log file {}: {}",
-                    old_path.display(),
-                    e
-                ),
-            }
-        }
-    }
+    // Remove oldest files if we exceed the max backup count
+    rotate_config
+        .backup_files
+        .drain(..files_to_remove)
+        .filter(|path| path.exists())
+        .for_each(|path| match std::fs::remove_file(&path) {
+            Ok(_) => tracing::debug!("Removed old log file: {}", path.display()),
+            Err(e) => tracing::error!("Failed to remove old log file {}: {}", path.display(), e),
+        });
 }
 
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
         // Check if we need to rotate the file
+        println!("Should rotate file: {}", self.should_rotate_file());
         if self.should_rotate_file() {
+            println!("Rotating file");
             self.rotate_file();
         }
 
@@ -349,6 +355,7 @@ impl LogWriter for FileWriter {
                 // Update current file size
                 if let Some(rotate_config) = &mut self.file_config.file_rotate {
                     rotate_config.cur_file_size += line.len() as u64;
+                    println!("Current file size: {}", rotate_config.cur_file_size);
                 }
             }
             Err(e) => tracing::error!("Error writing to file: {e:?}"),
