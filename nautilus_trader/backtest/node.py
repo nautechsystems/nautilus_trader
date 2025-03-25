@@ -77,7 +77,6 @@ class BacktestNode:
             all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )
-
         self._validate_configs(configs)
 
         self._configs: list[BacktestRunConfig] = configs
@@ -154,6 +153,7 @@ class BacktestNode:
 
         """
         results: list[BacktestResult] = []
+
         for config in self._configs:
             try:
                 result = self._run(
@@ -172,6 +172,7 @@ class BacktestNode:
                 # the execution of the other backtests (such as a zero balance exception).
                 if not is_logging_initialized():
                     _guard = init_logging()
+
                 log = Logger(type(self).__name__)
                 log.error(f"Error running backtest: {e}")
                 log.info(f"Config: {config}")
@@ -183,6 +184,7 @@ class BacktestNode:
 
     def _validate_configs(self, configs: list[BacktestRunConfig]) -> None:  # noqa: C901
         venue_ids: list[Venue] = []
+
         for config in configs:
             venue_ids += [Venue(c.name) for c in config.venues]
 
@@ -201,6 +203,7 @@ class BacktestNode:
                         )
 
                 instrument_id: InstrumentId = data_config.instrument_id
+
                 if instrument_id.venue not in venue_ids:
                     raise InvalidConfiguration(
                         f"Venue '{instrument_id.venue}' for {instrument_id} "
@@ -239,6 +242,7 @@ class BacktestNode:
         # Assign the global logging system guard to keep it alive for
         # the duration of the nodes runs.
         log_guard = engine.kernel.get_log_guard()
+
         if log_guard:
             self._log_guard = log_guard
 
@@ -250,7 +254,6 @@ class BacktestNode:
                 if config.leverages
                 else {}
             )
-
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],
@@ -279,6 +282,7 @@ class BacktestNode:
             if is_nautilus_class(config.data_type):
                 catalog = self.load_catalog(config)
                 instruments = catalog.instruments(instrument_ids=config.instrument_id)
+
                 for instrument in instruments or []:
                     if instrument.id not in engine.cache.instrument_ids():
                         engine.add_instrument(instrument)
@@ -296,6 +300,7 @@ class BacktestNode:
                 raise ValueError(
                     f"Data type {result.data_cls} not setup for loading into `BacktestEngine`",
                 )
+
             engine.add_data(
                 data=result.data,
                 client_id=result.client_id,
@@ -363,6 +368,7 @@ class BacktestNode:
         # Add query for all data configs
         for config in data_configs:
             catalog = self.load_catalog(config)
+
             if config.data_type == Bar:
                 # TODO: Temporary hack - improve bars config and decide implementation with `filter_expr`
                 assert config.instrument_id, "No `instrument_id` for Bar data config"
@@ -372,11 +378,13 @@ class BacktestNode:
                 bar_type = None
 
             used_start = config.start_time
+
             if used_start is not None or start is not None:
                 result = max_date(used_start, start)
                 used_start = result.isoformat() if result else None
 
             used_end = config.end_time
+
             if used_end is not None or end is not None:
                 result = min_date(used_end, end)
                 used_end = result.isoformat() if result else None
@@ -424,11 +432,13 @@ class BacktestNode:
                 f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
             result: CatalogDataResult = self.load_data_config(config, start, end)
+
             if config.instrument_id and result.instrument is None:
                 engine.logger.warning(
                     f"Requested instrument_id={result.instrument} from data_config not found in catalog",
                 )
                 continue
+
             if not result.data:
                 engine.logger.warning(f"No data found for {config}")
                 continue
@@ -437,7 +447,9 @@ class BacktestNode:
             engine.logger.info(
                 f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s",
             )
+
             self._load_engine_data(engine=engine, result=result)
+
             t2 = pd.Timestamp.now()
             engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
@@ -459,12 +471,12 @@ class BacktestNode:
         end: str | int | None = None,
     ) -> CatalogDataResult:
         catalog: ParquetDataCatalog = cls.load_catalog(config)
-
         instruments = (
             catalog.instruments(instrument_ids=[config.instrument_id])
             if config.instrument_id
             else None
         )
+
         if config.instrument_id and not instruments:
             return CatalogDataResult(data_cls=config.data_type, data=[])
 
