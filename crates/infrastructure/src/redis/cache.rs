@@ -721,8 +721,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
     fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
         let currency_code = currency.code.to_string();
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{currency_code}");
-        let value = DatabaseQueries::serialize_payload(self.encoding, currency)?;
-        self.insert(key, Some(vec![Bytes::from(value)]))
+        let serialized_currency = DatabaseQueries::serialize_currency(self.encoding, currency)?;
+        self.insert(key, Some(vec![Bytes::from(serialized_currency)]))
     }
 
     fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {

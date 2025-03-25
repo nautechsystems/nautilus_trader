@@ -35,7 +35,9 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import Currency
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -163,25 +165,25 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load() == {key: str(bar).encode()}
 
-    # @pytest.mark.asyncio
-    # async def test_add_currency(self):
-    #     # Arrange
-    #     currency = Currency(
-    #         code="1INCH",
-    #         precision=8,
-    #         iso4217=0,
-    #         name="1INCH",
-    #         currency_type=CurrencyType.CRYPTO,
-    #     )
+    @pytest.mark.asyncio
+    async def test_add_currency(self):
+        # Arrange
+        currency = Currency(
+            code="1INCH",
+            precision=8,
+            iso4217=0,
+            name="1INCH",
+            currency_type=CurrencyType.CRYPTO,
+        )
 
-    #     # Act
-    #     self.database.add_currency(currency)
+        # Act
+        self.database.add_currency(currency)
 
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_currency(currency.code))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_currency(currency.code))
 
-    #     # Assert
-    #     assert self.database.load_currency(currency.code) == currency
+        # Assert
+        assert self.database.load_currency(currency.code) == currency
 
     @pytest.mark.asyncio
     async def test_add_account(self):
@@ -515,43 +517,43 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert result == {"UserState": "MQ=="}
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_currency_when_no_currencies_in_database_returns_none(self):
-    #         # Arrange, Act
-    #         result = self.database.load_currency("ONEINCH")
+    @pytest.mark.asyncio
+    async def test_load_currency_when_no_currencies_in_database_returns_none(self):
+        # Arrange, Act
+        result = self.database.load_currency("ONEINCH")
 
-    #         # Assert
-    #         assert result is None
+        # Assert
+        assert result is None
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_currency_when_currency_in_database_returns_expected(self):
-    #         # Arrange
-    #         aud = Currency.from_str("AUD")
-    #         self.database.add_currency(aud)
+    @pytest.mark.asyncio
+    async def test_load_currency_when_currency_in_database_returns_expected(self):
+        # Arrange
+        aud = Currency.from_str("AUD")
+        self.database.add_currency(aud)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_currency("AUD"))
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_currency("AUD"))
 
-    #         # Act
-    #         result = self.database.load_currency("AUD")
+        # Act
+        result = self.database.load_currency("AUD")
 
-    #         # Assert
-    #         assert result == aud
+        # Assert
+        assert result == aud
 
-    #     @pytest.mark.asyncio
-    #     async def test_load_currencies_when_currencies_in_database_returns_expected(self):
-    #         # Arrange
-    #         aud = Currency.from_str("AUD")
-    #         self.database.add_currency(aud)
+    @pytest.mark.asyncio
+    async def test_load_currencies_when_currencies_in_database_returns_expected(self):
+        # Arrange
+        aud = Currency.from_str("AUD")
+        self.database.add_currency(aud)
 
-    #         # Allow MPSC thread to insert
-    #         await eventually(lambda: self.database.load_currencies())
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_currencies())
 
-    #         # Act
-    #         result = self.database.load_currencies()
+        # Act
+        result = self.database.load_currencies()
 
-    #         # Assert
-    #         assert result == {"AUD": aud}
+        # Assert
+        assert result == {"AUD": aud}
 
     @pytest.mark.asyncio
     async def test_load_instrument_when_no_instrument_in_database_returns_none(self):

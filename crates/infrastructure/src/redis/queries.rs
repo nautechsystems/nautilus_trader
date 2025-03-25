@@ -22,7 +22,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OrderType, TimeInForce, TriggerType},
+    enums::{CurrencyType, OrderType, TimeInForce, TriggerType},
     events::{OrderEventAny, OrderFilled},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
@@ -31,7 +31,7 @@ use nautilus_model::{
     types::{Currency, Price},
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
@@ -508,9 +508,8 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload::<Currency>(encoding, &result[0])?;
-
-        Ok(Some(currency))
+        let currency = Self::deserialize_payload::<CurrencyWrapper>(encoding, &result[0])?;
+        Ok(Some(currency.into()))
     }
 
     pub async fn load_instrument(
@@ -644,6 +643,15 @@ impl DatabaseQueries {
         }
 
         Ok(Some(position))
+    }
+
+    pub fn serialize_currency(
+        encoding: SerializationEncoding,
+        currency: &Currency,
+    ) -> anyhow::Result<Vec<u8>> {
+        let currency_wrapper = CurrencyWrapper::from(*currency);
+        let value = Self::serialize_payload(encoding, &currency_wrapper)?;
+        Ok(value)
     }
 
     fn get_collection_key(key: &str) -> anyhow::Result<&str> {
@@ -834,5 +842,46 @@ fn hydrate_order_events(
     // Insert events in reverse order to maintain the correct historical sequence
     for &event in original_events.iter().rev() {
         target_events.insert(0, event.clone());
+    }
+}
+
+/// CurrencyWrapper provides a way to serialize/deserialize Currency objects without relying on the global
+/// CURRENCY_MAP registry. This is necessary when loading currencies from Redis, as they may not yet exist
+/// in the registry but we still need to deserialize their complete data.
+#[derive(Serialize, Deserialize)]
+struct CurrencyWrapper {
+    /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
+    code: Ustr,
+    /// The currency decimal precision.
+    precision: u8,
+    /// The ISO 4217 currency code.
+    iso4217: u16,
+    /// The full name of the currency.
+    name: Ustr,
+    /// The currency type, indicating its category (e.g. Fiat, Crypto).
+    currency_type: CurrencyType,
+}
+
+impl From<CurrencyWrapper> for Currency {
+    fn from(wrapper: CurrencyWrapper) -> Self {
+        Currency {
+            code: wrapper.code,
+            precision: wrapper.precision,
+            iso4217: wrapper.iso4217,
+            name: wrapper.name,
+            currency_type: wrapper.currency_type,
+        }
+    }
+}
+
+impl From<Currency> for CurrencyWrapper {
+    fn from(currency: Currency) -> Self {
+        CurrencyWrapper {
+            code: currency.code,
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name,
+            currency_type: currency.currency_type,
+        }
     }
 }
