@@ -193,7 +193,7 @@ impl DataEngine {
     }
 
     #[must_use]
-    pub fn registed_clients(&self) -> Vec<ClientId> {
+    pub fn registered_clients(&self) -> Vec<ClientId> {
         self.clients.keys().copied().collect()
     }
 

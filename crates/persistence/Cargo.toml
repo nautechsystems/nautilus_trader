@@ -33,10 +33,10 @@ high-precision = [
 ]
 
 [dependencies]
-nautilus-core = { path = "../core" }
+nautilus-core = { path = "../core", features = ["ffi"] }
 nautilus-common = { path = "../common" }
 nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-serialization = { path = "../serialization" }
+nautilus-serialization = { path = "../serialization" , features = ["python"]}
 futures = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
