@@ -185,8 +185,8 @@ impl ExecutionEngine {
         {
             let mut cache = self.cache.borrow_mut();
             cache.clear_index();
-            cache.cache_general()?;
-            self.cache.borrow_mut().cache_all().await?;
+            cache.cache_general().await?;
+            cache.cache_all().await?;
             cache.build_index();
             let _ = cache.check_integrity();
 

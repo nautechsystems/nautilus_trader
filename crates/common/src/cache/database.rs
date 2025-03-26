@@ -59,7 +59,7 @@ pub trait CacheDatabaseAdapter {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap>;
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
+    async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>>;
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>>;
 

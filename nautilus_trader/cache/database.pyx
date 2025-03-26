@@ -304,24 +304,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         dict[str, bytes]
 
         """
-        cdef dict general = {}
-
-        cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
-        if not general_keys:
-            return general
-
-        cdef:
-            str key
-            list result
-            bytes value_bytes
-        for key in general_keys:
-            key = key.split(':', maxsplit=1)[1]
-            result = self._backing.read(key)
-            value_bytes = result[0]
-            if value_bytes is not None:
-                key = key.split(':', maxsplit=1)[1]
-                general[key] = value_bytes
-
+        cdef dict general = self._backing.load()
         return general
 
     cpdef dict load_currencies(self):

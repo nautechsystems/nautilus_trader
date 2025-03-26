@@ -147,19 +147,15 @@ impl RedisCacheDatabase {
         }
     }
 
-    // #[pyo3(name = "load")]
-    // fn py_load(&self, code: &str) -> Bytes {
-    //     let result = get_runtime().block_on(async {
-    //         self.load(
-    //             &self.con,
-    //             self.get_trader_key(),
-    //             &Ustr::from(code),
-    //             self.get_encoding(),
-    //         )
-    //         .await
-    //     });
-    //     result.map_err(to_pyruntime_err)
-    // }
+    #[pyo3(name = "load")]
+    fn py_load(&mut self) -> PyResult<HashMap<String, Vec<u8>>> {
+        let result: Result<HashMap<String, Vec<u8>>, anyhow::Error> =
+            get_runtime().block_on(async {
+                let result = self.load().await?;
+                Ok(result.into_iter().map(|(k, v)| (k, v.to_vec())).collect())
+            });
+        result.map_err(to_pyruntime_err)
+    }
 
     #[pyo3(name = "load_currency")]
     fn py_load_currency(&self, code: &str) -> PyResult<Option<Currency>> {

@@ -131,9 +131,9 @@ impl Cache {
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Clears the current general cache and loads the general objects from the cache database.
-    pub fn cache_general(&mut self) -> anyhow::Result<()> {
+    pub async fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &mut self.database {
-            Some(db) => db.load()?,
+            Some(db) => db.load().await?,
             None => HashMap::new(),
         };
 

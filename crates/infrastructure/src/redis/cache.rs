@@ -624,8 +624,19 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         DatabaseQueries::load_all(&self.con, self.encoding, &self.trader_key).await
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
-        todo!()
+    async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
+        let mut result = HashMap::new();
+        let keys = self.keys(GENERAL).await?;
+
+        for key in keys {
+            let key = key.split_once(REDIS_DELIMITER).unwrap().1;
+            let value = self.read(key).await?;
+            if let Some(value) = value.first() {
+                result.insert(key.to_string(), value.clone());
+            }
+        }
+
+        Ok(result)
     }
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
