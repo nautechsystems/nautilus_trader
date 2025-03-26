@@ -723,12 +723,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
-        cdef list result = self._backing.read(key)
-        if not result:
-            return {}
-
-        return self._serializer.deserialize(result[0])
+        cdef dict result = self._backing.load_strategy(strategy_id)
+        return result
 
     cpdef void delete_strategy(self, StrategyId strategy_id):
         """
@@ -946,11 +942,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(strategy, "strategy")
 
         cdef dict state = strategy.save()  # Extract state dictionary from strategy
-
-        cdef key = f"{_STRATEGIES}:{strategy.id.to_str()}:state"
-        cdef list payload = [self._serializer.serialize(state)]
-        self._backing.insert(key, payload)
-
+        self._backing.update_strategy(strategy.id.to_str(), state)
         self._log.debug(f"Saved strategy state for {strategy.id.value}")
 
     cpdef void update_account(self, Account account):

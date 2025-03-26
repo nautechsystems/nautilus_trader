@@ -24,7 +24,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{CurrencyType, OrderType, TimeInForce, TriggerType},
     events::{OrderEventAny, OrderFilled},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::{LimitOrder, MarketOrder, Order, OrderAny},
     position::Position,
@@ -643,6 +643,22 @@ impl DatabaseQueries {
         }
 
         Ok(Some(position))
+    }
+
+    pub async fn load_strategy(
+        con: &ConnectionManager,
+        trader_key: &str,
+        strategy_id: &StrategyId,
+        encoding: SerializationEncoding,
+    ) -> anyhow::Result<HashMap<String, String>> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let strategy = Self::deserialize_payload::<HashMap<String, String>>(encoding, &result[0])?;
+        Ok(strategy)
     }
 
     pub fn serialize_currency(

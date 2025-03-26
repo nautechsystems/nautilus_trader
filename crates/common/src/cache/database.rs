@@ -98,7 +98,10 @@ pub trait CacheDatabaseAdapter {
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>>;
+    async fn load_strategy(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, String>>;
 
     fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>>;
 
@@ -168,7 +171,7 @@ pub trait CacheDatabaseAdapter {
 
     fn update_actor(&self) -> anyhow::Result<()>;
 
-    fn update_strategy(&self) -> anyhow::Result<()>;
+    fn update_strategy(&mut self, strategy: HashMap<String, String>) -> anyhow::Result<()>;
 
     fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 

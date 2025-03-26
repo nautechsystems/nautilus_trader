@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::{
@@ -20,7 +22,9 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+    },
     orders::Order,
     position::Position,
     python::{
@@ -260,6 +264,20 @@ impl RedisCacheDatabase {
             .map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "load_strategy")]
+    fn py_load_strategy(&self, strategy_id: &str) -> PyResult<HashMap<String, String>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_strategy(
+                &self.con,
+                self.get_trader_key(),
+                &StrategyId::new(strategy_id),
+                self.get_encoding(),
+            )
+            .await
+            .map_err(to_pyruntime_err)
+        })
+    }
+
     #[pyo3(name = "read")]
     fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
         let result = get_runtime().block_on(async { self.read(key).await });
@@ -285,6 +303,11 @@ impl RedisCacheDatabase {
     fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
         let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();
         self.update(key, Some(payload)).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "update_strategy")]
+    fn py_update_strategy(&mut self, strategy: HashMap<String, String>) -> PyResult<()> {
+        self.update_strategy(strategy).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "delete")]

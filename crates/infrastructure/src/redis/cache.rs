@@ -705,8 +705,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
-        todo!()
+    async fn load_strategy(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, String>> {
+        DatabaseQueries::load_strategy(&self.con, &self.trader_key, strategy_id, self.encoding)
+            .await
     }
 
     fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
@@ -890,8 +894,13 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         todo!()
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
-        todo!()
+    fn update_strategy(&mut self, strategy: HashMap<String, String>) -> anyhow::Result<()> {
+        let strategy_id = strategy.get("id").unwrap();
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, &strategy)?;
+        self.insert(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Updated {strategy_id}");
+        Ok(())
     }
 
     fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {

@@ -504,7 +504,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
+    async fn load_strategy(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, String>> {
         todo!()
     }
 
@@ -809,7 +812,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
+    fn update_strategy(&mut self, strategy: HashMap<String, String>) -> anyhow::Result<()> {
         todo!()
     }
 
