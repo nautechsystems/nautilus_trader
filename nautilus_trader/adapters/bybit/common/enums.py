@@ -347,6 +347,30 @@ class BybitEnumParser:
             ): OrderType.LIMIT_IF_TOUCHED,
             (
                 BybitOrderType.LIMIT,
+                BybitStopOrderType.UNKNOWN,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.UNKNOWN,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.UNKNOWN,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.UNKNOWN,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
                 BybitStopOrderType.STOP,
                 BybitOrderSide.BUY,
                 BybitTriggerDirection.FALLS_TO,
