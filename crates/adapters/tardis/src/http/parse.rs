@@ -71,56 +71,17 @@ fn parse_spot_instrument(
     let raw_symbol = Symbol::new(info.id);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = Decimal::from_str(&info.maker_fee.to_string()).expect("Invalid decimal value");
-    let taker_fee = Decimal::from_str(&info.taker_fee.to_string()).expect("Invalid decimal value");
+    let maker_fee = parse_fee_rate(info.maker_fee);
+    let taker_fee = parse_fee_rate(info.taker_fee);
 
-    let mut price_increment = get_price_increment(info.price_increment);
-    let mut size_increment = get_size_increment(info.amount_increment);
-    let mut ts_event = UnixNanos::from(info.available_since);
+    let mut price_increment = parse_price_increment(info.price_increment);
+    let mut size_increment = parse_size_increment(info.amount_increment);
+    let ts_event = match info.changes {
+        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
+        Some(_) | None => UnixNanos::from(info.available_since),
+    };
 
     let mut instruments: Vec<InstrumentAny> = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by_key(|c| c.until);
-
-        for change in sorted_changes {
-            let this_ts_event = ts_event;
-            price_increment = change
-                .price_increment
-                .map_or(price_increment, get_price_increment);
-            size_increment = change
-                .amount_increment
-                .map_or(size_increment, get_size_increment);
-            ts_event = UnixNanos::from(change.until);
-
-            instruments.push(create_currency_pair(
-                &info,
-                instrument_id,
-                raw_symbol,
-                price_increment,
-                size_increment,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                this_ts_event,
-                ts_init.unwrap_or(this_ts_event),
-            ));
-        }
-    }
-
-    let base_ts_event = if let Some(changes) = &info.changes {
-        if !changes.is_empty() {
-            UnixNanos::from(changes.last().unwrap().until)
-        } else {
-            UnixNanos::from(info.available_since)
-        }
-    } else {
-        UnixNanos::from(info.available_since)
-    };
-    price_increment = get_price_increment(info.price_increment);
-    size_increment = get_size_increment(info.amount_increment);
 
     instruments.push(create_currency_pair(
         &info,
@@ -132,9 +93,54 @@ fn parse_spot_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        base_ts_event,
-        ts_init.unwrap_or(base_ts_event),
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
+
+    if let Some(changes) = &info.changes {
+        // Apply metadata changes in reverse order
+        let mut sorted_changes = changes.clone();
+        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+
+        for (i, change) in sorted_changes.iter().enumerate() {
+            if change.price_increment.is_none()
+                && change.amount_increment.is_none()
+                && change.contract_multiplier.is_none()
+            {
+                continue; // No changes to apply
+            }
+
+            price_increment = match change.price_increment {
+                Some(value) => parse_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => parse_size_increment(value),
+                None => size_increment,
+            };
+
+            // Get the timestamp for when the change occurred
+            let ts_event = if i == sorted_changes.len() - 1 {
+                UnixNanos::from(info.available_since)
+            } else {
+                UnixNanos::from(change.until)
+            };
+
+            instruments.push(create_currency_pair(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
 
     if let Some(effective) = effective {
         // Retain instruments up to and including the effective time
@@ -143,12 +149,12 @@ fn parse_spot_instrument(
             return Vec::new();
         }
 
-        // Sort descending by ts_event to keep most recent
-        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
         // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
+    // Sort ascending by ts_event
+    instruments.sort_by_key(|i| i.ts_event());
     instruments
 }
 
@@ -166,64 +172,18 @@ fn parse_perp_instrument(
     let raw_symbol = Symbol::new(info.id);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = Decimal::from_str(&info.maker_fee.to_string()).expect("Invalid decimal value");
-    let taker_fee = Decimal::from_str(&info.taker_fee.to_string()).expect("Invalid decimal value");
+    let maker_fee = parse_fee_rate(info.maker_fee);
+    let taker_fee = parse_fee_rate(info.taker_fee);
 
-    let mut price_increment = get_price_increment(info.price_increment);
-    let mut size_increment = get_size_increment(info.amount_increment);
-    let mut multiplier = get_multiplier(info.contract_multiplier);
-    let mut ts_event = UnixNanos::from(info.available_since);
+    let mut price_increment = parse_price_increment(info.price_increment);
+    let mut size_increment = parse_size_increment(info.amount_increment);
+    let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let ts_event = match info.changes {
+        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
+        Some(_) | None => UnixNanos::from(info.available_since),
+    };
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by_key(|c| c.until);
-
-        for change in sorted_changes {
-            let this_ts_event = ts_event;
-            price_increment = match change.price_increment {
-                Some(value) => get_price_increment(value),
-                None => price_increment,
-            };
-            size_increment = match change.amount_increment {
-                Some(value) => get_size_increment(value),
-                None => size_increment,
-            };
-            multiplier = match change.contract_multiplier {
-                Some(value) => Some(Quantity::from(value.to_string())),
-                None => multiplier,
-            };
-            ts_event = UnixNanos::from(change.until);
-
-            instruments.push(create_crypto_perpetual(
-                &info,
-                instrument_id,
-                raw_symbol,
-                price_increment,
-                size_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                this_ts_event,
-                ts_init.unwrap_or(this_ts_event),
-            ));
-        }
-    }
-
-    let base_ts_event = if let Some(changes) = &info.changes {
-        if !changes.is_empty() {
-            UnixNanos::from(changes.last().unwrap().until)
-        } else {
-            UnixNanos::from(info.available_since)
-        }
-    } else {
-        UnixNanos::from(info.available_since)
-    };
-    price_increment = get_price_increment(info.price_increment);
-    size_increment = get_size_increment(info.amount_increment);
 
     instruments.push(create_crypto_perpetual(
         &info,
@@ -236,9 +196,59 @@ fn parse_perp_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        base_ts_event,
-        ts_init.unwrap_or(base_ts_event),
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
+
+    if let Some(changes) = &info.changes {
+        // Apply metadata changes in reverse order
+        let mut sorted_changes = changes.clone();
+        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+
+        for (i, change) in sorted_changes.iter().enumerate() {
+            if change.price_increment.is_none()
+                && change.amount_increment.is_none()
+                && change.contract_multiplier.is_none()
+            {
+                continue; // No changes to apply
+            }
+
+            price_increment = match change.price_increment {
+                Some(value) => parse_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => parse_size_increment(value),
+                None => size_increment,
+            };
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+
+            // Get the timestamp for when the change occurred
+            let ts_event = if i == sorted_changes.len() - 1 {
+                UnixNanos::from(info.available_since)
+            } else {
+                UnixNanos::from(change.until)
+            };
+
+            instruments.push(create_crypto_perpetual(
+                &info,
+                instrument_id,
+                raw_symbol,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
 
     if let Some(effective) = effective {
         // Retain instruments up to and including the effective time
@@ -247,12 +257,12 @@ fn parse_perp_instrument(
             return Vec::new();
         }
 
-        // Sort descending by ts_event to keep most recent
-        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
         // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
+    // Sort ascending by ts_event
+    instruments.sort_by_key(|i| i.ts_event());
     instruments
 }
 
@@ -272,66 +282,18 @@ fn parse_future_instrument(
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = Decimal::from_str(&info.maker_fee.to_string()).expect("Invalid decimal value");
-    let taker_fee = Decimal::from_str(&info.taker_fee.to_string()).expect("Invalid decimal value");
+    let maker_fee = parse_fee_rate(info.maker_fee);
+    let taker_fee = parse_fee_rate(info.taker_fee);
 
-    let mut price_increment = get_price_increment(info.price_increment);
-    let mut size_increment = get_size_increment(info.amount_increment);
-    let mut multiplier = get_multiplier(info.contract_multiplier);
-    let mut ts_event = UnixNanos::from(info.available_since);
+    let mut price_increment = parse_price_increment(info.price_increment);
+    let mut size_increment = parse_size_increment(info.amount_increment);
+    let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let ts_event = match info.changes {
+        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
+        Some(_) | None => UnixNanos::from(info.available_since),
+    };
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by_key(|c| c.until);
-
-        for change in sorted_changes {
-            let this_ts_event = ts_event;
-            price_increment = match change.price_increment {
-                Some(value) => get_price_increment(value),
-                None => price_increment,
-            };
-            size_increment = match change.amount_increment {
-                Some(value) => get_size_increment(value),
-                None => size_increment,
-            };
-            multiplier = match change.contract_multiplier {
-                Some(value) => Some(Quantity::from(value.to_string())),
-                None => multiplier,
-            };
-            ts_event = UnixNanos::from(change.until);
-
-            instruments.push(create_crypto_future(
-                &info,
-                instrument_id,
-                raw_symbol,
-                activation,
-                expiration,
-                price_increment,
-                size_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                this_ts_event,
-                ts_init.unwrap_or(this_ts_event),
-            ));
-        }
-    }
-
-    let base_ts_event = if let Some(changes) = &info.changes {
-        if !changes.is_empty() {
-            UnixNanos::from(changes.last().unwrap().until)
-        } else {
-            UnixNanos::from(info.available_since)
-        }
-    } else {
-        UnixNanos::from(info.available_since)
-    };
-    price_increment = get_price_increment(info.price_increment);
-    size_increment = get_size_increment(info.amount_increment);
 
     instruments.push(create_crypto_future(
         &info,
@@ -346,9 +308,61 @@ fn parse_future_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        base_ts_event,
-        ts_init.unwrap_or(base_ts_event),
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
+
+    if let Some(changes) = &info.changes {
+        // Apply metadata changes in reverse order
+        let mut sorted_changes = changes.clone();
+        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+
+        for (i, change) in sorted_changes.iter().enumerate() {
+            if change.price_increment.is_none()
+                && change.amount_increment.is_none()
+                && change.contract_multiplier.is_none()
+            {
+                continue; // No changes to apply
+            }
+
+            price_increment = match change.price_increment {
+                Some(value) => parse_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => parse_size_increment(value),
+                None => size_increment,
+            };
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+
+            // Get the timestamp for when the change occurred
+            let ts_event = if i == sorted_changes.len() - 1 {
+                UnixNanos::from(info.available_since)
+            } else {
+                UnixNanos::from(change.until)
+            };
+
+            instruments.push(create_crypto_future(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
 
     if let Some(effective) = effective {
         // Retain instruments up to and including the effective time
@@ -357,12 +371,12 @@ fn parse_future_instrument(
             return Vec::new();
         }
 
-        // Sort descending by ts_event to keep most recent
-        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
         // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
+    // Sort ascending by ts_event
+    instruments.sort_by_key(|i| i.ts_event());
     instruments
 }
 
@@ -382,66 +396,18 @@ fn parse_option_instrument(
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = Decimal::from_str(&info.maker_fee.to_string()).expect("Invalid decimal value");
-    let taker_fee = Decimal::from_str(&info.taker_fee.to_string()).expect("Invalid decimal value");
+    let maker_fee = parse_fee_rate(info.maker_fee);
+    let taker_fee = parse_fee_rate(info.taker_fee);
 
-    let mut price_increment = get_price_increment(info.price_increment);
-    let mut size_increment = get_size_increment(info.amount_increment);
-    let mut multiplier = get_multiplier(info.contract_multiplier);
-    let mut ts_event = UnixNanos::from(info.available_since);
+    let mut price_increment = parse_price_increment(info.price_increment);
+    let mut size_increment = parse_size_increment(info.amount_increment);
+    let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let ts_event = match info.changes {
+        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
+        Some(_) | None => UnixNanos::from(info.available_since),
+    };
 
     let mut instruments = Vec::new();
-
-    if let Some(changes) = &info.changes {
-        let mut sorted_changes = changes.clone();
-        sorted_changes.sort_by_key(|c| c.until);
-
-        for change in sorted_changes {
-            let this_ts_event = ts_event;
-            price_increment = match change.price_increment {
-                Some(value) => get_price_increment(value),
-                None => price_increment,
-            };
-            size_increment = match change.amount_increment {
-                Some(value) => get_size_increment(value),
-                None => size_increment,
-            };
-            multiplier = match change.contract_multiplier {
-                Some(value) => Some(Quantity::from(value.to_string())),
-                None => multiplier,
-            };
-            ts_event = UnixNanos::from(change.until);
-
-            instruments.push(create_crypto_option(
-                &info,
-                instrument_id,
-                raw_symbol,
-                activation,
-                expiration,
-                price_increment,
-                size_increment,
-                multiplier,
-                margin_init,
-                margin_maint,
-                maker_fee,
-                taker_fee,
-                this_ts_event,
-                ts_init.unwrap_or(this_ts_event),
-            ));
-        }
-    }
-
-    let base_ts_event = if let Some(changes) = &info.changes {
-        if !changes.is_empty() {
-            UnixNanos::from(changes.last().unwrap().until)
-        } else {
-            UnixNanos::from(info.available_since)
-        }
-    } else {
-        UnixNanos::from(info.available_since)
-    };
-    price_increment = get_price_increment(info.price_increment);
-    size_increment = get_size_increment(info.amount_increment);
 
     instruments.push(create_crypto_option(
         &info,
@@ -456,9 +422,61 @@ fn parse_option_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
-        base_ts_event,
-        ts_init.unwrap_or(base_ts_event),
+        ts_event,
+        ts_init.unwrap_or(ts_event),
     ));
+
+    if let Some(changes) = &info.changes {
+        // Apply metadata changes in reverse order
+        let mut sorted_changes = changes.clone();
+        sorted_changes.sort_by(|a, b| b.until.cmp(&a.until));
+
+        for (i, change) in sorted_changes.iter().enumerate() {
+            if change.price_increment.is_none()
+                && change.amount_increment.is_none()
+                && change.contract_multiplier.is_none()
+            {
+                continue; // No changes to apply
+            }
+
+            price_increment = match change.price_increment {
+                Some(value) => parse_price_increment(value),
+                None => price_increment,
+            };
+            size_increment = match change.amount_increment {
+                Some(value) => parse_size_increment(value),
+                None => size_increment,
+            };
+            multiplier = match change.contract_multiplier {
+                Some(value) => Some(Quantity::from(value.to_string())),
+                None => multiplier,
+            };
+
+            // Get the timestamp for when the change occurred
+            let ts_event = if i == sorted_changes.len() - 1 {
+                UnixNanos::from(info.available_since)
+            } else {
+                UnixNanos::from(change.until)
+            };
+
+            instruments.push(create_crypto_option(
+                &info,
+                instrument_id,
+                raw_symbol,
+                activation,
+                expiration,
+                price_increment,
+                size_increment,
+                multiplier,
+                margin_init,
+                margin_maint,
+                maker_fee,
+                taker_fee,
+                ts_event,
+                ts_init.unwrap_or(ts_event),
+            ));
+        }
+    }
 
     if let Some(effective) = effective {
         // Retain instruments up to and including the effective time
@@ -467,27 +485,33 @@ fn parse_option_instrument(
             return Vec::new();
         }
 
-        // Sort descending by ts_event to keep most recent
-        instruments.sort_by_key(|i| std::cmp::Reverse(i.ts_event()));
         // Keep only most recent version at or before effective time
         instruments.truncate(1);
     }
 
+    // Sort ascending by ts_event
+    instruments.sort_by_key(|i| i.ts_event());
     instruments
 }
 
-/// Returns the price increment from the given `value`.
-fn get_price_increment(value: f64) -> Price {
+/// Parses the price increment from the given `value`.
+fn parse_price_increment(value: f64) -> Price {
     Price::from(value.to_string())
 }
 
-/// Returns the size increment from the given `value`.
-fn get_size_increment(value: f64) -> Quantity {
+/// Parses the size increment from the given `value`.
+fn parse_size_increment(value: f64) -> Quantity {
     Quantity::from(value.to_string())
 }
 
-fn get_multiplier(value: Option<f64>) -> Option<Quantity> {
+/// Parses the multiplier from the given `value`.
+fn parse_multiplier(value: Option<f64>) -> Option<Quantity> {
     value.map(|x| Quantity::from(x.to_string()))
+}
+
+/// Parses the fee rate from the given `value`.
+fn parse_fee_rate(value: f64) -> Decimal {
+    Decimal::from_str(&value.to_string()).expect("Invalid decimal value")
 }
 
 /// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.

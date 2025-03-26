@@ -16,7 +16,7 @@
 use chrono::{TimeZone, Utc};
 use nautilus_model::instruments::Instrument;
 use nautilus_tardis::{
-    enums::Exchange,
+    enums::{Exchange, InstrumentType},
     http::{client::TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
@@ -43,13 +43,36 @@ async fn main() {
         .await;
     println!("Received: {resp:?}");
 
+    let filter = InstrumentFilterBuilder::default()
+        .instrument_type(Some(vec![InstrumentType::Perpetual]))
+        .build()
+        .unwrap();
+    let resp = client
+        .instruments_info(Exchange::Bitmex, Some("XBTUSD"), Some(&filter))
+        .await;
+
+    for inst in resp.unwrap() {
+        println!("{inst:?}");
+        if let Some(changes) = inst.changes {
+            for change in changes {
+                println!("Change:");
+                println!("{change:?}");
+            }
+        }
+    }
+
     // Nautilus instrument definitions
     let resp = client
-        .instruments(Exchange::Deribit, None, None, None, None)
+        .instruments(Exchange::Bitmex, Some("XBTUSD"), Some(&filter), None, None)
         .await;
-    println!("Received: {resp:?}");
 
     for inst in resp.unwrap() {
         println!("{}", inst.id());
+        println!("price_increment={}", inst.price_increment());
+        println!("size_increment={}", inst.size_increment());
+        println!("multiplier={}", inst.multiplier());
+        println!("ts_event={}", inst.ts_event().to_rfc3339());
+        println!("ts_init={}", inst.ts_init().to_rfc3339());
+        println!("---------------------------");
     }
 }

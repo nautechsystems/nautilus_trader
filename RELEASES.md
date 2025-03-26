@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Added `Cache.index_price_count(...)`
 - Added `Cache.has_mark_prices()`
 - Added `Cache.has_index_prices()`
+- Added `UnixNanos.to_rfc3339()` for ISO 8601 (RFC 3339) strings
 - Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
 
 ### Breaking Changes
@@ -33,7 +34,7 @@ Released on TBD (UTC).
 - Completed global message bus design in Rust (#2460), thanks @filipmacek
 - Refactored enum dispatch (#2461), thanks @filipmacek
 - Refined catalog file operations in Rust (#2454), thanks @faysou
-- Refined quote ticks and klines for Bybit (#2465), thanks @davidblom
+- Refined quote ticks and klines for Bybit (#2465), thanks @davidsblom
 - Standardized use of `anyhow::bail` (#2459), thanks @faysou
 - Ported `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
 - Ported `add_instrument` for `BacktestEngine` in Rust (#2469), thanks @filipmacek
@@ -43,7 +44,8 @@ Released on TBD (UTC).
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
 - Fixed position state snapshot `ts_snapshot` value, which was always `ts_last` instead of timestamp when the snapshot was taken
 - Fixed instrument parsing for Tardis, now correctly applies changes and filters by `effective`
-- Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @twitu
+- Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @davidsblom
+- Fixed submitting stop market orders for dYdX (#2471), thanks @davidsblom
 
 ### Documentation Updates
 None
@@ -76,7 +78,7 @@ None
 - Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
 - Improved order denied reason message for balance impact
 - Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
-- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidblom
+- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidsblom
 - Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
 - Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
 - Some minor performance optimizations for Bybit and dYdX adapters (#2448), thanks @sunlei
