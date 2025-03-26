@@ -1072,7 +1072,6 @@ cdef class BacktestEngine:
             bint has_data
             bint missing_book_data
             bint book_type_has_depth
-
         for exchange in self._venues.values():
             for instrument_id in exchange.instruments:
                 has_data = instrument_id in self._has_data
@@ -1165,7 +1164,6 @@ cdef class BacktestEngine:
 
         # Set starting index
         cdef uint64_t i
-
         for i in range(self._data_len):
             if start_ns <= self._data[i].ts_init:
                 self._index = i
@@ -1176,7 +1174,6 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
-
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1313,7 +1310,6 @@ cdef class BacktestEngine:
             PyObject *raw_callback
             object callback
             SimulatedExchange exchange
-
         for i in range(raw_handler_vec.len):
             if FORCE_STOP:
                 # The FORCE_STOP flag has already been set,
@@ -1431,7 +1427,6 @@ cdef class BacktestEngine:
         cdef:
             list venue_positions
             set venue_currencies
-
         for venue in self._venues.values():
             account = venue.exec_client.get_account()
             self._log.info(f"{color}=================================================================")

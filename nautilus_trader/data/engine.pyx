@@ -479,8 +479,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_trade_ticks()
 
@@ -496,8 +496,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_mark_prices()
 
@@ -513,8 +513,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_index_prices()
 
@@ -530,8 +530,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_bars()
 
@@ -547,8 +547,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_instrument_status()
 
@@ -564,8 +564,8 @@ cdef class DataEngine(Component):
 
         """
         cdef list subscriptions = []
-        cdef MarketDataClient client
 
+        cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_instrument_close()
 
@@ -896,7 +896,6 @@ cdef class DataEngine(Component):
         cdef:
             list[Instrument] instruments
             str root
-
         if command.managed:
             # Create order book(s)
             if command.instrument_id.symbol.is_composite():
@@ -989,7 +988,6 @@ cdef class DataEngine(Component):
         cdef:
             InstrumentId component_instrument_id
             list synthetics_for_feed
-
         for component_instrument_id in synthetic.components:
             synthetics_for_feed = self._synthetic_quote_feeds.get(component_instrument_id)
 
@@ -1038,7 +1036,6 @@ cdef class DataEngine(Component):
         cdef:
             InstrumentId component_instrument_id
             list synthetics_for_feed
-
         for component_instrument_id in synthetic.components:
             synthetics_for_feed = self._synthetic_trade_feeds.get(component_instrument_id)
 
@@ -1867,7 +1864,6 @@ cdef class DataEngine(Component):
             Bar last_bar
             list bars
             int i
-
         if self._validate_data_sequence:
             last_bar = self._cache.bar(bar_type)
 
@@ -2412,7 +2408,6 @@ cdef class DataEngine(Component):
             QuoteTick component_quote
             Price update_bid
             Price update_ask
-
         for instrument_id in components:
             if instrument_id == update.instrument_id:
                 update_bid = update.bid_price
@@ -2470,7 +2465,6 @@ cdef class DataEngine(Component):
             InstrumentId instrument_id
             TradeTick component_quote
             Price update_price
-
         for instrument_id in components:
             if instrument_id == update.instrument_id:
                 update_price = update.price
