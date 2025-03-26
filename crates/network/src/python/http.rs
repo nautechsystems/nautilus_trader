@@ -143,8 +143,8 @@ impl HttpClient {
     /// When a request is made the URL should be split into all relevant keys within it.
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
-    #[pyo3(name = "request")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(name = "request")]
     #[pyo3(signature = (method, url, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_request<'py>(
         &self,
