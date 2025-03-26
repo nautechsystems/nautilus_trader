@@ -814,7 +814,6 @@ mod tests {
             .filter_map(Result::ok)
             .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
             .collect();
-        dbg!(&files);
 
         // We should have multiple files due to rotation
         assert_eq!(files.len(), 1);
@@ -832,7 +831,6 @@ mod tests {
             .filter_map(Result::ok)
             .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
             .collect();
-        dbg!(&files);
 
         // We should have multiple files due to rotation
         assert_eq!(files.len(), 2);
