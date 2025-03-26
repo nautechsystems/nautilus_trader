@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @davidsblom
 - Fixed submitting stop market orders for dYdX (#2471), thanks @davidsblom
 - Fixed `LIMIT_IF_TOUCHED` enum parsing order type mappings for Bybit
+- Fixed quote ticks for Polymarket to only emit new quote ticks when the top-of-book changes
 
 ### Documentation Updates
 - Improved custom data documentation (#2470), thanks @faysou
