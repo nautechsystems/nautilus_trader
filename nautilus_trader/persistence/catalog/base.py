@@ -87,6 +87,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[Data]:
         objects = []
+
         for cls in base_cls.__subclasses__():
             try:
                 objs = self.query(data_cls=cls, instrument_ids=instrument_ids, **kwargs)
@@ -137,6 +138,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[OrderBookDelta] | list[OrderBookDeltas]:
         data_cls = OrderBookDeltas if batched else OrderBookDelta
+
         return self.query(data_cls=data_cls, instrument_ids=instrument_ids, **kwargs)
 
     def order_book_depth10(
@@ -175,10 +177,13 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         **kwargs: Any,
     ) -> list[CustomData]:
         data = self.query(data_cls=cls, **kwargs)
+
         if as_nautilus:
             if data is None:
                 return []
+
             return [CustomData(data_type=DataType(cls, metadata=metadata), data=d) for d in data]
+
         return data
 
     @abstractmethod
@@ -187,6 +192,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def list_generic_data_types(self) -> list[str]:
         data_types = self.list_data_types()
+
         return [
             n.replace(CUSTOM_DATA_PREFIX, "")
             for n in data_types
