@@ -133,6 +133,6 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.6.9  # uv version
+    rev: 0.6.10  # uv version
     hooks:
       - id: uv-lock
