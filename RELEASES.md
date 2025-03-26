@@ -49,7 +49,7 @@ Released on TBD (UTC).
 - Fixed `LIMIT_IF_TOUCHED` enum parsing order type mappings for Bybit
 
 ### Documentation Updates
-None
+- Improved custom data documentation (#2470), thanks @faysou
 
 ### Deprecations
 None

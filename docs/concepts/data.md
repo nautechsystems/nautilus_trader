@@ -798,8 +798,8 @@ self.publish_data(
 )
 ```
 
-The `metadata` dictionary optionally adds granularity information that is used in the
-topic name used to publish data with the message bus.
+The `metadata` dictionary optionally adds more granular information that is used in the
+topic name to publish data with the message bus.
 
 Extra metadata information can also be passed to a `BacktestDataConfig` configuration object in order to
 enrich and describe custom data objects used in a backtesting context:
@@ -824,7 +824,7 @@ self.subscribe_data(
 )
 ```
 
-`client_id` allows to give extra information to direct the data subscription to a specific client.
+The `client_id` provides an identifier to route the data subscription to a specific client.
 
 This will result in your actor/strategy passing these received `MyDataPoint`
 objects to your `on_data` method. You will need to check the type, as this
