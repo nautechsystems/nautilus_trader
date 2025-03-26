@@ -627,6 +627,17 @@ impl CoinbaseIntxHttpClient {
         self.cache_initialized = true;
     }
 
+    /// Requests a list of portfolio details from Coinbase International.
+    pub async fn list_portfolios(&self) -> anyhow::Result<Vec<CoinbaseIntxPortfolio>> {
+        let resp = self
+            .inner
+            .http_list_portfolios()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        Ok(resp)
+    }
+
     /// Requests the account state for the given account ID from Coinbase International.
     pub async fn request_account_state(
         &self,
