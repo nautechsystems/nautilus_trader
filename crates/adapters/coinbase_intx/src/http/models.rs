@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use ustr::Ustr;
 use uuid::Uuid;
 
@@ -48,7 +48,7 @@ where
 }
 
 /// Represents a Coinbase International asset.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxAsset {
     /// Asset ID.
     pub asset_id: String,
@@ -75,7 +75,7 @@ pub struct CoinbaseIntxAsset {
 }
 
 /// Represents a Coinbase International instrument.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxInstrument {
     /// Instrument ID.
     pub instrument_id: String,
@@ -153,7 +153,7 @@ pub struct CoinbaseIntxInstrument {
 }
 
 /// Represents a Coinbase International instrument quote.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxInstrumentQuote {
     /// Best bid price.
     #[serde(default)]
@@ -191,7 +191,7 @@ pub struct CoinbaseIntxInstrumentQuote {
 }
 
 /// Represents a Coinbase International fee tier.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxFeeTier {
     /// Type of fee tier (e.g., "REGULAR", "LIQUIDITY_PROGRAM")
     pub fee_tier_type: CoinbaseIntxFeeTierType,
@@ -214,7 +214,7 @@ pub struct CoinbaseIntxFeeTier {
 }
 
 /// Represents Coinbase International portfolio fee rates.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPortfolioFeeRates {
     /// Type of instrument this fee rate applies to (e.g., "SPOT", "PERPETUAL_FUTURE")
     pub instrument_type: String, // Not the same as CoinbaseInstrumentType.
@@ -238,7 +238,7 @@ pub struct CoinbaseIntxPortfolioFeeRates {
 }
 
 /// A portfolio summary on Coinbase International.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPortfolio {
     /// Unique identifier for the portfolio.
     pub portfolio_id: String,
@@ -266,14 +266,14 @@ pub struct CoinbaseIntxPortfolio {
     pub pre_launch_trading_enabled: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPortfolioDetails {
     pub summary: CoinbaseIntxPortfolioSummary,
     pub balances: Vec<CoinbaseIntxBalance>,
     pub positions: Vec<CoinbaseIntxPosition>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPortfolioSummary {
     pub collateral: String,
     pub unrealized_pnl: String,
@@ -286,7 +286,7 @@ pub struct CoinbaseIntxPortfolioSummary {
     pub in_liquidation: bool,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxBalance {
     pub asset_id: String,
     pub asset_name: String,
@@ -297,7 +297,7 @@ pub struct CoinbaseIntxBalance {
 }
 
 /// Response for listing orders.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxOrderList {
     /// Pagination information.
     pub pagination: OrderListPagination,
@@ -306,7 +306,7 @@ pub struct CoinbaseIntxOrderList {
 }
 
 /// Pagination information for list orders response.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderListPagination {
     /// The datetime from which results were searched.
     pub ref_datetime: Option<DateTime<Utc>>,
@@ -316,7 +316,7 @@ pub struct OrderListPagination {
     pub result_offset: u32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxOrder {
     /// Unique identifier assigned by the exchange.
     pub order_id: Ustr,
@@ -378,7 +378,7 @@ pub struct CoinbaseIntxOrder {
 }
 
 /// Response for listing fills.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxFillList {
     /// Pagination information.
     pub pagination: OrderListPagination,
@@ -387,7 +387,7 @@ pub struct CoinbaseIntxFillList {
 }
 
 /// A fill in a Coinbase International portfolio.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxFill {
     /// Unique identifier for the portfolio.
     pub portfolio_id: Ustr,
@@ -459,7 +459,7 @@ pub struct CoinbaseIntxFill {
 }
 
 /// A position in a Coinbase portfolio.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPosition {
     /// Unique identifier for the position.
     pub id: String,
