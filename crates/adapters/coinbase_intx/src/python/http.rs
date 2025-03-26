@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use chrono::{DateTime, Utc};
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, serialization::to_dict_pyo3, to_pyvalue_err};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, Symbol, VenueOrderId},
@@ -66,6 +66,26 @@ impl CoinbaseIntxHttpClient {
     pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: PyObject) -> PyResult<()> {
         self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
+    }
+
+    #[pyo3(name = "list_portfolios")]
+    pub fn py_list_portfolios<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let response = client.list_portfolios().await.map_err(to_pyvalue_err)?;
+
+            Python::with_gil(|py| {
+                let py_list = PyList::empty(py);
+
+                for portfolio in response {
+                    let dict = to_dict_pyo3(py, &portfolio)?;
+                    py_list.append(dict)?;
+                }
+
+                Ok(py_list.into_any().unbind())
+            })
+        })
     }
 
     #[pyo3(name = "request_account_state")]

@@ -101,11 +101,38 @@ The WebSocket client handles automatic reconnection and re-subscribes to active 
 
 ## Execution
 
-**The adapter is built to trade one Coinbase International portfolio per execution client**.
+**The adapter is designed to trade one Coinbase International portfolio per execution client.**
 
-To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to the desired
-portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
-execution configuration for each client.
+### Selecting a portfolio
+
+To identify your available portfolios and their IDs, use the REST client by running the following script:
+
+```bash
+python nautilus_trader/adapters/coinbase_intx/scripts/list_portfolios.py
+```
+
+This will output a list of portfolio details, similar to the example below:
+
+```bash
+[{'borrow_disabled': False,
+  'cross_collateral_enabled': False,
+  'is_default': False,
+  'is_lsp': False,
+  'maker_fee_rate': '-0.00008',
+  'name': 'hrp5587988499',
+  'portfolio_id': '3mnk59ap-1-22',  # Your portfolio ID
+  'portfolio_uuid': 'dd0958ad-0c9d-4445-a812-1870fe40d0e1',
+  'pre_launch_trading_enabled': False,
+  'taker_fee_rate': '0.00012',
+  'trading_lock': False,
+  'user_uuid': 'd4fbf7ea-9515-1068-8d60-4de91702c108'}]
+```
+
+### Configuring the portfolio
+
+To specify a portfolio for trading, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to
+the desired `portfolio_id`. If you're using multiple execution clients, you can alternatively define
+the `portfolio_id` in the execution configuration for each client.
 
 ### Order types
 
