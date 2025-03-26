@@ -238,9 +238,9 @@ impl CoinbaseIntxHttpClient {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, symbol, client_order_id, order_type, order_side, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, post_only=None, reduce_only=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_submit_order<'py>(
         &self,
         py: Python<'py>,
@@ -297,8 +297,8 @@ impl CoinbaseIntxHttpClient {
         })
     }
 
-    #[pyo3(signature = (account_id, symbol, order_side=None))]
     #[pyo3(name = "cancel_orders")]
+    #[pyo3(signature = (account_id, symbol, order_side=None))]
     fn py_cancel_orders<'py>(
         &self,
         py: Python<'py>,
@@ -316,8 +316,8 @@ impl CoinbaseIntxHttpClient {
         })
     }
 
-    #[pyo3(signature = (account_id, client_order_id, new_client_order_id, price=None, trigger_price=None, quantity=None))]
     #[pyo3(name = "modify_order")]
+    #[pyo3(signature = (account_id, client_order_id, new_client_order_id, price=None, trigger_price=None, quantity=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
         &self,

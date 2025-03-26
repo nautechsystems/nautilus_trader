@@ -91,38 +91,38 @@ impl OrderBook {
         self.reset();
     }
 
-    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "add")]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     fn py_add(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.add(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "update")]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     fn py_update(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.update(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (order, flags, sequence, ts_event))]
     #[pyo3(name = "delete")]
+    #[pyo3(signature = (order, flags, sequence, ts_event))]
     fn py_delete(&mut self, order: BookOrder, flags: u8, sequence: u64, ts_event: u64) {
         self.delete(order, flags, sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear")]
+    #[pyo3(signature = (sequence, ts_event))]
     fn py_clear(&mut self, sequence: u64, ts_event: u64) {
         self.clear(sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear_bids")]
+    #[pyo3(signature = (sequence, ts_event))]
     fn py_clear_bids(&mut self, sequence: u64, ts_event: u64) {
         self.clear_bids(sequence, ts_event.into());
     }
 
-    #[pyo3(signature = (sequence, ts_event))]
     #[pyo3(name = "clear_asks")]
+    #[pyo3(signature = (sequence, ts_event))]
     fn py_clear_asks(&mut self, sequence: u64, ts_event: u64) {
         self.clear_asks(sequence, ts_event.into());
     }
@@ -147,36 +147,36 @@ impl OrderBook {
         book_check_integrity(self).map_err(to_pyruntime_err)
     }
 
-    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "bids")]
+    #[pyo3(signature = (depth=None))]
     fn py_bids(&self, depth: Option<usize>) -> Vec<BookLevel> {
         self.bids(depth)
             .map(|level_ref| (*level_ref).clone())
             .collect()
     }
 
-    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "asks")]
+    #[pyo3(signature = (depth=None))]
     fn py_asks(&self, depth: Option<usize>) -> Vec<BookLevel> {
         self.asks(depth)
             .map(|level_ref| (*level_ref).clone())
             .collect()
     }
 
-    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "bids_to_dict")]
+    #[pyo3(signature = (depth=None))]
     fn py_bids_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
         self.bids_as_map(depth)
     }
 
-    #[pyo3(signature = (depth=None))]
     #[pyo3(name = "asks_to_dict")]
+    #[pyo3(signature = (depth=None))]
     fn py_asks_to_dict(&self, depth: Option<usize>) -> IndexMap<Decimal, Decimal> {
         self.asks_as_map(depth)
     }
 
-    #[pyo3(signature = (group_size, depth=None))]
     #[pyo3(name = "group_bids")]
+    #[pyo3(signature = (group_size, depth=None))]
     pub fn py_group_bids(
         &self,
         group_size: Decimal,
@@ -185,8 +185,8 @@ impl OrderBook {
         self.group_bids(group_size, depth)
     }
 
-    #[pyo3(signature = (group_size, depth=None))]
     #[pyo3(name = "group_asks")]
+    #[pyo3(signature = (group_size, depth=None))]
     pub fn py_group_asks(
         &self,
         group_size: Decimal,
@@ -195,8 +195,8 @@ impl OrderBook {
         self.group_asks(group_size, depth)
     }
 
-    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bids_filtered_to_dict")]
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bids_filtered_to_dict(
         &self,
         depth: Option<usize>,
@@ -208,8 +208,8 @@ impl OrderBook {
         self.bids_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "asks_filtered_to_dict")]
+    #[pyo3(signature = (depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_asks_filtered_to_dict(
         &self,
         depth: Option<usize>,
@@ -221,8 +221,8 @@ impl OrderBook {
         self.asks_filtered_as_map(depth, own_book, status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "group_bids_filtered")]
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_group_bids_filered(
         &self,
         group_size: Decimal,
@@ -242,8 +242,8 @@ impl OrderBook {
         )
     }
 
-    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "group_asks_filtered")]
+    #[pyo3(signature = (group_size, depth=None, own_book=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_group_asks_filtered(
         &self,
         group_size: Decimal,
@@ -317,8 +317,8 @@ impl OrderBook {
         self.simulate_fills(order)
     }
 
-    #[pyo3(signature = (num_levels=3))]
     #[pyo3(name = "pprint")]
+    #[pyo3(signature = (num_levels=3))]
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)
     }
