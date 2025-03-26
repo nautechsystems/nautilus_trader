@@ -348,7 +348,6 @@ cdef class ExecutionEngine(Component):
             ClientId client_id
             Venue venue
             ExecutionClient client
-
         for order in orders:
             venues.add(order.venue)
             client_id = self._cache.client_id(order.client_order_id)
