@@ -145,7 +145,7 @@ runs:
 
     - name: Install pre-commit
       shell: bash
-      run: pip install pre-commit==4.1.0
+      run: pip install pre-commit==4.2.0
 
     # > --------------------------------------------------
     # > UV
