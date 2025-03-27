@@ -14,6 +14,35 @@
 // -------------------------------------------------------------------------------------------------
 
 //! A `UnixNanos` type for working with timestamps in nanoseconds since the UNIX epoch.
+//!
+//! This module provides a strongly-typed representation of timestamps as nanoseconds
+//! since the UNIX epoch (January 1, 1970, 00:00:00 UTC). The `UnixNanos` type offers
+//! conversion utilities, arithmetic operations, and comparison methods.
+//!
+//! # Features
+//!
+//! - Zero-cost abstraction with appropriate operator implementations.
+//! - Conversion to/from DateTime<Utc>.
+//! - RFC 3339 string formatting.
+//! - Duration calculations.
+//! - Flexible parsing and serialization.
+//!
+//! # Parsing and Serialization
+//!
+//! `UnixNanos` can be created from and serialized to various formats:
+//!
+//! * Integer values are interpreted as nanoseconds since the UNIX epoch.
+//! * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
+//! * String values may be:
+//!   - A numeric string (interpreted as nanoseconds).
+//!   - A floating-point string (interpreted as seconds, converted to nanoseconds).
+//!   - An RFC 3339 formatted timestamp (ISO 8601 with timezone).
+//!   - A simple date string in YYYY-MM-DD format (interpreted as midnight UTC on that date).
+//!
+//! # Limitations
+//!
+//! * Negative timestamps are invalid and will result in an error.
+//! * Arithmetic operations will panic on overflow/underflow rather than wrapping.
 
 use std::{
     cmp::Ordering,
@@ -22,7 +51,7 @@ use std::{
     str::FromStr,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self, Visitor},
@@ -80,6 +109,46 @@ impl UnixNanos {
     #[must_use]
     pub const fn duration_since(&self, other: &Self) -> Option<DurationNanos> {
         self.0.checked_sub(other.0)
+    }
+
+    fn parse_string(s: &str) -> Result<Self, String> {
+        // Try parsing as an integer (nanoseconds)
+        if let Ok(int_value) = s.parse::<u64>() {
+            return Ok(UnixNanos(int_value));
+        }
+
+        // Try parsing as a floating point number (seconds)
+        if let Ok(float_value) = s.parse::<f64>() {
+            if float_value < 0.0 {
+                return Err("Unix timestamp cannot be negative".into());
+            }
+            let nanos = (float_value * 1_000_000_000.0).round() as u64;
+            return Ok(UnixNanos(nanos));
+        }
+
+        // Try parsing as an RFC 3339 timestamp
+        if let Ok(datetime) = DateTime::parse_from_rfc3339(s) {
+            let nanos = datetime
+                .timestamp_nanos_opt()
+                .ok_or_else(|| "Timestamp out of range".to_string())?;
+            if nanos < 0 {
+                return Err("Unix timestamp cannot be negative".into());
+            }
+            return Ok(UnixNanos(nanos as u64));
+        }
+
+        // Try parsing as a simple date string (YYYY-MM-DD format)
+        if let Ok(datetime) = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .map(|date| date.and_hms_opt(0, 0, 0).unwrap())
+            .map(|naive_dt| DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc))
+        {
+            let nanos = datetime
+                .timestamp_nanos_opt()
+                .ok_or_else(|| "Timestamp out of range".to_string())?;
+            return Ok(UnixNanos(nanos as u64));
+        }
+
+        Err(format!("Invalid format: {s}"))
     }
 }
 
@@ -147,17 +216,17 @@ impl From<UnixNanos> for u64 {
 
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
-        Self(
-            value
-                .parse()
-                .expect("`value` should be a valid integer string"),
-        )
+        value
+            .parse()
+            .unwrap_or_else(|e| panic!("Failed to parse string into UnixNanos: {e}"))
     }
 }
 
 impl From<String> for UnixNanos {
     fn from(value: String) -> Self {
-        Self::from(value.as_str())
+        value
+            .parse()
+            .unwrap_or_else(|e| panic!("Failed to parse string into UnixNanos: {e}"))
     }
 }
 
@@ -168,10 +237,10 @@ impl From<DateTime<Utc>> for UnixNanos {
 }
 
 impl FromStr for UnixNanos {
-    type Err = std::num::ParseIntError;
+    type Err = Box<dyn std::error::Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse().map(UnixNanos)
+        Self::parse_string(s).map_err(|e| e.into())
     }
 }
 
@@ -250,15 +319,6 @@ impl From<UnixNanos> for DateTime<Utc> {
 }
 
 impl<'de> Deserialize<'de> for UnixNanos {
-    /// Deserializes a `UnixNanos` from various formats:
-    /// * Integer values are interpreted as nanoseconds since the UNIX epoch.
-    /// * Floating-point values are interpreted as seconds since the UNIX epoch (converted to nanoseconds).
-    /// * String values may be:
-    ///   - A numeric string (interpreted as nanoseconds).
-    ///   - A floating-point string (interpreted as seconds, converted to nanoseconds).
-    ///   - An RFC 3339 formatted timestamp (ISO 8601 with timezone).
-    ///
-    /// Negative timestamps are invalid and will result in an error.
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -305,33 +365,7 @@ impl<'de> Deserialize<'de> for UnixNanos {
             where
                 E: de::Error,
             {
-                // Try parsing as an integer (nanoseconds)
-                if let Ok(int_value) = value.parse::<u64>() {
-                    return Ok(UnixNanos(int_value));
-                }
-
-                // Try parsing as a floating point number (seconds)
-                if let Ok(float_value) = value.parse::<f64>() {
-                    if float_value < 0.0 {
-                        return Err(E::custom("Unix timestamp cannot be negative"));
-                    }
-                    let nanos = (float_value * 1_000_000_000.0).round() as u64;
-                    return Ok(UnixNanos(nanos));
-                }
-
-                // Try parsing as an RFC 3339 timestamp
-                if let Ok(datetime) = DateTime::parse_from_rfc3339(value) {
-                    let nanos = datetime
-                        .timestamp_nanos_opt()
-                        .ok_or_else(|| E::custom("Timestamp out of range"))?;
-                    if nanos < 0 {
-                        return Err(E::custom("Unix timestamp cannot be negative"));
-                    }
-                    return Ok(UnixNanos(nanos as u64));
-                }
-
-                // If none of the above works, fail with an error
-                Err(E::custom(format!("Invalid format: {value}")))
+                UnixNanos::parse_string(value).map_err(E::custom)
             }
         }
 
@@ -593,6 +627,26 @@ mod tests {
     }
 
     #[rstest]
+    #[case("123", 123)] // Integer string
+    #[case("1234.567", 1_234_567_000_000)] // Float string (seconds to nanos)
+    #[case("2024-02-10", 1707523200000000000)] // Simple date (midnight UTC)
+    #[case("2024-02-10T14:58:43Z", 1707577123000000000)] // RFC3339 without fractions
+    #[case("2024-02-10T14:58:43.456789Z", 1707577123456789000)] // RFC3339 with fractions
+    fn test_from_str_formats(#[case] input: &str, #[case] expected: u64) {
+        let parsed: UnixNanos = input.parse().unwrap();
+        assert_eq!(parsed.as_u64(), expected);
+    }
+
+    #[rstest]
+    #[case("abc")] // Random string
+    #[case("not a timestamp")] // Non-timestamp string
+    #[case("2024-02-10 14:58:43")] // Space-separated format (not RFC3339)
+    fn test_from_str_invalid_formats(#[case] input: &str) {
+        let result = input.parse::<UnixNanos>();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_deserialize_u64() {
         let json = "123456789";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
@@ -645,19 +699,6 @@ mod tests {
     #[rstest]
     fn test_deserialize_invalid_string_fails() {
         let json = "\"not a timestamp\"";
-        let result: Result<UnixNanos, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-    }
-
-    #[rstest]
-    fn test_non_rfc3339_formats_fail() {
-        // Space-separated format should fail
-        let json = "\"2024-02-10 14:58:43.456789\"";
-        let result: Result<UnixNanos, _> = serde_json::from_str(json);
-        assert!(result.is_err());
-
-        // Simple date format should fail
-        let json = "\"2024-02-10\"";
         let result: Result<UnixNanos, _> = serde_json::from_str(json);
         assert!(result.is_err());
     }

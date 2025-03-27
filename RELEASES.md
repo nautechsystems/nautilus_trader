@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Added `Cache.has_index_prices()`
 - Added `UnixNanos.to_rfc3339()` for ISO 8601 (RFC 3339) strings
 - Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
+- Enhanced `UnixNanos` string parsing to support YYYY-MM-DD date format (interpreted as midnight UTC)
 
 ### Breaking Changes
 - Changed `Cache.add_mark_price(self, InstrumentId instrument_id, Price price)` to `add_mark_price(self, MarkPriceUpdate mark_price)`
