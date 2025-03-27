@@ -1436,38 +1436,6 @@ class TestCacheDatabaseAdapter:
         assert not loaded_position.is_closed
         assert loaded_position.realized_return > 0  # Should have positive PnL
 
-    # TimeOut Error
-    # @pytest.mark.asyncio
-    # async def test_update_ema_cross_strategy(self):
-    #     # Arrange
-    #     config = EMACrossConfig(
-    #         instrument_id=_AUDUSD_SIM.id,
-    #         bar_type=TestDataStubs.bartype_audusd_1min_bid(),
-    #         trade_size=Decimal(100_000),
-    #         fast_ema_period=10,
-    #         slow_ema_period=20,
-    #     )
-
-    #     strategy = EMACross(config=config)
-    #     strategy.register(
-    #         trader_id=self.trader_id,
-    #         portfolio=self.portfolio,
-    #         msgbus=self.msgbus,
-    #         cache=self.cache,
-    #         clock=self.clock,
-    #     )
-
-    #     # Act
-    #     self.database.update_strategy(strategy)
-
-    #     # Allow MPSC thread to insert
-    #     await eventually(lambda: self.database.load_strategy(strategy.id))
-
-    #     # Assert
-    #     result = self.database.load_strategy(strategy.id)
-    #     assert result is not None
-    #     assert isinstance(result, dict)
-
     @pytest.mark.asyncio
     async def test_complete_portfolio_state(self):
         # Arrange - create a complete portfolio with accounts, orders, and positions
