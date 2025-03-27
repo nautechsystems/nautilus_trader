@@ -16,10 +16,10 @@
 Define the base class for dYdX endpoints.
 """
 
-from json import JSONDecodeError
 from typing import Any
 
 import msgspec
+from msgspec import DecodeError
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXEndpointType
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
@@ -65,7 +65,7 @@ class DYDXHttpEndpoint:
             max_retries=5,
             retry_delay_secs=1.0,
             logger=Logger(name="DYDXHttpEndpoint"),
-            exc_types=(HttpTimeoutError, HttpError, DYDXError, JSONDecodeError),
+            exc_types=(HttpTimeoutError, HttpError, DYDXError, DecodeError),
             retry_check=should_retry,
         )
 
