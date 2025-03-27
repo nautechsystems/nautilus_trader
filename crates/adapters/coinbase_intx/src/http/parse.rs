@@ -424,7 +424,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::load_test_json;
+    use crate::common::testing::load_test_json;
 
     #[rstest]
     fn test_parse_spot_instrument() {
