@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{TimeZone, Utc};
+use nautilus_core::UnixNanos;
 use nautilus_model::instruments::Instrument;
 use nautilus_tardis::{
-    enums::{Exchange, InstrumentType},
+    enums::Exchange,
     http::{client::TardisHttpClient, query::InstrumentFilterBuilder},
 };
 
@@ -32,9 +32,9 @@ async fn main() {
     let resp = client.instruments_info(Exchange::Binance, None, None).await;
     println!("Received: {resp:?}");
 
-    let start = Utc.with_ymd_and_hms(2020, 1, 1, 0, 0, 0).unwrap();
+    let start = UnixNanos::from("2020-1-1");
     let filter = InstrumentFilterBuilder::default()
-        .available_since(Some(start))
+        .available_since(Some(start.into()))
         .build()
         .unwrap();
 
@@ -44,7 +44,7 @@ async fn main() {
     println!("Received: {resp:?}");
 
     let filter = InstrumentFilterBuilder::default()
-        .instrument_type(Some(vec![InstrumentType::Perpetual]))
+        .instrument_type(Some(vec!["perpetual".to_string()]))
         .build()
         .unwrap();
     let resp = client
@@ -61,9 +61,17 @@ async fn main() {
         }
     }
 
+    let effective = UnixNanos::from("2020-08-01");
+
     // Nautilus instrument definitions
     let resp = client
-        .instruments(Exchange::Bitmex, Some("XBTUSD"), Some(&filter), None, None)
+        .instruments(
+            Exchange::Bitmex,
+            Some("XBTUSD"),
+            Some(&filter),
+            Some(effective),
+            None,
+        )
         .await;
 
     for inst in resp.unwrap() {
