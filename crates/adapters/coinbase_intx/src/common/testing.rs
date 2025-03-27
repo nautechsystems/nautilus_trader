@@ -13,15 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{fs, path::PathBuf};
+
 #[cfg(test)]
 #[must_use]
 pub fn load_test_json(file_name: &str) -> String {
-    use std::{fs, path::PathBuf};
-
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("tests")
-        .join("data")
+        .join("test_data")
         .join(file_name);
 
     fs::read_to_string(path).expect("Failed to read test JSON file")
