@@ -515,7 +515,7 @@ class TestCacheDatabaseAdapter:
         result = self.database.load_strategy(strategy.id)
 
         # Assert
-        assert result == {"UserState": "MQ=="}
+        assert result == {"UserState": b"1"}
 
     @pytest.mark.asyncio
     async def test_load_currency_when_no_currencies_in_database_returns_none(self):

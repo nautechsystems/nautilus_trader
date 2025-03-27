@@ -507,11 +507,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     async fn load_strategy(
         &self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, String>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
+    fn delete_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -812,7 +812,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn update_strategy(&mut self, strategy: HashMap<String, String>) -> anyhow::Result<()> {
+    fn update_strategy(
+        &mut self,
+        id: &str,
+        strategy: HashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         todo!()
     }
 

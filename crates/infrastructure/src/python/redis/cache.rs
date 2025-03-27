@@ -261,7 +261,7 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "load_strategy")]
-    fn py_load_strategy(&self, strategy_id: &str) -> PyResult<HashMap<String, String>> {
+    fn py_load_strategy(&self, strategy_id: &str) -> PyResult<HashMap<String, Vec<u8>>> {
         get_runtime().block_on(async {
             DatabaseQueries::load_strategy(
                 &self.con,
@@ -271,7 +271,14 @@ impl RedisCacheDatabase {
             )
             .await
             .map_err(to_pyruntime_err)
+            .map(|map| map.into_iter().map(|(k, v)| (k, v.to_vec())).collect())
         })
+    }
+
+    #[pyo3(name = "delete_strategy")]
+    fn py_delete_strategy(&mut self, strategy_id: &str) -> PyResult<()> {
+        self.delete_strategy(&StrategyId::new(strategy_id))
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "read")]
@@ -302,8 +309,13 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "update_strategy")]
-    fn py_update_strategy(&mut self, strategy: HashMap<String, String>) -> PyResult<()> {
-        self.update_strategy(strategy).map_err(to_pyvalue_err)
+    fn py_update_strategy(&mut self, id: &str, strategy: HashMap<String, Vec<u8>>) -> PyResult<()> {
+        let strategy_map: HashMap<String, Bytes> = strategy
+            .into_iter()
+            .map(|(k, v)| (k, Bytes::from(v)))
+            .collect();
+        self.update_strategy(id, strategy_map)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "delete")]

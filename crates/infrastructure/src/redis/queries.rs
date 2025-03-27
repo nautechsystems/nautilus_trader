@@ -650,14 +650,14 @@ impl DatabaseQueries {
         trader_key: &str,
         strategy_id: &StrategyId,
         encoding: SerializationEncoding,
-    ) -> anyhow::Result<HashMap<String, String>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
         let result = Self::read(con, trader_key, &key).await?;
         if result.is_empty() {
             return Ok(HashMap::new());
         }
 
-        let strategy = Self::deserialize_payload::<HashMap<String, String>>(encoding, &result[0])?;
+        let strategy = Self::deserialize_payload::<HashMap<String, Bytes>>(encoding, &result[0])?;
         Ok(strategy)
     }
 

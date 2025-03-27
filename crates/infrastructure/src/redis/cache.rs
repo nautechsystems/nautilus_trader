@@ -212,7 +212,10 @@ impl RedisCacheDatabase {
     }
 
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
-        let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
+        let pattern = format!(
+            "{}{REDIS_DELIMITER}{pattern}{REDIS_DELIMITER}*",
+            self.trader_key
+        );
         log::debug!("Querying keys: {pattern}");
         DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
@@ -627,13 +630,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
     async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         let mut result = HashMap::new();
         let keys = self.keys(GENERAL).await?;
-
         for key in keys {
             let key = key.split_once(REDIS_DELIMITER).unwrap().1;
             let value = self.read(key).await?;
-            if let Some(value) = value.first() {
-                result.insert(key.to_string(), value.clone());
-            }
+            let key = key.split_once(REDIS_DELIMITER).unwrap().1;
+            result.insert(key.to_string(), value.first().unwrap().clone());
         }
 
         Ok(result)
@@ -719,13 +720,17 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
     async fn load_strategy(
         &self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, String>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         DatabaseQueries::load_strategy(&self.con, &self.trader_key, strategy_id, self.encoding)
             .await
     }
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
-        todo!()
+    fn delete_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+        self.delete(key, None)?;
+
+        tracing::debug!("Deleted strategy {strategy_id}");
+        Ok(())
     }
 
     fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
@@ -905,12 +910,15 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
         todo!()
     }
 
-    fn update_strategy(&mut self, strategy: HashMap<String, String>) -> anyhow::Result<()> {
-        let strategy_id = strategy.get("id").unwrap();
-        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+    fn update_strategy(
+        &mut self,
+        id: &str,
+        strategy: HashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{id}");
         let value = DatabaseQueries::serialize_payload(self.encoding, &strategy)?;
         self.insert(key, Some(vec![Bytes::from(value)]))?;
-        tracing::debug!("Updated {strategy_id}");
+        tracing::debug!("Updated {id}");
         Ok(())
     }
 

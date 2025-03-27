@@ -706,7 +706,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        cdef dict result = self._backing.load_strategy(strategy_id)
+        cdef dict result = self._backing.load_strategy(strategy_id.to_str())
         return result
 
     cpdef void delete_strategy(self, StrategyId strategy_id):
@@ -721,9 +721,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
-        self._backing.delete(key)
-
+        self._backing.delete_strategy(strategy_id.to_str())
         self._log.info(f"Deleted {repr(strategy_id)}")
 
     cpdef void add(self, str key, bytes value):
@@ -925,6 +923,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.not_none(strategy, "strategy")
 
         cdef dict state = strategy.save()  # Extract state dictionary from strategy
+        for key, value in state.items():
+            print(f"Key: {key} (type: {type(key).__name__}), Value: {value} (type: {type(value).__name__})")
         self._backing.update_strategy(strategy.id.to_str(), state)
         self._log.debug(f"Saved strategy state for {strategy.id.value}")
 
