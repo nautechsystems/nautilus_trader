@@ -99,7 +99,7 @@ pub fn create_crypto_perpetual(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
             info.settlement_currency
-                .unwrap_or(info.quote_currency)
+                .unwrap_or(info.base_currency)
                 .to_uppercase()
                 .as_str(),
         ),
@@ -148,7 +148,12 @@ pub fn create_crypto_future(
         raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(info.base_currency.to_uppercase().as_str()),
+        get_currency(
+            info.settlement_currency
+                .unwrap_or(info.base_currency)
+                .to_uppercase()
+                .as_str(),
+        ),
         info.inverse.expect("Future should have `inverse` field"),
         activation,
         expiration,
@@ -196,7 +201,12 @@ pub fn create_crypto_option(
         raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(info.base_currency.to_uppercase().as_str()),
+        get_currency(
+            info.settlement_currency
+                .unwrap_or(info.base_currency)
+                .to_uppercase()
+                .as_str(),
+        ),
         info.inverse.unwrap_or(false),
         parse_option_kind(
             info.option_type

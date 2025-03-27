@@ -17,8 +17,6 @@ use chrono::{DateTime, Utc};
 use derive_builder::Builder;
 use serde::Serialize;
 
-use crate::enums::InstrumentType;
-
 mod datetime_format {
     use chrono::{DateTime, Utc};
     use serde::{self, Serializer};
@@ -51,7 +49,7 @@ pub struct InstrumentFilter {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     #[builder(default)]
-    pub instrument_type: Option<Vec<InstrumentType>>,
+    pub instrument_type: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub contract_type: Option<Vec<String>>,
