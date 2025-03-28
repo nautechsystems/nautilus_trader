@@ -25,7 +25,7 @@ use std::{
 
 use nautilus_common::{
     clock::{Clock, TestClock},
-    messages::data::{DataEvent, SubscriptionCommand},
+    messages::data::{DataEvent, SubscribeCommand},
     runner::{DataQueue, DataResponseQueue, GlobalDataQueue},
 };
 use nautilus_data::engine::DataEngine;
@@ -79,7 +79,7 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
         .expect("Should be able to access thread local clock");
 }
 
-pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscriptionCommand>>>;
+pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
 
 /// Get globally shared message bus command queue
 #[must_use]

@@ -23,6 +23,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     fmt::Debug,
+    num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
@@ -31,12 +32,20 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_common::{
     clock::Clock,
-    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
+    messages::data::{
+        DataRequest, DataResponse, Payload, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepths10, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepths10,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, DataType, QuoteTick, TradeTick},
-    enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
@@ -58,129 +67,38 @@ pub trait DataClient {
 
     // -- COMMAND HANDLERS ------------------------------------------------------------------------
 
-    fn subscribe(
-        &mut self,
-        data_type: &DataType,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_instruments(
-        &mut self,
-        venue: Option<&Venue>,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_instrument(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_order_book_deltas(
-        &mut self,
-        instrument_id: &InstrumentId,
-        book_type: BookType,
-        depth: Option<usize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_order_book_snapshots(
-        &mut self,
-        instrument_id: &InstrumentId,
-        book_type: BookType,
-        depth: Option<usize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_quote_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_trade_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_bars(
-        &mut self,
-        bar_type: &BarType,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_instrument_status(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_instrument_close(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_mark_prices(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn subscribe_index_prices(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe(
-        &mut self,
-        data_type: &DataType,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_instruments(
-        &mut self,
-        venue: Option<&Venue>,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_instrument(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_order_book_deltas(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_order_book_snapshots(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_quote_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_trade_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_bars(
-        &mut self,
-        bar_type: &BarType,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
+    fn subscribe(&mut self, cmd: SubscribeData) -> anyhow::Result<()>;
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()>;
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()>;
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()>;
+    fn subscribe_book_depths10(&mut self, cmd: SubscribeBookDepths10) -> anyhow::Result<()>;
+    fn subscribe_book_snapshots(&mut self, cmd: SubscribeBookSnapshots) -> anyhow::Result<()>;
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()>;
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()>;
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()>;
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()>;
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()>;
+    fn subscribe_instrument_status(&mut self, cmd: SubscribeInstrumentStatus)
+    -> anyhow::Result<()>;
+    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()>;
+    fn unsubscribe(&mut self, cmd: UnsubscribeData) -> anyhow::Result<()>;
+    fn unsubscribe_instruments(&mut self, cmd: UnsubscribeInstruments) -> anyhow::Result<()>;
+    fn unsubscribe_instrument(&mut self, cmd: UnsubscribeInstrument) -> anyhow::Result<()>;
+    fn unsubscribe_book_deltas(&mut self, cmd: UnsubscribeBookDeltas) -> anyhow::Result<()>;
+    fn unsubscribe_book_depths10(&mut self, cmd: UnsubscribeBookDepths10) -> anyhow::Result<()>;
+    fn unsubscribe_book_snapshots(&mut self, cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()>;
+    fn unsubscribe_quotes(&mut self, cmd: UnsubscribeQuotes) -> anyhow::Result<()>;
+    fn unsubscribe_trades(&mut self, cmd: UnsubscribeTrades) -> anyhow::Result<()>;
+    fn unsubscribe_mark_prices(&mut self, cmd: UnsubscribeMarkPrices) -> anyhow::Result<()>;
+    fn unsubscribe_index_prices(&mut self, cmd: UnsubscribeIndexPrices) -> anyhow::Result<()>;
+    fn unsubscribe_bars(&mut self, cmd: UnsubscribeBars) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(
         &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
+        cmd: UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(
         &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_mark_prices(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
-    ) -> anyhow::Result<()>;
-    fn unsubscribe_index_prices(
-        &mut self,
-        instrument_id: &InstrumentId,
-        params: &Option<HashMap<String, String>>,
+        cmd: UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()>;
 
     // -- DATA REQUEST HANDLERS -------------------------------------------------------------------
@@ -207,7 +125,7 @@ pub trait DataClient {
         &self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
-        depth: Option<usize>,
+        depth: Option<NonZeroUsize>,
         params: &Option<HashMap<String, String>>,
     ) -> Payload;
     fn request_quote_ticks(
@@ -216,7 +134,7 @@ pub trait DataClient {
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-        limit: Option<usize>,
+        limit: Option<NonZeroUsize>,
         params: &Option<HashMap<String, String>>,
     ) -> Vec<QuoteTick>;
     fn request_trade_ticks(
@@ -225,7 +143,7 @@ pub trait DataClient {
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-        limit: Option<usize>,
+        limit: Option<NonZeroUsize>,
         params: &Option<HashMap<String, String>>,
     ) -> Vec<TradeTick>;
     fn request_bars(
@@ -234,7 +152,7 @@ pub trait DataClient {
         bar_type: BarType,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-        limit: Option<usize>,
+        limit: Option<NonZeroUsize>,
         params: &Option<HashMap<String, String>>,
     ) -> Vec<Bar>;
 }
@@ -244,20 +162,21 @@ pub struct DataClientAdapter {
     clock: Rc<RefCell<dyn Clock>>,
     pub client_id: ClientId,
     pub venue: Venue,
-    pub handles_order_book_deltas: bool,
-    pub handles_order_book_snapshots: bool,
+    pub handles_book_deltas: bool,
+    pub handles_book_snapshots: bool,
     pub subscriptions_generic: HashSet<DataType>,
-    pub subscriptions_order_book_delta: HashSet<InstrumentId>,
-    pub subscriptions_order_book_snapshot: HashSet<InstrumentId>,
-    pub subscriptions_quote_tick: HashSet<InstrumentId>,
-    pub subscriptions_trade_tick: HashSet<InstrumentId>,
-    pub subscriptions_bar: HashSet<BarType>,
+    pub subscriptions_book_deltas: HashSet<InstrumentId>,
+    pub subscriptions_book_depths: HashSet<InstrumentId>,
+    pub subscriptions_book_snapshots: HashSet<InstrumentId>,
+    pub subscriptions_quotes: HashSet<InstrumentId>,
+    pub subscriptions_trades: HashSet<InstrumentId>,
+    pub subscriptions_bars: HashSet<BarType>,
     pub subscriptions_instrument_status: HashSet<InstrumentId>,
     pub subscriptions_instrument_close: HashSet<InstrumentId>,
     pub subscriptions_instrument: HashSet<InstrumentId>,
     pub subscriptions_instrument_venue: HashSet<Venue>,
-    pub subscriptions_mark_price: HashSet<InstrumentId>,
-    pub subscriptions_index_price: HashSet<InstrumentId>,
+    pub subscriptions_mark_prices: HashSet<InstrumentId>,
+    pub subscriptions_index_prices: HashSet<InstrumentId>,
 }
 
 impl Deref for DataClientAdapter {
@@ -279,25 +198,23 @@ impl Debug for DataClientAdapter {
         f.debug_struct("DataClientAdapter")
             .field("client_id", &self.client_id)
             .field("venue", &self.venue)
-            .field("handles_order_book_deltas", &self.handles_order_book_deltas)
-            .field(
-                "handles_order_book_snapshots",
-                &self.handles_order_book_snapshots,
-            )
+            .field("handles_book_deltas", &self.handles_book_deltas)
+            .field("handles_book_snapshots", &self.handles_book_snapshots)
             .field("subscriptions_generic", &self.subscriptions_generic)
+            .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
+            .field("subscriptions_book_depths", &self.subscriptions_book_depths)
             .field(
-                "subscriptions_order_book_delta",
-                &self.subscriptions_order_book_delta,
+                "subscriptions_book_snapshot",
+                &self.subscriptions_book_snapshots,
             )
+            .field("subscriptions_quotes", &self.subscriptions_quotes)
+            .field("subscriptions_trades", &self.subscriptions_trades)
+            .field("subscriptions_mark_prices", &self.subscriptions_mark_prices)
             .field(
-                "subscriptions_order_book_snapshot",
-                &self.subscriptions_order_book_snapshot,
+                "subscriptions_index_prices",
+                &self.subscriptions_index_prices,
             )
-            .field("subscriptions_quote_tick", &self.subscriptions_quote_tick)
-            .field("subscriptions_trade_tick", &self.subscriptions_trade_tick)
-            .field("subscriptions_mark_price", &self.subscriptions_mark_price)
-            .field("subscriptions_index_price", &self.subscriptions_index_price)
-            .field("subscriptions_bar", &self.subscriptions_bar)
+            .field("subscriptions_bars", &self.subscriptions_bars)
             .field(
                 "subscriptions_instrument_status",
                 &self.subscriptions_instrument_status,
@@ -331,16 +248,17 @@ impl DataClientAdapter {
             clock,
             client_id,
             venue,
-            handles_order_book_deltas,
-            handles_order_book_snapshots,
+            handles_book_deltas: handles_order_book_deltas,
+            handles_book_snapshots: handles_order_book_snapshots,
             subscriptions_generic: HashSet::new(),
-            subscriptions_order_book_delta: HashSet::new(),
-            subscriptions_order_book_snapshot: HashSet::new(),
-            subscriptions_quote_tick: HashSet::new(),
-            subscriptions_trade_tick: HashSet::new(),
-            subscriptions_mark_price: HashSet::new(),
-            subscriptions_index_price: HashSet::new(),
-            subscriptions_bar: HashSet::new(),
+            subscriptions_book_deltas: HashSet::new(),
+            subscriptions_book_depths: HashSet::new(),
+            subscriptions_book_snapshots: HashSet::new(),
+            subscriptions_quotes: HashSet::new(),
+            subscriptions_trades: HashSet::new(),
+            subscriptions_mark_prices: HashSet::new(),
+            subscriptions_index_prices: HashSet::new(),
+            subscriptions_bars: HashSet::new(),
             subscriptions_instrument_status: HashSet::new(),
             subscriptions_instrument_close: HashSet::new(),
             subscriptions_instrument: HashSet::new(),
@@ -349,326 +267,248 @@ impl DataClientAdapter {
     }
 
     /// TODO: Decide whether to use mut references for subscription commands
-    pub fn through_execute(&self, command: SubscriptionCommand) {}
+    pub fn through_execute(&self, command: SubscribeCommand) {}
 
-    pub fn execute(&mut self, command: SubscriptionCommand) {
-        match command.action {
-            Action::Subscribe => self.execute_subscribe_command(command),
-            Action::Unsubscribe => self.execute_unsubscribe_command(command),
+    // // TODO: Deprecated
+    // pub fn execute(&mut self, command: SubscribeCommand) {
+    //     match command.action {
+    //         Action::Subscribe => self.execute_subscribe_command(command),
+    //         Action::Unsubscribe => self.execute_unsubscribe_command(command),
+    //     }
+    // }
+
+    #[inline]
+    pub fn execute_subscribe_command(&mut self, cmd: SubscribeCommand) {
+        let result = match cmd.clone() {
+            SubscribeCommand::Data(cmd) => self.subscribe(cmd),
+            SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
+            SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
+            SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd),
+            SubscribeCommand::BookDepths10(cmd) => self.subscribe_book_depths10(cmd),
+            SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd),
+            SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(cmd),
+            SubscribeCommand::Trades(cmd) => self.subscribe_trades(cmd),
+            SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
+            SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
+            SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
+        };
+
+        if let Err(e) = result {
+            log::debug!("Error on subscribe: {cmd:?}");
         }
     }
 
     #[inline]
-    fn execute_subscribe_command(&mut self, command: SubscriptionCommand) {
-        match command.data_type.type_name() {
-            stringify!(InstrumentAny) => Self::subscribe_instrument(self, command),
-            stringify!(OrderBookDelta) => Self::subscribe_order_book_deltas(self, command),
-            stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
-                Self::subscribe_snapshots(self, command);
-            }
-            stringify!(QuoteTick) => Self::subscribe_quote_ticks(self, command),
-            stringify!(TradeTick) => Self::subscribe_trade_ticks(self, command),
-            stringify!(MarkPriceUpdate) => Self::subscribe_mark_prices(self, command),
-            stringify!(IndexPriceUpdate) => Self::subscribe_index_prices(self, command),
-            stringify!(Bar) => Self::subscribe_bars(self, command),
-            _ => Self::subscribe(self, command),
+    pub fn execute_unsubscribe_command(&mut self, cmd: UnsubscribeCommand) {
+        let result = match cmd.clone() {
+            UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
+            UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
+            UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
+            UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd),
+            UnsubscribeCommand::BookDepths10(cmd) => self.unsubscribe_book_depths10(cmd),
+            UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd),
+            UnsubscribeCommand::Quotes(cmd) => self.unsubscribe_quotes(cmd),
+            UnsubscribeCommand::Trades(cmd) => self.unsubscribe_trades(cmd),
+            UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
+            UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
+            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
+        };
+
+        if let Err(e) = result {
+            log::debug!("Error on unsubscribe: {cmd:?}");
         }
     }
 
-    #[inline]
-    fn execute_unsubscribe_command(&mut self, command: SubscriptionCommand) {
-        match command.data_type.type_name() {
-            stringify!(InstrumentAny) => Self::unsubscribe_instrument(self, command),
-            stringify!(OrderBookDelta) => Self::unsubscribe_order_book_deltas(self, command),
-            stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
-                Self::unsubscribe_snapshots(self, command);
-            }
-            stringify!(QuoteTick) => Self::unsubscribe_quote_ticks(self, command),
-            stringify!(TradeTick) => Self::unsubscribe_trade_ticks(self, command),
-            stringify!(MarkPriceUpdate) => Self::unsubscribe_mark_prices(self, command),
-            stringify!(IndexPriceUpdate) => Self::unsubscribe_index_prices(self, command),
-            stringify!(Bar) => Self::unsubscribe_bars(self, command),
-            _ => Self::unsubscribe(self, command),
+    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
+        if !self.subscriptions_instrument_venue.contains(&cmd.venue) {
+            self.subscriptions_instrument_venue.insert(cmd.venue);
+            self.client.subscribe_instruments(cmd)?;
         }
+
+        Ok(())
     }
 
-    fn subscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.instrument_id();
-        let venue = command.data_type.venue();
-
-        if let Some(instrument_id) = instrument_id {
-            // TODO: consider using insert_with once it stabilizes
-            // https://github.com/rust-lang/rust/issues/60896
-            if !self.subscriptions_instrument.contains(&instrument_id) {
-                self.client
-                    .subscribe_instrument(&instrument_id, &command.params)
-                    .expect("Error on subscribe");
-            }
-
-            self.subscriptions_instrument.insert(instrument_id);
+    fn unsubscribe_instruments(&mut self, cmd: UnsubscribeInstruments) -> anyhow::Result<()> {
+        if self.subscriptions_instrument_venue.contains(&cmd.venue) {
+            self.subscriptions_instrument_venue.remove(&cmd.venue);
+            self.client.unsubscribe_instruments(cmd)?;
         }
 
-        if let Some(venue) = venue {
-            if !self.subscriptions_instrument_venue.contains(&venue) {
-                self.client
-                    .subscribe_instruments(Some(&venue), &command.params)
-                    .expect("Error on subscribe");
-            }
-
-            self.subscriptions_instrument_venue.insert(venue);
-        }
+        Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.instrument_id();
-        let venue = command.data_type.venue();
-
-        if let Some(instrument_id) = instrument_id {
-            if self.subscriptions_instrument.contains(&instrument_id) {
-                self.client
-                    .unsubscribe_instrument(&instrument_id, &command.params)
-                    .expect("Error on subscribe");
-            }
-
-            self.subscriptions_instrument.remove(&instrument_id);
+    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+        if !self.subscriptions_instrument.contains(&cmd.instrument_id) {
+            self.subscriptions_instrument.insert(cmd.instrument_id);
+            self.client.subscribe_instrument(cmd)?;
         }
 
-        if let Some(venue) = venue {
-            if self.subscriptions_instrument_venue.contains(&venue) {
-                self.client
-                    .unsubscribe_instruments(Some(&venue), &command.params)
-                    .expect("Error on subscribe");
-            }
-
-            self.subscriptions_instrument_venue.remove(&venue);
-        }
+        Ok(())
     }
 
-    fn subscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        let book_type = command.data_type.book_type();
-        let depth = command.data_type.depth();
-
-        if !self.subscriptions_order_book_delta.contains(&instrument_id) {
-            self.client
-                .subscribe_order_book_deltas(&instrument_id, book_type, depth, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_instrument(&mut self, cmd: UnsubscribeInstrument) -> anyhow::Result<()> {
+        if self.subscriptions_instrument.contains(&cmd.instrument_id) {
+            self.subscriptions_instrument.remove(&cmd.instrument_id);
+            self.client.unsubscribe_instrument(cmd)?;
         }
 
-        self.subscriptions_order_book_delta.insert(instrument_id);
+        Ok(())
     }
 
-    fn unsubscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if self.subscriptions_order_book_delta.contains(&instrument_id) {
-            self.client
-                .unsubscribe_order_book_deltas(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+        if !self.subscriptions_book_deltas.contains(&cmd.instrument_id) {
+            self.subscriptions_book_deltas.insert(cmd.instrument_id);
+            self.client.subscribe_book_deltas(cmd)?;
         }
 
-        self.subscriptions_order_book_delta.remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_snapshots(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
+    fn unsubscribe_book_deltas(&mut self, cmd: UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        if self.subscriptions_book_deltas.contains(&cmd.instrument_id) {
+            self.subscriptions_book_deltas.remove(&cmd.instrument_id);
+            self.client.unsubscribe_book_deltas(cmd)?;
+        }
 
-        let book_type = command.data_type.book_type();
-        let depth = command.data_type.depth();
+        Ok(())
+    }
 
+    fn subscribe_order_book_depths10(&mut self, cmd: SubscribeBookDepths10) -> anyhow::Result<()> {
+        if !self.subscriptions_book_depths.contains(&cmd.instrument_id) {
+            self.subscriptions_book_depths.insert(cmd.instrument_id);
+            self.client.subscribe_book_depths10(cmd)?;
+        }
+
+        Ok(())
+    }
+
+    fn unsubscribe_book_depths10(&mut self, cmd: UnsubscribeBookDepths10) -> anyhow::Result<()> {
+        if self.subscriptions_book_depths.contains(&cmd.instrument_id) {
+            self.subscriptions_book_depths.remove(&cmd.instrument_id);
+            self.client.unsubscribe_book_depths10(cmd)?;
+        }
+
+        Ok(())
+    }
+
+    fn subscribe_book_snapshots(&mut self, cmd: SubscribeBookSnapshots) -> anyhow::Result<()> {
         if !self
-            .subscriptions_order_book_snapshot
-            .contains(&instrument_id)
+            .subscriptions_book_snapshots
+            .contains(&cmd.instrument_id)
         {
-            self.client
-                .subscribe_order_book_snapshots(&instrument_id, book_type, depth, &command.params)
-                .expect("Error on subscribe");
+            self.subscriptions_book_snapshots.insert(cmd.instrument_id);
+            self.client.subscribe_book_snapshots(cmd)?;
         }
 
-        self.subscriptions_order_book_snapshot.insert(instrument_id);
+        Ok(())
     }
 
-    fn unsubscribe_snapshots(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
+    fn unsubscribe_snapshots(&mut self, cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         if self
-            .subscriptions_order_book_snapshot
-            .contains(&instrument_id)
+            .subscriptions_book_snapshots
+            .contains(&cmd.instrument_id)
         {
-            self.client
-                .unsubscribe_order_book_snapshots(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+            self.subscriptions_book_snapshots.remove(&cmd.instrument_id);
+            self.client.unsubscribe_book_snapshots(cmd)?;
         }
 
-        self.subscriptions_order_book_snapshot
-            .remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if !self.subscriptions_quote_tick.contains(&instrument_id) {
-            self.client
-                .subscribe_quote_ticks(&instrument_id, &command.params)
-                .expect("Error on subscribe");
-        }
-        self.subscriptions_quote_tick.insert(instrument_id);
+    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
+        if !self.subscriptions_quotes.contains(&cmd.instrument_id) {
+            self.subscriptions_quotes.insert(cmd.instrument_id);
+            self.client.subscribe_quotes(cmd)?;
+        };
+        Ok(())
     }
 
-    fn unsubscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if self.subscriptions_quote_tick.contains(&instrument_id) {
-            self.client
-                .unsubscribe_quote_ticks(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_quotes(&mut self, cmd: UnsubscribeQuotes) -> anyhow::Result<()> {
+        if self.subscriptions_quotes.contains(&cmd.instrument_id) {
+            self.subscriptions_quotes.remove(&cmd.instrument_id);
+            self.client.unsubscribe_quotes(cmd)?;
         }
-        self.subscriptions_quote_tick.remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if !self.subscriptions_trade_tick.contains(&instrument_id) {
-            self.client
-                .subscribe_trade_ticks(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+        if !self.subscriptions_trades.contains(&cmd.instrument_id) {
+            self.subscriptions_trades.insert(cmd.instrument_id);
+            self.client.subscribe_trades(cmd)?;
         }
-        self.subscriptions_trade_tick.insert(instrument_id);
+        Ok(())
     }
 
-    fn unsubscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if self.subscriptions_trade_tick.contains(&instrument_id) {
-            self.client
-                .unsubscribe_trade_ticks(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_trades(&mut self, cmd: UnsubscribeTrades) -> anyhow::Result<()> {
+        if self.subscriptions_trades.contains(&cmd.instrument_id) {
+            self.subscriptions_trades.remove(&cmd.instrument_id);
+            self.client.unsubscribe_trades(cmd)?;
         }
-        self.subscriptions_trade_tick.remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if !self.subscriptions_mark_price.contains(&instrument_id) {
-            self.client
-                .subscribe_mark_prices(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        if !self.subscriptions_mark_prices.contains(&cmd.instrument_id) {
+            self.subscriptions_mark_prices.insert(cmd.instrument_id);
+            self.client.subscribe_mark_prices(cmd)?;
         }
-        self.subscriptions_mark_price.insert(instrument_id);
+        Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if self.subscriptions_mark_price.contains(&instrument_id) {
-            self.client
-                .unsubscribe_mark_prices(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_mark_prices(&mut self, cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        if self.subscriptions_mark_prices.contains(&cmd.instrument_id) {
+            self.subscriptions_mark_prices.remove(&cmd.instrument_id);
+            self.client.unsubscribe_mark_prices(cmd)?;
         }
-        self.subscriptions_mark_price.remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if !self.subscriptions_index_price.contains(&instrument_id) {
-            self.client
-                .subscribe_index_prices(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        if !self.subscriptions_index_prices.contains(&cmd.instrument_id) {
+            self.subscriptions_index_prices.insert(cmd.instrument_id);
+            self.client.subscribe_index_prices(cmd)?;
         }
-        self.subscriptions_index_price.insert(instrument_id);
+        Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command
-            .data_type
-            .instrument_id()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        if self.subscriptions_index_price.contains(&instrument_id) {
-            self.client
-                .unsubscribe_index_prices(&instrument_id, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_index_prices(&mut self, cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        if self.subscriptions_index_prices.contains(&cmd.instrument_id) {
+            self.subscriptions_index_prices.remove(&cmd.instrument_id);
+            self.client.unsubscribe_index_prices(cmd)?;
         }
-        self.subscriptions_index_price.remove(&instrument_id);
+        Ok(())
     }
 
-    fn subscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.bar_type();
-
-        if !self.subscriptions_bar.contains(&bar_type) {
-            self.client
-                .subscribe_bars(&bar_type, &command.params)
-                .expect("Error on subscribe");
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+        if !self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.insert(cmd.bar_type);
+            self.client.subscribe_bars(cmd)?;
         }
-        self.subscriptions_bar.insert(bar_type);
+        Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.bar_type();
-
-        if self.subscriptions_bar.contains(&bar_type) {
-            self.client
-                .subscribe_bars(&bar_type, &command.params)
-                .expect("Error on subscribe");
+    fn unsubscribe_bars(&mut self, cmd: UnsubscribeBars) -> anyhow::Result<()> {
+        if self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.remove(&cmd.bar_type);
+            self.client.unsubscribe_bars(cmd)?;
         }
-        self.subscriptions_bar.remove(&bar_type);
+        Ok(())
     }
 
-    pub fn subscribe(&mut self, command: SubscriptionCommand) {
-        let data_type = command.data_type;
-        if !self.subscriptions_generic.contains(&data_type) {
-            self.client
-                .subscribe(&data_type, &command.params)
-                .expect("Error on subscribe");
+    pub fn subscribe(&mut self, cmd: SubscribeData) -> anyhow::Result<()> {
+        if !self.subscriptions_generic.contains(&cmd.data_type) {
+            self.subscriptions_generic.insert(cmd.data_type.clone());
+            self.client.subscribe(cmd)?;
         }
-        self.subscriptions_generic.insert(data_type);
+        Ok(())
     }
 
-    pub fn unsubscribe(&mut self, command: SubscriptionCommand) {
-        let data_type = command.data_type;
-        if self.subscriptions_generic.contains(&data_type) {
-            self.client
-                .unsubscribe(&data_type, &command.params)
-                .expect("Error on unsubscribe");
+    pub fn unsubscribe(&mut self, cmd: UnsubscribeData) -> anyhow::Result<()> {
+        if self.subscriptions_generic.contains(&cmd.data_type) {
+            self.subscriptions_generic.remove(&cmd.data_type);
+            self.client.unsubscribe(cmd)?;
         }
-        self.subscriptions_generic.remove(&data_type);
+        Ok(())
     }
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
@@ -687,7 +527,7 @@ impl DataClientAdapter {
         let venue = req.data_type.venue();
         let start = req.data_type.start();
         let end = req.data_type.end();
-        let limit = req.data_type.limit();
+        let limit = req.data_type.limit().map(|l| NonZeroUsize::new(l).unwrap()); // TODO
 
         match req.data_type.type_name() {
             stringify!(InstrumentAny) => match (instrument_id, venue) {
