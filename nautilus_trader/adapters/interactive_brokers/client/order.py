@@ -19,6 +19,7 @@ from ibapi.commission_report import CommissionReport
 from ibapi.contract import Contract
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
+from ibapi.order_cancel import OrderCancel as IBOrderCancel
 from ibapi.order_state import OrderState as IBOrderState
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
@@ -70,7 +71,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             order.orderRef = f"{order.orderRef}:{order.orderId}"
             self._eclient.placeOrder(order.orderId, order.contract, order)
 
-    def cancel_order(self, order_id: int, manual_cancel_order_time: str = "") -> None:
+    def cancel_order(self, order_id: int, order_cancel: IBOrderCancel = None) -> None:
         """
         Cancel an order through the EClient.
 
@@ -78,11 +79,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         ----------
         order_id : int
             The unique identifier for the order to be canceled.
-        manual_cancel_order_time : str, optional
-            The timestamp indicating when the order was canceled manually.
+        order_cancel : OrderCancel object, optional.
+            The Order cancellation parameters when cancelling an order, when subject to CME Rule 576.
 
         """
-        self._eclient.cancelOrder(order_id, manual_cancel_order_time)
+        if order_cancel is None:
+            order_cancel = IBOrderCancel()
+        self._eclient.cancelOrder(order_id, order_cancel)
 
     def cancel_all_orders(self) -> None:
         """
