@@ -27,7 +27,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.85.1"
-version = "0.44.0"
+version = "0.45.0"
 edition = "2024"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -81,7 +81,7 @@ ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 
 # dev-dependencies
-axum = "0.8.1"
+axum = "0.8.3"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
