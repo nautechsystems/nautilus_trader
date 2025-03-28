@@ -43,9 +43,9 @@ cdef class ExecutionReportCommand(Command):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the command.
-    start : datetime
+    start : datetime, optional
         The start datetime (UTC) of request time range (inclusive).
-    end : datetime
+    end : datetime, optional
         The end datetime (UTC) of request time range.
         The inclusiveness depends on individual data client implementation.
     command_id : UUID4

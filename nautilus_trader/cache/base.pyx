@@ -16,6 +16,8 @@
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
@@ -59,6 +61,14 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `trade_ticks` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef list mark_prices(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `mark_prices` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef list index_prices(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `index_prices` must be implemented in the subclass")  # pragma: no cover
+
     cpdef list bars(self, BarType bar_type):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bars` must be implemented in the subclass")  # pragma: no cover
@@ -95,6 +105,14 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `trade_tick` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index=0):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `mark_price` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index=0):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `index_price` must be implemented in the subclass")  # pragma: no cover
+
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bar` must be implemented in the subclass")  # pragma: no cover
@@ -111,6 +129,14 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `trade_tick_count` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef int mark_price_count(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `mark_price_count` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef int index_price_count(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `index_price_count` must be implemented in the subclass")  # pragma: no cover
+
     cpdef int bar_count(self, BarType bar_type):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `bar_count` must be implemented in the subclass")  # pragma: no cover
@@ -126,6 +152,14 @@ cdef class CacheFacade:
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `has_trade_ticks` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef bint has_mark_prices(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `has_mark_prices` must be implemented in the subclass")  # pragma: no cover
+
+    cpdef bint has_index_prices(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `has_index_prices` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_bars(self, BarType bar_type):
         """Abstract method (implement in subclass)."""

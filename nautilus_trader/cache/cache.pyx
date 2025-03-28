@@ -47,6 +47,8 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport IndexPriceUpdate
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -112,19 +114,20 @@ cdef class Cache(CacheFacade):
 
         # Caches
         self._general: dict[str, bytes] = {}
-        self._xrate_symbols: dict[InstrumentId, str] = {}
-        self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
-        self._mark_prices: dict[InstrumentId, Price] = {}
-        self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
-        self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
-        self._order_books: dict[InstrumentId, OrderBook] = {}
-        self._own_order_books: dict[InstrumentId, nautilus_pyo3.OwnOrderBook] = {}
-        self._bars: dict[BarType, deque[Bar]] = {}
-        self._bars_bid: dict[InstrumentId, Bar] = {}
-        self._bars_ask: dict[InstrumentId, Bar] = {}
         self._currencies: dict[str, Currency] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._synthetics: dict[InstrumentId, SyntheticInstrument] = {}
+        self._order_books: dict[InstrumentId, OrderBook] = {}
+        self._own_order_books: dict[InstrumentId, nautilus_pyo3.OwnOrderBook] = {}
+        self._quote_ticks: dict[InstrumentId, deque[QuoteTick]] = {}
+        self._trade_ticks: dict[InstrumentId, deque[TradeTick]] = {}
+        self._xrate_symbols: dict[InstrumentId, str] = {}
+        self._mark_xrates: dict[tuple[Currency, Currency], double] = {}
+        self._mark_prices: dict[InstrumentId, MarkPriceUpdate] = {}
+        self._index_prices: dict[InstrumentId, IndexPriceUpdate] = {}
+        self._bars: dict[BarType, deque[Bar]] = {}
+        self._bars_bid: dict[InstrumentId, Bar] = {}
+        self._bars_ask: dict[InstrumentId, Bar] = {}
         self._accounts: dict[AccountId, Account] = {}
         self._orders: dict[ClientOrderId, Order] = {}
         self._order_lists: dict[OrderListId, OrderList] = {}
@@ -801,18 +804,19 @@ cdef class Cache(CacheFacade):
         self._log.debug("Resetting cache")
 
         self._general.clear()
+        self._currencies.clear()
+        self._synthetics.clear()
+        self._order_books.clear()
+        self._own_order_books.clear()
+        self._quote_ticks.clear()
+        self._trade_ticks.clear()
         self._xrate_symbols.clear()
         self._mark_xrates.clear()
         self._mark_prices.clear()
-        self._quote_ticks.clear()
-        self._trade_ticks.clear()
-        self._order_books.clear()
-        self._own_order_books.clear()
+        self._index_prices.clear()
         self._bars.clear()
         self._bars_bid.clear()
         self._bars_ask.clear()
-        self._currencies.clear()
-        self._synthetics.clear()
         self._accounts.clear()
         self._orders.clear()
         self._order_lists.clear()
@@ -1221,23 +1225,6 @@ cdef class Cache(CacheFacade):
         cdef InstrumentId instrument_id = InstrumentId.from_str(own_order_book.instrument_id.value)
         self._own_order_books[instrument_id] = own_order_book
 
-    cpdef void add_mark_price(self, InstrumentId instrument_id, Price price):
-        """
-        Add the given mark price to the cache.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the mark price.
-        price : Price
-            The mark price.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(price, "price")
-
-        self._mark_prices[instrument_id] = price
-
     cpdef void add_quote_tick(self, QuoteTick tick):
         """
         Add the given quote tick to the cache.
@@ -1281,6 +1268,48 @@ cdef class Cache(CacheFacade):
             self._trade_ticks[instrument_id] = ticks
 
         ticks.appendleft(tick)
+
+    cpdef void add_mark_price(self, MarkPriceUpdate mark_price):
+        """
+        Add the given mark price update to the cache.
+
+        Parameters
+        ----------
+        mark_price : MarkPriceUpdate
+            The mark price update to add.
+
+        """
+        Condition.not_none(mark_price, "mark_price")
+
+        mark_prices = self._mark_prices.get(mark_price.instrument_id)
+
+        if not mark_prices:
+            # The instrument_id was not registered
+            mark_prices = deque(maxlen=self.tick_capacity)
+            self._mark_prices[mark_price.instrument_id] = mark_prices
+
+        mark_prices.appendleft(mark_price)
+
+    cpdef void add_index_price(self, IndexPriceUpdate index_price):
+        """
+        Add the given index price update to the cache.
+
+        Parameters
+        ----------
+        index_price : IndexPriceUpdate
+            The index price update to add.
+
+        """
+        Condition.not_none(index_price, "index_price")
+
+        index_prices = self._index_prices.get(index_price.instrument_id)
+
+        if not index_prices:
+            # The instrument_id was not registered
+            index_prices = deque(maxlen=self.tick_capacity)
+            self._index_prices[index_price.instrument_id] = index_prices
+
+        index_prices.appendleft(index_price)
 
     cpdef void add_bar(self, Bar bar):
         """
@@ -2238,6 +2267,42 @@ cdef class Cache(CacheFacade):
 
         return list(self._trade_ticks.get(instrument_id, []))
 
+    cpdef list mark_prices(self, InstrumentId instrument_id):
+        """
+        Return mark prices for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark prices to get.
+
+        Returns
+        -------
+        list[MarkPriceUpdate]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._mark_prices.get(instrument_id, []))
+
+    cpdef list index_prices(self, InstrumentId instrument_id):
+        """
+        Return index prices for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark prices to get.
+
+        Returns
+        -------
+        list[IndexPriceUpdate]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._index_prices.get(instrument_id, []))
+
     cpdef list bars(self, BarType bar_type):
         """
         Return bars for the given bar type.
@@ -2286,7 +2351,9 @@ cdef class Cache(CacheFacade):
             if quote_tick is not None:
                 return quote_tick.extract_price(price_type)
         elif price_type == PriceType.MARK:
-            return self._mark_prices.get(instrument_id)
+            mark_price = self.mark_price(instrument_id)
+            if mark_price is not None:
+                return mark_price.value
 
         # Fall back to bar pricing for bid, ask and last
         cdef Bar bar
@@ -2502,6 +2569,74 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
+    cpdef MarkPriceUpdate mark_price(self, InstrumentId instrument_id, int index = 0):
+        """
+        Return the mark price for the given instrument ID at the given index (if found).
+
+        Last mark price if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark price to get.
+        index : int, optional
+            The index for the mark price to get.
+
+        Returns
+        -------
+        MarkPriceUpdate or ``None``
+            If no mark prices or no mark price at index then returns ``None``.
+
+        Notes
+        -----
+        Reverse indexed (most recent mark price at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        mark_prices = self._mark_prices.get(instrument_id)
+        if not mark_prices:
+            return None
+
+        try:
+            return mark_prices[index]
+        except IndexError:
+            return None
+
+    cpdef IndexPriceUpdate index_price(self, InstrumentId instrument_id, int index = 0):
+        """
+        Return the index price for the given instrument ID at the given index (if found).
+
+        Last index price if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the index price to get.
+        index : int, optional
+            The index for the index price to get.
+
+        Returns
+        -------
+        IndexPriceUpdate or ``None``
+            If no index prices or no index price at index then returns ``None``.
+
+        Notes
+        -----
+        Reverse indexed (most recent index price at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        index_prices = self._index_prices.get(instrument_id)
+        if not index_prices:
+            return None
+
+        try:
+            return index_prices[index]
+        except IndexError:
+            return None
+
     cpdef Bar bar(self, BarType bar_type, int index = 0):
         """
         Return the bar for the given bar type at the given index (if found).
@@ -2596,6 +2731,42 @@ cdef class Cache(CacheFacade):
 
         return len(self._trade_ticks.get(instrument_id, []))
 
+    cpdef int mark_price_count(self, InstrumentId instrument_id):
+        """
+        The count of mark prices for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark prices.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._mark_prices.get(instrument_id, []))
+
+    cpdef int index_price_count(self, InstrumentId instrument_id):
+        """
+        The count of index prices for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the index prices.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._index_prices.get(instrument_id, []))
+
     cpdef int bar_count(self, BarType bar_type):
         """
         The count of bars for the given bar type.
@@ -2668,6 +2839,44 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         return self.trade_tick_count(instrument_id) > 0
+
+    cpdef bint has_mark_prices(self, InstrumentId instrument_id):
+        """
+        Return a value indicating whether the cache has mark prices for the
+        given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the mark prices.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.mark_price_count(instrument_id) > 0
+
+    cpdef bint has_index_prices(self, InstrumentId instrument_id):
+        """
+        Return a value indicating whether the cache has index prices for the
+        given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the index prices.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.index_price_count(instrument_id) > 0
 
     cpdef bint has_bars(self, BarType bar_type):
         """

@@ -25,7 +25,7 @@ use super::{
 use crate::types::{Price, Quantity};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[enum_dispatch]
+#[enum_dispatch(Instrument)]
 pub enum InstrumentAny {
     Betting(BettingInstrument),
     BinaryOption(BinaryOption),

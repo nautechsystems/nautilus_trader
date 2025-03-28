@@ -1,0 +1,29 @@
+[
+  {
+    "asset_id": "1",
+    "asset_uuid": "2b92315d-eab7-5bef-84fa-089a131333f5",
+    "asset_name": "USDC",
+    "status": "ACTIVE",
+    "collateral_weight": 1.0,
+    "supported_networks_enabled": false,
+    "min_borrow_qty": "10",
+    "max_borrow_qty": "1000000",
+    "loan_collateral_requirement_multiplier": 1.0,
+    "ecosystem_collateral_limit_breached": false,
+    "loan_initial_margin": "0.1",
+    "max_loan_leverage": "3"
+  },
+  {
+    "asset_id": "118059611751202816",
+    "asset_uuid": "5b71fc48-3dd3-540c-809b-f8c94d0e68b5",
+    "asset_name": "BTC",
+    "status": "ACTIVE",
+    "collateral_weight": 0.9,
+    "supported_networks_enabled": true,
+    "min_borrow_qty": "0",
+    "max_borrow_qty": "0",
+    "loan_collateral_requirement_multiplier": 0.0,
+    "account_collateral_limit": "0",
+    "ecosystem_collateral_limit_breached": false
+  }
+]

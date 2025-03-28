@@ -93,7 +93,7 @@ impl ExponentialBackoff {
     }
 
     /// Reset the backoff to its initial state.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.delay_current = self.delay_initial;
     }
 

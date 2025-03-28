@@ -15,10 +15,7 @@
 
 //! An `OrderBookDepth10` aggregated top-of-book data type with a fixed depth of 10 levels per side.
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-};
+use std::{collections::HashMap, fmt::Display};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
@@ -181,7 +178,7 @@ impl OrderBookDepth10 {
 
 // TODO: Exact format for Debug and Display TBD
 impl Display for OrderBookDepth10 {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},flags={},sequence={},ts_event={},ts_init={}",

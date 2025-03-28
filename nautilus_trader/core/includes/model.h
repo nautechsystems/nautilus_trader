@@ -723,31 +723,31 @@ typedef enum RecordFlag {
  */
 typedef enum TimeInForce {
     /**
-     * Good-Till-Canceled (GTC) - the order remains active until canceled.
+     * Good Till Cancel (GTC) - Remains active until canceled.
      */
     GTC = 1,
     /**
-     * Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+     * Immediate or Cancel (IOC) - Executes immediately to the extent possible, with any unfilled portion canceled.
      */
     IOC = 2,
     /**
-     * Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+     * Fill or Kill (FOK) - Executes in its entirety immediately or is canceled if full execution is not possible.
      */
     FOK = 3,
     /**
-     * Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
+     * Good Till Date (GTD) - Remains active until the specified expiration date or time is reached.
      */
     GTD = 4,
     /**
-     * Day - the order is active until the end of the current trading session.
+     * Day - Remains active until the close of the current trading session.
      */
     DAY = 5,
     /**
-     * At the Opening (ATO) - the order is scheduled to be executed at the market's opening.
+     * At the Opening (ATO) - Executes at the market opening or expires if not filled.
      */
     AT_THE_OPEN = 6,
     /**
-     * At the Closing (ATC) - the order is scheduled to be executed at the market's closing.
+     * At the Closing (ATC) - Executes at the market close or expires if not filled.
      */
     AT_THE_CLOSE = 7,
 } TimeInForce;
@@ -1088,7 +1088,7 @@ typedef struct OrderBookDepth10_t {
 } OrderBookDepth10_t;
 
 /**
- * Represents a single quote tick in a market.
+ * Represents a quote tick in a market.
  */
 typedef struct QuoteTick_t {
     /**
@@ -1139,7 +1139,7 @@ typedef struct TradeId_t {
 } TradeId_t;
 
 /**
- * Represents a single trade tick in a market.
+ * Represents a trade tick in a market.
  */
 typedef struct TradeTick_t {
     /**

@@ -36,7 +36,8 @@ use nautilus_common::{
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
     msgbus::{
-        MessageBus, {self},
+        self, get_message_bus,
+        switchboard::{self},
     },
 };
 use nautilus_core::UUID4;
@@ -65,7 +66,6 @@ use crate::{
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, Rc<dyn ExecutionClient>>,
     default_client: Option<Rc<dyn ExecutionClient>>,
     routing_map: HashMap<Venue, ClientId>,
@@ -79,14 +79,12 @@ impl ExecutionEngine {
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
         config: Option<ExecutionEngineConfig>,
     ) -> Self {
-        let trader_id = msgbus.borrow().trader_id;
+        let trader_id = get_message_bus().borrow().trader_id;
         Self {
             clock: clock.clone(),
             cache,
-            msgbus,
             clients: HashMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
@@ -145,6 +143,10 @@ impl ExecutionEngine {
     pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
+    }
+
+    pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
+        self.clients.get(client_id).cloned()
     }
 
     pub fn register_venue_routing(
@@ -475,11 +477,8 @@ impl ExecutionEngine {
             }
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        if msgbus.has_backing {
-            let topic = msgbus
-                .switchboard
-                .get_order_snapshots_topic(order.client_order_id());
+        if get_message_bus().borrow().has_backing {
+            let topic = switchboard::get_order_snapshots_topic(order.client_order_id());
             msgbus::publish(&topic, order);
         }
     }
@@ -494,10 +493,7 @@ impl ExecutionEngine {
         //     position.unrealized_pnl(last)
         // }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_positions_snapshots_topic(position.id);
+        let topic = switchboard::get_positions_snapshots_topic(position.id);
         msgbus::publish(&topic, position);
     }
 
@@ -665,10 +661,7 @@ impl ExecutionEngine {
             log::error!("Error updating order in cache: {e}");
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_orders_topic(event.strategy_id());
+        let topic = switchboard::get_event_orders_topic(event.strategy_id());
         msgbus::publish(&topic, order);
 
         if self.config.snapshot_orders {
@@ -699,7 +692,7 @@ impl ExecutionEngine {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
-            log::error!("Cannot handle order fill: no position ID found for fill {fill}",);
+            log::error!("Cannot handle order fill: no position ID found for fill {fill}");
             return;
         };
 
@@ -765,10 +758,7 @@ impl ExecutionEngine {
 
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_positions_topic(event.strategy_id);
+        let topic = switchboard::get_event_positions_topic(event.strategy_id);
         msgbus::publish(&topic, &event);
 
         Ok(position)
@@ -786,10 +776,7 @@ impl ExecutionEngine {
             self.create_position_state_snapshot(position);
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_positions_topic(position.strategy_id);
+        let topic = switchboard::get_event_positions_topic(position.strategy_id);
         let ts_init = self.clock.borrow().timestamp_ns();
 
         if position.is_closed() {
@@ -1056,10 +1043,7 @@ impl ExecutionEngine {
             return;
         }
 
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus
-            .switchboard
-            .get_event_orders_topic(order.strategy_id());
+        let topic = switchboard::get_event_orders_topic(order.strategy_id());
         msgbus::publish(&topic, &denied);
 
         if self.config.snapshot_orders {
@@ -1107,12 +1091,11 @@ mod tests {
 
     // Helpers
     fn _get_exec_engine(
-        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<TestClock>>,
         config: Option<ExecutionEngineConfig>,
     ) -> ExecutionEngine {
-        ExecutionEngine::new(clock, cache, msgbus, config)
+        ExecutionEngine::new(clock, cache, config)
     }
 
     // TODO: After Implementing ExecutionClient & Strategy

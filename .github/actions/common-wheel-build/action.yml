@@ -10,11 +10,13 @@ runs:
   using: "composite"
   steps:
     - name: Update version in pyproject.toml
+      if: github.ref != 'refs/heads/master'
       shell: bash
       run: |
         bash ./scripts/ci/update-pyproject-version.sh
 
     - name: Generate updated lock file
+      if: github.ref != 'refs/heads/master'
       shell: bash
       run: uv lock --no-upgrade
 

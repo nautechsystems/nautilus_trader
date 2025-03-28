@@ -23,6 +23,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -136,8 +137,13 @@ class TestPortfolioMarkPrices:
         )
 
         # Add a mark price to the cache for the portfolio to look up
-        mark_price = Price.from_str("10510.00")
-        self.cache.add_mark_price(BTCUSDT_BINANCE.id, mark_price)
+        mark_price = MarkPriceUpdate(
+            instrument_id=BTCUSDT_BINANCE.id,
+            value=Price.from_str("10510.00"),
+            ts_event=0,
+            ts_init=1,
+        )
+        self.cache.add_mark_price(mark_price)
 
         # Create a position for the filled order and update the portfolio
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)

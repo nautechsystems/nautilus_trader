@@ -15,7 +15,6 @@
 
 use std::{fs, fs::File, path::PathBuf};
 
-use anyhow::{Result, anyhow};
 use arrow::record_batch::RecordBatch;
 use parquet::{
     arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder},
@@ -26,30 +25,23 @@ use parquet::{
     },
 };
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.serialization.enums"
-    )
-)]
-pub enum ParquetWriteMode {
-    Append = 0,
-    Prepend = 1,
-    Overwrite = 2,
-    NewFile = 3,
-}
+use crate::enums::ParquetWriteMode;
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
 pub fn write_batch_to_parquet(
     batch: RecordBatch,
     filepath: &PathBuf,
     compression: Option<parquet::basic::Compression>,
+    max_row_group_size: Option<usize>,
     write_mode: Option<ParquetWriteMode>,
-) -> Result<()> {
-    write_batches_to_parquet(&[batch], filepath, compression, None, write_mode)
+) -> anyhow::Result<()> {
+    write_batches_to_parquet(
+        &[batch],
+        filepath,
+        compression,
+        max_row_group_size,
+        write_mode,
+    )
 }
 
 pub fn write_batches_to_parquet(
@@ -58,7 +50,7 @@ pub fn write_batches_to_parquet(
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
     write_mode: Option<ParquetWriteMode>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let used_write_mode = write_mode.unwrap_or(ParquetWriteMode::Overwrite);
 
     // Ensure the parent directory exists
@@ -75,30 +67,17 @@ pub fn write_batches_to_parquet(
         let existing_batches: Vec<RecordBatch> = reader.build()?.collect::<Result<Vec<_>, _>>()?;
 
         if !existing_batches.is_empty() {
-            // Get the schema of the existing data.
-            let existing_schema = existing_batches[0].schema();
-
-            // Cast new batches to the existing schema.
-            let mut cast_batches: Vec<RecordBatch> = Vec::with_capacity(batches.len());
-
-            for batch in batches {
-                if batch.schema() != existing_schema {
-                    let cast_batch = batch.clone().with_schema(existing_schema.clone())?; // Attempt to cast.
-                    cast_batches.push(cast_batch);
-                } else {
-                    cast_batches.push(batch.clone()); // No cast needed, just clone.
-                }
-            }
+            let mut combined = Vec::with_capacity(existing_batches.len() + batches.len());
+            let batches: Vec<RecordBatch> = batches.to_vec();
 
             // Combine batches in the appropriate order
             let combined_batches = if used_write_mode == ParquetWriteMode::Append {
-                let mut combined = existing_batches;
-                combined.extend(cast_batches);
+                combined.extend(existing_batches);
+                combined.extend(batches);
                 combined
             } else {
                 // Prepend mode
-                let mut combined = Vec::with_capacity(cast_batches.len() + existing_batches.len());
-                combined.extend(cast_batches);
+                combined.extend(batches.clone());
                 combined.extend(existing_batches);
                 combined
             };
@@ -121,7 +100,7 @@ pub fn combine_data_files(
     column_name: &str,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let n_files = parquet_files.len();
 
     if n_files <= 1 {
@@ -141,9 +120,9 @@ pub fn combine_data_files(
     // Check for timestamp intersection
     for i in 1..n_files {
         if min_max_per_file[ordering[i - 1]].1 >= min_max_per_file[ordering[i]].0 {
-            return Err(anyhow!(
+            anyhow::bail!(
                 "Merging not safe due to intersection of timestamps between files. Aborting."
-            ));
+            );
         }
     }
 
@@ -161,7 +140,7 @@ pub fn combine_parquet_files(
     file_list: Vec<PathBuf>,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     if file_list.len() <= 1 {
         return Ok(());
     }
@@ -198,7 +177,7 @@ fn write_batches_to_file(
     filepath: &PathBuf,
     compression: Option<parquet::basic::Compression>,
     max_row_group_size: Option<usize>,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let file = File::create(filepath)?;
     let writer_props = WriterProperties::builder()
         .set_compression(compression.unwrap_or(parquet::basic::Compression::SNAPPY))
@@ -214,7 +193,10 @@ fn write_batches_to_file(
     Ok(())
 }
 
-pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> Result<(i64, i64)> {
+pub fn min_max_from_parquet_metadata(
+    file_path: &PathBuf,
+    column_name: &str,
+) -> anyhow::Result<(i64, i64)> {
     // Open the parquet file
     let file = File::open(file_path)?;
     let reader = SerializedFileReader::new(file)?;
@@ -251,14 +233,12 @@ pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> 
                             }
                         }
                     } else {
-                        return Err(anyhow!(
-                            "Warning: Column name '{column_name}' is not of type i64."
-                        ));
+                        anyhow::bail!("Warning: Column name '{column_name}' is not of type i64.");
                     }
                 } else {
-                    return Err(anyhow!(
+                    anyhow::bail!(
                         "Warning: Statistics not available for column '{column_name}' in row group {i}."
-                    ));
+                    );
                 }
             }
         }
@@ -268,8 +248,8 @@ pub fn min_max_from_parquet_metadata(file_path: &PathBuf, column_name: &str) -> 
     if let (Some(min), Some(max)) = (overall_min_value, overall_max_value) {
         Ok((min, max))
     } else {
-        Err(anyhow!(
+        anyhow::bail!(
             "Column '{column_name}' not found or has no Int64 statistics in any row group."
-        ))
+        )
     }
 }

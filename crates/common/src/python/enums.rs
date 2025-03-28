@@ -19,7 +19,76 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
 
-use crate::enums::{LogColor, LogLevel};
+use crate::enums::{Environment, LogColor, LogLevel};
+
+#[pymethods]
+impl Environment {
+    #[new]
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(&t, value)
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(Environment),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub const fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "BACKTEST")]
+    const fn py_backtest() -> Self {
+        Self::Backtest
+    }
+
+    #[classattr]
+    #[pyo3(name = "SANDBOX")]
+    const fn py_sandbox() -> Self {
+        Self::Sandbox
+    }
+
+    #[classattr]
+    #[pyo3(name = "LIVE")]
+    const fn py_live() -> Self {
+        Self::Live
+    }
+}
 
 #[pymethods]
 impl LogLevel {

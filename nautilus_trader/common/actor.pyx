@@ -37,6 +37,7 @@ from nautilus_trader.common.enums import UpdateCatalogMode
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
+from nautilus_trader.core import nautilus_pyo3
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -67,18 +68,22 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -87,8 +92,10 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -438,6 +445,38 @@ cdef class Actor(Component):
         ----------
         tick : TradeTick
             The tick received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_mark_price(self, MarkPriceUpdate mark_price):
+        """
+        Actions to be performed when running and receives a mark price update.
+
+        Parameters
+        ----------
+        mark_price : MarkPriceUpdate
+            The mark price update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_index_price(self, IndexPriceUpdate index_price):
+        """
+        Actions to be performed when running and receives an index price update.
+
+        Parameters
+        ----------
+        index_price : IndexPriceUpdate
+            The index price update received.
 
         Warnings
         --------
@@ -1484,6 +1523,94 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void subscribe_mark_prices(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `MarkPriceUpdate` data for the given instrument ID.
+
+        Once subscribed, any matching mark price updates published on the message bus are forwarded
+        to the `on_mark_price` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.mark_prices"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_mark_price,
+        )
+
+        cdef SubscribeMarkPrices command = SubscribeMarkPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_index_prices(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to streaming `IndexPriceUpdate` data for the given instrument ID.
+
+        Once subscribed, any matching index price updates published on the message bus are forwarded
+        to the `on_index_price` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.index_prices"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_index_price,
+        )
+
+        cdef SubscribeIndexPrices command = SubscribeIndexPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void subscribe_bars(
         self,
         BarType bar_type,
@@ -1899,6 +2026,88 @@ cdef class Actor(Component):
         )
 
         cdef UnsubscribeTradeTicks command = UnsubscribeTradeTicks(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_mark_prices(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `MarkPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.mark_prices"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_mark_price,
+        )
+
+        cdef UnsubscribeMarkPrices command = UnsubscribeMarkPrices(
+            instrument_id=instrument_id,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_index_prices(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe from streaming `IndexPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.subscribe(
+            topic=f"data.index_prices"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_index_price,
+        )
+
+        cdef UnsubscribeIndexPrices command = UnsubscribeIndexPrices(
             instrument_id=instrument_id,
             client_id=client_id,
             venue=instrument_id.venue,
@@ -3124,6 +3333,56 @@ cdef class Actor(Component):
                 self.on_trade_tick(tick)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(tick)}", e)
+                raise
+
+    cpdef void handle_mark_price(self, MarkPriceUpdate mark_price):
+        """
+        Handle the given mark price update.
+
+        If state is ``RUNNING`` then passes to `on_mark_price`.
+
+        Parameters
+        ----------
+        mark_price : MarkPriceUpdate
+            The mark price update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(mark_price, "mark_price")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_mark_price(mark_price)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(mark_price)}", e)
+                raise
+
+    cpdef void handle_index_price(self, IndexPriceUpdate index_price):
+        """
+        Handle the given index price update.
+
+        If state is ``RUNNING`` then passes to `on_index_price`.
+
+        Parameters
+        ----------
+        index_price : IndexPriceUpdate
+            The index price update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(index_price, "index_price")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_index_price(index_price)
+            except Exception as e:
+                self.log.exception(f"Error on handling {repr(index_price)}", e)
                 raise
 
     @cython.boundscheck(False)

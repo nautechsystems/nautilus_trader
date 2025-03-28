@@ -22,6 +22,7 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -140,8 +141,8 @@ cdef class Strategy(Actor):
     cpdef void cancel_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
     cpdef void cancel_orders(self, list orders, ClientId client_id=*, dict[str, object] params=*)
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void close_position(self, Position position, ClientId client_id=*, list[str] tags=*, bint reduce_only=*, dict[str, object] params=*)
-    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, bint reduce_only=*, dict[str, object] params=*)
+    cpdef void close_position(self, Position position, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, dict[str, object] params=*)
+    cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, list[str] tags=*, TimeInForce time_in_force=*, bint reduce_only=*, dict[str, object] params=*)
     cpdef void query_order(self, Order order, ClientId client_id=*, dict[str, object] params=*)
     cdef ModifyOrder _create_modify_order(
         self,

@@ -25,13 +25,13 @@ uv sync --extra bybit
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/).
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The Bybit adapter includes multiple components, which can be used together or separately depending
+on the use case.
 
 - `BybitHttpClient`: Low-level HTTP API connectivity.
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity.
@@ -99,7 +99,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 | `STOP_LIMIT`           | ✓                    | ✓                                       |
 | `MARKET_IF_TOUCHED`    | ✓                    | ✓                                       |
 | `LIMIT_IF_TOUCHED`     | ✓                    | ✓                                       |
-| `TRAILING_STOP_MARKET` |                      | ✓                                       |
+| `TRAILING_STOP_MARKET` | Not supported        | ✓                                       |
 
 ### Limitations for SPOT
 
@@ -201,6 +201,10 @@ For Bybit demo clients, you can set:
 For Bybit testnet clients, you can set:
 - `BYBIT_TESTNET_API_KEY`
 - `BYBIT_TESTNET_API_SECRET`
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.

@@ -21,13 +21,25 @@ uv sync --extra binance
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full Binance integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+The Binance integration supports the following product types:
+
+- Spot markets (including Binance US)
+- USDT-Margined Futures
+- Coin-Margined Futures
+
+:::note
+Margin accounts are not fully supported at this time due to limited developer testing.
+Contributions via [GitHub issue](https://github.com/nautechsystems/nautilus_trader/issues) reports
+or pull requests to enhance margin account functionality are encouraged.
+:::
+
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The Binance adapter includes multiple components, which can be used together or separately depending
+on the use case.
 
 - `BinanceHttpClient`: Low-level HTTP API connectivity.
 - `BinanceWebSocketClient`: Low-level WebSocket API connectivity.
@@ -69,15 +81,15 @@ E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would 
 |------------------------|---------------------------------|---------------------------------|-------------------|
 | `MARKET`               | ✓                               | ✓                               | ✓                 |
 | `LIMIT`                | ✓                               | ✓                               | ✓                 |
-| `STOP_MARKET`          |                                 | ✓                               | ✓                 |
+| `STOP_MARKET`          | Not supported                   | ✓                               | ✓                 |
 | `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
-| `MARKET_IF_TOUCHED`    |                                 |                                 | ✓                 |
+| `MARKET_IF_TOUCHED`    | Not supported                   | Not supported                   | ✓                 |
 | `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
-| `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
+| `TRAILING_STOP_MARKET` | Not supported                   | Not supported                   | ✓                 |
 
 ### Trailing stops
 
-Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292).
+Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
 This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price can optionally be set using the `trigger_price` value.
 
 Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
@@ -86,7 +98,7 @@ The activated price is simply the price at which the order will begin trailing b
 When submitting trailing stop orders from your strategy, you have two options:
 
 1. Use the `trigger_price` to manually set the activation price.
-2. Leave the `trigger_price` as `None`, making the trailing action immediately "active".
+2. Leave the `trigger_price` as `None`, activating the trailing mechanism immediately.
 
 You must also have at least *one* of the following:
 
@@ -181,6 +193,10 @@ using the `BinanceAccountType` enum. The account type options are:
 - `ISOLATED_MARGIN` (Margin assigned to a single position)
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
 
 ### Base url overrides
 

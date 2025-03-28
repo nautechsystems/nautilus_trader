@@ -93,20 +93,20 @@ class DYDXTimeInForce(Enum):
     Represents a dYdX time in force setting.
     """
 
-    # GTT represents Good-Til-Time, where an order will first match with existing orders on the book
+    # GTT represents Good Til Time, where an order will first match with existing orders on the book
     # and any remaining size will be added to the book as a maker order, which will expire at a
     # given expiry time.
-    GTT = "GTT"  # Good-Til-Time
+    GTT = "GTT"  # Good Til Time
 
-    # FOK represents Fill-Or-KILl where it's enforced that an order will either be filled
+    # FOK represents Fill or KILl where it's enforced that an order will either be filled
     # completely and immediately by maker orders on the book or canceled if the entire amount can't
     # be filled.
-    FOK = "FOK"  # Fill-Or-Kill
+    FOK = "FOK"  # Fill or Kill
 
-    # IOC represents Immediate-Or-Cancel, where it's enforced that an order only be matched with
+    # IOC represents Immediate or Cancel, where it's enforced that an order only be matched with
     # maker orders on the book. If the order has remaining size after matching with existing orders
     # on the book, the remaining size is not placed on the book.
-    IOC = "IOC"  # Immediate-Or-Cancel
+    IOC = "IOC"  # Immediate or Cancel
 
 
 @unique

@@ -89,6 +89,7 @@ impl Quota {
 impl Quota {
     /// Construct a quota for a number of cells per second. The given number of cells is also
     /// assumed to be the maximum burst size.
+    #[must_use]
     pub const fn per_second(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_secs(1).as_nanos() / (max_burst.get() as u128);
         Self {
@@ -99,6 +100,7 @@ impl Quota {
 
     /// Construct a quota for a number of cells per 60-second period. The given number of cells is
     /// also assumed to be the maximum burst size.
+    #[must_use]
     pub const fn per_minute(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_secs(60).as_nanos() / (max_burst.get() as u128);
         Self {
@@ -109,6 +111,7 @@ impl Quota {
 
     /// Construct a quota for a number of cells per 60-minute (3600-second) period. The given number
     /// of cells is also assumed to be the maximum burst size.
+    #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns =
             Duration::from_secs(60 * 60).as_nanos() / (max_burst.get() as u128);
@@ -126,6 +129,7 @@ impl Quota {
     /// necessary.
     ///
     /// If the time interval is zero, returns `None`.
+    #[must_use]
     pub const fn with_period(replenish_1_per: Duration) -> Option<Self> {
         if replenish_1_per.as_nanos() == 0 {
             None
@@ -139,6 +143,7 @@ impl Quota {
 
     /// Adjusts the maximum burst size for a quota to construct a rate limiter with a capacity
     /// for at most the given number of cells.
+    #[must_use]
     pub const fn allow_burst(self, max_burst: NonZeroU32) -> Self {
         Self { max_burst, ..self }
     }
@@ -161,6 +166,7 @@ impl Quota {
         note = "This constructor is often confusing and non-intuitive. \
     Use the `per_(interval)` / `with_period` and `max_burst` constructors instead."
     )]
+    #[must_use]
     pub fn new(max_burst: NonZeroU32, replenish_all_per: Duration) -> Option<Self> {
         if replenish_all_per.as_nanos() == 0 {
             None
@@ -177,16 +183,19 @@ impl Quota {
 impl Quota {
     /// The time it takes for a rate limiter with an exhausted burst budget to replenish
     /// a single element.
+    #[must_use]
     pub const fn replenish_interval(&self) -> Duration {
         self.replenish_1_per
     }
 
     /// The maximum number of cells that can be allowed in one burst.
+    #[must_use]
     pub const fn burst_size(&self) -> NonZeroU32 {
         self.max_burst
     }
 
     /// The time it takes to replenish the entire maximum burst size.
+    #[must_use]
     pub const fn burst_size_replenished_in(&self) -> Duration {
         let fill_in_ns = self.replenish_1_per.as_nanos() * self.max_burst.get() as u128;
         Duration::from_nanos(fill_in_ns as u64)

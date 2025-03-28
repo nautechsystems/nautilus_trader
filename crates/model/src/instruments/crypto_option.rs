@@ -149,9 +149,9 @@ impl CryptoOption {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment, stringify!(price_increment))?;
         if let Some(multiplier) = multiplier {
-            check_positive_quantity(multiplier.raw, stringify!(multiplier.raw))?;
+            check_positive_quantity(multiplier, stringify!(multiplier))?;
         }
 
         Ok(Self {
@@ -306,7 +306,7 @@ impl Instrument for CryptoOption {
     }
 
     fn isin(&self) -> Option<Ustr> {
-        None
+        None // Not applicable
     }
 
     fn option_kind(&self) -> Option<OptionKind> {
@@ -326,7 +326,7 @@ impl Instrument for CryptoOption {
     }
 
     fn exchange(&self) -> Option<Ustr> {
-        None
+        None // Not applicable (these are tradfi MICs)
     }
 
     fn price_precision(&self) -> u8 {
@@ -334,7 +334,7 @@ impl Instrument for CryptoOption {
     }
 
     fn size_precision(&self) -> u8 {
-        0
+        self.size_precision
     }
 
     fn price_increment(&self) -> Price {
@@ -342,7 +342,7 @@ impl Instrument for CryptoOption {
     }
 
     fn size_increment(&self) -> Quantity {
-        Quantity::from(1)
+        self.size_increment
     }
 
     fn multiplier(&self) -> Quantity {

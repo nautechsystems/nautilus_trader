@@ -19,7 +19,6 @@ use std::{
     rc::Rc,
 };
 
-use anyhow::Result;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -125,7 +124,7 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
-    pub fn on_start(&mut self) -> Result<()> {
+    pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
             .borrow()

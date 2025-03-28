@@ -50,10 +50,10 @@ pub fn get_exchange_rate(
     }
 
     if quotes_bid.is_empty() || quotes_ask.is_empty() {
-        return Err(anyhow::anyhow!("Quote maps must not be empty"));
+        anyhow::bail!("Quote maps must not be empty");
     }
     if quotes_bid.len() != quotes_ask.len() {
-        return Err(anyhow::anyhow!("Quote maps must have equal lengths"));
+        anyhow::bail!("Quote maps must have equal lengths");
     }
 
     // Build effective quotes based on the requested price type

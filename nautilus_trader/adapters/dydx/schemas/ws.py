@@ -56,6 +56,7 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -724,6 +725,15 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
             else Price(0, price_precision)
         )
 
+        trigger_type = (
+            TriggerType.DEFAULT if self.triggerPrice is not None else TriggerType.NO_TRIGGER
+        )
+        trigger_price = (
+            Price(Decimal(self.triggerPrice), price_precision)
+            if self.triggerPrice is not None
+            else None
+        )
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=DYDXSymbol(self.ticker).to_instrument_id(),
@@ -749,6 +759,8 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
             report_id=report_id,
             ts_accepted=0,
             ts_init=ts_init,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
         )
 
 

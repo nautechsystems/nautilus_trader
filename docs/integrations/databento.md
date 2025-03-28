@@ -14,7 +14,7 @@ The capabilities of this adapter include:
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
 With careful requests, this is more than enough for testing and evaluation purposes.
-It's recommended you make use of the [/metadata.get_cost](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost) endpoint.
+We recommend you make use of the [/metadata.get_cost](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost) endpoint.
 :::
 
 ## Overview
@@ -28,6 +28,7 @@ adapter are compiled as static libraries and linked automatically during the bui
 :::
 
 The following adapter classes are available:
+
 - `DatabentoDataLoader`: Loads Databento Binary Encoding (DBN) data from files.
 - `DatabentoInstrumentProvider`: Integrates with the Databento API (HTTP) to provide latest or historical instrument definitions.
 - `DatabentoHistoricalClient`: Integrates with the Databento API (HTTP) for historical market data requests.
@@ -41,12 +42,12 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
 
 ## Databento documentation
 
 Databento provides extensive documentation for new users which can be found in the [Databento new users guide](https://databento.com/docs/quickstart/new-user-guides).
-It's recommended you also refer to the Databento documentation in conjunction with this NautilusTrader integration guide.
+We recommend also referring to the Databento documentation in conjunction with this NautilusTrader integration guide.
 
 ## Databento Binary Encoding (DBN)
 
@@ -391,3 +392,7 @@ node.build()
 - `instrument_ids`: The instrument IDs to request instrument definitions for on start.
 - `timeout_initial_load`: The timeout (seconds) to wait for instruments to load (concurrently per dataset).
 - `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the initial snapshot and then all deltas.
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::

@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::{
-    Environment, cache::CacheConfig, logging::logger::LoggerConfig,
+    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
 };
 use nautilus_core::UUID4;
@@ -112,6 +112,32 @@ impl NautilusKernelConfig {
             timeout_post_stop: timeout_post_stop.unwrap_or(10),
             timeout_shutdown: timeout_shutdown.unwrap_or(5),
             logging: logging.unwrap_or_default(),
+        }
+    }
+}
+
+impl Default for NautilusKernelConfig {
+    fn default() -> Self {
+        Self {
+            environment: Environment::Backtest,
+            trader_id: TraderId::default(),
+            load_state: false,
+            save_state: false,
+            logging: LoggerConfig::default(),
+            instance_id: None,
+            timeout_connection: 60,
+            timeout_reconciliation: 30,
+            timeout_portfolio: 10,
+            timeout_disconnection: 10,
+            timeout_post_stop: 10,
+            timeout_shutdown: 5,
+            cache: None,
+            msgbus: None,
+            data_engine: None,
+            risk_engine: None,
+            exec_engine: None,
+            portfolio: None,
+            streaming: None,
         }
     }
 }

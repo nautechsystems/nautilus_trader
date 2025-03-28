@@ -550,7 +550,6 @@ cdef class Instrument(Data):
             list prices = []
             Price price
             int i
-
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_bid_price(value=value, n=i)
@@ -602,7 +601,6 @@ cdef class Instrument(Data):
             list prices = []
             Price price
             int i
-
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_ask_price(value=value, n=i)

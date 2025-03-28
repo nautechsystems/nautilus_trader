@@ -365,3 +365,124 @@ cpdef time_in_force_to_pyo3(TimeInForce value):
         return nautilus_pyo3.TimeInForce.AT_THE_CLOSE
 
     raise ValueError(f"Unsupported `TimeInForce`, was '{time_in_force_to_str(value)}'")
+
+
+cpdef OrderSide order_side_from_pyo3(value: nautilus_pyo3.OrderSide):
+    if value == nautilus_pyo3.OrderSide.BUY:
+        return OrderSide.BUY
+    if value == nautilus_pyo3.OrderSide.SELL:
+        return OrderSide.SELL
+    if value == nautilus_pyo3.OrderSide.NO_ORDER_SIDE:
+        return OrderSide.NO_ORDER_SIDE
+
+    raise ValueError(f"Unsupported `OrderSide`, was '{value}'")
+
+
+cpdef OrderType order_type_from_pyo3(value: nautilus_pyo3.OrderType):
+    if value == nautilus_pyo3.OrderType.MARKET:
+        return OrderType.MARKET
+    if value == nautilus_pyo3.OrderType.LIMIT:
+        return OrderType.LIMIT
+    if value == nautilus_pyo3.OrderType.STOP_MARKET:
+        return OrderType.STOP_MARKET
+    if value == nautilus_pyo3.OrderType.STOP_LIMIT:
+        return OrderType.STOP_LIMIT
+    if value == nautilus_pyo3.OrderType.MARKET_TO_LIMIT:
+        return OrderType.MARKET_TO_LIMIT
+    if value == nautilus_pyo3.OrderType.MARKET_IF_TOUCHED:
+        return OrderType.MARKET_IF_TOUCHED
+    if value == nautilus_pyo3.OrderType.LIMIT_IF_TOUCHED:
+        return OrderType.LIMIT_IF_TOUCHED
+    if value == nautilus_pyo3.OrderType.TRAILING_STOP_MARKET:
+        return OrderType.TRAILING_STOP_MARKET
+    if value == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT:
+        return OrderType.TRAILING_STOP_LIMIT
+
+    raise ValueError(f"Unsupported `OrderType`, was '{value}'")
+
+
+cpdef OrderStatus order_status_from_pyo3(value: nautilus_pyo3.OrderStatus):
+    if value == nautilus_pyo3.OrderStatus.INITIALIZED:
+        return OrderStatus.INITIALIZED
+    if value == nautilus_pyo3.OrderStatus.DENIED:
+        return OrderStatus.DENIED
+    if value == nautilus_pyo3.OrderStatus.EMULATED:
+        return OrderStatus.EMULATED
+    if value == nautilus_pyo3.OrderStatus.RELEASED:
+        return OrderStatus.RELEASED
+    if value == nautilus_pyo3.OrderStatus.SUBMITTED:
+        return OrderStatus.SUBMITTED
+    if value == nautilus_pyo3.OrderStatus.ACCEPTED:
+        return OrderStatus.ACCEPTED
+    if value == nautilus_pyo3.OrderStatus.REJECTED:
+        return OrderStatus.REJECTED
+    if value == nautilus_pyo3.OrderStatus.CANCELED:
+        return OrderStatus.CANCELED
+    if value == nautilus_pyo3.OrderStatus.EXPIRED:
+        return OrderStatus.EXPIRED
+    if value == nautilus_pyo3.OrderStatus.TRIGGERED:
+        return OrderStatus.TRIGGERED
+    if value == nautilus_pyo3.OrderStatus.PENDING_UPDATE:
+        return OrderStatus.PENDING_UPDATE
+    if value == nautilus_pyo3.OrderStatus.PENDING_CANCEL:
+        return OrderStatus.PENDING_CANCEL
+    if value == nautilus_pyo3.OrderStatus.PARTIALLY_FILLED:
+        return OrderStatus.PARTIALLY_FILLED
+    if value == nautilus_pyo3.OrderStatus.FILLED:
+        return OrderStatus.FILLED
+
+    raise ValueError(f"Unsupported `OrderStatus`, was '{value}'")
+
+
+cpdef TimeInForce time_in_force_from_pyo3(value: nautilus_pyo3.TimeInForce):
+    if value == nautilus_pyo3.TimeInForce.GTC:
+        return TimeInForce.GTC
+    if value == nautilus_pyo3.TimeInForce.IOC:
+        return TimeInForce.IOC
+    if value == nautilus_pyo3.TimeInForce.FOK:
+        return TimeInForce.FOK
+    if value == nautilus_pyo3.TimeInForce.GTD:
+        return TimeInForce.GTD
+    if value == nautilus_pyo3.TimeInForce.DAY:
+        return TimeInForce.DAY
+    if value == nautilus_pyo3.TimeInForce.AT_THE_OPEN:
+        return TimeInForce.AT_THE_OPEN
+    if value == nautilus_pyo3.TimeInForce.AT_THE_CLOSE:
+        return TimeInForce.AT_THE_CLOSE
+
+    raise ValueError(f"Unsupported `TimeInForce`, was '{value}'")
+
+
+cpdef LiquiditySide liquidity_side_from_pyo3(value: nautilus_pyo3.LiquiditySide):
+    if value == nautilus_pyo3.LiquiditySide.NO_LIQUIDITY_SIDE:
+        return LiquiditySide.NO_LIQUIDITY_SIDE
+    if value == nautilus_pyo3.LiquiditySide.MAKER:
+        return LiquiditySide.MAKER
+    if value == nautilus_pyo3.LiquiditySide.TAKER:
+        return LiquiditySide.TAKER
+
+    raise ValueError(f"Unsupported `LiquiditySide`, was '{value}'")
+
+
+cpdef ContingencyType contingency_type_from_pyo3(value: nautilus_pyo3.ContingencyType):
+    if value == nautilus_pyo3.ContingencyType.NO_CONTINGENCY:
+        return ContingencyType.NO_CONTINGENCY
+    if value == nautilus_pyo3.ContingencyType.OCO:
+        return ContingencyType.OCO
+    if value == nautilus_pyo3.ContingencyType.OTO:
+        return ContingencyType.OTO
+    if value == nautilus_pyo3.ContingencyType.OUO:
+        return ContingencyType.OUO
+
+    raise ValueError(f"Unsupported `ContingencyType`, was '{value}'")
+
+
+cpdef PositionSide position_side_from_pyo3(value: nautilus_pyo3.PositionSide):
+    if value == nautilus_pyo3.PositionSide.FLAT:
+        return PositionSide.FLAT
+    if value == nautilus_pyo3.PositionSide.LONG:
+        return PositionSide.LONG
+    if value == nautilus_pyo3.PositionSide.SHORT:
+        return PositionSide.SHORT
+
+    raise ValueError(f"Unsupported `PositionSide`, was '{value}'")

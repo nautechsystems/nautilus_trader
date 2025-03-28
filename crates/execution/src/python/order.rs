@@ -22,10 +22,11 @@ use nautilus_model::{
         ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
     types::{Price, Quantity},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use rust_decimal::Decimal;
 
 use crate::reports::order::OrderStatusReport;
 
@@ -49,6 +50,7 @@ impl OrderStatusReport {
         client_order_id=None,
         report_id=None,
         order_list_id=None,
+        venue_position_id=None,
         contingency_type=None,
         expire_time=None,
         price=None,
@@ -80,13 +82,14 @@ impl OrderStatusReport {
         client_order_id: Option<ClientOrderId>,
         report_id: Option<UUID4>,
         order_list_id: Option<OrderListId>,
+        venue_position_id: Option<PositionId>,
         contingency_type: Option<ContingencyType>,
         expire_time: Option<u64>,
         price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
-        limit_offset: Option<Price>,
-        trailing_offset: Option<Price>,
+        limit_offset: Option<Decimal>,
+        trailing_offset: Option<Decimal>,
         trailing_offset_type: Option<TrailingOffsetType>,
         avg_px: Option<f64>,
         display_qty: Option<Quantity>,
@@ -112,50 +115,53 @@ impl OrderStatusReport {
             report_id,
         );
 
-        if let Some(id) = order_list_id {
-            report = report.with_order_list_id(id);
+        if let Some(order_list_id) = order_list_id {
+            report = report.with_order_list_id(order_list_id);
         }
-        if let Some(ct) = contingency_type {
-            report = report.with_contingency_type(ct);
+        if let Some(venue_position_id) = venue_position_id {
+            report = report.with_venue_position_id(venue_position_id);
         }
-        if let Some(et) = expire_time {
-            report = report.with_expire_time(et.into());
+        if let Some(contingency_type) = contingency_type {
+            report = report.with_contingency_type(contingency_type);
         }
-        if let Some(p) = price {
-            report = report.with_price(p);
+        if let Some(expire_time) = expire_time {
+            report = report.with_expire_time(expire_time.into());
         }
-        if let Some(tp) = trigger_price {
-            report = report.with_trigger_price(tp);
+        if let Some(price) = price {
+            report = report.with_price(price);
         }
-        if let Some(tt) = trigger_type {
-            report = report.with_trigger_type(tt);
+        if let Some(trigger_price) = trigger_price {
+            report = report.with_trigger_price(trigger_price);
         }
-        if let Some(lo) = limit_offset {
-            report = report.with_limit_offset(lo);
+        if let Some(trigger_type) = trigger_type {
+            report = report.with_trigger_type(trigger_type);
         }
-        if let Some(to) = trailing_offset {
-            report = report.with_trailing_offset(to);
+        if let Some(limit_offset) = limit_offset {
+            report = report.with_limit_offset(limit_offset);
         }
-        if let Some(tot) = trailing_offset_type {
-            report = report.with_trailing_offset_type(tot);
+        if let Some(trailing_offset) = trailing_offset {
+            report = report.with_trailing_offset(trailing_offset);
         }
-        if let Some(ap) = avg_px {
-            report = report.with_avg_px(ap);
+        if let Some(trailing_offset_type) = trailing_offset_type {
+            report = report.with_trailing_offset_type(trailing_offset_type);
         }
-        if let Some(dq) = display_qty {
-            report = report.with_display_qty(dq);
+        if let Some(avg_px) = avg_px {
+            report = report.with_avg_px(avg_px);
+        }
+        if let Some(display_qty) = display_qty {
+            report = report.with_display_qty(display_qty);
         }
         if post_only {
-            report = report.with_post_only(true);
+            report = report.with_post_only(post_only);
         }
         if reduce_only {
-            report = report.with_reduce_only(true);
+            report = report.with_reduce_only(reduce_only);
         }
-        if let Some(cr) = cancel_reason {
-            report = report.with_cancel_reason(&cr);
+        if let Some(cancel_reason) = cancel_reason {
+            report = report.with_cancel_reason(cancel_reason);
         }
-        if let Some(tt) = ts_triggered {
-            report = report.with_ts_triggered(tt.into());
+        if let Some(ts_triggered) = ts_triggered {
+            report = report.with_ts_triggered(ts_triggered.into());
         }
 
         Ok(report)
@@ -268,6 +274,12 @@ impl OrderStatusReport {
     }
 
     #[getter]
+    #[pyo3(name = "venue_position_id")]
+    const fn py_venue_position_id(&self) -> Option<PositionId> {
+        self.venue_position_id
+    }
+
+    #[getter]
     #[pyo3(name = "contingency_type")]
     const fn py_contingency_type(&self) -> ContingencyType {
         self.contingency_type
@@ -299,13 +311,13 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "limit_offset")]
-    const fn py_limit_offset(&self) -> Option<Price> {
+    const fn py_limit_offset(&self) -> Option<Decimal> {
         self.limit_offset
     }
 
     #[getter]
     #[pyo3(name = "trailing_offset")]
-    const fn py_trailing_offset(&self) -> Option<Price> {
+    const fn py_trailing_offset(&self) -> Option<Decimal> {
         self.trailing_offset
     }
 

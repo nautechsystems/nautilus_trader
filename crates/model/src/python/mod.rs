@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
+#![allow(clippy::missing_errors_doc)] // Allow missing errors docs for Python modules at this stage
+
+//! Python bindings from [PyO3](https://pyo3.rs).
 
 use pyo3::prelude::*;
 
@@ -57,6 +59,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::bet::Bet>()?;
     m.add_class::<crate::data::bet::BetPosition>()?;
     m.add_class::<crate::data::order::BookOrder>()?;
+    m.add_class::<crate::data::prices::MarkPriceUpdate>()?;
+    m.add_class::<crate::data::prices::IndexPriceUpdate>()?;
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;

@@ -35,7 +35,7 @@ pub fn calculate_commission(
     last_qty: Quantity,
     last_px: Price,
     use_quote_for_inverse: Option<bool>,
-) -> anyhow::Result<Money> {
+) -> Money {
     let liquidity_side = LiquiditySide::Taker;
     assert_ne!(
         liquidity_side,
@@ -53,9 +53,9 @@ pub fn calculate_commission(
         panic!("Invalid liquidity side {liquidity_side}")
     };
     if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-        Ok(Money::new(commission, instrument.base_currency().unwrap()))
+        Money::new(commission, instrument.base_currency().unwrap())
     } else {
-        Ok(Money::new(commission, instrument.quote_currency()))
+        Money::new(commission, instrument.quote_currency())
     }
 }
 

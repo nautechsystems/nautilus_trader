@@ -15,7 +15,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
+use nautilus_common::{cache::Cache, clock::TestClock};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, QuoteTick},
@@ -42,11 +42,6 @@ use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 use crate::portfolio::Portfolio;
-
-#[fixture]
-fn msgbus() -> Rc<RefCell<MessageBus>> {
-    MessageBus::default().register_message_bus()
-}
 
 #[fixture]
 fn simple_cache() -> Cache {
@@ -88,7 +83,6 @@ fn instrument_ethusdt(ethusdt_bitmex: CryptoPerpetual) -> InstrumentAny {
 
 #[fixture]
 fn portfolio(
-    msgbus: Rc<RefCell<MessageBus>>,
     mut simple_cache: Cache,
     clock: TestClock,
     instrument_audusd: InstrumentAny,
@@ -102,7 +96,6 @@ fn portfolio(
     simple_cache.add_instrument(instrument_ethusdt).unwrap();
 
     Portfolio::new(
-        msgbus,
         Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
         None,

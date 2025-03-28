@@ -30,7 +30,7 @@ Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](http
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
 
 ## Getting Started
 

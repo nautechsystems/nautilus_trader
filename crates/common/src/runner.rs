@@ -21,7 +21,7 @@ use std::{
 
 use crate::{
     clock::Clock,
-    messages::data::{DataEvent, DataResponse, SubscriptionCommand},
+    messages::data::{DataEvent, DataResponse, SubscribeCommand},
     timer::TimeEvent,
 };
 
@@ -80,7 +80,7 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
         .expect("Should be able to access thread local clock");
 }
 
-pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscriptionCommand>>>;
+pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>; // TODO: Use DataCommand?
 
 /// Get globally shared message bus command queue
 #[must_use]

@@ -15,11 +15,7 @@
 
 //! A `TradeTick` data type representing a single trade in a market.
 
-use std::{
-    collections::HashMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
-};
+use std::{collections::HashMap, fmt::Display, hash::Hash};
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
@@ -33,7 +29,7 @@ use crate::{
     types::{Price, Quantity, fixed::FIXED_SIZE_BINARY, quantity::check_positive_quantity},
 };
 
-/// Represents a single trade tick in a market.
+/// Represents a trade tick in a market.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
@@ -78,7 +74,7 @@ impl TradeTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_positive_quantity(size.raw, "size.raw")?;
+        check_positive_quantity(size, stringify!(size))?;
 
         Ok(Self {
             instrument_id,
@@ -148,7 +144,7 @@ impl TradeTick {
 }
 
 impl Display for TradeTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{}",
@@ -188,7 +184,7 @@ mod tests {
 
     #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
-    #[should_panic(expected = "invalid u128 for 'size.raw' not positive, was 0")]
+    #[should_panic(expected = "invalid `Quantity` for 'size' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let price = Price::from("10000.00");

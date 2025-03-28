@@ -26,22 +26,24 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.85.0"
-version = "0.43.0"
+rust-version = "1.85.1"
+version = "0.44.0"
 edition = "2024"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
+ahash = "0.8.11"
 anyhow = "1.0.97"
-arrow = "54.2.1"  # Keep major version in line with datafusion
+arrow = "54.3.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
 bytes = { version = "1.10.1", features = ["serde"] }
-chrono = { version = "=0.4.39", features = ["serde"] }  # Pinned due temporary trait ambiguity with arrow
-chrono-tz = { version = "0.10.1" }
+chrono = { version = "0.4.40", features = ["serde"] }
+chrono-tz = "0.10.3"
+deranged = "=0.4.0"
 derive_builder = "0.20.2"
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
@@ -49,18 +51,19 @@ futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
 indexmap = { version = "2.8.0", features = ["serde"] }
-itertools = "0.13.0"
+itertools = "0.14.0"
 itoa = "1.0.15"
-log = { version = "0.4.26", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "54.2.1"  # Keep major version in line with datafusion
-pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
+log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
+memchr = "2.7.4"
+parquet = "54.3.0"  # Keep major version in line with datafusion
+pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
-reqwest = { version = "0.12.14", features = ["blocking"] }
+reqwest = { version = "0.12.15", features = ["blocking"] }
 ring = "0.17.14"
 rmp-serde = "1.3.0"
-rust_decimal = "1.36.0"
-rust_decimal_macros = "1.36.0"
+rust_decimal = "1.37.1"
+rust_decimal_macros = "1.37.1"
 semver = "1.0.25"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
@@ -72,7 +75,7 @@ toml = "0.8.20"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.44.0", features = ["full"] }
+tokio = { version = "1.44.1", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }

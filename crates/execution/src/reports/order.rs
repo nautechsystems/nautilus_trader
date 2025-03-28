@@ -24,6 +24,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Represents an order status at a point in time.
@@ -77,9 +78,9 @@ pub struct OrderStatusReport {
     /// The trigger type for the order.
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
-    pub limit_offset: Option<Price>,
+    pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
-    pub trailing_offset: Option<Price>,
+    pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
     pub trailing_offset_type: TrailingOffsetType,
     /// The order average fill price.
@@ -201,14 +202,14 @@ impl OrderStatusReport {
 
     /// Sets the limit offset.
     #[must_use]
-    pub const fn with_limit_offset(mut self, limit_offset: Price) -> Self {
+    pub const fn with_limit_offset(mut self, limit_offset: Decimal) -> Self {
         self.limit_offset = Some(limit_offset);
         self
     }
 
     /// Sets the trailing offset.
     #[must_use]
-    pub const fn with_trailing_offset(mut self, trailing_offset: Price) -> Self {
+    pub const fn with_trailing_offset(mut self, trailing_offset: Decimal) -> Self {
         self.trailing_offset = Some(trailing_offset);
         self
     }
@@ -253,8 +254,8 @@ impl OrderStatusReport {
 
     /// Sets cancel reason.
     #[must_use]
-    pub fn with_cancel_reason(mut self, cancel_reason: &str) -> Self {
-        self.cancel_reason = Some(cancel_reason.to_string());
+    pub fn with_cancel_reason(mut self, cancel_reason: String) -> Self {
+        self.cancel_reason = Some(cancel_reason);
         self
     }
 

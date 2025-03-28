@@ -44,6 +44,7 @@ from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 from nautilus_trader.adapters.dydx.grpc.order_builder import MAX_CLIENT_ID
 from nautilus_trader.adapters.dydx.grpc.order_builder import DYDXGRPCOrderType
 from nautilus_trader.adapters.dydx.grpc.order_builder import OrderBuilder
+from nautilus_trader.adapters.dydx.grpc.order_builder import OrderExecution
 from nautilus_trader.adapters.dydx.grpc.order_builder import OrderFlags
 from nautilus_trader.adapters.dydx.http.account import DYDXAccountHttpAPI
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
@@ -431,31 +432,34 @@ class DYDXExecutionClient(LiveExecutionClient):
         Create an order status report for a specific order.
         """
         self._log.debug("Requesting OrderStatusReport...")
+
+        client_order_id = command.client_order_id
+        venue_order_id = command.venue_order_id
         PyCondition.is_false(
-            command.client_order_id is None and command.venue_order_id is None,
+            client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
 
         max_retries = 3
-        retries = self._generate_order_status_retries.get(command.client_order_id, 0)
+        retries = self._generate_order_status_retries.get(client_order_id, 0)
 
         if retries > max_retries:
             self._log.error(
                 f"Reached maximum retries {retries}/{max_retries} for generating OrderStatusReport for "
-                f"{repr(command.client_order_id) if command.client_order_id else ''} "
-                f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
+                f"{repr(client_order_id) if client_order_id else ''} "
+                f"{repr(venue_order_id) if venue_order_id else ''}",
             )
             return None
 
         self._log.info(
-            f"Generating OrderStatusReport for {repr(command.client_order_id) if command.client_order_id else ''} {repr(command.venue_order_id) if command.venue_order_id else ''}",  # noqa: E501
+            f"Generating OrderStatusReport for {repr(client_order_id) if client_order_id else ''} {repr(venue_order_id) if venue_order_id else ''}",
         )
 
         report = None
         order = None
 
-        if command.client_order_id is None:
-            client_order_id = self._cache.client_order_id(command.venue_order_id)
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(venue_order_id)
 
         if client_order_id:
             order = self._cache.order(client_order_id)
@@ -468,7 +472,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return None  # Nothing else to do
 
-        if command.venue_order_id is None:
+        if venue_order_id is None:
             venue_order_id = order.venue_order_id
 
         try:
@@ -1076,7 +1080,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             await self._submit_order_single(order=order)
 
-    async def _submit_order_single(self, order: Order) -> None:
+    async def _submit_order_single(self, order: Order) -> None:  # noqa: C901
         """
         Submit a single order.
         """
@@ -1117,6 +1121,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         order_flags = OrderFlags.SHORT_TERM
         good_til_date_secs: int | None = None
         good_til_block: int | None = None
+        execution = OrderExecution.DEFAULT
 
         if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
             rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
@@ -1130,20 +1135,32 @@ class DYDXExecutionClient(LiveExecutionClient):
             return
 
         if dydx_order_tags.is_short_term_order:
+            order_flags = OrderFlags.SHORT_TERM
             good_til_block = self._block_height + dydx_order_tags.num_blocks_open
-
-        elif order.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
-            good_til_block = None
-            order_flags = OrderFlags.CONDITIONAL
-            good_til_date_secs = (
-                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
-            )
-
         else:
             order_flags = OrderFlags.LONG_TERM
             good_til_date_secs = (
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
+
+        if order.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
+            order_flags = OrderFlags.CONDITIONAL
+            good_til_block = None
+            good_til_date_secs = (
+                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+            )
+
+            if order.order_type == OrderType.STOP_MARKET:
+                execution = OrderExecution.IOC
+
+            if order.is_post_only:
+                execution = OrderExecution.POST_ONLY
+
+            if order.time_in_force == TimeInForce.IOC:
+                execution = OrderExecution.IOC
+
+            if order.time_in_force == TimeInForce.FOK:
+                execution = OrderExecution.FOK
 
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
@@ -1215,6 +1232,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             good_til_block=good_til_block,
             good_til_block_time=good_til_date_secs,
             trigger_price=trigger_price,
+            execution=execution,
         )
 
         await self._place_order(order_msg=order_msg, order=order)

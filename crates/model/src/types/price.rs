@@ -23,10 +23,6 @@ use std::{
     str::FromStr,
 };
 
-#[cfg(not(feature = "high-precision"))]
-use nautilus_core::correctness::check_positive_i64;
-#[cfg(feature = "high-precision")]
-use nautilus_core::correctness::check_positive_i128;
 use nautilus_core::{
     correctness::{FAILED, check_in_range_inclusive_f64},
     parsing::precision_from_str,
@@ -77,28 +73,6 @@ pub const ERROR_PRICE: Price = Price {
     raw: 0,
     precision: 255,
 };
-
-#[cfg(feature = "high-precision")]
-pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_i128(value, param)
-}
-
-#[cfg(not(feature = "high-precision"))]
-pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
-    check_positive_i64(value, param)
-}
-
-#[cfg(feature = "high-precision")]
-/// The raw i64 price has already been scaled by 10^9. Further scale
-/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
-pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
-}
-
-#[cfg(not(feature = "high-precision"))]
-pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
-    value
-}
 
 /// Represents a price in a market.
 ///
@@ -465,6 +439,25 @@ impl<'de> Deserialize<'de> for Price {
         let price: Self = price_str.into();
         Ok(price)
     }
+}
+
+pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
+    if !value.is_positive() {
+        anyhow::bail!("{FAILED}: invalid `Price` for '{param}' not positive, was {value}")
+    }
+    Ok(())
+}
+
+#[cfg(feature = "high-precision")]
+/// The raw i64 price has already been scaled by 10^9. Further scale
+/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
+}
+
+#[cfg(not(feature = "high-precision"))]
+pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
+    value
 }
 
 ////////////////////////////////////////////////////////////////////////////////

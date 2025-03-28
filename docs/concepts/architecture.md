@@ -165,7 +165,7 @@ Rust or Cython to be installed at runtime.
 
 ### Type safety
 
-The design of the platform holds software correctness and safety at the highest level.
+The design of the platform prioritizes software correctness and safety at the highest level.
 
 The Rust codebase in `nautilus_core` is always type safe and memory safe as guaranteed by the `rustc` compiler,
 and so is _correct by construction_ (unless explicitly marked `unsafe`, see the Rust section of the [Developer Guide](../developer_guide/rust.md)).

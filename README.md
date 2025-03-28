@@ -2,23 +2,23 @@
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
+![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
-| Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
-| :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
-| `nightly` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
-| `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
+| :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
+| `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
 | Platform           | Rust    | Python      |
 | :----------------- | :------ | :---------- |
-| `Linux (x86_64)`   | 1.85.0+ | 3.11, 3.12  |
-| `macOS (arm64)`    | 1.85.0+ | 3.11, 3.12  |
-| `Windows (x86_64)` | 1.85.0+ | 3.11, 3.12  |
-
-[![](https://dcbadge.limes.pink/api/server/nautilustrader)](https://discord.gg/NautilusTrader)
+| `Linux (x86_64)`   | 1.85.1+ | 3.11, 3.12  |
+| `macOS (arm64)`    | 1.85.1+ | 3.11, 3.12  |
+| `Windows (x86_64)` | 1.85.1+ | 3.11, 3.12  |
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
@@ -34,11 +34,11 @@ The platform is *AI-first*, designed to develop and deploy algorithmic trading s
 and robust Python-native environment. This helps to address the parity challenge of keeping the Python research/backtest
 environment consistent with the production live trading environment.
 
-NautilusTrader's design, architecture, and implementation philosophy holds software correctness and safety at the
+NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset-class-agnostic — with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also universal, and asset-class-agnostic —  with any REST API or WebSocket feed able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
@@ -49,9 +49,9 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
 - **Reliable**: Type safety and thread safety through Rust. [Redis](https://redis.io)-backed performant state persistence (optional).
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
-- **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
-- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
-- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus.
+- **Flexible**: Modular adapters mean any REST API or WebSocket feed can be integrated.
+- **Advanced**: Time in force `IOC`, `FOK`, `GTC`, `GTD`, `DAY`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency orders including `OCO`, `OUO`, `OTO`.
+- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the [cache](https://nautilustrader.io/docs/latest/concepts/cache) and [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
 - **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Live**: Use identical strategy implementations between backtesting and live deployments.
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
@@ -84,27 +84,27 @@ with CPython C extension modules then able to offer a Python-native environment,
 
 ## Why Python?
 
-Python was originally created decades ago as a simple scripting language with a clean straight
-forward syntax. It has since evolved into a fully fledged general purpose object-oriented
-programming language. Based on the TIOBE index, Python is currently the most popular programming language in the world.
+Python was originally created decades ago as a simple scripting language with a clean straightforward syntax.
+It has since evolved into a fully fledged general purpose object-oriented programming language.
+Based on the TIOBE index, Python is currently the most popular programming language in the world.
 Not only that, Python has become the _de facto lingua franca_ of data science, machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of
 implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
-of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
+of a statically typed language, embedded into Python's rich ecosystem of software libraries and
 developer/user communities.
 
 ## What is Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
-concurrency. Rust is blazingly fast and memory-efficient (comparable to C and C++) with no garbage collector.
+concurrency. Rust is "blazingly fast" and memory-efficient (comparable to C and C++) with no garbage collector.
 It can power mission-critical systems, run on embedded devices, and easily integrates with other languages.
 
 Rust’s rich type system and ownership model guarantees memory-safety and thread-safety deterministically —
 eliminating many classes of bugs at compile-time.
 
 The project increasingly utilizes Rust for core performance-critical components. Python language binding is handled through
-Cython and [PyO3](https://pyo3.rs/latest), with static libraries linked at compile-time before the wheel binaries are packaged, so a user
+Cython and [PyO3](https://pyo3.rs), with static libraries linked at compile-time before the wheel binaries are packaged, so a user
 does not need to have Rust installed to run NautilusTrader.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
@@ -124,19 +124,20 @@ and data providers by translating their raw APIs into a unified interface and no
 
 The following integrations are currently supported:
 
-| Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                        |
-| :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------- |
-| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/betfair.html)    |
-| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
-| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/bybit.html)      |
-| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/databento.html)  |
-| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)       |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)         |
-| [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/okx.html)        |
-| [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
-| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
+| Name                                                                         | ID                    | Type                    | Status                                                  | Docs                                                                            |
+| :--------------------------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------------------ |
+| [Betfair](https://betfair.com)                                               | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/betfair.html)       |
+| [Binance](https://binance.com)                                               | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/binance.html)       |
+| [Binance US](https://binance.us)                                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/binance.html)       |
+| [Binance Futures](https://www.binance.com/en/futures)                        | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/binance.html)       |
+| [Bybit](https://www.bybit.com)                                               | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/bybit.html)         |
+| [Coinbase International](https://www.coinbase.com/en/international-exchange) | `COINBASE_INTX`       | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/nightly/integrations/coinbase_intx.html) |
+| [Databento](https://databento.com)                                           | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/databento.html)     |
+| [dYdX](https://dydx.exchange/)                                               | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/dydx.html)          |
+| [Interactive Brokers](https://www.interactivebrokers.com)                    | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/ib.html)            |
+| [OKX](https://okx.com)                                                       | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/nightly/integrations/okx.html)           |
+| [Polymarket](https://polymarket.com)                                         | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/polymarket.html)    |
+| [Tardis](https://tardis.dev)                                                 | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/nightly/integrations/tardis.html)        |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
@@ -154,7 +155,7 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.
 the API is becoming more stable, breaking changes can occur between releases.
 We strive to document these changes in the release notes on a **best-effort basis**.
 
-We aim to follow a **weekly release schedule**, though experimental or larger features may cause delays.
+We aim to follow a **bi-weekly release schedule**, though experimental or larger features may cause delays.
 
 ### Branches
 
@@ -192,7 +193,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
 
-To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
+To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
 
     pip install -U nautilus_trader
 
@@ -297,7 +298,7 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
        curl -LsSf https://astral.sh/uv/install.sh | sh
 
-5. Clone the source with `git`, and install from the projects root directory:
+5. Clone the source with `git`, and install from the project's root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
@@ -311,7 +312,8 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Redis
 
-Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+Using [Redis](https://redis.io) with NautilusTrader is **optional** and only required if configured as the backend for a
+[cache](https://nautilustrader.io/docs/latest/concepts/cache) database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
 See the **Redis** section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Makefile
@@ -358,7 +360,7 @@ Docker containers are built using the base image `python:3.12-slim` with the fol
 - `jupyterlab:nightly` has the head of the `nightly` branch installed along with `jupyterlab` and an
   example backtest notebook with accompanying data.
 
-The container images can be pulled as follows:
+You can pull the container images as follows:
 
     docker pull ghcr.io/nautechsystems/<image_variant_tag> --platform linux/amd64
 
@@ -388,13 +390,17 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 
 ### Testing with Rust
 
-[cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
+[cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.
+Its key benefit is isolating each test in its own process, ensuring test reliability
+by avoiding interference.
+
+You can install cargo-nextest by running:
 
     cargo install cargo-nextest
 
 > [!TIP]
 >
-> Run Rust tests with `make cargo-test`, as they only pass via **cargo-nextest**.
+> Run Rust tests with `make cargo-test`, which uses **cargo-nextest** with an efficient profile.
 
 ## Contributing
 
@@ -417,7 +423,7 @@ Thank you again for your interest in NautilusTrader! We look forward to reviewin
 
 Join our community of users and contributors on [Discord](https://discord.gg/NautilusTrader) to chat
 and stay up-to-date with the latest announcements and features of NautilusTrader. Whether you're a
-developer looking to contribute or just want to learn more about the platform, all are welcome on our server.
+developer looking to contribute or just want to learn more about the platform, all are welcome on our Discord server.
 
 > [!WARNING]
 >

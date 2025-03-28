@@ -27,7 +27,7 @@ uv sync --extra polymarket
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
 
 ## Binary options
 
@@ -45,9 +45,9 @@ Polymarket offers comprehensive resources for different audiences:
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full Polymarket integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The Polymarket integration adapter includes multiple components, which can be used together or
+separately depending on the use case.
 
 - `PolymarketWebSocketClient`: Low-level WebSocket API connectivity (built on top of the Nautilus `WebSocketClient` written in Rust).
 - `PolymarketInstrumentProvider`: Instrument parsing and loading functionality for `BinaryOption` instruments.
@@ -177,7 +177,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
   - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
 
 :::tip
-It's recommended you use environment variables for API credentials.
+We recommend using environment variables to manage your credentials.
 :::
 
 ## Orders
@@ -187,9 +187,9 @@ The following order types are supported on Polymarket:
 - `LIMIT`
 
 The following time in force options are available:
-- `GTC`: Good-Till-Canceled
-- `GTD`: Good-Till-Date (second granularity based on UNIX time)
-- `FOK`: Fill-Or-Kill
+- `GTC`: Good Till Cancel
+- `GTD`: Good Till Date (second granularity based on UNIX time)
+- `FOK`: Fill or Kill
 
 ## Trades
 

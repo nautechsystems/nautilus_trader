@@ -1,0 +1,11 @@
+{
+  "channel": "LEVEL1",
+  "type": "SNAPSHOT",
+  "product_id": "BTC-PERP",
+  "sequence": 0,
+  "bid_price": "84368.5",
+  "bid_qty": "2.608",
+  "ask_price": "84368.6",
+  "ask_qty": "2.9453",
+  "time": "2025-03-14T23:05:39.533Z"
+}

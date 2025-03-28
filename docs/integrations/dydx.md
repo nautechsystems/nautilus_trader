@@ -26,13 +26,13 @@ uv install --extra dydx
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/).
 
 ## Overview
 
-The following documentation assumes a trader is setting up for both live market
-data feeds, and trade execution. The full dYdX integration consists of an assortment of components,
-which can be used together or separately depending on the user's needs.
+This guide assumes a trader is setting up for both live market data feeds, and trade execution.
+The dYdX adapter includes multiple components, which can be used together or separately depending
+on the use case.
 
 - `DYDXHttpClient`: Low-level HTTP API connectivity.
 - `DYDXWebSocketClient`: Low-level WebSocket API connectivity.
@@ -54,12 +54,6 @@ Only perpetual contracts are available on dYdX. To be consistent with other adap
 futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all
 available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified
 as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
-
-## Order types
-
-dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
-However, the execution engine currently only supports submitting market and limit orders. Stop orders
-and trailing stop orders can be implemented later.
 
 ## Short-term and long-term orders
 
@@ -127,6 +121,10 @@ order = self.order_factory.market(
 )
 ```
 
+## Stop limit and stop market orders
+Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
+for conditional orders.
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.
@@ -192,6 +190,10 @@ For dYdX live clients, you can set:
 For dYdX testnet clients, you can set:
 - `DYDX_TESTNET_WALLET_ADDRESS`
 - `DYDX_TESTNET_MNEMONIC`
+
+:::tip
+We recommend using environment variables to manage your credentials.
+:::
 
 The data client is using the wallet address to determine the trading fees. The trading fees are used during back tests only.
 

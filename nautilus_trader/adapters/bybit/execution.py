@@ -234,6 +234,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
                 ws_trade_timeout_secs=config.ws_trade_timeout_secs,
+                recv_window_ms=config.recv_window_ms,
             )
             self._order_single_client = self._ws_order_client
             if config.use_http_batch_api:
@@ -1126,7 +1127,8 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if client_order_id is None:
             self._log.debug(
-                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
+                f"Cannot process order execution for {venue_order_id!r}: "
+                "no `ClientOrderId` found (most likely due to being an external order)",
             )
             return
 
@@ -1151,9 +1153,16 @@ class BybitExecutionClient(LiveExecutionClient):
             strategy_id = order.strategy_id
             order_type = order.order_type
 
+        if strategy_id is None:
+            raise ValueError(
+                f"Cannot handle trade event: strategy ID not found for {client_order_id!r}",
+            )
+
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
-            raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
+            raise ValueError(
+                f"Cannot handle trade event: instrument {instrument_id} not found",
+            )
 
         quote_currency = instrument.quote_currency
         is_maker = execution.isMaker

@@ -22,7 +22,7 @@ uv sync --extra betfair
 
 ## Examples
 
-You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
+You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
 
 ## Betfair documentation
 
@@ -59,12 +59,13 @@ When starting the trading node, you'll receive immediate confirmation of whether
 credentials are valid and have trading permissions.
 
 :::tip
-Best practice is to manage your credentials using environment variables.
+We recommend using environment variables to manage your credentials.
 :::
 
 ## Overview
 
 The following adapter classes are available:
+
 - `BetfairInstrumentProvider` which enables querying the Betfair market catalogue for betting markets, which are then converted into Nautilus "instruments".
 - `BetfairDataClient` which connects to the Exchange Stream API and streams market data.
 - `BetfairExecutionClient` which enables the retrieval of account information and execution and updates for orders (or bets).

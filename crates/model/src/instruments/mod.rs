@@ -52,7 +52,7 @@ use crate::{
     types::{Currency, Money, Price, Quantity},
 };
 
-#[enum_dispatch(InstrumentAny)]
+#[enum_dispatch]
 pub trait Instrument: 'static + Send {
     fn into_any(self) -> InstrumentAny;
     fn id(&self) -> InstrumentId;
