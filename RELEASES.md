@@ -48,7 +48,8 @@ Released on 28th March 2025 (UTC).
 - Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @davidsblom
 - Fixed submitting stop market orders for dYdX (#2471), thanks @davidsblom
 - Fixed retrying HTTP calls on `DecodeError` for dYdX (#2472), thanks @davidsblom
-- Fixed `LIMIT_IF_TOUCHED` enum parsing order type mappings for Bybit
+- Fixed `LIMIT_IF_TOUCHED` order type enum parsing for Bybit
+- Fixed `MARKET` order type enum parsing for Bybit
 - Fixed quote ticks for Polymarket to only emit new quote ticks when the top-of-book changes
 - Fixed error on cancel order for IB (#2475), thanks @FGU1
 
