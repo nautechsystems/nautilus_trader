@@ -1,10 +1,9 @@
 # NautilusTrader 1.214.0 Beta
 
-Released on TBD (UTC).
+Released on 28th March 2025 (UTC).
 
 ### Enhancements
 - Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
-- Added log file rotation additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
 - Added `time_in_force` parameter for `Strategy.close_position(...)`
 - Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
 - Added `MarkPriceUpdate` data type
@@ -34,6 +33,7 @@ Released on TBD (UTC).
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
 - Completed global message bus design in Rust (#2460), thanks @filipmacek
 - Refactored enum dispatch (#2461), thanks @filipmacek
+- Refactored data interfaces to messages in Rust
 - Refined catalog file operations in Rust (#2454), thanks @faysou
 - Refined quote ticks and klines for Bybit (#2465), thanks @davidsblom
 - Standardized use of `anyhow::bail` (#2459), thanks @faysou
@@ -50,6 +50,7 @@ Released on TBD (UTC).
 - Fixed retrying HTTP calls on `DecodeError` for dYdX (#2472), thanks @davidsblom
 - Fixed `LIMIT_IF_TOUCHED` enum parsing order type mappings for Bybit
 - Fixed quote ticks for Polymarket to only emit new quote ticks when the top-of-book changes
+- Fixed error on cancel order for IB (#2475), thanks @FGU1
 
 ### Documentation Updates
 - Improved custom data documentation (#2470), thanks @faysou
