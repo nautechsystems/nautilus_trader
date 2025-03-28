@@ -20,6 +20,7 @@ from unittest.mock import MagicMock
 from unittest.mock import Mock
 
 import pytest
+from ibapi.order_cancel import OrderCancel as IBOrderCancel
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -64,12 +65,12 @@ def test_cancel_order(ib_client):
     ib_client._eclient.cancelOrder = MagicMock()
 
     # Act
-    ib_client.cancel_order(order_id)
+    ib_client.cancel_order(order_id, IBOrderCancel)
 
     # Assert
     ib_client._eclient.cancelOrder.assert_called_with(
         order_id,
-        "",
+        IBOrderCancel,
     )
 
 
