@@ -16,7 +16,7 @@
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    num::NonZeroU64,
+    num::NonZeroUsize,
     rc::Rc,
 };
 
@@ -41,7 +41,7 @@ pub struct BookSnapshotInfo {
     pub is_composite: bool,
     pub root: Ustr,
     pub topic: Ustr,
-    pub interval_ms: NonZeroU64,
+    pub interval_ms: NonZeroUsize,
 }
 
 pub struct BookUpdater {

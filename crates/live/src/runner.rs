@@ -22,7 +22,7 @@ use std::{
 use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
-    messages::data::{DataEvent, DataResponse, SubscriptionCommand},
+    messages::data::{DataCommand, DataEvent, DataResponse, SubscribeCommand},
     runner::{DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
     runtime::get_runtime,
 };
@@ -80,7 +80,7 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
         .expect("Should be able to access thread local clock");
 }
 
-pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscriptionCommand>>>;
+pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
 
 /// Get globally shared message bus command queue
 #[must_use]
@@ -129,8 +129,8 @@ impl Runner for LiveRunner {
         let msgbus_cmd = get_msgbus_cmd();
 
         loop {
-            while let Some(sub_cmd) = msgbus_cmd.borrow_mut().pop_front() {
-                engine.execute(sub_cmd);
+            while let Some(cmd) = msgbus_cmd.borrow_mut().pop_front() {
+                engine.execute(DataCommand::Subscribe(cmd)); // TODO: We shouldn't need the enum?
             }
 
             // Collect the next event to process
