@@ -46,8 +46,8 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
     instrument_ids : list[InstrumentId], optional
         The instrument IDs to request instrument definitions for on start.
-    venue_dataset_map: dict[Venue, Dataset], option
-        A dictionary to override the default Dataset used for a Venue
+    venue_dataset_map: dict[Venue, Dataset], optional
+        A dictionary to override the default dataset used for a venue.
 
     """
 
