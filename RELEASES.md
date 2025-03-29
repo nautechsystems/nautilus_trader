@@ -9,6 +9,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 
 ### Fixes

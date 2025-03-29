@@ -82,9 +82,9 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         generate new position IDs.
     account_type : str
         The account type for the exchange.
-    starting_balances : list[str]
+    starting_balances : list[Money | str]
         The starting account balances (specify one for a single asset account).
-    base_currency : Currency, optional
+    base_currency : Currency | str, optional
         The account base currency for the exchange. Use ``None`` for multi-currency accounts.
     default_leverage : float, optional
         The account default leverage (for margin accounts).
@@ -160,7 +160,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The `fsspec` filesystem protocol for the catalog.
     catalog_fs_storage_options : dict, optional
         The `fsspec` storage options.
-    instrument_id : InstrumentId, optional
+    instrument_id : InstrumentId | str, optional
         The instrument ID for the data configuration.
     start_time : str or int, optional
         The start time for the data configuration.
@@ -174,13 +174,13 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The client ID for the data configuration.
     metadata : dict, optional
         The metadata for the data catalog query.
-    bar_spec : str, optional
+    bar_spec : BarSpecification | str, optional
         The bar specification for the data catalog query.
-    instrument_ids : list[str], optional
+    instrument_ids : list[InstrumentId | str], optional
         The instrument IDs for the data catalog query.
         Can be used if instrument_id is not specified.
         If bar_spec is specified an equivalent list of bar_types will be constructed.
-    bar_types : list[str], optional
+    bar_types : list[BarType | str], optional
         The bar types for the data catalog query.
         Can be used if instrument_id is not specified.
 
