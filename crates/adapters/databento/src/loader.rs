@@ -33,7 +33,6 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::Currency,
 };
-use ustr::Ustr;
 
 use super::{
     decode::{
@@ -116,17 +115,18 @@ impl DatabentoDataLoader {
             .clone()
             .into_iter()
             .map(|p| (p.publisher_id, p))
-            .collect::<IndexMap<u16, DatabentoPublisher>>();
+            .collect();
 
-        self.venue_dataset_map = publishers
-            .iter()
-            .map(|p| {
-                (
-                    Venue::from(p.venue.as_str()),
-                    Dataset::from(p.dataset.as_str()),
-                )
-            })
-            .collect::<IndexMap<Venue, Ustr>>();
+        let mut venue_dataset_map = IndexMap::new();
+
+        // Only insert a dataset if the venue key is not already in the map
+        for publisher in &publishers {
+            let venue = Venue::from(publisher.venue.as_str());
+            let dataset = Dataset::from(publisher.dataset.as_str());
+            venue_dataset_map.entry(venue).or_insert(dataset);
+        }
+
+        self.venue_dataset_map = venue_dataset_map;
 
         // Insert CME Globex exchanges
         let glbx = Dataset::from("GLBX.MDP3");
@@ -142,7 +142,7 @@ impl DatabentoDataLoader {
         self.publisher_venue_map = publishers
             .into_iter()
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
-            .collect::<IndexMap<u16, Venue>>();
+            .collect();
 
         Ok(())
     }
