@@ -9,6 +9,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 
@@ -45,8 +46,8 @@ Released on 28th March 2025 (UTC).
 - Added `Cache.index_prices(...)`
 - Added `Cache.mark_price_count(...)`
 - Added `Cache.index_price_count(...)`
-- Added `Cache.has_mark_prices()`
-- Added `Cache.has_index_prices()`
+- Added `Cache.has_mark_prices(...)`
+- Added `Cache.has_index_prices(...)`
 - Added `UnixNanos.to_rfc3339()` for ISO 8601 (RFC 3339) strings
 - Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
 - Enhanced `UnixNanos` string parsing to support YYYY-MM-DD date format (interpreted as midnight UTC)

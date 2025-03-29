@@ -1527,3 +1527,47 @@ class TestPosition:
         # Assert
         assert position.signed_qty == expected_signed_qty
         assert position.signed_decimal_qty() == expected_decimal_qty
+
+    def test_purge_order_events(self) -> None:
+        # Arrange
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.000000"),
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.000000"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("10500.00"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("10500.00"),
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill1)
+        position.apply(fill2)
+
+        # Act
+        position.purge_events_for_order(fill1.client_order_id)
+
+        # Assert
+        assert len(position.events) == 1
+        assert len(position.trade_ids) == 1
+        assert fill1 not in position.events
+        assert fill2 in position.events
+        assert fill1.trade_id not in position.trade_ids
+        assert fill2.trade_id in position.trade_ids
