@@ -23,7 +23,7 @@ use std::{
 
 use nautilus_core::UUID4;
 
-use crate::messages::data::DataResponse;
+use crate::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
 
 /// TODO: deprecate for `MessageHandler` trait which has all the relevant functions
 pub trait Actor: Any {

@@ -3105,6 +3105,7 @@ dependencies = [
 name = "nautilus-common"
 version = "0.45.0"
 dependencies = [
+ "ahash 0.8.11",
  "anyhow",
  "async-trait",
  "bytes",
@@ -3115,6 +3116,7 @@ dependencies = [
  "indexmap",
  "log",
  "nautilus-core",
+ "nautilus-indicators",
  "nautilus-model",
  "proptest",
  "pyo3",

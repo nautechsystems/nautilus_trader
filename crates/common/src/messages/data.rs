@@ -75,6 +75,13 @@ pub enum DataCommand {
     Unsubscribe(UnsubscribeCommand),
 }
 
+impl DataCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
 pub enum DataEvent {
