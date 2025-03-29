@@ -570,9 +570,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if not is_nautilus_class(data_cls):
             # Special handling for generic data
+            metadata = kwargs.get("metadata")
             data = [
-                CustomData(data_type=DataType(data_cls, metadata=kwargs.get("metadata")), data=d)
-                for d in data
+                CustomData(data_type=DataType(data_cls, metadata=metadata), data=d) for d in data
             ]
 
         return data
@@ -825,8 +825,10 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if start is not None:
             filters.append(pds.field(ts_column) >= pd.Timestamp(start).value)
+
         if end is not None:
             filters.append(pds.field(ts_column) <= pd.Timestamp(end).value)
+
         if filters:
             filter_ = combine_filters(*filters)
         else:
@@ -935,18 +937,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         return self.fs.glob(os.path.join(directory, "*.parquet"))
 
     # -- OVERLOADED BASE METHODS ------------------------------------------------------------------
-
-    def instruments(
-        self,
-        instrument_type: type | None = None,
-        instrument_ids: list[str] | None = None,
-        **kwargs: Any,
-    ) -> list[Instrument]:
-        return super().instruments(
-            instrument_type=instrument_type,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
 
     def _list_directory_stems(self, subdirectory: str) -> list[str]:
         glob_path = f"{self.path}/{subdirectory}/*"
