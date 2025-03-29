@@ -32,7 +32,7 @@ class CatalogDataResult:
 
     data_cls: type
     data: list[Data]
-    instrument: Instrument | None = None
+    instruments: list[Instrument] | None = None
     client_id: ClientId | None = None
 
 
