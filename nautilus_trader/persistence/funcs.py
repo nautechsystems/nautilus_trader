@@ -27,8 +27,10 @@ def class_to_filename(cls: type) -> str:
     """
     filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
     name = f"{convert_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
+
     if not is_nautilus_class(cls):
         name = f"{CUSTOM_DATA_PREFIX}{name}"
+
     return name
 
 
@@ -38,17 +40,21 @@ def urisafe_instrument_id(instrument_id: InstrumentId | str) -> str:
     """
     if isinstance(instrument_id, InstrumentId):
         instrument_id = instrument_id.value
+
     return instrument_id.replace("/", "")
 
 
 def combine_filters(*filters):
     filters = tuple(x for x in filters if x is not None)
+
     if len(filters) == 0:
         return None
     elif len(filters) == 1:
         return filters[0]
     else:
         expr = filters[0]
+
         for f in filters[1:]:
             expr = expr & f
+
         return expr
