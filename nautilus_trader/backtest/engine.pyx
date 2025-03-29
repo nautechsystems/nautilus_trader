@@ -672,6 +672,7 @@ cdef class BacktestEngine:
 
         if validate:
             first = data[0]
+
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
