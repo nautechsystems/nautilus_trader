@@ -364,7 +364,7 @@ When using less granular data, the same behaviors apply as L1:
 
 The `FillModel` has certain limitations to keep in mind:
 
-- Partial fills are not simulated - orders either fill completely or not at all.
+- **Partial fills are supported** with L2/L3 order book data - when there is no longer any size available in the order book, no more fills will be generated and the order will remain in a partially filled state. This accurately simulates real market conditions where not enough liquidity is available at the desired price levels.
 - With L1 data, slippage is limited to a fixed 1-tick, at which entire order's quantity is filled.
 
 :::note
