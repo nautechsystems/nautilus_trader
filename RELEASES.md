@@ -3,19 +3,19 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
-None
+- Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 
 ### Fixes
-None
+- Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
 ### Documentation Updates
-None
+- Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
 
 ### Deprecations
 None
