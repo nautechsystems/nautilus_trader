@@ -71,7 +71,7 @@ class BacktestNode:
 
     """
 
-    def __init__(self, configs: list[BacktestRunConfig]):
+    def __init__(self, configs: list[BacktestRunConfig]) -> None:
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
         PyCondition.is_true(
