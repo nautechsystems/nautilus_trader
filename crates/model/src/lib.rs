@@ -58,3 +58,6 @@ pub mod python;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
+
+#[cfg(feature = "defi")]
+mod defi;
