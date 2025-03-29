@@ -28,7 +28,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     ----------
     database : DatabaseConfig, optional
         The configuration for the cache backing database.
-    encoding : str, {'msgpack', 'json'}, default 'msgpack'
+    encoding : str, default 'json'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
