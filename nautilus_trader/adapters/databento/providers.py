@@ -115,10 +115,9 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         PyCondition.not_empty(instrument_ids, "instrument_ids")
-
         instrument_ids_to_decode: set[str] = {i.value for i in instrument_ids}
-
         dataset = self._check_all_datasets_equal(instrument_ids)
+
         live_client = nautilus_pyo3.DatabentoLiveClient(
             key=self._live_api_key,
             dataset=dataset,
@@ -174,8 +173,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         async def monitor_inactivity():
             nonlocal last_received_time
+
             while True:
                 await asyncio.sleep(check_interval_secs)
+
                 if started_receiving and (
                     self._clock.timestamp() - last_received_time > timeout_secs
                 ):
@@ -275,16 +276,17 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
             use_exchange_as_venue=use_exchange_as_venue,
         )
-
         instruments = instruments_from_pyo3(pyo3_instruments)
-
         instruments = sorted(instruments, key=lambda x: x.ts_init)
+
         return instruments
 
     def _check_all_datasets_equal(self, instrument_ids: list[InstrumentId]) -> str:
         first_dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
+
         for instrument_id in instrument_ids:
             next_dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
             if first_dataset != next_dataset:
                 raise ValueError(
                     "Databento datasets for the provided `instrument_ids` were not equal, "
