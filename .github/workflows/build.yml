@@ -104,6 +104,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -184,6 +185,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -240,6 +242,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -293,6 +296,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data

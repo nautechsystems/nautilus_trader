@@ -5,18 +5,22 @@ inputs:
   python-version:
     description: The Python version to setup
     required: true
+  github_ref:
+    description: The GitHub ref (branch name)
+    required: true
+    default: ${{ github.ref }}
 
 runs:
   using: "composite"
   steps:
     - name: Update version in pyproject.toml
-      if: github.ref != 'refs/heads/master'
+      if: inputs.github_ref != 'refs/heads/master'
       shell: bash
       run: |
         bash ./scripts/ci/update-pyproject-version.sh
 
     - name: Generate updated lock file
-      if: github.ref != 'refs/heads/master'
+      if: inputs.github_ref != 'refs/heads/master'
       shell: bash
       run: uv lock --no-upgrade
 
