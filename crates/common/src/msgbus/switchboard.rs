@@ -17,11 +17,19 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     data::{BarType, DataType},
-    identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId},
+    identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
 };
 use ustr::Ustr;
 
 use crate::msgbus::get_message_bus;
+
+#[must_use]
+pub fn get_custom_topic(data_type: &DataType) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_custom_topic(data_type)
+}
 
 #[must_use]
 pub fn get_instrument_topic(instrument_id: InstrumentId) -> Ustr {
@@ -29,6 +37,14 @@ pub fn get_instrument_topic(instrument_id: InstrumentId) -> Ustr {
         .borrow_mut()
         .switchboard
         .get_instrument_topic(instrument_id)
+}
+
+#[must_use]
+pub fn get_instruments_topic(venue: Venue) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_instruments_topic(venue)
 }
 
 #[must_use]
@@ -131,6 +147,7 @@ pub fn get_event_positions_topic(strategy_id: StrategyId) -> Ustr {
 #[derive(Clone, Debug)]
 pub struct MessagingSwitchboard {
     custom_topics: HashMap<DataType, Ustr>,
+    instruments_topics: HashMap<Venue, Ustr>,
     instrument_topics: HashMap<InstrumentId, Ustr>,
     deltas_topics: HashMap<InstrumentId, Ustr>,
     book_snapshots_topics: HashMap<InstrumentId, Ustr>,
@@ -151,6 +168,7 @@ impl Default for MessagingSwitchboard {
     fn default() -> Self {
         Self {
             custom_topics: HashMap::new(),
+            instruments_topics: HashMap::new(),
             instrument_topics: HashMap::new(),
             deltas_topics: HashMap::new(),
             book_snapshots_topics: HashMap::new(),
@@ -195,6 +213,14 @@ impl MessagingSwitchboard {
             .custom_topics
             .entry(data_type.clone())
             .or_insert_with(|| Ustr::from(&format!("data.{}", data_type.topic())))
+    }
+
+    #[must_use]
+    pub fn get_instruments_topic(&mut self, venue: Venue) -> Ustr {
+        *self
+            .instruments_topics
+            .entry(venue)
+            .or_insert_with(|| Ustr::from(&format!("data.instrument.{}", venue)))
     }
 
     #[must_use]

@@ -27,7 +27,7 @@ use nautilus_model::data::Data;
 use ustr::Ustr;
 
 use crate::{
-    actor::{Actor, get_actor_unchecked, register_actor},
+    actor::registry::{Actor, get_actor_unchecked, register_actor},
     clock::Clock,
     messages::data::DataResponse,
     msgbus::{
