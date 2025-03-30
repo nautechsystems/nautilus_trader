@@ -243,13 +243,13 @@ class Trader(Component):
     # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     def _start(self) -> None:
-        for actor in self._actors.values():
+        for actor in list(self._actors.values()):
             actor.start()
 
-        for strategy in self._strategies.values():
+        for strategy in list(self._strategies.values()):
             strategy.start()
 
-        for exec_algorithm in self._exec_algorithms.values():
+        for exec_algorithm in list(self._exec_algorithms.values()):
             exec_algorithm.start()
 
     def _stop(self) -> None:
