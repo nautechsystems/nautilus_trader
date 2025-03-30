@@ -769,7 +769,7 @@ cdef class Cache(CacheFacade):
         ts_now : uint64_t
             The current UNIX timestamp (nanoseconds).
         buffer_secs : uint64_t, default 0
-            The purge buffer (milliseconds) from when the order was closed.
+            The purge buffer (seconds) from when the order was closed.
             Only orders that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed orders regardless of when they were closed.
 
@@ -796,7 +796,7 @@ cdef class Cache(CacheFacade):
         ts_now : uint64_t
             The current UNIX timestamp (nanoseconds).
         buffer_secs : uint64_t, default 0
-            The purge buffer (milliseconds) from when the position was closed.
+            The purge buffer (seconds) from when the position was closed.
             Only positions that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed positions regardless of when they were closed.
 
