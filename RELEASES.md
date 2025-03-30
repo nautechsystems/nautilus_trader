@@ -4,6 +4,10 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
+- Added `Cache.purge_closed_order(...)`
+- Added `Cache.purge_closed_orders(...)`
+- Added `Cache.purge_closed_position(...)`
+- Added `Cache.purge_closed_positions(...)`
 - Added `Order.ts_closed` property
 
 ### Breaking Changes
