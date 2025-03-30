@@ -567,7 +567,7 @@ class TestPosition:
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
-            ts_filled_ns=1_000_000_000,
+            ts_event=1_000_000_000,
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
@@ -934,7 +934,7 @@ class TestPosition:
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
-            ts_filled_ns=1_000_000_000,
+            ts_event=1_000_000_000,
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
