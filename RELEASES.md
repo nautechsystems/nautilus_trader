@@ -8,6 +8,10 @@ Released on TBD (UTC).
 - Added `Cache.purge_closed_orders(...)`
 - Added `Cache.purge_closed_position(...)`
 - Added `Cache.purge_closed_positions(...)`
+- Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
 
 ### Breaking Changes
