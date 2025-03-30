@@ -760,7 +760,7 @@ cdef class Cache(CacheFacade):
 
         return residuals
 
-    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_ms = 0):
+    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_secs = 0):
         """
         Purge all closed orders from the cache.
 
@@ -768,16 +768,16 @@ cdef class Cache(CacheFacade):
         ----------
         ts_now : uint64_t
             The current UNIX timestamp (nanoseconds).
-        buffer_ms : uint64_t, default 0
+        buffer_secs : uint64_t, default 0
             The purge buffer (milliseconds) from when the order was closed.
             Only orders that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed orders regardless of when they were closed.
 
         """
-        cdef str buffer_ms_str = f" with {buffer_ms=:_}" if buffer_ms else ""
-        self._log.debug(f"Purging closed orders{buffer_ms_str}", LogColor.MAGENTA)
+        cdef str buffer_secs_str = f" with {buffer_secs=:_}" if buffer_secs else ""
+        self._log.debug(f"Purging closed orders{buffer_secs_str}", LogColor.MAGENTA)
 
-        cdef uint64_t buffer_ns = nautilus_pyo3.millis_to_nanos(buffer_ms)
+        cdef uint64_t buffer_ns = nautilus_pyo3.secs_to_nanos(buffer_secs)
 
         cdef:
             ClientOrderId client_order_id
@@ -787,7 +787,7 @@ cdef class Cache(CacheFacade):
             if order is not None and order.ts_closed + buffer_ns <= ts_now:
                 self.purge_order(client_order_id)
 
-    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_ms = 0):
+    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_secs = 0):
         """
         Purge all closed positions from the cache.
 
@@ -795,16 +795,16 @@ cdef class Cache(CacheFacade):
         ----------
         ts_now : uint64_t
             The current UNIX timestamp (nanoseconds).
-        buffer_ms : uint64_t, default 0
+        buffer_secs : uint64_t, default 0
             The purge buffer (milliseconds) from when the position was closed.
             Only positions that have been closed for at least this amount of time will be purged.
             A value of 0 means purge all closed positions regardless of when they were closed.
 
         """
-        cdef str buffer_ms_str = f" with {buffer_ms=:_}" if buffer_ms else ""
-        self._log.debug(f"Purging closed positions{buffer_ms_str}", LogColor.MAGENTA)
+        cdef str buffer_secs_str = f" with {buffer_secs=:_}" if buffer_secs else ""
+        self._log.debug(f"Purging closed positions{buffer_secs_str}", LogColor.MAGENTA)
 
-        cdef uint64_t buffer_ns = nautilus_pyo3.millis_to_nanos(buffer_ms)
+        cdef uint64_t buffer_ns = nautilus_pyo3.secs_to_nanos(buffer_secs)
 
         cdef:
             PositionId position_id
