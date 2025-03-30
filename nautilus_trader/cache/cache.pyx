@@ -760,6 +760,134 @@ cdef class Cache(CacheFacade):
 
         return residuals
 
+    cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_ms = 0):
+        """
+        Purge all closed orders from the cache.
+
+        Parameters
+        ----------
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
+        buffer_ms : uint64_t, default 0
+            The purge buffer (milliseconds) from when the order was closed.
+            Only orders that have been closed for at least this amount of time will be purged.
+            A value of 0 means purge all closed orders regardless of when they were closed.
+
+        """
+        cdef str buffer_ms_str = f" with {buffer_ms=:_}" if buffer_ms else ""
+        self._log.debug(f"Purging closed orders{buffer_ms_str}", LogColor.MAGENTA)
+
+        cdef uint64_t buffer_ns = nautilus_pyo3.millis_to_nanos(buffer_ms)
+
+        cdef:
+            ClientOrderId client_order_id
+            Order order
+        for client_order_id in self._index_orders_closed.copy():
+            order = self._orders.get(client_order_id)
+            if order is not None and order.ts_closed + buffer_ns <= ts_now:
+                self.purge_order(client_order_id)
+
+    cpdef void purge_closed_positions(self, uint64_t ts_now, uint64_t buffer_ms = 0):
+        """
+        Purge all closed positions from the cache.
+
+        Parameters
+        ----------
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
+        buffer_ms : uint64_t, default 0
+            The purge buffer (milliseconds) from when the position was closed.
+            Only positions that have been closed for at least this amount of time will be purged.
+            A value of 0 means purge all closed positions regardless of when they were closed.
+
+        """
+        cdef str buffer_ms_str = f" with {buffer_ms=:_}" if buffer_ms else ""
+        self._log.debug(f"Purging closed positions{buffer_ms_str}", LogColor.MAGENTA)
+
+        cdef uint64_t buffer_ns = nautilus_pyo3.millis_to_nanos(buffer_ms)
+
+        cdef:
+            PositionId position_id
+            Position position
+        for position_id in self._index_positions_closed.copy():
+            position = self._positions.get(position_id)
+            if position is not None and position.ts_closed + buffer_ns <= ts_now:
+                self.purge_position(position_id)
+
+    cpdef void purge_order(self, ClientOrderId client_order_id):
+        """
+        Purge the order for the given client order ID from the cache (if found).
+
+        All `OrderFilled` events for the order will also be purged from any associated position.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to purge.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef Order order = self._orders.pop(client_order_id, None)
+
+        if order is None:
+            self._log.warning(f"Order {client_order_id} not found when purging")
+        else:
+            self._index_venue_orders[order.instrument_id.venue].discard(client_order_id)
+            self._index_venue_order_ids.pop(order.venue_order_id, None)
+            self._index_instrument_orders[order.instrument_id].discard(client_order_id)
+            if order.position_id is not None:
+                self._index_position_orders[order.position_id].discard(client_order_id)
+            if order.exec_algorithm_id is not None:
+                self._index_exec_algorithm_orders[order.exec_algorithm_id].discard(client_order_id)
+            self._log.info(f"Purged order {client_order_id}", LogColor.BLUE)
+
+        self._index_order_position.pop(client_order_id, None)
+        self._index_order_strategy.pop(client_order_id, None)
+        self._index_order_client.pop(client_order_id, None)
+        self._index_client_order_ids.pop(client_order_id, None)
+        self._index_strategy_orders.pop(client_order_id, None)
+        self._index_exec_spawn_orders.pop(client_order_id, None)
+        self._index_orders.discard(client_order_id)
+        self._index_orders_closed.discard(client_order_id)
+        self._index_orders_emulated.discard(client_order_id)
+        self._index_orders_inflight.discard(client_order_id)
+        self._index_orders_pending_cancel.discard(client_order_id)
+
+        cdef Position position = self.position_for_order(client_order_id)
+
+        if position is not None:
+            position.purge_events_for_order(client_order_id)
+
+    cpdef void purge_position(self, PositionId position_id):
+        """
+        Purge the position for the given position ID from the cache (if found).
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID to purge.
+
+        """
+        Condition.not_none(position_id, "position_id")
+
+        cdef Position position = self._positions.pop(position_id, None)
+        if position is None:
+            self._log.warning(f"Position {position_id} not found when purging")
+        else:
+            self._index_venue_positions[position.instrument_id.venue].discard(position_id)
+            self._index_instrument_positions[position.instrument_id].discard(position_id)
+            self._index_strategy_positions[position.strategy_id].discard(position_id)
+            for client_order_id in position.client_order_ids_c():
+                self._index_order_position.pop(client_order_id, None)
+            self._log.info(f"Purged position {position_id}", LogColor.BLUE)
+
+        self._index_position_strategy.pop(position_id, None)
+        self._index_position_orders.pop(position_id, None)
+        self._index_positions.discard(position_id)
+        self._index_positions_open.discard(position_id)
+        self._index_positions_closed.discard(position_id)
+
     cpdef void clear_index(self):
         self._log.debug(f"Clearing index")
 
