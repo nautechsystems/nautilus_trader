@@ -112,22 +112,22 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         If True, the **check_open_orders** requests only currently open orders from the venue.
         If False, it requests the entire order history, which can be a heavy API call.
         This parameter only applies if the **check_open_orders** task is running.
-    purge_closed_orders_interval_secs : PositiveFloat, optional
-        The interval (seconds) between purging closed orders from the cache.
-        If None, closed orders will not be automatically purged.
-        A recommended setting is 3,600 (or one hour).
-        Warning: Setting this lower than ~10 seconds may result in corrupting the cache on start.
-    purge_closed_orders_buffer_ms : NonNegativeInt, optional
-        The time buffer (milliseconds) from when an order was closed before it can be purged.
+    purge_closed_orders_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging closed orders from the in-memory cache,
+        **will not purge from the database**. If None, closed orders will not be automatically purged.
+        A recommended setting is 10-15 minutes.
+    purge_closed_orders_buffer_mins : NonNegativeInt, optional
+        The time buffer (minutes) from when an order was closed before it can be purged.
         Only orders closed for at least this amount of time will be purged.
-    purge_closed_positions_interval_secs : PositiveFloat, optional
-        The interval (seconds) between purging closed positions from the cache.
-        If None, closed positions will not be automatically purged.
-        A recommended setting is 3,600 (or one hour).
-        Warning: Setting this lower than ~10 seconds may result in corrupting the cache on start.
-    purge_closed_positions_buffer_ms : NonNegativeInt, optional
-        The time buffer (milliseconds) from when a position was closed before it can be purged.
+        A recommended setting is 60 minutes.
+    purge_closed_positions_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging closed positions from the in-memory cache,
+        **will not purge from the database**. If None, closed positions will not be automatically purged.
+        A recommended setting is 10-15 minutes.
+    purge_closed_positions_buffer_mins : NonNegativeInt, optional
+        The time buffer (minutes) from when a position was closed before it can be purged.
         Only positions closed for at least this amount of time will be purged.
+        A recommended setting is 60 minutes.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
@@ -144,10 +144,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     own_books_audit_interval_secs: PositiveFloat | None = None
     open_check_interval_secs: PositiveFloat | None = None
     open_check_open_only: bool = True
-    purge_closed_orders_interval_secs: PositiveFloat | None = None
-    purge_closed_orders_buffer_ms: NonNegativeInt | None = None
-    purge_closed_positions_interval_secs: PositiveFloat | None = None
-    purge_closed_positions_buffer_ms: NonNegativeInt | None = None
+    purge_closed_orders_interval_mins: PositiveInt | None = None
+    purge_closed_orders_buffer_mins: NonNegativeInt | None = None
+    purge_closed_positions_interval_mins: PositiveInt | None = None
+    purge_closed_positions_buffer_mins: NonNegativeInt | None = None
     qsize: PositiveInt = 100_000
 
 

@@ -163,10 +163,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self.own_books_audit_interval_secs: float | None = config.own_books_audit_interval_secs
         self.open_check_interval_secs: float | None = config.open_check_interval_secs
         self.open_check_open_only: float | None = config.open_check_open_only
-        self.purge_closed_orders_interval_secs = config.purge_closed_orders_interval_secs
-        self.purge_closed_orders_buffer_ms = config.purge_closed_orders_buffer_ms
-        self.purge_closed_positions_interval_secs = config.purge_closed_positions_interval_secs
-        self.purge_closed_positions_buffer_ms = config.purge_closed_positions_buffer_ms
+        self.purge_closed_orders_interval_mins = config.purge_closed_orders_interval_mins
+        self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
+        self.purge_closed_positions_interval_mins = config.purge_closed_positions_interval_mins
+        self.purge_closed_positions_buffer_mins = config.purge_closed_positions_buffer_mins
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
@@ -179,10 +179,10 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.own_books_audit_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
         self._log.info(f"{config.open_check_open_only=}", LogColor.BLUE)
-        self._log.info(f"{config.purge_closed_orders_interval_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.purge_closed_orders_buffer_ms=}", LogColor.BLUE)
-        self._log.info(f"{config.purge_closed_positions_interval_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.purge_closed_positions_buffer_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_closed_orders_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_closed_orders_buffer_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_closed_positions_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_closed_positions_buffer_mins=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -391,15 +391,15 @@ class LiveExecutionEngine(ExecutionEngine):
                 name="open_check",
             )
 
-        if self.purge_closed_orders_interval_secs and not self._purge_closed_orders_task:
+        if self.purge_closed_orders_interval_mins and not self._purge_closed_orders_task:
             self._purge_closed_orders_task = self._loop.create_task(
-                self._purge_closed_orders_loop(self.purge_closed_orders_interval_secs),
+                self._purge_closed_orders_loop(self.purge_closed_orders_interval_mins),
                 name="purge_closed_orders",
             )
 
-        if self.purge_closed_positions_interval_secs and not self._purge_closed_positions_task:
+        if self.purge_closed_positions_interval_mins and not self._purge_closed_positions_task:
             self._purge_closed_positions_task = self._loop.create_task(
-                self._purge_closed_positions_loop(self.purge_closed_positions_interval_secs),
+                self._purge_closed_positions_loop(self.purge_closed_positions_interval_mins),
                 name="purge_closed_positions",
             )
 
@@ -583,27 +583,31 @@ class LiveExecutionEngine(ExecutionEngine):
             # Catch all exception for error visibility in task
             self._log.exception("Error in check_open_orders", e)
 
-    async def _purge_closed_orders_loop(self, interval_secs: float) -> None:
-        buffer_ms = self.purge_closed_orders_buffer_ms or 0
+    async def _purge_closed_orders_loop(self, interval_mins: int) -> None:
+        buffer_mins = self.purge_closed_orders_buffer_mins or 0
+        interval_secs = interval_mins * 60
+        buffer_secs = buffer_mins * 60
 
         try:
             while True:
                 await asyncio.sleep(interval_secs)
                 ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_orders(ts_now=ts_now, buffer_ms=buffer_ms)
+                self._cache.purge_closed_orders(ts_now=ts_now, buffer_secs=buffer_secs)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'purge_closed_orders_loop'")
         except Exception as e:
             self._log.exception("Error purging closed orders", e)
 
-    async def _purge_closed_positions_loop(self, interval_secs: float) -> None:
-        buffer_ms = self.purge_closed_positions_buffer_ms or 0
+    async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
+        buffer_mins = self.purge_closed_positions_buffer_mins or 0
+        interval_secs = interval_mins * 60
+        buffer_secs = buffer_mins * 60
 
         try:
             while True:
                 await asyncio.sleep(interval_secs)
                 ts_now = self._clock.timestamp_ns()
-                self._cache.purge_closed_positions(ts_now=ts_now, buffer_ms=buffer_ms)
+                self._cache.purge_closed_positions(ts_now=ts_now, buffer_secs=buffer_secs)
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'purge_closed_positions_loop'")
         except Exception as e:
