@@ -220,6 +220,7 @@ cdef class Order:
         self.ts_init = init.ts_init
         self.ts_submitted = 0
         self.ts_accepted = 0
+        self.ts_closed = 0
         self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
@@ -790,7 +791,7 @@ cdef class Order:
     @property
     def is_closed(self):
         """
-        Return whether the order is closed.
+        Return whether the order is closed (lifecycle completed).
 
         An order is considered closed when its status can no longer change.
         The possible statuses of closed orders include;
@@ -1067,14 +1068,14 @@ cdef class Order:
         self.ts_last = event.ts_event
 
     cdef void _denied(self, OrderDenied event):
-        pass  # Do nothing else
+        self.ts_closed = event.ts_event
 
     cdef void _submitted(self, OrderSubmitted event):
         self.account_id = event.account_id
         self.ts_submitted = event.ts_event
 
     cdef void _rejected(self, OrderRejected event):
-        pass  # Do nothing else
+        self.ts_closed = event.ts_event
 
     cdef void _accepted(self, OrderAccepted event):
         self.venue_order_id = event.venue_order_id
@@ -1089,16 +1090,17 @@ cdef class Order:
         raise NotImplementedError("method `_triggered` must be implemented in the subclass")  # pragma: no cover
 
     cdef void _canceled(self, OrderCanceled event):
-        pass  # Do nothing else
+        self.ts_closed = event.ts_event
 
     cdef void _expired(self, OrderExpired event):
-        pass  # Do nothing else
+        self.ts_closed = event.ts_event
 
     cdef void _filled(self, OrderFilled fill):
         if self.filled_qty._mem.raw + fill.last_qty._mem.raw < self.quantity._mem.raw:
             self._fsm.trigger(OrderStatus.PARTIALLY_FILLED)
         else:
             self._fsm.trigger(OrderStatus.FILLED)
+            self.ts_closed = fill.ts_event
 
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id

@@ -244,10 +244,11 @@ pub trait Order: 'static + Send {
     fn avg_px(&self) -> Option<f64>;
     fn slippage(&self) -> Option<f64>;
     fn init_id(&self) -> UUID4;
-    fn ts_last(&self) -> UnixNanos;
-    fn ts_accepted(&self) -> Option<UnixNanos>;
-    fn ts_submitted(&self) -> Option<UnixNanos>;
     fn ts_init(&self) -> UnixNanos;
+    fn ts_submitted(&self) -> Option<UnixNanos>;
+    fn ts_accepted(&self) -> Option<UnixNanos>;
+    fn ts_closed(&self) -> Option<UnixNanos>;
+    fn ts_last(&self) -> UnixNanos;
 
     fn order_side_specified(&self) -> OrderSideSpecified {
         self.order_side().as_specified()
@@ -495,10 +496,11 @@ pub struct OrderCore {
     pub avg_px: Option<f64>,
     pub slippage: Option<f64>,
     pub init_id: UUID4,
-    pub ts_last: UnixNanos,
-    pub ts_accepted: Option<UnixNanos>,
-    pub ts_submitted: Option<UnixNanos>,
     pub ts_init: UnixNanos,
+    pub ts_submitted: Option<UnixNanos>,
+    pub ts_accepted: Option<UnixNanos>,
+    pub ts_closed: Option<UnixNanos>,
+    pub ts_last: UnixNanos,
 }
 
 impl OrderCore {
@@ -543,10 +545,11 @@ impl OrderCore {
             avg_px: None,
             slippage: None,
             init_id: init.event_id,
-            ts_last: init.ts_event,
-            ts_accepted: None,
-            ts_submitted: None,
             ts_init: init.ts_event,
+            ts_submitted: None,
+            ts_accepted: None,
+            ts_closed: None,
+            ts_last: init.ts_event,
         }
     }
 
