@@ -25,8 +25,8 @@ use std::{
 
 use nautilus_common::{
     clock::{Clock, TestClock},
-    messages::data::{DataEvent, SubscribeCommand},
-    runner::{DataQueue, DataResponseQueue, GlobalDataQueue},
+    messages::data::SubscribeCommand,
+    runner::{DataEvent, DataQueue, DataResponseQueue, GlobalDataQueue},
 };
 use nautilus_data::engine::DataEngine;
 

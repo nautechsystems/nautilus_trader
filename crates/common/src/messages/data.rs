@@ -18,55 +18,10 @@ use std::{any::Any, collections::HashMap, num::NonZeroUsize, sync::Arc};
 use chrono::{DateTime, Utc};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, Data, DataType},
+    data::{BarType, DataType},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
 };
-
-#[derive(Clone, Debug)]
-pub struct DataRequest {
-    pub correlation_id: UUID4,
-    pub client_id: ClientId,
-    pub venue: Venue,
-    pub data_type: DataType,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
-}
-
-pub type Payload = Arc<dyn Any + Send + Sync>;
-
-#[derive(Clone, Debug)]
-pub struct DataResponse {
-    pub correlation_id: UUID4,
-    pub client_id: ClientId,
-    pub venue: Venue,
-    pub data_type: DataType,
-    pub data: Payload,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
-}
-
-impl DataResponse {
-    pub fn new<T: Any + Send + Sync>(
-        correlation_id: UUID4,
-        client_id: ClientId,
-        venue: Venue,
-        data_type: DataType,
-        data: T,
-        ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            client_id,
-            venue,
-            data_type,
-            data: Arc::new(data),
-            ts_init,
-            params,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub enum DataCommand {
@@ -80,13 +35,6 @@ impl DataCommand {
     pub fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-}
-
-// TODO: Refine this to reduce disparity between enum sizes
-#[allow(clippy::large_enum_variant)]
-pub enum DataEvent {
-    Response(DataResponse),
-    Data(Data),
 }
 
 #[derive(Clone, Debug)]
@@ -1262,6 +1210,51 @@ impl RequestBars {
             client_id,
             venue,
             request_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DataRequest {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+pub type Payload = Arc<dyn Any + Send + Sync>;
+
+#[derive(Clone, Debug)]
+pub struct DataResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
+    pub data: Payload,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl DataResponse {
+    pub fn new<T: Any + Send + Sync>(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
+        data: T,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            venue,
+            data_type,
+            data: Arc::new(data),
             ts_init,
             params,
         }
