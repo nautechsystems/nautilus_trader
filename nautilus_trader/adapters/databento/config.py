@@ -13,10 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 
 
 class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -46,7 +44,7 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
     instrument_ids : list[InstrumentId], optional
         The instrument IDs to request instrument definitions for on start.
-    venue_dataset_map: dict[Venue, Dataset], optional
+    venue_dataset_map: dict[str, str], optional
         A dictionary to override the default dataset used for a venue.
 
     """
@@ -59,4 +57,4 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     mbo_subscriptions_delay: float | None = 3.0  # Need to have received all definitions
     instrument_ids: list[InstrumentId] | None = None
     parent_symbols: dict[str, set[str]] | None = None
-    venue_dataset_map: dict[Venue, Dataset] | None = None
+    venue_dataset_map: dict[str, str] | None = None

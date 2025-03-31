@@ -51,18 +51,9 @@ pub fn instrument_id_to_symbol_string(
     instrument_id: InstrumentId,
     symbol_venue_map: &mut HashMap<Symbol, Venue>,
 ) -> String {
-    let venue = instrument_id.venue;
-    if venue == Venue::CBCM()
-        || venue == Venue::NYUM()
-        || venue == Venue::XCBT()
-        || venue == Venue::XCEC()
-        || venue == Venue::XCME()
-        || venue == Venue::XFXS()
-        || venue == Venue::XNYM()
-    {
-        symbol_venue_map.insert(instrument_id.symbol, venue);
-    }
-
+    symbol_venue_map
+        .entry(instrument_id.symbol)
+        .or_insert(instrument_id.venue);
     instrument_id.symbol.to_string()
 }
 
