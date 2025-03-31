@@ -117,7 +117,10 @@ impl DatabentoLiveClient {
 
 fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
     if let Err(e) = callback.call1(py, (py_obj,)) {
-        tracing::error!("Error calling Python: {e}");
+        // TODO: Improve this by checking for the actual exception type
+        if !e.to_string().contains("CancelledError") {
+            tracing::error!("Error calling Python: {e}");
+        }
     }
 }
 
