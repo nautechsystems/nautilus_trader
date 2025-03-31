@@ -209,7 +209,7 @@ class BybitWebSocketClient:
 
             self._log.warning(f"Reconnected to {self._base_url}")
         except Exception as e:
-            self._log.error(f"Reconnection failed: {e}")
+            self._log.exception("Reconnection failed", e)
         finally:
             self._reconnecting = False
 
@@ -405,7 +405,7 @@ class BybitWebSocketClient:
         try:
             msg = self._decoder_ws_order_response.decode(raw)
         except Exception as e:
-            self._log.error(f"Failed to decode order ack response {raw!r}: {e}")
+            self._log.exception(f"Failed to decode order ack response {raw!r}", e)
             return
 
         req_id = msg.reqId

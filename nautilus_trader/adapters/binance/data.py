@@ -922,7 +922,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     f"Unrecognized websocket message type: {wrapper.stream}",
                 )
         except Exception as e:
-            self._log.error(f"Error handling websocket message {raw!r}, {e}")
+            self._log.exception("Error handling websocket message {raw!r}", e)
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)

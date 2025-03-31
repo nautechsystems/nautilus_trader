@@ -594,7 +594,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(ts_event),
                 )
             except Exception as e:
-                self._log.error(f"Failed to generate AccountState: {e}")
+                self._log.exception("Failed to generate AccountState", e)
 
         # Set Leverages
         if self._futures_leverages:
@@ -1094,7 +1094,7 @@ class BybitExecutionClient(LiveExecutionClient):
             else:
                 self._log.error(f"Unknown websocket message topic: {topic}")
         except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse websocket message: {raw.decode()}", e)
 
     def _handle_account_execution_update(self, raw: bytes) -> None:
         try:
@@ -1334,13 +1334,13 @@ class BybitExecutionClient(LiveExecutionClient):
                         ts_event=report.ts_last,
                     )
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.exception(repr(e), e)
 
     def _handle_account_wallet_update(self, raw: bytes) -> None:
         try:
             self._process_wallet_update(raw)
         except Exception as e:
-            self._log.exception(f"Failed to handle account wallet update: {e}", e)
+            self._log.exception("Failed to handle account wallet update", e)
 
     def _process_wallet_update(self, raw: bytes) -> None:
         msg: BybitWsAccountWalletMsg = self._decoder_ws_account_wallet_update.decode(raw)

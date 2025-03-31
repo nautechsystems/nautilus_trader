@@ -70,7 +70,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._log.info("Connection cancelled.")
             await self._disconnect()
         except Exception as e:
-            self._log.error(f"Connection failed: {e}")
+            self._log.exception("Connection failed", e)
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
             await self._handle_reconnect()
@@ -86,7 +86,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 self._is_ib_connected.clear()
             self._log.info("Disconnected from Interactive Brokers API.")
         except Exception as e:
-            self._log.error(f"Disconnection failed: {e}")
+            self._log.exception("Disconnection failed", e)
 
     async def _handle_reconnect(self) -> None:
         """

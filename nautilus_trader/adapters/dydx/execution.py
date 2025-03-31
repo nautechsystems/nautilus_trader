@@ -776,7 +776,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             else:
                 self._log.error(f"Unknown message `{ws_message_type}`: {raw.decode()}")
         except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse websocket message: {raw.decode()}", e)
 
     def _handle_block_height_subscribed(self, raw: bytes) -> None:
         try:
@@ -786,8 +786,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._block_height = int(msg.contents.height)
 
         except Exception as e:
-            self._log.error(
-                f"Failed to parse block height subscribed message: {raw.decode()} with error {e}",
+            self._log.exception(
+                f"Failed to parse block height subscribed message: {raw.decode()}",
+                e,
             )
 
     def _handle_block_height_channel_data(self, raw: bytes) -> None:
@@ -798,8 +799,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._block_height = int(msg.contents.blockHeight)
 
         except Exception as e:
-            self._log.error(
-                f"Failed to parse block height channel message: {raw.decode()} with error {e}",
+            self._log.exception(
+                f"Failed to parse block height channel message: {raw.decode()}",
+                e,
             )
 
     def _handle_markets(self, raw: bytes) -> None:
@@ -812,7 +814,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     self._oracle_prices[instrument_id] = Decimal(oracle_price_market.oraclePrice)
 
         except Exception as e:
-            self._log.error(f"Failed to parse market data: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse market data: {raw.decode()}", e)
 
     def _handle_markets_subscribed(self, raw: bytes) -> None:
         try:
@@ -824,7 +826,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     self._oracle_prices[instrument_id] = Decimal(oracle_price_market.oraclePrice)
 
         except Exception as e:
-            self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse market channel data: {raw.decode()}", e)
 
     def _handle_subaccounts_subscribed(self, raw: bytes) -> None:
         try:
@@ -885,8 +887,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
         except Exception as e:
-            self._log.error(
-                f"Failed to parse subaccounts subscribed message: {raw.decode()} with error {e}",
+            self._log.exception(
+                f"Failed to parse subaccounts subscribed message: {raw.decode()}",
+                e,
             )
 
     def _handle_subaccounts_channel_data(self, raw: bytes) -> None:
@@ -902,8 +905,9 @@ class DYDXExecutionClient(LiveExecutionClient):
                     self._handle_order_message(order_msg=order_msg)
 
         except Exception as e:
-            self._log.error(
-                f"Failed to parse subaccounts channel data: {raw.decode()} with error {e}",
+            self._log.exception(
+                f"Failed to parse subaccounts channel data: {raw.decode()}",
+                e,
             )
 
     def _handle_order_message(

@@ -195,7 +195,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             else:
                 self._log.warning(str(e))
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.exception(repr(e), e)
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 

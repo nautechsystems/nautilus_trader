@@ -440,9 +440,9 @@ class InteractiveBrokersClient(
                 try:
                     actions()
                 except Exception as e:
-                    self._log.error(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
-                        f"{e!r}",
+                    self._log.exception(
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                        e,
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)
