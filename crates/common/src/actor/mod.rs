@@ -207,13 +207,13 @@ impl Actor {
         self.check_registered();
 
         let actor_id = self.actor_id;
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(Box::new(
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instruments: &Vec<InstrumentAny>| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
                     .handle_instruments(instruments);
             },
-        ))));
+        )));
 
         let topic = get_instruments_topic(venue);
         msgbus::subscribe(topic, handler, None);
@@ -239,13 +239,13 @@ impl Actor {
         self.check_registered();
 
         let actor_id = self.actor_id;
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(Box::new(
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
                     .handle_instrument(instrument);
             },
-        ))));
+        )));
 
         let topic = get_instrument_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
