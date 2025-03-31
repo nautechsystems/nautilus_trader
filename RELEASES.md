@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
+- Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
 
 ### Breaking Changes
 None
@@ -25,6 +26,7 @@ None
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 
 ### Fixes
+- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
 - Fixed handling of `PolymarketTickSizeChanged` message
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
