@@ -46,10 +46,6 @@ class CoinbaseIntxDataClientConfig(LiveDataClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
     http_timeout_secs : PositiveInt or None, default 60
         The default timeout (seconds) for HTTP requests.
-    ws_connection_delay_secs : PositiveInt, default 5
-        The delay (seconds) prior to main websocket connection to allow initial subscriptions to arrive.
-    update_instruments_interval_mins: PositiveInt or None, default 60
-        The interval (minutes) between reloading instruments from the venue.
 
     """
 
@@ -60,8 +56,6 @@ class CoinbaseIntxDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     http_timeout_secs: PositiveInt | None = 60
-    ws_connection_delay_secs: PositiveInt = 5
-    update_instruments_interval_mins: PositiveInt | None = 60
 
 
 class CoinbaseIntxExecClientConfig(LiveExecClientConfig, frozen=True):

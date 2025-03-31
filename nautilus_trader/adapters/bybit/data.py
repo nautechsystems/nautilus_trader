@@ -567,7 +567,7 @@ class BybitDataClient(LiveMarketDataClient):
             else:
                 self._log.error(f"Unknown websocket message topic: {ws_message.topic}")
         except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse websocket message: {raw.decode()}", e)
 
     def _handle_orderbook(self, product_type: BybitProductType, raw: bytes, topic: str) -> None:
         msg = self._decoder_ws_orderbook.decode(raw)
@@ -667,7 +667,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._last_quotes[quote.instrument_id] = quote
             self._handle_data(quote)
         except Exception as e:
-            self._log.error(f"Failed to parse ticker: {msg} with error {e}")
+            self._log.exception(f"Failed to parse ticker: {msg}", e)
 
     def _handle_trade(self, product_type: BybitProductType, raw: bytes) -> None:
         msg = self._decoder_ws_trade.decode(raw)
@@ -687,7 +687,7 @@ class BybitDataClient(LiveMarketDataClient):
                 )
                 self._handle_data(trade)
         except Exception as e:
-            self._log.error(f"Failed to parse trade tick: {msg} with error {e}")
+            self._log.exception(f"Failed to parse trade tick: {msg}", e)
 
     def _handle_kline(self, raw: bytes) -> None:
         msg = self._decoder_ws_kline.decode(raw)
@@ -716,4 +716,4 @@ class BybitDataClient(LiveMarketDataClient):
                 )
                 self._handle_data(bar)
         except Exception as e:
-            self._log.error(f"Failed to parse bar: {msg} with error {e}")
+            self._log.exception(f"Failed to parse bar: {msg}", e)

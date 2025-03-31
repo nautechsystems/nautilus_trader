@@ -24,14 +24,10 @@ use std::{
 };
 
 use nautilus_core::message::Message;
-use nautilus_model::data::Data;
 use ustr::Ustr;
 use uuid::Uuid;
 
-use crate::{
-    messages::data::DataResponse,
-    msgbus::{ShareableMessageHandler, handler::MessageHandler},
-};
+use crate::msgbus::{ShareableMessageHandler, handler::MessageHandler};
 
 // Stub message handler which logs the data it receives
 pub struct StubMessageHandler {
@@ -47,10 +43,6 @@ impl MessageHandler for StubMessageHandler {
     fn handle(&self, message: &dyn Any) {
         (self.callback)(message.downcast_ref::<Message>().unwrap().clone());
     }
-
-    fn handle_response(&self, _resp: DataResponse) {}
-
-    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self
@@ -93,10 +85,6 @@ impl MessageHandler for CallCheckMessageHandler {
     fn handle(&self, _message: &dyn Any) {
         self.called.store(true, Ordering::SeqCst);
     }
-
-    fn handle_response(&self, _resp: DataResponse) {}
-
-    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self
@@ -152,10 +140,6 @@ impl<T: Clone + 'static> MessageHandler for MessageSavingHandler<T> {
             None => panic!("MessageSavingHandler: message type mismatch {message:?}"),
         }
     }
-
-    fn handle_response(&self, _resp: DataResponse) {}
-
-    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self

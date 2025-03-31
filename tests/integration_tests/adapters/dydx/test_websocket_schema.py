@@ -60,6 +60,7 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -633,6 +634,84 @@ def test_account_channel_data_new_order_opened() -> None:
     assert result.time_in_force == expected_result.time_in_force
     assert result.order_status == expected_result.order_status
     assert result.price == expected_result.price
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
+    assert result.quantity == expected_result.quantity
+    assert result.filled_qty == expected_result.filled_qty
+    assert result.avg_px == expected_result.avg_px
+    assert result.post_only is expected_result.post_only
+    assert result.reduce_only is expected_result.reduce_only
+    assert result.ts_last == expected_result.ts_last
+    assert result.id == expected_result.id
+    assert result.ts_accepted == expected_result.ts_accepted
+    assert result.ts_init == expected_result.ts_init
+    assert result == expected_result
+
+
+def test_account_channel_data_new_conditional_order_opened() -> None:
+    """
+    Test parsing the account channel data.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsSubaccountsChannelData)
+    account_id = AccountId(f"{DYDX_VENUE.value}-001")
+    report_id = UUID4()
+    expected_result = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=DYDXSymbol("ETH-USD").to_instrument_id(),
+        client_order_id=ClientOrderId("1885399800"),
+        venue_order_id=VenueOrderId("09a4bd71-66b5-5eb6-886f-8c91b0e6d7bf"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.STOP_LIMIT,
+        time_in_force=TimeInForce.IOC,
+        order_status=OrderStatus.ACCEPTED,
+        price=Price(2791.6, 4),
+        trigger_price=Price(2791.9, 4),
+        trigger_type=TriggerType.DEFAULT,
+        quantity=Quantity(0.002, 5),
+        filled_qty=Quantity(0, 5),
+        avg_px=Price(2791.6, 4),
+        post_only=False,
+        reduce_only=False,
+        ts_last=1,
+        report_id=report_id,
+        ts_accepted=0,
+        ts_init=1,
+    )
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_accounts_channel_data_order_opened_stop_limit.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    assert msg.contents.orders is not None
+    assert len(msg.contents.orders) == 1
+
+    result = msg.contents.orders[0].parse_to_order_status_report(
+        account_id=account_id,
+        client_order_id=ClientOrderId("1885399800"),
+        report_id=report_id,
+        price_precision=4,
+        size_precision=5,
+        enum_parser=DYDXEnumParser(),
+        ts_init=1,
+    )
+
+    # Assert
+    assert msg.channel == "v4_subaccounts"
+    assert msg.contents.orders[0].status == DYDXOrderStatus.BEST_EFFORT_OPENED
+    assert result.account_id == expected_result.account_id
+    assert result.instrument_id == expected_result.instrument_id
+    assert result.client_order_id == expected_result.client_order_id
+    assert result.venue_order_id == expected_result.venue_order_id
+    assert result.order_side == expected_result.order_side
+    assert result.order_type == expected_result.order_type
+    assert result.time_in_force == expected_result.time_in_force
+    assert result.order_status == expected_result.order_status
+    assert result.price == expected_result.price
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
     assert result.quantity == expected_result.quantity
     assert result.filled_qty == expected_result.filled_qty
     assert result.avg_px == expected_result.avg_px

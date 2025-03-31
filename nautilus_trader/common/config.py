@@ -33,6 +33,8 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -79,18 +81,16 @@ def resolve_config_path(path: str) -> type[NautilusConfig]:
     return config
 
 
-def msgspec_encoding_hook(obj: Any) -> Any:  # noqa: C901 (too complex)
+def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
         return obj.value
     if isinstance(obj, Identifier):
         return obj.value
-    if isinstance(obj, BarSpecification):
+    if isinstance(obj, (BarType | BarSpecification)):
         return str(obj)
-    if isinstance(obj, BarType):
-        return str(obj)
-    if isinstance(obj, (Price | Quantity)):
+    if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
@@ -122,6 +122,10 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too c
         return Price.from_str(obj)
     if obj_type == Quantity:
         return Quantity.from_str(obj)
+    if obj_type == Money:
+        return Money.from_str(obj)
+    if obj_type == Currency:
+        return Currency.from_str(obj)
     if obj_type == Environment:
         return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:

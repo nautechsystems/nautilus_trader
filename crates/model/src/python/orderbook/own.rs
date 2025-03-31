@@ -255,8 +255,8 @@ impl OwnOrderBook {
             .collect()
     }
 
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bids_to_dict")]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bids_to_dict(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -266,8 +266,8 @@ impl OwnOrderBook {
         self.bids_as_map(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "asks_to_dict")]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_asks_to_dict(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -277,8 +277,8 @@ impl OwnOrderBook {
         self.asks_as_map(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "bid_quantity")]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_bid_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -288,8 +288,8 @@ impl OwnOrderBook {
         self.bid_quantity(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "ask_quantity")]
+    #[pyo3(signature = (status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_ask_quantity(
         &self,
         status: Option<HashSet<OrderStatus>>,
@@ -299,8 +299,8 @@ impl OwnOrderBook {
         self.ask_quantity(status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "group_bids")]
+    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_group_bids(
         &self,
         group_size: Decimal,
@@ -312,8 +312,8 @@ impl OwnOrderBook {
         self.group_bids(group_size, depth, status, accepted_buffer_ns, ts_now)
     }
 
-    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     #[pyo3(name = "group_asks")]
+    #[pyo3(signature = (group_size, depth=None, status=None, accepted_buffer_ns=None, ts_now=None))]
     fn py_group_asks(
         &self,
         group_size: Decimal,
@@ -330,8 +330,8 @@ impl OwnOrderBook {
         self.audit_open_orders(&open_order_ids)
     }
 
-    #[pyo3(signature = (num_levels=3))]
     #[pyo3(name = "pprint")]
+    #[pyo3(signature = (num_levels=3))]
     fn py_pprint(&self, num_levels: usize) -> String {
         self.pprint(num_levels)
     }

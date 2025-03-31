@@ -1,31 +1,98 @@
-# NautilusTrader 1.214.0 Beta
+# NautilusTrader 1.215.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
-- Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
-- Added `time_in_force` parameter for `Strategy.close_position(...)`
-- Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
+- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
+- Added `Cache.purge_closed_order(...)`
+- Added `Cache.purge_closed_orders(...)`
+- Added `Cache.purge_closed_position(...)`
+- Added `Cache.purge_closed_positions(...)`
+- Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `Order.ts_closed` property
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
+- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
+- Standardized unexpected exception logging to include full stack trace
+- Refined type handling for backtest configs
+- Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+
+### Fixes
+- Fixed handling of `PolymarketTickSizeChanged` message
+- Fixed sccache key for uv in CI (#2482), thanks @davidsblom
+
+### Documentation Updates
+- Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.214.0 Beta
+
+Released on 28th March 2025 (UTC).
+
+### Enhancements
+- Added [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) initial integration adapter
+- Added `time_in_force` parameter for `Strategy.close_position(...)`
+- Added `time_in_force` parameter for `Strategy.close_all_positions(...)`
+- Added `MarkPriceUpdate` data type
+- Added `IndexPriceUpdate` data type
+- Added `Actor.subscribe_mark_prices(...)`
+- Added `Actor.subscribe_index_prices(...)`
+- Added `Actor.unsubscribe_mark_prices(...)`
+- Added `Actor.unsubscribe_index_prices(...)`
+- Added `Actor.on_mark_price(...)`
+- Added `Actor.on_index_price(...)`
+- Added `Cache.mark_price(...)`
+- Added `Cache.index_price(...)`
+- Added `Cache.mark_prices(...)`
+- Added `Cache.index_prices(...)`
+- Added `Cache.mark_price_count(...)`
+- Added `Cache.index_price_count(...)`
+- Added `Cache.has_mark_prices(...)`
+- Added `Cache.has_index_prices(...)`
+- Added `UnixNanos.to_rfc3339()` for ISO 8601 (RFC 3339) strings
+- Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
+- Enhanced `UnixNanos` string parsing to support YYYY-MM-DD date format (interpreted as midnight UTC)
+
+### Breaking Changes
+- Changed `Cache.add_mark_price(self, InstrumentId instrument_id, Price price)` to `add_mark_price(self, MarkPriceUpdate mark_price)`
+
+### Internal Improvements
 - Improved `WebSocketClient` and `SocketClient` design with dedicated writer task and message channel
 - Completed global message bus design in Rust (#2460), thanks @filipmacek
-- Implemented `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
 - Refactored enum dispatch (#2461), thanks @filipmacek
+- Refactored data interfaces to messages in Rust
 - Refined catalog file operations in Rust (#2454), thanks @faysou
-- Refined quote ticks and klines for Bybit (#2465), thanks @davidblom
+- Refined quote ticks and klines for Bybit (#2465), thanks @davidsblom
 - Standardized use of `anyhow::bail` (#2459), thanks @faysou
+- Ported `add_venue` for `BacktestEngine` in Rust (#2457), thanks @filipmacek
+- Ported `add_instrument` for `BacktestEngine` in Rust (#2469), thanks @filipmacek
 - Upgraded `redis` crate to v0.29.2
 
 ### Fixes
 - Fixed race condition on multiple reconnect attempts for `WebSocketClient` and `SocketClient`
 - Fixed position state snapshot `ts_snapshot` value, which was always `ts_last` instead of timestamp when the snapshot was taken
+- Fixed instrument parsing for Tardis, now correctly applies changes and filters by `effective`
+- Fixed `OrderStatusReport` for conditional orders of dYdX (#2467), thanks @davidsblom
+- Fixed submitting stop market orders for dYdX (#2471), thanks @davidsblom
+- Fixed retrying HTTP calls on `DecodeError` for dYdX (#2472), thanks @davidsblom
+- Fixed `LIMIT_IF_TOUCHED` order type enum parsing for Bybit
+- Fixed `MARKET` order type enum parsing for Bybit
+- Fixed quote ticks for Polymarket to only emit new quote ticks when the top-of-book changes
+- Fixed error on cancel order for IB (#2475), thanks @FGU1
 
 ### Documentation Updates
-None
+- Improved custom data documentation (#2470), thanks @faysou
 
 ### Deprecations
 None
@@ -55,7 +122,7 @@ None
 - Improved `InstrumentProvider` error handling when loading (#2444), thanks @davidsblom
 - Improved order denied reason message for balance impact
 - Handle BybitErrors when updating instruments for ByBit (#2437), thanks @davidsblom
-- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidblom
+- Handle unexpected errors when fetching order books for dYdX (#2445), thanks @davidsblom
 - Retry if HttpError is raised for dYdX (#2438), thanks @davidsblom
 - Refactored some Rust logs to use named parameters in format strings (#2443), thanks @faysou
 - Some minor performance optimizations for Bybit and dYdX adapters (#2448), thanks @sunlei

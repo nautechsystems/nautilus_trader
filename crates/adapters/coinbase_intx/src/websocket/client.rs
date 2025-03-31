@@ -42,7 +42,8 @@ use super::{
     error::CoinbaseIntxWsError,
     messages::{CoinbaseIntxSubscription, CoinbaseIntxWsMessage, NautilusWsMessage},
     parse::{
-        parse_candle_msg, parse_orderbook_snapshot_msg, parse_orderbook_update_msg, parse_quote_msg,
+        parse_candle_msg, parse_index_price_msg, parse_mark_price_msg,
+        parse_orderbook_snapshot_msg, parse_orderbook_update_msg, parse_quote_msg,
     },
 };
 use crate::{
@@ -123,6 +124,14 @@ impl CoinbaseIntxWebSocketClient {
         self.credential.api_key.as_str()
     }
 
+    /// Returns a value indicating whether the client is active.
+    pub fn is_active(&self) -> bool {
+        match &self.inner {
+            Some(inner) => inner.is_active(),
+            None => false,
+        }
+    }
+
     /// Returns a value indicating whether the client is closed.
     pub fn is_closed(&self) -> bool {
         match &self.inner {
@@ -132,10 +141,7 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Connects the client to the server and caches the given instruments.
-    pub async fn connect(
-        &mut self,
-        instruments: HashMap<Ustr, InstrumentAny>,
-    ) -> anyhow::Result<()> {
+    pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> anyhow::Result<()> {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
@@ -160,12 +166,17 @@ impl CoinbaseIntxWebSocketClient {
 
         self.inner = Some(Arc::new(client));
 
+        let mut instruments_map: HashMap<Ustr, InstrumentAny> = HashMap::new();
+        for inst in instruments {
+            instruments_map.insert(inst.raw_symbol().inner(), inst);
+        }
+
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            CoinbaseIntxWsMessageHandler::new(instruments, reader, signal, tx)
+            CoinbaseIntxWsMessageHandler::new(instruments_map, reader, signal, tx)
                 .run()
                 .await;
         });
@@ -246,7 +257,7 @@ impl CoinbaseIntxWebSocketClient {
         let signature = self.credential.sign_ws(&time);
         let message = CoinbaseIntxSubscription {
             op: WsOperation::Subscribe,
-            product_ids,
+            product_ids: Some(product_ids),
             channels,
             time,
             key: self.credential.api_key,
@@ -296,7 +307,7 @@ impl CoinbaseIntxWebSocketClient {
         let signature = self.credential.sign_ws(&time);
         let message = CoinbaseIntxSubscription {
             op: WsOperation::Unsubscribe,
-            product_ids,
+            product_ids: Some(product_ids),
             channels,
             time,
             key: self.credential.api_key,
@@ -395,6 +406,26 @@ impl CoinbaseIntxWebSocketClient {
             .await
     }
 
+    /// Subscribes to risk streams (for mark prices) for the given instrument IDs.
+    pub async fn subscribe_mark_prices(
+        &self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> Result<(), CoinbaseIntxWsError> {
+        let product_ids = instrument_ids_to_product_ids(&instrument_ids);
+        self.subscribe(vec![CoinbaseIntxWsChannel::Risk], product_ids)
+            .await
+    }
+
+    /// Subscribes to risk streams (for index prices) for the given instrument IDs.
+    pub async fn subscribe_index_prices(
+        &self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> Result<(), CoinbaseIntxWsError> {
+        let product_ids = instrument_ids_to_product_ids(&instrument_ids);
+        self.subscribe(vec![CoinbaseIntxWsChannel::Risk], product_ids)
+            .await
+    }
+
     /// Subscribes to bar (candle) streams for the given instrument IDs.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
@@ -463,6 +494,26 @@ impl CoinbaseIntxWebSocketClient {
             .await
     }
 
+    /// Unsubscribes from risk streams (for mark prices) for the given instrument IDs.
+    pub async fn unsubscribe_mark_prices(
+        &self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> Result<(), CoinbaseIntxWsError> {
+        let product_ids = instrument_ids_to_product_ids(&instrument_ids);
+        self.unsubscribe(vec![CoinbaseIntxWsChannel::Risk], product_ids)
+            .await
+    }
+
+    /// Unsubscribes from risk streams (for index prices) for the given instrument IDs.
+    pub async fn unsubscribe_index_prices(
+        &self,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> Result<(), CoinbaseIntxWsError> {
+        let product_ids = instrument_ids_to_product_ids(&instrument_ids);
+        self.unsubscribe(vec![CoinbaseIntxWsChannel::Risk], product_ids)
+            .await
+    }
+
     /// Unsubscribes from bar (candle) streams for the given instrument IDs.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
@@ -514,7 +565,7 @@ impl CoinbaseIntxFeedHandler {
                                     tracing::error!("{msg:?}");
                                 }
                                 CoinbaseIntxWsMessage::Confirmation(msg) => {
-                                    tracing::debug!("Subscribed: {msg:?}");
+                                    tracing::debug!("{msg:?}");
                                     continue;
                                 }
                                 CoinbaseIntxWsMessage::Instrument(_) => return Some(event),
@@ -689,6 +740,48 @@ impl CoinbaseIntxWsMessageHandler {
                                 tracing::error!("Failed to parse trade: {e}");
                             }
                         }
+                    } else {
+                        tracing::error!("No instrument found for {}", msg.product_id);
+                    }
+                }
+                CoinbaseIntxWsMessage::Risk(msg) => {
+                    if let Some(inst) = self.instruments.get(&msg.product_id) {
+                        let mark_price = match parse_mark_price_msg(
+                            &msg,
+                            inst.id(),
+                            inst.price_precision(),
+                            clock.get_time_ns(),
+                        ) {
+                            Ok(mark_price) => Some(mark_price),
+                            Err(e) => {
+                                tracing::error!("Failed to parse mark price: {e}");
+                                None
+                            }
+                        };
+
+                        let index_price = match parse_index_price_msg(
+                            &msg,
+                            inst.id(),
+                            inst.price_precision(),
+                            clock.get_time_ns(),
+                        ) {
+                            Ok(index_price) => Some(index_price),
+                            Err(e) => {
+                                tracing::error!("Failed to parse index price: {e}");
+                                None
+                            }
+                        };
+
+                        match (mark_price, index_price) {
+                            (Some(mark), Some(index)) => {
+                                return Some(NautilusWsMessage::MarkAndIndex((mark, index)));
+                            }
+                            (Some(mark), None) => return Some(NautilusWsMessage::MarkPrice(mark)),
+                            (None, Some(index)) => {
+                                return Some(NautilusWsMessage::IndexPrice(index));
+                            }
+                            (None, None) => continue,
+                        };
                     } else {
                         tracing::error!("No instrument found for {}", msg.product_id);
                     }

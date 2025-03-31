@@ -71,7 +71,7 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
 
     Parameters
     ----------
-    dt : pd.Timestamp
+    dt : pd.Timestamp | str | int
         The datetime to convert.
 
     Returns

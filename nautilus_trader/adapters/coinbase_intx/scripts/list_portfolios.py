@@ -12,3 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import asyncio
+import pprint
+
+from nautilus_trader.adapters.coinbase_intx.factories import get_coinbase_intx_http_client
+
+
+async def run():
+    http_client = get_coinbase_intx_http_client()
+
+    portfolios = await http_client.list_portfolios()
+    pprint.pprint(portfolios)
+
+
+if __name__ == "__main__":
+    asyncio.run(run())

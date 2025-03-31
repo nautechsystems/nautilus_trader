@@ -4747,3 +4747,387 @@ cdef class TradeTick(Data):
             self._mem.ts_event,
             self._mem.ts_init,
         )
+
+
+cdef class MarkPriceUpdate(Data):
+    """
+    Represents a mark price update.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the mark price.
+    value : Price
+        The mark price.
+    ts_event : uint64_t
+        UNIX timestamp (nanoseconds) when the update occurred.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        Price value not None,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.value = value
+        self.ts_event = ts_event
+        self.ts_init = ts_init
+
+    def __eq__(self, MarkPriceUpdate other) -> bool:
+        return self.to_str() == other.to_str()
+
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    def __str__(self) -> str:
+        return self.to_str()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.to_str()})"
+
+    cdef str to_str(self):
+        return f"{self.instrument_id},{self.value},{self.ts_event},{self.ts_init}"
+
+    @staticmethod
+    cdef MarkPriceUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return MarkPriceUpdate(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            value=Price.from_str_c(values["value"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(MarkPriceUpdate obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": str(obj.instrument_id),
+            "value": str(obj.value),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> MarkPriceUpdate:
+        """
+        Return a mark price from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        MarkPriceUpdate
+
+        """
+        return MarkPriceUpdate.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(MarkPriceUpdate obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return MarkPriceUpdate.to_dict_c(obj)
+
+    @staticmethod
+    def to_pyo3_list(list[MarkPriceUpdate] mark_prices) -> list[nautilus_pyo3.MarkPriceUpdate]:
+        """
+        Return pyo3 Rust mark prices converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        mark_prices : list[MarkPriceUpdate]
+            The legacy Cython Rust mark prices to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.MarkPriceUpdate]
+
+        """
+        cdef list output = []
+
+        pyo3_instrument_id = None
+        cdef uint8_t price_prec = 0
+
+        cdef:
+            MarkPriceUpdate mark_price
+        for mark_price in mark_prices:
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(mark_price.instrument_id.value)
+                price_prec = mark_price.value.precision
+
+            pyo3_mark_price = MarkPriceUpdate(
+                pyo3_instrument_id,
+                nautilus_pyo3.Price(float(mark_price.value), price_prec),
+                mark_price.ts_event,
+                mark_price.ts_init,
+            )
+            output.append(pyo3_mark_price)
+
+        return output
+
+    @staticmethod
+    def from_pyo3_list(list pyo3_mark_prices) -> list[MarkPriceUpdate]:
+        """
+        Return legacy Cython trades converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_mark_prices : list[nautilus_pyo3.MarkPriceUpdate]
+            The pyo3 Rust mark prices to convert from.
+
+        Returns
+        -------
+        list[MarkPriceUpdate]
+
+        """
+        cdef list[MarkPriceUpdate] output = []
+
+        for pyo3_mark_price in pyo3_mark_prices:
+            output.append(MarkPriceUpdate.from_pyo3_c(pyo3_mark_price))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_mark_price) -> MarkPriceUpdate:
+        """
+        Return a legacy Cython mark price converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_trade : nautilus_pyo3.MarkPriceUpdate
+            The pyo3 Rust mark price to convert from.
+
+        Returns
+        -------
+        MarkPriceUpdate
+
+        """
+        return MarkPriceUpdate(
+            instrument_id=InstrumentId.from_str(pyo3_mark_price.instrument_id.value),
+            value=Price(float(pyo3_mark_price.value), pyo3_mark_price.value.precision),
+            ts_event=pyo3_mark_price.ts_event,
+            ts_init=pyo3_mark_price.ts_init,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.MarkPriceUpdate:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.MarkPriceUpdate
+
+        """
+        return nautilus_pyo3.MarkPriceUpdate(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price(float(self.value), self.value.precision),
+            self.ts_event,
+            self.ts_init,
+        )
+
+
+cdef class IndexPriceUpdate(Data):
+    """
+    Represents an index price update.
+
+    Parameters
+    ----------
+    instrument_id : InstrumentId
+        The instrument ID for the index price.
+    value : Price
+        The index price.
+    ts_event : uint64_t
+        UNIX timestamp (nanoseconds) when the update occurred.
+    ts_init : uint64_t
+        UNIX timestamp (nanoseconds) when the data object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        Price value not None,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.value = value
+        self.ts_event = ts_event
+        self.ts_init = ts_init
+
+    def __eq__(self, IndexPriceUpdate other) -> bool:
+        return self.to_str() == other.to_str()
+
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    def __str__(self) -> str:
+        return self.to_str()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}({self.to_str()})"
+
+    cdef str to_str(self):
+        return f"{self.instrument_id},{self.value},{self.ts_event},{self.ts_init}"
+
+    @staticmethod
+    cdef IndexPriceUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return IndexPriceUpdate(
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            value=Price.from_str_c(values["value"]),
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(IndexPriceUpdate obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": type(obj).__name__,
+            "instrument_id": str(obj.instrument_id),
+            "value": str(obj.value),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> IndexPriceUpdate:
+        """
+        Return an index price from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        IndexPriceUpdate
+
+        """
+        return IndexPriceUpdate.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(IndexPriceUpdate obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return IndexPriceUpdate.to_dict_c(obj)
+
+    @staticmethod
+    def to_pyo3_list(list[IndexPriceUpdate] index_prices) -> list[nautilus_pyo3.IndexPriceUpdate]:
+        """
+        Return pyo3 Rust index prices converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        mark_prices : list[IndexPriceUpdate]
+            The legacy Cython Rust index prices to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.IndexPriceUpdate]
+
+        """
+        cdef list output = []
+
+        pyo3_instrument_id = None
+        cdef uint8_t price_prec = 0
+
+        cdef:
+            IndexPriceUpdate index_price
+        for index_price in index_prices:
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(index_price.instrument_id.value)
+                price_prec = index_price.value.precision
+
+            pyo3_index_price = IndexPriceUpdate(
+                pyo3_instrument_id,
+                nautilus_pyo3.Price(float(index_price.value), price_prec),
+                index_price.ts_event,
+                index_price.ts_init,
+            )
+            output.append(pyo3_index_price)
+
+        return output
+
+    @staticmethod
+    def from_pyo3_list(list pyo3_index_prices) -> list[IndexPriceUpdate]:
+        """
+        Return legacy Cython index prices converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_index_prices : list[nautilus_pyo3.IndexPriceUpdate]
+            The pyo3 Rust index prices to convert from.
+
+        Returns
+        -------
+        list[IndexPriceUpdate]
+
+        """
+        cdef list[IndexPriceUpdate] output = []
+
+        for pyo3_index_price in pyo3_index_prices:
+            output.append(IndexPriceUpdate.from_pyo3_c(pyo3_index_price))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_index_price) -> IndexPriceUpdate:
+        """
+        Return a legacy Cython index price converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_trade : nautilus_pyo3.IndexPriceUpdate
+            The pyo3 Rust index price to convert from.
+
+        Returns
+        -------
+        IndexPriceUpdate
+
+        """
+        return IndexPriceUpdate(
+            instrument_id=InstrumentId.from_str(pyo3_index_price.instrument_id.value),
+            value=Price(float(pyo3_index_price.value), pyo3_index_price.value.precision),
+            ts_event=pyo3_index_price.ts_event,
+            ts_init=pyo3_index_price.ts_init,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.IndexPriceUpdate:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.IndexPriceUpdate
+
+        """
+        return nautilus_pyo3.IndexPriceUpdate(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price(float(self.value), self.value.precision),
+            self.ts_event,
+            self.ts_init,
+        )

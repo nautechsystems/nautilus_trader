@@ -16,7 +16,7 @@
 //! An `OrderBookDeltas` container type to carry a bulk of `OrderBookDelta` records.
 
 use std::{
-    fmt::{Display, Formatter},
+    fmt::Display,
     hash::{Hash, Hasher},
     ops::{Deref, DerefMut},
 };
@@ -109,7 +109,7 @@ impl Hash for OrderBookDeltas {
 
 // TODO: Exact format for Debug and Display TBD
 impl Display for OrderBookDeltas {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},len={},flags={},sequence={},ts_event={},ts_init={}",

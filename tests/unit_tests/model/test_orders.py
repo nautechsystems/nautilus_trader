@@ -312,6 +312,9 @@ class TestOrders:
         assert not order.is_parent_order
         assert not order.is_child_order
         assert order.ts_last == 0
+        assert order.ts_accepted == 0
+        assert order.ts_submitted == 0
+        assert order.ts_closed == 0
         assert order.last_event.ts_init == 0
         assert isinstance(order.init_event, OrderInitialized)
 
@@ -1620,7 +1623,7 @@ class TestOrders:
             order.client_order_id,
             "SOME_REASON",
             UUID4(),
-            0,
+            1,
         )
 
         # Act
@@ -1632,6 +1635,7 @@ class TestOrders:
         assert order.last_event == denied
         assert not order.is_open
         assert order.is_closed
+        assert order.ts_closed == 1
 
     def test_apply_order_submitted_event(self):
         # Arrange
@@ -1691,16 +1695,17 @@ class TestOrders:
             Quantity.from_int(100_000),
         )
 
-        order.apply(TestEventStubs.order_submitted(order))
+        order.apply(TestEventStubs.order_submitted(order, ts_event=1))
 
         # Act
-        order.apply(TestEventStubs.order_rejected(order))
+        order.apply(TestEventStubs.order_rejected(order, ts_event=1))
 
         # Assert
         assert order.status == OrderStatus.REJECTED
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
+        assert order.ts_closed == 1
 
     def test_apply_order_expired_event(self):
         # Arrange
@@ -1717,13 +1722,14 @@ class TestOrders:
         order.apply(TestEventStubs.order_accepted(order))
 
         # Act
-        order.apply(TestEventStubs.order_expired(order))
+        order.apply(TestEventStubs.order_expired(order, ts_event=1))
 
         # Assert
         assert order.status == OrderStatus.EXPIRED
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
+        assert order.ts_closed == 1
 
     def test_apply_order_triggered_event(self):
         # Arrange
@@ -1785,7 +1791,7 @@ class TestOrders:
         order.apply(TestEventStubs.order_pending_cancel(order))
 
         # Act
-        order.apply(TestEventStubs.order_canceled(order))
+        order.apply(TestEventStubs.order_canceled(order, ts_event=1))
 
         # Assert
         assert order.status == OrderStatus.CANCELED
@@ -1796,6 +1802,7 @@ class TestOrders:
         assert not order.is_pending_update
         assert not order.is_pending_cancel
         assert order.event_count == 5
+        assert order.ts_closed == 1
 
     def test_order_status_pending_update(self):
         # Arrange
@@ -2012,6 +2019,7 @@ class TestOrders:
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("1.00001"),
+            ts_event=1,
         )
 
         # Act
@@ -2027,7 +2035,8 @@ class TestOrders:
         assert not order.is_inflight
         assert not order.is_open
         assert order.is_closed
-        assert order.ts_last == 0
+        assert order.ts_last == 1
+        assert order.ts_closed == 1
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange

@@ -15,11 +15,10 @@
 
 use std::{any::Any, sync::Arc};
 
-use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
+use crate::msgbus::handler::MessageHandler;
 
 #[cfg_attr(
     feature = "python",
@@ -59,25 +58,6 @@ impl MessageHandler for PythonMessageHandler {
 
     fn id(&self) -> Ustr {
         self.id
-    }
-
-    fn handle_response(&self, _resp: DataResponse) {
-        // TODO: convert message to PyObject
-        let py_event = ();
-        let result =
-            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
-        if let Err(e) = result {
-            eprintln!("Error calling handle method: {e:?}");
-        }
-    }
-
-    fn handle_data(&self, _data: Data) {
-        let py_event = ();
-        let result =
-            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
-        if let Err(e) = result {
-            eprintln!("Error calling handle method: {e:?}");
-        }
     }
 
     fn as_any(&self) -> &dyn Any {

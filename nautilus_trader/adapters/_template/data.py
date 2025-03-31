@@ -23,19 +23,23 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -138,6 +142,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _subscribe_order_book_snapshots        | optional    |
     | _subscribe_quote_ticks                 | optional    |
     | _subscribe_trade_ticks                 | optional    |
+    | _subscribe_mark_prices                 | optional    |
+    | _subscribe_index_prices                | optional    |
     | _subscribe_bars                        | optional    |
     | _subscribe_instrument_status           | optional    |
     | _subscribe_instrument_close            | optional    |
@@ -148,6 +154,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _unsubscribe_order_book_snapshots      | optional    |
     | _unsubscribe_quote_ticks               | optional    |
     | _unsubscribe_trade_ticks               | optional    |
+    | _unsubscribe_mark_prices               | optional    |
+    | _unsubscribe_index_prices              | optional    |
     | _unsubscribe_bars                      | optional    |
     | _unsubscribe_instrument_status         | optional    |
     | _unsubscribe_instrument_close          | optional    |
@@ -220,6 +228,16 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_subscribe_trade_ticks` must be implemented in the subclass",
         )  # pragma: no cover
 
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        raise NotImplementedError(
+            "method `_subscribe_mark_prices` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        raise NotImplementedError(
+            "method `_subscribe_index_prices` must be implemented in the subclass",
+        )  # pragma: no cover
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError(
             "method `_subscribe_bars` must be implemented in the subclass",
@@ -268,6 +286,16 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         raise NotImplementedError(
             "method `_unsubscribe_trade_ticks` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        raise NotImplementedError(
+            "method `_unsubscribe_mark_prices` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _unsubscribe_index_prices(self, command: UnsubscribeIndexPrices) -> None:
+        raise NotImplementedError(
+            "method `_unsubscribe_index_prices` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:

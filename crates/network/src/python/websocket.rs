@@ -38,8 +38,8 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, reconnect_timeout_ms=10_000, reconnect_delay_initial_ms=2_000, reconnect_delay_max_ms=30_000, reconnect_backoff_factor=1.5, reconnect_jitter_ms=100))]
     fn py_new(
         url: String,
         handler: PyObject,

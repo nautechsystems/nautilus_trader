@@ -288,24 +288,13 @@ impl CoinbaseIntxFixClient {
                 if connected_clone.load(Ordering::SeqCst) && !logged_on_clone.load(Ordering::SeqCst)
                 {
                     // Rate limit logon attempts
-                    if last_logon_attempt.elapsed() > Duration::from_secs(5) {
+                    if last_logon_attempt.elapsed() > Duration::from_secs(10) {
                         tracing::info!("Connected without logon");
                         last_logon_attempt = std::time::Instant::now();
 
                         if let Err(e) = client_clone.send_logon().await {
                             tracing::error!("Failed to send logon: {e}");
                         }
-                    }
-                }
-
-                // Check if we should exit
-                if !connected_clone.load(Ordering::SeqCst) {
-                    // Wait a bit to see if we reconnect
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-
-                    if !connected_clone.load(Ordering::SeqCst) {
-                        // Still not connected, exit
-                        break;
                     }
                 }
             }
@@ -342,7 +331,7 @@ impl CoinbaseIntxFixClient {
                 tokio::time::sleep(interval).await;
             }
 
-            tracing::debug!("Completed task 'FIX heartbeat'");
+            tracing::debug!("Stopped task 'FIX heartbeat'");
         })));
 
         Ok(())

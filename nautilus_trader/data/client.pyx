@@ -33,19 +33,23 @@ from nautilus_trader.data.messages cimport RequestQuoteTicks
 from nautilus_trader.data.messages cimport RequestTradeTicks
 from nautilus_trader.data.messages cimport SubscribeBars
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeIndexPrices
 from nautilus_trader.data.messages cimport SubscribeInstrument
 from nautilus_trader.data.messages cimport SubscribeInstrumentClose
 from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport SubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport SubscribeMarkPrices
 from nautilus_trader.data.messages cimport SubscribeOrderBook
 from nautilus_trader.data.messages cimport SubscribeQuoteTicks
 from nautilus_trader.data.messages cimport SubscribeTradeTicks
 from nautilus_trader.data.messages cimport UnsubscribeBars
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeIndexPrices
 from nautilus_trader.data.messages cimport UnsubscribeInstrument
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentClose
 from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages cimport UnsubscribeMarkPrices
 from nautilus_trader.data.messages cimport UnsubscribeOrderBook
 from nautilus_trader.data.messages cimport UnsubscribeQuoteTicks
 from nautilus_trader.data.messages cimport UnsubscribeTradeTicks
@@ -265,6 +269,8 @@ cdef class MarketDataClient(DataClient):
         self._subscriptions_order_book_snapshot = set()  # type: set[InstrumentId]
         self._subscriptions_quote_tick = set()           # type: set[InstrumentId]
         self._subscriptions_trade_tick = set()           # type: set[InstrumentId]
+        self._subscriptions_mark_price = set()           # type: set[InstrumentId]
+        self._subscriptions_index_price = set()          # type: set[InstrumentId]
         self._subscriptions_bar = set()                  # type: set[BarType]
         self._subscriptions_instrument_status = set()    # type: set[InstrumentId]
         self._subscriptions_instrument_close = set()     # type: set[InstrumentId]
@@ -340,6 +346,28 @@ cdef class MarketDataClient(DataClient):
 
         """
         return sorted(list(self._subscriptions_trade_tick))
+
+    cpdef list subscribed_mark_prices(self):
+        """
+        Return the mark price update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscriptions_mark_price))
+
+    cpdef list subscribed_index_prices(self):
+        """
+        Return the index price update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscriptions_index_price))
 
     cpdef list subscribed_bars(self):
         """
@@ -503,6 +531,42 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `subscribe_trade_ticks` method for this client",  # pragma: no cover
         )
         raise NotImplementedError("method `subscribe_trade_ticks` must be implemented in the subclass")
+
+    cpdef void subscribe_mark_prices(self, SubscribeMarkPrices command):
+        """
+        Subscribe to `MarkPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_mark_prices` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `subscribe_mark_prices` must be implemented in the subclass")
+
+    cpdef void subscribe_index_prices(self, SubscribeIndexPrices command):
+        """
+        Subscribe to `IndexPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot subscribe to `IndexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_index_prices` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `subscribe_index_prices` must be implemented in the subclass")
 
     cpdef void subscribe_instrument_status(self, SubscribeInstrumentStatus command):
         """
@@ -681,6 +745,42 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_trade_ticks` must be implemented in the subclass")
 
+    cpdef void unsubscribe_mark_prices(self, UnsubscribeMarkPrices command):
+        """
+        Unsubscribe from `MarkPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `MarkPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_mark_prices` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `unsubscribe_mark_prices` must be implemented in the subclass")
+
+    cpdef void unsubscribe_index_prices(self, UnsubscribeIndexPrices command):
+        """
+        Unsubscribe from `IndexPriceUpdate` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot unsubscribe from `IndexPriceUpdate` data for {command.instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_index_prices` method for this client",  # pragma: no cover
+        )
+        raise NotImplementedError("method `unsubscribe_index_prices` must be implemented in the subclass")
+
     cpdef void unsubscribe_bars(self, UnsubscribeBars command):
         """
         Unsubscribe from `Bar` data for the given bar type.
@@ -765,6 +865,16 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_trade_tick.add(instrument_id)
 
+    cpdef void _add_subscription_mark_prices(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_mark_price.add(instrument_id)
+
+    cpdef void _add_subscription_index_prices(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_index_price.add(instrument_id)
+
     cpdef void _add_subscription_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
 
@@ -809,6 +919,16 @@ cdef class MarketDataClient(DataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._subscriptions_trade_tick.discard(instrument_id)
+
+    cpdef void _remove_subscription_mark_prices(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_mark_price.discard(instrument_id)
+
+    cpdef void _remove_subscription_index_prices(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._subscriptions_index_price.discard(instrument_id)
 
     cpdef void _remove_subscription_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")

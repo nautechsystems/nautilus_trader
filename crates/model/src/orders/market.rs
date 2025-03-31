@@ -366,20 +366,24 @@ impl Order for MarketOrder {
         self.init_id
     }
 
-    fn ts_last(&self) -> UnixNanos {
-        self.ts_last
-    }
-
-    fn ts_accepted(&self) -> Option<UnixNanos> {
-        self.ts_accepted
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 
     fn ts_submitted(&self) -> Option<UnixNanos> {
         self.ts_submitted
     }
 
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
+    fn ts_accepted(&self) -> Option<UnixNanos> {
+        self.ts_accepted
+    }
+
+    fn ts_closed(&self) -> Option<UnixNanos> {
+        self.ts_closed
+    }
+
+    fn ts_last(&self) -> UnixNanos {
+        self.ts_last
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {

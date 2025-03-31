@@ -41,9 +41,9 @@ impl TardisHttpClient {
         Self::new(api_key, base_url, timeout_secs, normalize_symbols).map_err(to_pyruntime_err)
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "instruments")]
     #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, effective=None, ts_init=None))]
-    #[allow(clippy::too_many_arguments)]
     fn py_instruments<'py>(
         &self,
         exchange: String,
@@ -60,6 +60,7 @@ impl TardisHttpClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let exchange = Exchange::from_str(&exchange).map_err(to_pyvalue_err)?;
+
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)
             .quote_currency(quote_currency)

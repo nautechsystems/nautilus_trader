@@ -16,9 +16,10 @@
 //! Tests module for `Cache`.
 
 use bytes::Bytes;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, QuoteTick, TradeTick},
+    data::{Bar, MarkPriceUpdate, QuoteTick, TradeTick},
     enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType, PriceType},
     events::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, Venue},
@@ -574,10 +575,15 @@ fn test_price_when_empty(cache: Cache, audusd_sim: CurrencyPair, #[case] price_t
 
 #[rstest]
 fn test_price_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
-    let mark_price = Price::new(1.00000, 5);
-    cache.add_mark_price(&audusd_sim.id, mark_price);
+    let mark_price = MarkPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        UnixNanos::from(5),
+        UnixNanos::from(10),
+    );
+    cache.add_mark_price(mark_price).unwrap();
     let result = cache.price(&audusd_sim.id, PriceType::Mark);
-    assert_eq!(result, Some(mark_price));
+    assert_eq!(result, Some(mark_price.value));
 }
 
 #[rstest]
@@ -642,6 +648,30 @@ fn test_trade_ticks_when_some(mut cache: Cache) {
     cache.add_trades(&trades).unwrap();
     let result = cache.trades(&trades[0].instrument_id);
     assert_eq!(result, Some(trades));
+}
+
+#[rstest]
+fn test_mark_price_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.mark_price(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_mark_prices_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.mark_prices(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_index_price_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.index_price(&audusd_sim.id);
+    assert!(result.is_none());
+}
+
+#[rstest]
+fn test_index_prices_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+    let result = cache.index_prices(&audusd_sim.id);
+    assert!(result.is_none());
 }
 
 #[rstest]

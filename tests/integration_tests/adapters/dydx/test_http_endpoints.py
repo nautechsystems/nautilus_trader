@@ -48,6 +48,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -134,6 +135,17 @@ def order_response() -> DYDXOrderResponse:
     decoder = msgspec.json.Decoder(DYDXOrderResponse)
 
     with Path("tests/test_data/dydx/http/order.json").open() as file_reader:
+        return decoder.decode(file_reader.read())
+
+
+@pytest.fixture
+def conditional_order_response() -> DYDXOrderResponse:
+    """
+    Create an endpoint response.
+    """
+    decoder = msgspec.json.Decoder(DYDXOrderResponse)
+
+    with Path("tests/test_data/dydx/http/conditional_order.json").open() as file_reader:
         return decoder.decode(file_reader.read())
 
 
@@ -429,6 +441,80 @@ def test_order_parse_to_order_status_report(order_response: DYDXOrderResponse) -
     assert result.id == expected_result.id
     assert result.ts_accepted == expected_result.ts_accepted
     assert result.ts_init == expected_result.ts_init
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
+    assert result == expected_result
+
+
+def test_order_parse_to_conditional_order_status_report(
+    conditional_order_response: DYDXOrderResponse,
+) -> None:
+    """
+    Test creating an order status report from an order message.
+    """
+    # Prepare
+    report_id = UUID4()
+    account_id = AccountId(f"{DYDX_VENUE.value}-001")
+    expected_result = OrderStatusReport(
+        account_id=account_id,
+        instrument_id=DYDXSymbol("ETH-USD").to_instrument_id(),
+        client_order_id=ClientOrderId("2043599281"),
+        venue_order_id=VenueOrderId("05009670-3fba-5ec7-8447-efb81a03cd9f"),
+        order_side=OrderSide.BUY,
+        order_type=OrderType.STOP_LIMIT,
+        time_in_force=TimeInForce.IOC,
+        order_status=OrderStatus.FILLED,
+        price=Price(3335.3, 4),
+        trigger_price=Price(2791.9, 4),
+        trigger_type=TriggerType.DEFAULT,
+        quantity=Quantity(0.003, 5),
+        filled_qty=Quantity(0.003, 5),
+        avg_px=None,
+        post_only=False,
+        reduce_only=False,
+        ts_last=1722496165767000000,
+        report_id=report_id,
+        ts_accepted=0,
+        ts_init=1,
+    )
+
+    # Act
+    result = conditional_order_response.parse_to_order_status_report(
+        account_id=account_id,
+        client_order_id=ClientOrderId("2043599281"),
+        price_precision=4,
+        size_precision=5,
+        report_id=report_id,
+        enum_parser=DYDXEnumParser(),
+        ts_init=1,
+    )
+
+    # Assert
+    assert result.account_id == expected_result.account_id
+    assert result.instrument_id == expected_result.instrument_id
+    assert result.client_order_id == expected_result.client_order_id
+    assert result.venue_order_id == expected_result.venue_order_id
+    assert result.order_side == expected_result.order_side
+    assert result.order_type == expected_result.order_type
+    assert result.time_in_force == expected_result.time_in_force
+    assert result.order_status == expected_result.order_status
+    assert result.price == expected_result.price
+    assert result.price is not None
+    assert expected_result.price is not None
+    assert result.price.precision == expected_result.price.precision
+    assert result.quantity == expected_result.quantity
+    assert result.quantity.precision == expected_result.quantity.precision
+    assert result.filled_qty == expected_result.filled_qty
+    assert result.filled_qty.precision == expected_result.filled_qty.precision
+    assert result.avg_px == expected_result.avg_px
+    assert result.post_only is expected_result.post_only
+    assert result.reduce_only is expected_result.reduce_only
+    assert result.ts_last == expected_result.ts_last
+    assert result.id == expected_result.id
+    assert result.ts_accepted == expected_result.ts_accepted
+    assert result.ts_init == expected_result.ts_init
+    assert result.trigger_price == expected_result.trigger_price
+    assert result.trigger_type == expected_result.trigger_type
     assert result == expected_result
 
 

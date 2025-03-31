@@ -33,6 +33,7 @@ from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -102,6 +103,14 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
             else Quantity(Decimal("0"), size_precision)
         )
         ts_last = dt_to_unix_nanos(self.updatedAt) if self.updatedAt is not None else ts_init
+        trigger_type = (
+            TriggerType.DEFAULT if self.triggerPrice is not None else TriggerType.NO_TRIGGER
+        )
+        trigger_price = (
+            Price(Decimal(self.triggerPrice), price_precision)
+            if self.triggerPrice is not None
+            else None
+        )
 
         return OrderStatusReport(
             account_id=account_id,
@@ -121,4 +130,6 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
             report_id=report_id,
             ts_accepted=0,
             ts_init=ts_init,
+            trigger_type=trigger_type,
+            trigger_price=trigger_price,
         )

@@ -788,15 +788,43 @@ We can now work with this data type for backtesting and live trading. For instan
 we could now create an adapter which is able to parse and create objects of this
 type - and send them back to the `DataEngine` for consumption by subscribers.
 
-You can subscribe to these custom data types within your actor/strategy in the
-following way:
+You can publish a custom data type within your actor/strategy using the message bus
+in the following way:
+
+```python
+self.publish_data(
+    DataType(MyDataPoint, metadata={"some_optional_category": 1}),
+    MyDataPoint(...),
+)
+```
+
+The `metadata` dictionary optionally adds more granular information that is used in the
+topic name to publish data with the message bus.
+
+Extra metadata information can also be passed to a `BacktestDataConfig` configuration object in order to
+enrich and describe custom data objects used in a backtesting context:
+
+```python
+from nautilus_trader.config import BacktestDataConfig
+
+data_config = BacktestDataConfig(
+    catalog_path=str(catalog.path),
+    data_cls=MyDataPoint,
+    metadata={"some_optional_category": 1},
+)
+```
+
+You can subscribe to custom data types within your actor/strategy in the following way:
 
 ```python
 self.subscribe_data(
-    data_type=DataType(MyDataPoint, metadata={"some_optional_category": 1}),
+    data_type=DataType(MyDataPoint,
+    metadata={"some_optional_category": 1}),
     client_id=ClientId("MY_ADAPTER"),
 )
 ```
+
+The `client_id` provides an identifier to route the data subscription to a specific client.
 
 This will result in your actor/strategy passing these received `MyDataPoint`
 objects to your `on_data` method. You will need to check the type, as this

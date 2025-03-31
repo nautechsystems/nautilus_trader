@@ -20,18 +20,20 @@
 //! The core `BacktestEngine` for backtesting on historical data.
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     rc::Rc,
 };
 
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
 use nautilus_system::kernel::NautilusKernel;
@@ -39,7 +41,8 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    accumulator::TimeEventAccumulator, config::BacktestEngineConfig, exchange::SimulatedExchange,
+    accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
+    data_client::BacktestDataClient, exchange::SimulatedExchange,
     execution_client::BacktestExecutionClient, modules::SimulationModule,
 };
 
@@ -175,8 +178,40 @@ impl BacktestEngine {
         todo!("implement change_fill_model")
     }
 
-    pub fn add_instrument(&mut self, instrument: InstrumentAny) {
-        todo!("implement add_instrument")
+    pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
+        let instrument_id = instrument.id();
+        if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
+            // check if instrument is of variant CurrencyPair
+            if matches!(instrument, InstrumentAny::CurrencyPair(_))
+                && exchange.borrow().account_type != AccountType::Margin
+                && exchange.borrow().base_currency.is_some()
+            {
+                anyhow::bail!(
+                    "Cannot add a `CurrencyPair` instrument {} for a venue with a single-currency CASH account",
+                    instrument_id
+                )
+            }
+            exchange
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+                .unwrap();
+        } else {
+            anyhow::bail!(
+                "Cannot add an `Instrument` object without first adding its associated venue {}",
+                instrument.id().venue
+            )
+        }
+
+        // Check client has been registered
+        self.add_market_data_client_if_not_exists(instrument.id().venue);
+
+        self.kernel.data_engine.process(&instrument as &dyn Any);
+        log::info!(
+            "Added instrument {} to exchange {}",
+            instrument_id,
+            instrument_id.venue
+        );
+        Ok(())
     }
 
     pub fn add_data(
@@ -273,7 +308,108 @@ impl BacktestEngine {
         todo!("implement add_data_client_if_not_exists")
     }
 
-    pub fn add_market_data_client_if_not_exists(&mut self) {
-        todo!("implement add_market_data_client_if_not_exists")
+    pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
+        let client_id = ClientId::from(venue.as_str());
+        if !self
+            .kernel
+            .data_engine
+            .registered_clients()
+            .contains(&client_id)
+        {
+            let backtest_client =
+                BacktestDataClient::new(client_id, venue, self.kernel.cache.clone());
+            let data_client_adapter = DataClientAdapter::new(
+                client_id,
+                venue,
+                false,
+                false,
+                Box::new(backtest_client),
+                self.kernel.clock.clone(),
+            );
+            self.kernel
+                .data_engine
+                .register_client(data_client_adapter, None);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use nautilus_execution::models::{fee::FeeModelAny, fill::FillModel};
+    use nautilus_model::{
+        enums::{AccountType, BookType, OmsType},
+        identifiers::{ClientId, Venue},
+        instruments::{
+            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
+        },
+        types::Money,
+    };
+    use rstest::rstest;
+
+    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+
+    fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
+        let config = config.unwrap_or(BacktestEngineConfig::default());
+        let mut engine = BacktestEngine::new(config);
+        engine.add_venue(
+            Venue::from("BINANCE"),
+            OmsType::Netting,
+            AccountType::Margin,
+            BookType::L2_MBP,
+            vec![Money::from("1000000 USD")],
+            None,
+            None,
+            HashMap::new(),
+            vec![],
+            FillModel::default(),
+            FeeModelAny::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        engine
+    }
+
+    #[rstest]
+    fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let venue = Venue::from("BINANCE");
+        let client_id = ClientId::from(venue.as_str());
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        let mut engine = get_backtest_engine(None);
+        engine.add_instrument(instrument).unwrap();
+
+        // Check the venue and exec client has been added
+        assert_eq!(engine.venues.len(), 1);
+        assert!(engine.venues.get(&venue).is_some());
+        assert!(engine.kernel.exec_engine.get_client(&client_id).is_some());
+
+        // Check the instrument has been added
+        assert!(
+            engine
+                .venues
+                .get(&venue)
+                .is_some_and(|venue| venue.borrow().get_matching_engine(&instrument_id).is_some())
+        );
+        assert_eq!(engine.kernel.data_engine.registered_clients().len(), 1);
+        assert!(
+            engine
+                .kernel
+                .data_engine
+                .registered_clients()
+                .contains(&client_id)
+        )
     }
 }

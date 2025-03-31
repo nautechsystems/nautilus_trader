@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use futures_util::StreamExt;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
-    instruments::Instrument,
     python::{
         data::data_to_pycapsule,
         events::order::order_event_to_pyobject,
@@ -58,6 +55,16 @@ impl CoinbaseIntxWebSocketClient {
         self.api_key()
     }
 
+    #[pyo3(name = "is_active")]
+    fn py_is_active(&mut self) -> bool {
+        self.is_active()
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&mut self) -> bool {
+        self.is_closed()
+    }
+
     #[pyo3(name = "connect")]
     fn py_connect<'py>(
         &mut self,
@@ -65,10 +72,10 @@ impl CoinbaseIntxWebSocketClient {
         instruments: Vec<PyObject>,
         callback: PyObject,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut instruments_any = HashMap::new();
+        let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-            instruments_any.insert(inst_any.raw_symbol().inner(), inst_any);
+            instruments_any.push(inst_any);
         }
 
         get_runtime().block_on(async {
@@ -102,22 +109,28 @@ impl CoinbaseIntxWebSocketClient {
                     NautilusWsMessage::Deltas(deltas) => Python::with_gil(|py| {
                         call_python(py, &callback, deltas.into_py_any_unwrap(py));
                     }),
+                    NautilusWsMessage::MarkPrice(mark_price) => Python::with_gil(|py| {
+                        call_python(py, &callback, mark_price.into_py_any_unwrap(py));
+                    }),
+                    NautilusWsMessage::IndexPrice(index_price) => Python::with_gil(|py| {
+                        call_python(py, &callback, index_price.into_py_any_unwrap(py));
+                    }),
+                    NautilusWsMessage::MarkAndIndex((mark_price, index_price)) => {
+                        Python::with_gil(|py| {
+                            call_python(py, &callback, mark_price.into_py_any_unwrap(py));
+                            call_python(py, &callback, index_price.into_py_any_unwrap(py));
+                        })
+                    }
                     NautilusWsMessage::OrderEvent(msg) => Python::with_gil(|py| {
                         let py_obj =
                             order_event_to_pyobject(py, msg).expect("Failed to create event");
                         call_python(py, &callback, py_obj);
                     }),
-                    _ => panic!("Not implemented"),
                 }
             }
 
             Ok(())
         })
-    }
-
-    #[pyo3(name = "is_closed")]
-    fn py_is_closed(&mut self) -> bool {
-        self.is_closed()
     }
 
     #[pyo3(name = "close")]
@@ -133,12 +146,14 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     #[pyo3(name = "subscribe_instruments")]
+    #[pyo3(signature = (instrument_ids=None))]
     fn py_subscribe_instruments<'py>(
         &self,
         py: Python<'py>,
-        instrument_ids: Vec<InstrumentId>,
+        instrument_ids: Option<Vec<InstrumentId>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
+        let instrument_ids = instrument_ids.unwrap_or_default();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_instruments(instrument_ids).await {
@@ -191,6 +206,38 @@ impl CoinbaseIntxWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.subscribe_trades(instrument_ids).await {
                 log::error!("Failed to subscribe to trades: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_mark_prices")]
+    fn py_subscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_mark_prices(instrument_ids).await {
+                log::error!("Failed to subscribe to mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "subscribe_index_prices")]
+    fn py_subscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.subscribe_index_prices(instrument_ids).await {
+                log::error!("Failed to subscribe to index prices: {e}");
             }
             Ok(())
         })
@@ -271,6 +318,38 @@ impl CoinbaseIntxWebSocketClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             if let Err(e) = client.unsubscribe_trades(instrument_ids).await {
                 log::error!("Failed to unsubscribe from trades: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_mark_prices")]
+    fn py_unsubscribe_mark_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_mark_prices(instrument_ids).await {
+                log::error!("Failed to unsubscribe from mark prices: {e}");
+            }
+            Ok(())
+        })
+    }
+
+    #[pyo3(name = "unsubscribe_index_prices")]
+    fn py_unsubscribe_index_prices<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_ids: Vec<InstrumentId>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if let Err(e) = client.unsubscribe_index_prices(instrument_ids).await {
+                log::error!("Failed to unsubscribe from index prices: {e}");
             }
             Ok(())
         })

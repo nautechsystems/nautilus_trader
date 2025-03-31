@@ -15,12 +15,7 @@
 
 //! A `QuoteTick` data type representing a top-of-book state.
 
-use std::{
-    cmp,
-    collections::HashMap,
-    fmt::{Display, Formatter},
-    hash::Hash,
-};
+use std::{cmp, collections::HashMap, fmt::Display, hash::Hash};
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
@@ -41,7 +36,7 @@ use crate::{
     },
 };
 
-/// Represents a single quote tick in a market.
+/// Represents a quote tick in a market.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
@@ -195,7 +190,7 @@ impl QuoteTick {
 }
 
 impl Display for QuoteTick {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{},{},{},{},{},{}",

@@ -16,13 +16,12 @@
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    enums::{AssetClass, CurrencyType},
+    enums::CurrencyType,
     identifiers::{InstrumentId, Symbol},
-    instruments::{CryptoFuture, CryptoPerpetual, CurrencyPair, InstrumentAny, OptionContract},
+    instruments::{CryptoFuture, CryptoOption, CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use super::models::InstrumentInfo;
 use crate::parse::parse_option_kind;
@@ -100,7 +99,7 @@ pub fn create_crypto_perpetual(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
             info.settlement_currency
-                .unwrap_or(info.quote_currency)
+                .unwrap_or(info.base_currency)
                 .to_uppercase()
                 .as_str(),
         ),
@@ -149,7 +148,12 @@ pub fn create_crypto_future(
         raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
-        get_currency(info.base_currency.to_uppercase().as_str()),
+        get_currency(
+            info.settlement_currency
+                .unwrap_or(info.base_currency)
+                .to_uppercase()
+                .as_str(),
+        ),
         info.inverse.expect("Future should have `inverse` field"),
         activation,
         expiration,
@@ -176,13 +180,14 @@ pub fn create_crypto_future(
 
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-pub fn create_option_contract(
+pub fn create_crypto_option(
     info: &InstrumentInfo,
     instrument_id: InstrumentId,
     raw_symbol: Symbol,
     activation: UnixNanos,
     expiration: UnixNanos,
     price_increment: Price,
+    size_increment: Quantity,
     multiplier: Option<Quantity>,
     margin_init: Decimal,
     margin_maint: Decimal,
@@ -191,31 +196,39 @@ pub fn create_option_contract(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
-    InstrumentAny::OptionContract(OptionContract::new(
+    InstrumentAny::CryptoOption(CryptoOption::new(
         instrument_id,
         raw_symbol,
-        AssetClass::Cryptocurrency,
-        Some(Ustr::from(instrument_id.venue.as_str())),
-        Ustr::from(info.base_currency.to_string().to_uppercase().as_str()),
+        get_currency(info.base_currency.to_uppercase().as_str()),
+        get_currency(info.quote_currency.to_uppercase().as_str()),
+        get_currency(
+            info.settlement_currency
+                .unwrap_or(info.base_currency)
+                .to_uppercase()
+                .as_str(),
+        ),
+        info.inverse.unwrap_or(false),
         parse_option_kind(
             info.option_type
                 .clone()
-                .expect("Option should have `option_type` field"),
+                .expect("CryptoOption should have `option_type` field"),
         ),
         Price::new(
             info.strike_price
-                .expect("Option should have `strike_price` field"),
+                .expect("CryptoOption should have `strike_price` field"),
             price_increment.precision,
         ),
-        get_currency(info.quote_currency.to_uppercase().as_str()),
         activation,
         expiration,
         price_increment.precision,
+        size_increment.precision,
         price_increment,
-        multiplier.unwrap_or(Quantity::from(1)),
-        Quantity::from(1), // lot_size
+        size_increment,
+        multiplier,
         None,
         Some(Quantity::from(info.min_trade_amount.to_string().as_str())),
+        None,
+        None,
         None,
         None,
         Some(margin_init),

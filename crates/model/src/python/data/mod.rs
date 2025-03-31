@@ -22,6 +22,7 @@ pub mod deltas;
 pub mod depth;
 pub mod greeks;
 pub mod order;
+pub mod prices;
 pub mod quote;
 pub mod status;
 pub mod trade;

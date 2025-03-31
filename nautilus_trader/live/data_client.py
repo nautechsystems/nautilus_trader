@@ -46,10 +46,12 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeInstrumentStatus
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -59,6 +61,7 @@ from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstrumentClose
 from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeInstrumentStatus
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -197,10 +200,9 @@ class LiveDataClient(DataClient):
                 try:
                     actions()
                 except Exception as e:
-                    tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    self._log.error(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
-                        f"{e!r}\n{tb_str}",
+                    self._log.exception(
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                        e,
                     )
             if success_msg:
                 self._log.info(success_msg, success_color)
@@ -424,10 +426,9 @@ class LiveMarketDataClient(MarketDataClient):
                 try:
                     actions()
                 except Exception as e:
-                    tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    self._log.error(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
-                        f"{e!r}\n{tb_str}",
+                    self._log.exception(
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                        e,
                     )
             if success_msg:
                 self._log.info(success_msg, success_color)
@@ -519,6 +520,24 @@ class LiveMarketDataClient(MarketDataClient):
             self._subscribe_trade_ticks(command),
             log_msg=f"subscribe: trade_ticks {command.instrument_id}",
             success_msg=f"Subscribed {command.instrument_id} trades",
+            success_color=LogColor.BLUE,
+        )
+
+    def subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        self._add_subscription_mark_prices(command.instrument_id)
+        self.create_task(
+            self._subscribe_mark_prices(command),
+            log_msg=f"subscribe: mark_prices {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} mark prices",
+            success_color=LogColor.BLUE,
+        )
+
+    def subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        self._add_subscription_index_prices(command.instrument_id)
+        self.create_task(
+            self._subscribe_index_prices(command),
+            log_msg=f"subscribe: index_prices {command.instrument_id}",
+            success_msg=f"Subscribed {command.instrument_id} index prices",
             success_color=LogColor.BLUE,
         )
 
@@ -615,6 +634,24 @@ class LiveMarketDataClient(MarketDataClient):
             self._unsubscribe_trade_ticks(command),
             log_msg=f"unsubscribe: trade_ticks {command.instrument_id}",
             success_msg=f"Unsubscribed {command.instrument_id} trades",
+            success_color=LogColor.BLUE,
+        )
+
+    def unsubscribe_mark_prices(self, command: UnsubscribeMarkPrices) -> None:
+        self._remove_subscription_trade_ticks(command.instrument_id)
+        self.create_task(
+            self._unsubscribe_trade_ticks(command),
+            log_msg=f"unsubscribe: mark_prices {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} mark prices",
+            success_color=LogColor.BLUE,
+        )
+
+    def unsubscribe_index_prices(self, command: UnsubscribeMarkPrices) -> None:
+        self._remove_subscription_trade_ticks(command.instrument_id)
+        self.create_task(
+            self._unsubscribe_trade_ticks(command),
+            log_msg=f"unsubscribe: index_prices {command.instrument_id}",
+            success_msg=f"Unsubscribed {command.instrument_id} index prices",
             success_color=LogColor.BLUE,
         )
 
@@ -765,6 +802,16 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe_mark_prices` coroutine",  # pragma: no cover
+        )
+
+    async def _subscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_subscribe_index_prices` coroutine",  # pragma: no cover
+        )
+
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_bars` coroutine",  # pragma: no cover
@@ -813,6 +860,16 @@ class LiveMarketDataClient(MarketDataClient):
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_trade_ticks` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe_mark_prices` coroutine",  # pragma: no cover
+        )
+
+    async def _unsubscribe_index_prices(self, command: SubscribeIndexPrices) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_unsubscribe_index_prices` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:

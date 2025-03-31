@@ -61,6 +61,7 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_str_c(str value)
     cpdef bint is_synthetic(self)
+    cpdef object to_pyo3(self)
 
 
 cdef class ComponentId(Identifier):

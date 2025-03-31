@@ -41,15 +41,19 @@ from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
+from nautilus_trader.data.messages import SubscribeIndexPrices
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
 from nautilus_trader.data.messages import UnsubscribeData
+from nautilus_trader.data.messages import UnsubscribeIndexPrices
 from nautilus_trader.data.messages import UnsubscribeInstrument
 from nautilus_trader.data.messages import UnsubscribeInstruments
+from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -1399,7 +1403,7 @@ class TestDataEngine:
         assert handler1 == [tick]
         assert handler2 == [tick]
 
-    def test_subscribe_trade_tick_then_subscribes(self):
+    def test_subscribe_trade_ticks_then_subscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
@@ -1418,7 +1422,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_trade_ticks() == [ETHUSDT_BINANCE.id]
 
-    def test_unsubscribe_trade_tick_then_unsubscribes(self):
+    def test_unsubscribe_trade_ticks_then_unsubscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
@@ -1452,6 +1456,114 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_trade_ticks() == []
         assert self.binance_client.subscribed_trade_ticks() == []
+
+    def test_subscribe_mark_prices_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeMarkPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_mark_prices() == [ETHUSDT_BINANCE.id]
+
+    def test_unsubscribe_mark_prices_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.mark_prices.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = SubscribeMarkPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        assert self.binance_client.subscribed_mark_prices() == [ETHUSDT_BINANCE.id]
+
+        unsubscribe = UnsubscribeMarkPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_mark_prices() == []
+        assert self.binance_client.subscribed_mark_prices() == []
+
+    def test_subscribe_index_prices_then_subscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        subscribe = SubscribeIndexPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_index_prices() == [ETHUSDT_BINANCE.id]
+
+    def test_unsubscribe_index_prices_then_unsubscribes(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.index_prices.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = SubscribeIndexPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        assert self.binance_client.subscribed_index_prices() == [ETHUSDT_BINANCE.id]
+
+        unsubscribe = UnsubscribeIndexPrices(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_index_prices() == []
+        assert self.binance_client.subscribed_index_prices() == []
 
     def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
         # Arrange

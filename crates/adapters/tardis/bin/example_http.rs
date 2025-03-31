@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::UnixNanos;
 use nautilus_model::instruments::Instrument;
-use nautilus_tardis::{enums::Exchange, http::client::TardisHttpClient};
+use nautilus_tardis::{
+    enums::Exchange,
+    http::{client::TardisHttpClient, query::InstrumentFilterBuilder},
+};
 
 #[tokio::main]
 async fn main() {
@@ -25,21 +29,58 @@ async fn main() {
     let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
-    let resp = client.instruments_info(Exchange::Okex, None, None).await;
+    let resp = client.instruments_info(Exchange::Binance, None, None).await;
     println!("Received: {resp:?}");
 
+    let start = UnixNanos::from("2020-1-1");
+    let filter = InstrumentFilterBuilder::default()
+        .available_since(Some(start.into()))
+        .build()
+        .unwrap();
+
     let resp = client
-        .instruments_info(Exchange::Okex, Some("ETH-USD"), None)
+        .instruments_info(Exchange::Binance, Some("BTCUSDT"), Some(&filter))
         .await;
     println!("Received: {resp:?}");
+
+    let filter = InstrumentFilterBuilder::default()
+        .instrument_type(Some(vec!["perpetual".to_string()]))
+        .build()
+        .unwrap();
+    let resp = client
+        .instruments_info(Exchange::Bitmex, Some("XBTUSD"), Some(&filter))
+        .await;
+
+    for inst in resp.unwrap() {
+        println!("{inst:?}");
+        if let Some(changes) = inst.changes {
+            for change in changes {
+                println!("Change:");
+                println!("{change:?}");
+            }
+        }
+    }
+
+    let effective = UnixNanos::from("2020-08-01");
 
     // Nautilus instrument definitions
     let resp = client
-        .instruments(Exchange::Deribit, None, None, None, None)
+        .instruments(
+            Exchange::Bitmex,
+            Some("XBTUSD"),
+            Some(&filter),
+            Some(effective),
+            None,
+        )
         .await;
-    println!("Received: {resp:?}");
 
     for inst in resp.unwrap() {
         println!("{}", inst.id());
+        println!("price_increment={}", inst.price_increment());
+        println!("size_increment={}", inst.size_increment());
+        println!("multiplier={}", inst.multiplier());
+        println!("ts_event={}", inst.ts_event().to_rfc3339());
+        println!("ts_init={}", inst.ts_init().to_rfc3339());
+        println!("---------------------------");
     }
 }

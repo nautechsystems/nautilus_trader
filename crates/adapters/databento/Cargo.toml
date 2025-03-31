@@ -42,9 +42,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
 databento = "0.20.0"
-deranged = "=0.4.0"  # Pin temporarily due to [E0282]: type annotation error in time crate
 fallible-streaming-iterator = "0.1.9"
-time = "0.3.40"
+time = "0.3.41"
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../../test_kit" }

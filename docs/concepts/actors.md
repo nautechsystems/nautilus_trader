@@ -80,6 +80,8 @@ Here's how different data operations map to their handlers:
 | `subscribe_order_book_deltas()` | Real-time&nbsp;  | `on_order_book_deltas()` | Live order book updates |
 | `subscribe_quote_ticks()`       | Real-time&nbsp;  | `on_quote_tick()`        | Live quote updates |
 | `subscribe_trade_ticks()`       | Real-time&nbsp;  | `on_trade_tick()`        | Live trade updates |
+| `subscribe_mark_prices()`       | Real-time&nbsp;  | `on_mark_price()`        | Live mark price updates |
+| `subscribe_index_prices()`      | Real-time&nbsp;  | `on_index_price()`       | Live index price updates |
 | `subscribe_bars()`              | Real-time&nbsp;  | `on_bar()`               | Live bar updates |
 | `subscribe_instrument_status()` | Real-time&nbsp;  | `on_instrument_status()` | Live instrument status updates |
 | `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |

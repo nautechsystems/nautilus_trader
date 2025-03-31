@@ -27,7 +27,10 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{self, handler::ShareableMessageHandler},
+    msgbus::{
+        self,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -42,16 +45,8 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
-use uuid::Uuid;
 
-use crate::{
-    config::PortfolioConfig,
-    handlers::{
-        UpdateAccountHandler, UpdateBarHandler, UpdateOrderHandler, UpdatePositionHandler,
-        UpdateQuoteTickHandler,
-    },
-    manager::AccountsManager,
-};
+use crate::{config::PortfolioConfig, manager::AccountsManager};
 
 struct PortfolioState {
     accounts: AccountsManager,
@@ -131,60 +126,53 @@ impl Portfolio {
     ) {
         let update_account_handler = {
             let cache = cache.clone();
-            ShareableMessageHandler(Rc::new(UpdateAccountHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &AccountState| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &AccountState| {
                     update_account(cache.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_position_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdatePositionHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &PositionEvent| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &PositionEvent| {
                     update_position(cache.clone(), clock.clone(), inner.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_quote_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdateQuoteTickHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |quote: &QuoteTick| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |quote: &QuoteTick| {
                     update_quote_tick(cache.clone(), clock.clone(), inner.clone(), quote);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_bar_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdateBarHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |bar: &Bar| {
-                    update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
-                }),
-            }))
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
+            })))
         };
 
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
             let inner = inner;
-            ShareableMessageHandler(Rc::new(UpdateOrderHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &OrderEventAny| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &OrderEventAny| {
                     update_order(cache.clone(), clock.clone(), inner.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         msgbus::register("Portfolio.update_account", update_account_handler.clone());
