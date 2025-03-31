@@ -168,15 +168,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._update_account_task: asyncio.Task | None = None
 
         # Hot caches:
-        # - filled_qty_cache: Tracks filled quantities separately from order state since Betfair
-        #   only provides cumulative matched sizes (sm). This lets us calculate incremental fills
-        #   while avoiding race conditions with delayed order state updates.
-        # - pending_update_order_client_ids: Tracks orders with pending updates to ensure state
-        #   consistency during asynchronous processing.
-        # - published_executions: Stores published executions per order to avoid duplicates and
-        #   support reconciliation with external systems.
+        # Tracks filled quantities separately from order state since Betfair only provides
+        # cumulative matched sizes (sm). This lets us calculate incremental fills
+        # while avoiding race conditions with delayed order state updates.
         self._filled_qty_cache: dict[ClientOrderId, Quantity] = {}
+
+        # Tracks orders with pending updates to ensure state consistency during asynchronous processing
         self._pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
+
+        # Stores published executions per order to avoid duplicates and support reconciliation
         self._published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
 
     @property
@@ -274,7 +274,9 @@ class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug("Sent account state")
                 await asyncio.sleep(self.config.request_account_state_secs)
         except asyncio.CancelledError:
-            self._log.debug("Canceled task '_update_account_state'")
+            self._log.debug("Canceled task 'update_account_state'")
+        except Exception as e:
+            self._log.exception("Error updating account state", e)
 
     async def request_account_state(self) -> AccountState:
         account_details = await self._client.get_account_details()
