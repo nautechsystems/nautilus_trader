@@ -1056,8 +1056,7 @@ impl MessageHandler for SubscriptionCommandHandler {
     fn handle(&self, msg: &dyn Any) {
         self.engine_ref.borrow_mut().enqueue(msg);
     }
-    fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, _data: Data) {}
+
     fn as_any(&self) -> &dyn Any {
         self
     }
