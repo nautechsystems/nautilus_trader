@@ -162,7 +162,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
-            dataset = self._get_dataset_for_venue(instrument_id.venue)
+            dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             self._instrument_ids[dataset].add(instrument_id)
 
         # MBO/L3 subscription buffering
@@ -174,11 +174,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_client_futures: set[asyncio.Future] = set()
         self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard-coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
-
-    def _get_dataset_for_venue(self, venue: Venue) -> Dataset:
-        return (
-            self._venue_dataset_map and self._venue_dataset_map.get(venue)
-        ) or self._loader.get_dataset_for_venue(venue)
 
     async def _connect(self) -> None:
         if not self._instrument_ids:
@@ -331,7 +326,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
         try:
-            dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             subscribed_instruments = self._instrument_ids[dataset]
 
             if instrument_id in subscribed_instruments:
@@ -420,7 +415,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             # TODO: Create `DatabentoTimeSeriesParams`
             instrument_id: InstrumentId = data_type.metadata["instrument_id"]
-            dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.IMBALANCE.value,
@@ -434,7 +429,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             # TODO: Create `DatabentoTimeSeriesParams`
             instrument_id: InstrumentId = data_type.metadata["instrument_id"]
-            dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.STATISTICS.value,
@@ -450,7 +445,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
         try:
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             start: int | None = command.params.get("start")
 
             live_client = self._get_live_client(dataset)
@@ -510,7 +505,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 )
                 return
 
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
 
             if self._is_buffering_mbo_subscriptions:
                 self._log.debug(
@@ -545,7 +540,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache
 
-            dataset: Dataset = self._get_dataset_for_venue(instrument_ids[0].venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
 
             if dataset == "GLBX.MDP3":
@@ -600,7 +595,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                     )
                     return
 
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
@@ -625,7 +620,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             start: int | None = command.params.get("start")
 
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=schema,
@@ -649,7 +644,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             start: int | None = command.params.get("start")
 
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
                 schema=DatabentoSchema.TRADES.value,
@@ -662,7 +657,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         try:
-            dataset: Dataset = self._get_dataset_for_venue(
+            dataset: Dataset = self._loader.get_dataset_for_venue(
                 command.bar_type.instrument_id.venue,
             )
 
@@ -686,7 +681,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         try:
-            dataset: Dataset = self._get_dataset_for_venue(command.instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(command.instrument_id.venue)
 
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
@@ -770,7 +765,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - pd.Timedelta(days=2)
@@ -803,7 +798,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - pd.Timedelta(days=2)
@@ -834,7 +829,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
 
-        dataset: Dataset = self._get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = start or available_end - pd.Timedelta(days=2)
@@ -861,7 +856,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
-        dataset: Dataset = self._get_dataset_for_venue(request.instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = request.start or available_end - pd.Timedelta(days=2)
@@ -892,7 +887,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_instrument(instruments[0], request.id, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        dataset: Dataset = self._get_dataset_for_venue(request.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = request.start or available_end - pd.Timedelta(days=2)
@@ -925,7 +920,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_instruments(instruments, request.venue, request.id, request.params)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
-        dataset: Dataset = self._get_dataset_for_venue(request.instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = request.start or available_end - pd.Timedelta(days=1)
@@ -963,7 +958,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_quote_ticks(request.instrument_id, quotes, request.id, request.params)
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
-        dataset: Dataset = self._get_dataset_for_venue(request.instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = request.start or available_end - pd.Timedelta(days=1)
@@ -991,7 +986,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
 
     async def _request_bars(self, request: RequestBars) -> None:
-        dataset: Dataset = self._get_dataset_for_venue(request.bar_type.instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
         start = request.start or available_end - pd.Timedelta(days=1)

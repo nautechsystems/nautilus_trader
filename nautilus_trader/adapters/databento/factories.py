@@ -146,7 +146,7 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             gateway=config.http_gateway,
         )
 
-        loader = DatabentoDataLoader()
+        loader = DatabentoDataLoader(config.venue_dataset_map)
         provider = get_cached_databento_instrument_provider(
             http_client=http_client,
             clock=clock,
