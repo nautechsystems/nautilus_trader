@@ -208,13 +208,12 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._log.debug("Starting 'update_account_state' task")
 
+        # Request one initial update
+        account_state = await self.request_account_state()
+        self._send_account_state(account_state)
+
         if self.config.request_account_state_secs:
             self._update_account_task = self.create_task(self._update_account_state())
-        else:
-            # Request one initial update
-            account_state = await self.request_account_state()
-            self._log.debug(f"Received account state: {account_state}")
-            self._send_account_state(account_state)
 
     async def _reconnect(self) -> None:
         self._log.info("Reconnecting to Betfair")
@@ -226,6 +225,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         await self._client.reconnect()
         await self._stream.reconnect()
+
+        account_state = await self.request_account_state()
+        self._send_account_state(account_state)
 
         if self.config.request_account_state_secs:
             self._update_account_task = self.create_task(self._update_account_state())
@@ -267,18 +269,20 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _update_account_state(self) -> None:
         try:
             while True:
-                self._log.debug("Requesting account state")
-                account_state = await self.request_account_state()
-                self._log.debug(f"Received account state: {account_state}")
-                self._send_account_state(account_state)
-                self._log.debug("Sent account state")
-                await asyncio.sleep(self.config.request_account_state_secs)
+                try:
+                    await asyncio.sleep(self.config.request_account_state_secs)
+                    account_state = await self.request_account_state()
+                    self._send_account_state(account_state)
+                except BetfairError as e:
+                    self._log.warning(str(e))
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_account_state'")
         except Exception as e:
             self._log.exception("Error updating account state", e)
 
     async def request_account_state(self) -> AccountState:
+        self._log.debug("Requesting account state")
+
         account_details = await self._client.get_account_details()
         account_funds = await self._client.get_account_funds()
         timestamp = self._clock.timestamp_ns()
@@ -290,6 +294,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             ts_event=timestamp,
             ts_init=timestamp,
         )
+        self._log.debug(f"Received account state: {account_state}")
+
         return account_state
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
