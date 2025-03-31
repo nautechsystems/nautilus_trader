@@ -26,7 +26,7 @@ use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use ustr::Ustr;
 
 use crate::{
-    actor::registry::{Actor, get_actor_unchecked, register_actor},
+    actor::registry::{DeprecatedActor, get_actor_unchecked, register_actor},
     clock::Clock,
     messages::data::DataResponse,
     msgbus::{
@@ -82,7 +82,7 @@ pub struct Throttler<T, F> {
     output_drop: Option<F>,
 }
 
-impl<T, F> Actor for Throttler<T, F>
+impl<T, F> DeprecatedActor for Throttler<T, F>
 where
     T: 'static,
     F: Fn(T) + 'static,
@@ -91,12 +91,12 @@ where
         self.actor_id
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn handle(&self, _resp: DataResponse) {
         // TODO: Implement
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

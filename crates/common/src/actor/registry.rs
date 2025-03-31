@@ -26,14 +26,14 @@ use nautilus_core::UUID4;
 use crate::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
 
 /// TODO: deprecate for `MessageHandler` trait which has all the relevant functions
-pub trait Actor: Any {
+pub trait DeprecatedActor: Any {
     fn handle(&self, resp: DataResponse); // TODO: Draft
     fn id(&self) -> UUID4;
     fn as_any(&self) -> &dyn Any;
 }
 
 pub struct ActorRegistry {
-    actors: RefCell<HashMap<UUID4, Rc<UnsafeCell<dyn Actor>>>>,
+    actors: RefCell<HashMap<UUID4, Rc<UnsafeCell<dyn DeprecatedActor>>>>,
 }
 
 impl Default for ActorRegistry {
@@ -49,11 +49,11 @@ impl ActorRegistry {
         }
     }
 
-    pub fn insert(&self, id: UUID4, actor: Rc<UnsafeCell<dyn Actor>>) {
+    pub fn insert(&self, id: UUID4, actor: Rc<UnsafeCell<dyn DeprecatedActor>>) {
         self.actors.borrow_mut().insert(id, actor);
     }
 
-    pub fn get(&self, id: &UUID4) -> Option<Rc<UnsafeCell<dyn Actor>>> {
+    pub fn get(&self, id: &UUID4) -> Option<Rc<UnsafeCell<dyn DeprecatedActor>>> {
         self.actors.borrow().get(id).cloned()
     }
 }
@@ -68,17 +68,17 @@ pub fn get_actor_registry() -> &'static ActorRegistry {
     ACTOR_REGISTRY.get_or_init(ActorRegistry::new)
 }
 
-pub fn register_actor(actor: Rc<UnsafeCell<dyn Actor>>) {
+pub fn register_actor(actor: Rc<UnsafeCell<dyn DeprecatedActor>>) {
     let actor_id = unsafe { &mut *actor.get() }.id();
     get_actor_registry().insert(actor_id, actor);
 }
 
-pub fn get_actor(id: &UUID4) -> Option<Rc<UnsafeCell<dyn Actor>>> {
+pub fn get_actor(id: &UUID4) -> Option<Rc<UnsafeCell<dyn DeprecatedActor>>> {
     get_actor_registry().get(id)
 }
 
 #[allow(clippy::mut_from_ref)]
-pub fn get_actor_unchecked<T: Actor>(id: &UUID4) -> &mut T {
+pub fn get_actor_unchecked<T: DeprecatedActor>(id: &UUID4) -> &mut T {
     let actor = get_actor(id).unwrap_or_else(|| panic!("Actor for {} not found", id));
     unsafe { &mut *(actor.get() as *mut _ as *mut T) }
 }
