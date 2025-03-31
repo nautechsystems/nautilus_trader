@@ -22,8 +22,8 @@ use std::{
 use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
-    messages::data::{DataCommand, DataEvent, DataResponse, SubscribeCommand},
-    runner::{DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
+    messages::data::{DataCommand, DataResponse, SubscribeCommand},
+    runner::{DataEvent, DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
     runtime::get_runtime,
 };
 use nautilus_data::engine::DataEngine;

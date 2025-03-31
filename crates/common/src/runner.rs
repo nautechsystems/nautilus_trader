@@ -19,9 +19,11 @@ use std::{
     rc::Rc,
 };
 
+use nautilus_model::data::Data;
+
 use crate::{
     clock::Clock,
-    messages::data::{DataEvent, DataResponse, SubscribeCommand},
+    messages::data::{DataResponse, SubscribeCommand},
     timer::TimeEvent,
 };
 
@@ -30,6 +32,13 @@ pub trait DataQueue {
 }
 
 pub type GlobalDataQueue = Rc<RefCell<dyn DataQueue>>;
+
+// TODO: Refine this to reduce disparity between enum sizes
+#[allow(clippy::large_enum_variant)]
+pub enum DataEvent {
+    Response(DataResponse),
+    Data(Data),
+}
 
 pub struct SyncDataQueue(VecDeque<DataEvent>);
 
