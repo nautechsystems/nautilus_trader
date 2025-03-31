@@ -23,7 +23,6 @@ use std::{
 };
 
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
-use nautilus_model::data::Data;
 use ustr::Ustr;
 
 use crate::{
@@ -344,14 +343,6 @@ where
         }
 
         throttler.is_limiting = false;
-    }
-
-    fn handle_response(&self, _resp: DataResponse) {
-        // TODO: Implement
-    }
-
-    fn handle_data(&self, _data: Data) {
-        // TODO: Implement
     }
 
     fn as_any(&self) -> &dyn Any {

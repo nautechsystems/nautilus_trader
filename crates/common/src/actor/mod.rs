@@ -20,7 +20,6 @@
 
 pub mod config;
 pub mod executor;
-pub mod handlers;
 #[cfg(feature = "indicators")]
 pub(crate) mod indicators;
 pub mod registry;
@@ -36,7 +35,6 @@ use std::{
 
 use config::ActorConfig;
 use executor::ActorExecutor;
-use handlers::{HandleData, HandleInstrument, HandleInstruments};
 use indicators::Indicators;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -67,7 +65,7 @@ use crate::{
     },
     msgbus::{
         self, get_message_bus,
-        handler::ShareableMessageHandler,
+        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_custom_topic, get_instrument_topic,
             get_instruments_topic,
@@ -171,12 +169,13 @@ impl Actor {
         self.check_registered();
 
         let actor_id = self.actor_id;
-        let handler =
-            ShareableMessageHandler(Rc::new(HandleData::new(Box::new(move |data: &dyn Any| {
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+            move |data: &dyn Any| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
                     .handle_data(data);
-            }))));
+            },
+        )));
 
         let topic = get_custom_topic(&data_type);
         msgbus::subscribe(topic, handler, None);
@@ -208,7 +207,7 @@ impl Actor {
         self.check_registered();
 
         let actor_id = self.actor_id;
-        let handler = ShareableMessageHandler(Rc::new(HandleInstruments::new(Box::new(
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(Box::new(
             move |instruments: &Vec<InstrumentAny>| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
@@ -240,13 +239,13 @@ impl Actor {
         self.check_registered();
 
         let actor_id = self.actor_id;
-        let handler = ShareableMessageHandler(Rc::new(HandleInstrument::new(Box::new(Box::new(
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(Box::new(
             move |instrument: &InstrumentAny| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
                     .handle_instrument(instrument);
             },
-        )))));
+        ))));
 
         let topic = get_instrument_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);

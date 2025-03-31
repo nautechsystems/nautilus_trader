@@ -22,7 +22,6 @@ use std::{
 
 use nautilus_common::{
     cache::Cache,
-    messages::data::DataResponse,
     msgbus::{self, handler::MessageHandler},
     timer::TimeEvent,
 };
@@ -66,22 +65,24 @@ impl MessageHandler for BookUpdater {
         self.id
     }
 
-    fn handle(&self, message: &dyn Any) {}
-    fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, data: Data) {
-        if let Some(book) = self
-            .cache
-            .borrow_mut()
-            .order_book_mut(&data.instrument_id())
-        {
-            match data {
-                Data::Delta(delta) => book.apply_delta(&delta),
-                Data::Deltas(deltas) => book.apply_deltas(&deltas),
-                Data::Depth10(depth) => book.apply_depth(&depth),
-                _ => log::error!("Invalid data type for book update, was {data:?}"),
+    fn handle(&self, message: &dyn Any) {
+        // TODO: Temporary handler implementation (this will be removed soon)
+        if let Some(data) = message.downcast_ref::<Data>() {
+            if let Some(book) = self
+                .cache
+                .borrow_mut()
+                .order_book_mut(&data.instrument_id())
+            {
+                match data {
+                    Data::Delta(delta) => book.apply_delta(delta),
+                    Data::Deltas(deltas) => book.apply_deltas(deltas),
+                    Data::Depth10(depth) => book.apply_depth(depth),
+                    _ => log::error!("Invalid data type for book update, was {data:?}"),
+                }
             }
         }
     }
+
     fn as_any(&self) -> &dyn Any {
         self
     }

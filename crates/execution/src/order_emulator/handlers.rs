@@ -15,8 +15,8 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::{messages::data::DataResponse, msgbus::handler::MessageHandler};
-use nautilus_model::{data::Data, events::OrderEventAny};
+use nautilus_common::msgbus::handler::MessageHandler;
+use nautilus_model::events::OrderEventAny;
 use ustr::Ustr;
 
 use crate::{messages::TradingCommand, order_emulator::emulator::OrderEmulator};
@@ -39,8 +39,7 @@ impl MessageHandler for OrderEmulatorExecuteHandler {
                 .clone(),
         );
     }
-    fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, _data: Data) {}
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -64,8 +63,7 @@ impl MessageHandler for OrderEmulatorOnEventHandler {
                 .clone(),
         );
     }
-    fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, _data: Data) {}
+
     fn as_any(&self) -> &dyn Any {
         self
     }
