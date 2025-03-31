@@ -26,7 +26,7 @@ pub mod registry;
 pub mod registry_v2;
 
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -46,7 +46,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-use registry_v2::{get_actor, get_actor_unchecked, register_actor};
+use registry_v2::{Actor, get_actor, get_actor_unchecked, register_actor};
 use ustr::Ustr;
 use uuid::Uuid;
 
@@ -75,8 +75,72 @@ use crate::{
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
 
+impl Actor for DataActorCore {
+    fn id(&self) -> ComponentId {
+        self.actor_id
+    }
+
+    fn handle(&mut self, msg: &dyn Any) {}
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+pub trait DataActor: Actor {
+    /// Actions to be performed when the actor state is saved.
+    fn on_save(&self) -> HashMap<String, Vec<u8>> {
+        HashMap::new()
+    }
+    /// Actions to be performed when the actor state is loaded.
+    fn on_load(&mut self, state: HashMap<String, Vec<u8>>) {}
+    /// Actions to be performed on start.
+    fn on_start(&mut self) {}
+    /// Actions to be performed on stop.
+    fn on_stop(&mut self) {}
+    /// Actions to be performed on resume.
+    fn on_resume(&mut self) {}
+    /// Actions to be performed on reset.
+    fn on_reset(&mut self) {}
+    /// Actions to be performed on dispose.
+    fn on_dispose(&mut self) {}
+    /// Actions to be performed on degrade.
+    fn on_degrade(&mut self) {}
+    /// Actions to be performed on fault.
+    fn on_fault(&mut self) {}
+    // Actions to be performed when receiving an event.
+    // pub fn on_event(&mut self, event: &i Event) {  // TODO: TBD
+    //     // Default empty implementation
+    // }
+    fn on_data(&mut self, data: &dyn Any);
+    /// Actions to be performed when receiving an instrument status update.
+    fn on_instrument_status(&mut self, data: &InstrumentStatus) {}
+    // Actions to be performed when receiving an instrument close update.  // TODO: Implement data
+    // pub fn on_instrument_close(&mut self, update: InstrumentClose) {}
+    /// Actions to be performed when receiving an instrument.
+    fn on_instrument(&mut self, instrument: &InstrumentAny) {}
+    /// Actions to be performed when receiving an order book.
+    fn on_book(&mut self, order_book: &OrderBook) {}
+    /// Actions to be performed when receiving order book deltas.
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) {}
+    /// Actions to be performed when receiving a quote.
+    fn on_quote(&mut self, quote: &QuoteTick);
+    /// Actions to be performed when receiving a trade.
+    fn on_trade(&mut self, tick: &TradeTick) {}
+    /// Actions to be performed when receiving a mark price update.
+    fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) {}
+    /// Actions to be performed when receiving an index price update.
+    fn on_index_price(&mut self, index_price: &IndexPriceUpdate) {}
+    /// Actions to be performed when receiving a bar.
+    fn on_bar(&mut self, bar: &Bar) {}
+    // Actions to be performed when receiving a signal. // TODO: TBD
+    // pub fn on_signal(&mut self, signal: &impl Data) {}
+    // Actions to be performed when receiving historical data.
+    fn on_historical_data(&mut self, data: &dyn Any) {} // TODO: Probably break this down further
+}
+
 /// Core functionality for all actors.
-pub struct Actor {
+pub struct DataActorCore {
     /// The component ID for the actor.
     pub actor_id: ComponentId, // TODO: Probably just add an ActorId now?
     /// The actors configuration.
@@ -94,7 +158,12 @@ pub struct Actor {
     indicators: Indicators,
 }
 
-impl Actor {
+impl DataActor for DataActorCore {
+    fn on_data(&mut self, data: &dyn Any) {}
+    fn on_quote(&mut self, quote: &QuoteTick) {}
+}
+
+impl DataActorCore {
     /// Creates a new [`Actor`] instance.
     pub fn new(
         config: ActorConfig,
@@ -119,9 +188,11 @@ impl Actor {
         }
     }
 
+    /// Returns the trader ID this actor is registered to.
     pub fn trader_id(&self) -> Option<TraderId> {
         self.trader_id
     }
+
     /// Register an executor for the actor.
     pub fn register_executor(&mut self, executor: Arc<dyn ActorExecutor>) {
         self.executor = Some(executor);
@@ -168,12 +239,10 @@ impl Actor {
     ) {
         self.check_registered();
 
-        let actor_id = self.actor_id;
+        let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                get_actor_unchecked(&actor_id)
-                    .borrow_mut()
-                    .handle_data(data);
+                get_actor_unchecked(&actor_id).borrow_mut().handle(data);
             },
         )));
 
@@ -206,12 +275,12 @@ impl Actor {
     ) {
         self.check_registered();
 
-        let actor_id = self.actor_id;
+        let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instruments: &Vec<InstrumentAny>| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
-                    .handle_instruments(instruments);
+                    .handle(instruments);
             },
         )));
 
@@ -238,12 +307,12 @@ impl Actor {
     ) {
         self.check_registered();
 
-        let actor_id = self.actor_id;
+        let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
                 get_actor_unchecked(&actor_id)
                     .borrow_mut()
-                    .handle_instrument(instrument);
+                    .handle(instrument);
             },
         )));
 
@@ -262,144 +331,156 @@ impl Actor {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Actions to be performed when the actor state is saved.
-    pub fn on_save(&self) -> HashMap<String, Vec<u8>> {
-        // Default implementation returns empty state
-        HashMap::new()
+    pub fn handle(&mut self, msg: &dyn Any) {
+        // TODO: Optimize
+        let type_id = msg.type_id();
+
+        if type_id == TypeId::of::<InstrumentAny>() {
+            self.handle_instrument(msg.downcast_ref::<InstrumentAny>().unwrap())
+        } else if type_id == TypeId::of::<Vec<InstrumentAny>>() {
+            self.handle_instruments(msg.downcast_ref::<Vec<InstrumentAny>>().unwrap())
+        } else if type_id == TypeId::of::<OrderBook>() {
+            self.handle_book(msg.downcast_ref::<OrderBook>().unwrap())
+        } else if type_id == TypeId::of::<OrderBookDeltas>() {
+            self.handle_book_deltas(msg.downcast_ref::<OrderBookDeltas>().unwrap())
+        } else if type_id == TypeId::of::<QuoteTick>() {
+            self.handle_quote(msg.downcast_ref::<QuoteTick>().unwrap())
+        } else if type_id == TypeId::of::<TradeTick>() {
+            self.handle_trade(msg.downcast_ref::<TradeTick>().unwrap())
+        } else if type_id == TypeId::of::<MarkPriceUpdate>() {
+            self.handle_mark_price(msg.downcast_ref::<MarkPriceUpdate>().unwrap())
+        } else if type_id == TypeId::of::<IndexPriceUpdate>() {
+            self.handle_index_price(msg.downcast_ref::<IndexPriceUpdate>().unwrap())
+        } else if type_id == TypeId::of::<InstrumentStatus>() {
+            self.handle_instrument_status(msg.downcast_ref::<InstrumentStatus>().unwrap())
+        } else if type_id == TypeId::of::<Bar>() {
+            self.handle_bar(msg.downcast_ref::<Bar>().unwrap())
+        } else {
+            self.handle_data(msg)
+        }
     }
-
-    /// Actions to be performed when the actor state is loaded.
-    pub fn on_load(&mut self, state: HashMap<String, Vec<u8>>) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed on start.
-    pub fn on_start(&mut self) {
-        // Default implementation - warning will be logged by implementations
-    }
-
-    /// Actions to be performed on stop.
-    pub fn on_stop(&mut self) {
-        // Default implementation - warning will be logged by implementations
-    }
-
-    /// Actions to be performed on resume.
-    pub fn on_resume(&mut self) {
-        // Default implementation - warning will be logged by implementations
-    }
-
-    /// Actions to be performed on reset.
-    pub fn on_reset(&mut self) {
-        // Default implementation - warning will be logged by implementations
-    }
-
-    /// Actions to be performed on dispose.
-    pub fn on_dispose(&mut self) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed on degrade.
-    pub fn on_degrade(&mut self) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed on fault.
-    pub fn on_fault(&mut self) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving an instrument status update.
-    pub fn on_instrument_status(&mut self, data: InstrumentStatus) {
-        // Default empty implementation
-    }
-
-    // Actions to be performed when receiving an instrument close update.  // TODO: Implement data
-    // pub fn on_instrument_close(&mut self, update: InstrumentClose) {
-    //     // Default empty implementation
-    // }
-
-    /// Actions to be performed when receiving an instrument.
-    pub fn on_instrument(&mut self, instrument: &InstrumentAny) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving an order book.
-    pub fn on_order_book(&mut self, order_book: &OrderBook) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving order book deltas.
-    pub fn on_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving a quote tick.
-    pub fn on_quote_tick(&mut self, tick: &QuoteTick) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving a trade tick.
-    pub fn on_trade_tick(&mut self, tick: &TradeTick) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving a mark price update.
-    pub fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving an index price update.
-    pub fn on_index_price(&mut self, index_price: &IndexPriceUpdate) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving a bar.
-    pub fn on_bar(&mut self, bar: &Bar) {
-        // Default empty implementation
-    }
-
-    /// Actions to be performed when receiving data.
-    pub fn on_data(&mut self, data: &dyn Any) {
-        // Default empty implementation
-    }
-
-    // Actions to be performed when receiving a signal. // TODO: TBD
-    // pub fn on_signal(&mut self, signal: &impl Data) {
-    //     // Default empty implementation
-    // }
-
-    // Actions to be performed when receiving historical data.
-    pub fn on_historical_data(&mut self, data: &dyn Any) { // TODO: Probably break this down
-        // Default empty implementation
-    }
-
-    // Actions to be performed when receiving an event.
-    // pub fn on_event(&mut self, event: &i Event) {  // TODO: TBD
-    //     // Default empty implementation
-    // }
 
     // Handler methods for data processing
     /// Handle a received instrument
     pub fn handle_data(&mut self, data: &dyn Any) {
+        // TODO: Log receipt
         // TODO: Check component state is running
-        // TODO: Try to call on_instrument and handle any errors
+        self.on_data(data)
     }
 
     // Handler methods for data processing
     /// Handle a received instrument
     pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+        // TODO: Log receipt
         // TODO: Check component state is running
-        // TODO: Try to call on_instrument and handle any errors
+
+        self.on_instrument(instrument);
     }
 
     /// Handle multiple received instruments
     pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        // TODO: Log receipt of instruments
+        // TODO: Log receipt
+        // TODO: Check component state is running
 
         for instrument in instruments {
             self.handle_instrument(instrument);
         }
     }
 
-    // TBC
+    /// Handle receiving order book deltas.
+    pub(crate) fn handle_book(&mut self, book: &OrderBook) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_book(book);
+    }
+
+    /// Handle receiving an order book.
+    pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_book_deltas(deltas);
+    }
+
+    /// Handle receiving a quote.
+    pub(crate) fn handle_quote(&mut self, quote: &QuoteTick) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_quote(quote);
+    }
+
+    /// Handle receiving a trade.
+    pub(crate) fn handle_trade(&mut self, trade: &TradeTick) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_trade(trade);
+    }
+
+    /// Handle receiving a mark price update.
+    pub(crate) fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_mark_price(mark_price);
+    }
+
+    /// Handle receiving a mark price update.
+    pub(crate) fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_index_price(index_price);
+    }
+
+    /// Handle receiving a mark price update.
+    pub(crate) fn handle_instrument_status(&mut self, instrument_status: &InstrumentStatus) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_instrument_status(instrument_status);
+    }
+
+    /// Handle receiving a bar.
+    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
+        // TODO: Log receipt
+        // TODO: Check component state is running
+        self.on_bar(bar);
+    }
+}
+
+// TODO: Scratch implementation for development
+
+struct MyDataActor {
+    core: DataActorCore,
+}
+
+impl Actor for MyDataActor {
+    fn id(&self) -> ComponentId {
+        self.core.actor_id
+    }
+
+    fn handle(&mut self, msg: &dyn Any) {
+        // Let the core handle message routing
+        self.core.handle(msg);
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+// User implements DataActor trait overriding handlers are required
+impl DataActor for MyDataActor {
+    fn on_data(&mut self, data: &dyn Any) {
+        println!("Received generic data");
+    }
+
+    fn on_book(&mut self, book: &OrderBook) {
+        println!("Received a book {book}");
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) {
+        println!("Received a quote {quote}");
+    }
+}
+
+// Custom functionality as required
+impl MyDataActor {
+    pub fn custom_function(&mut self) {}
 }

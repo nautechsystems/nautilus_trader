@@ -32,7 +32,7 @@ pub enum DataCommand {
 
 impl DataCommand {
     /// Converts the command to a dyn Any trait object for messaging.
-    pub fn as_any(&self) -> &dyn std::any::Any {
+    pub fn as_any(&self) -> &dyn Any {
         self
     }
 }
