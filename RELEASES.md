@@ -23,6 +23,7 @@ None
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 
 ### Fixes
+- Fixed handling of `PolymarketTickSizeChanged` message
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
 ### Documentation Updates
