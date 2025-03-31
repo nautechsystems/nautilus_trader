@@ -20,6 +20,7 @@ None
 ### Internal Improvements
 - Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
 - Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
+- Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 

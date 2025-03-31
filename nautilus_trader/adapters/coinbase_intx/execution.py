@@ -260,7 +260,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
         except Exception as e:
-            self._log.error(f"Failed to generate OrderStatusReports: {e}")
+            self._log.exception("Failed to generate OrderStatusReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -310,7 +310,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
             self._log.debug(f"Received {report}", LogColor.MAGENTA)
             return report
         except Exception as e:
-            self._log.error(f"Failed to generate OrderStatusReport: {e}")
+            self._log.exception("Failed to generate OrderStatusReport", e)
         return None
 
     async def generate_fill_reports(
@@ -335,7 +335,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Received {report}", LogColor.MAGENTA)
                 reports.append(report)
         except Exception as e:
-            self._log.error(f"Failed to generate FillReports: {e}")
+            self._log.exception("Failed to generate FillReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -392,7 +392,7 @@ class CoinbaseIntxExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
                     reports.append(report)
         except Exception as e:
-            self._log.error(f"Failed to generate PositionReports: {e}")
+            self._log.exception("Failed to generate PositionReports", e)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"

@@ -259,7 +259,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
                 await asyncio.gather(*tasks)
             except Exception as e:  # Create specific exception type
-                self._log.error(f"Error updating dataset range: {e}")
+                self._log.exception("Error updating dataset range", e)
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'update_dataset_ranges'")
                 break
@@ -387,7 +387,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.warning("Canceled task 'get_dataset_range'")
             return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
-            self._log.error(f"Error requesting dataset range: {e}")
+            self._log.exception("Error requesting dataset range", e)
             return (None, pd.Timestamp.utcnow())
         finally:
             self._dataset_ranges_requested.discard(dataset)
