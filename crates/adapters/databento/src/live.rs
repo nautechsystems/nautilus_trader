@@ -18,8 +18,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use ahash::HashSet;
-use ahash::HashSetExt;
+use ahash::{HashSet, HashSetExt};
 use databento::{
     dbn::{self, PitSymbolMap, Publisher, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
