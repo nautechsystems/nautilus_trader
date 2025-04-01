@@ -4911,6 +4911,7 @@ class DatabentoHistoricalClient:
         self,
         key: str,
         publishers_filepath: str,
+        use_exchange_as_venue: bool,
     ) -> None: ...
     @property
     def key(self) -> str: ...
@@ -4922,7 +4923,6 @@ class DatabentoHistoricalClient:
         start: int,
         end: int | None = None,
         limit: int | None = None,
-        use_exchange_as_venue: bool = False
     ) -> list[Instrument]: ...
     async def get_range_quotes(
         self,
@@ -4982,6 +4982,7 @@ class DatabentoLiveClient:
         key: str,
         dataset: str,
         publishers_filepath: str,
+        use_exchange_as_venue: bool,
     ) -> None: ...
     @property
     def key(self) -> str: ...

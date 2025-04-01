@@ -284,6 +284,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 key=self._live_api_key,
                 dataset=dataset,
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
+                use_exchange_as_venue=self._use_exchange_as_venue,
             )
             self._live_clients[dataset] = live_client
 
@@ -298,6 +299,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 key=self._live_api_key,
                 dataset=dataset,
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
+                use_exchange_as_venue=self._use_exchange_as_venue,
             )
             self._live_clients_mbo[dataset] = live_client
 
@@ -874,7 +876,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -899,8 +900,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        use_exchange_as_venue = request.params.get("use_exchange_as_venue", False)
-
         # parent_symbols can be equal to ["ES.OPT", "ES.FUT"] for example in order to not query all instruments of an exchange
         parent_symbols = request.params.get("parent_symbols") or [ALL_SYMBOLS]
         pyo3_instrument_ids = [
@@ -913,7 +912,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=pyo3_instrument_ids,
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=use_exchange_as_venue,
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
 
