@@ -25,7 +25,7 @@ use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 use crate::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
-    websocket::{WebSocketClient, WebSocketConfig, WriterCommand},
+    websocket::{Consumer, WebSocketClient, WebSocketConfig, WriterCommand},
 };
 
 // Python exception class for websocket errors
@@ -55,7 +55,7 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Some(Arc::new(handler)),
+            handler: Consumer::Python(Some(Arc::new(handler))),
             headers,
             heartbeat,
             heartbeat_msg,
