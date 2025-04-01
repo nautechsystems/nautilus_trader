@@ -66,6 +66,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         live_gateway: str | None = None,
         loader: DatabentoDataLoader | None = None,
         config: InstrumentProviderConfig | None = None,
+        use_exchange_as_venue: bool = True,
     ) -> None:
         super().__init__(config=config)
 
@@ -76,6 +77,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         self._http_client = http_client
         self._loader = loader or DatabentoDataLoader()
+        self._use_exchange_as_venue = use_exchange_as_venue
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         raise RuntimeError(
@@ -122,11 +124,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             key=self._live_api_key,
             dataset=dataset,
             publishers_filepath=str(PUBLISHERS_FILEPATH),
+            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
-        # use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
-
         pyo3_instruments = []
 
         success_msg = "All instruments received and decoded"
@@ -157,7 +158,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 [instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
             ),
             start=0,  # From start of current week (latest definitions)
-            # use_exchange_as_venue=use_exchange_as_venue,  # TODO
         )
 
         if parent_symbols:
@@ -265,7 +265,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         dataset = self._check_all_datasets_equal(instrument_ids)
-        use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
 
         # Here the NULL venue is overridden and so is used as a
         # placeholder to conform to instrument ID conventions.
@@ -274,7 +273,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.NULL"))],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
-            use_exchange_as_venue=use_exchange_as_venue,
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
         instruments = sorted(instruments, key=lambda x: x.ts_init)
