@@ -28,6 +28,7 @@ None
 - Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+- Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
