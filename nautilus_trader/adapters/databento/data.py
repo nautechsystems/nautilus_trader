@@ -876,7 +876,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -913,7 +912,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=pyo3_instrument_ids,
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=self._use_exchange_as_venue,
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
 

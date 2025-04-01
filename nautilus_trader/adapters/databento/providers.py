@@ -273,7 +273,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.NULL"))],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
-            use_exchange_as_venue=self._use_exchange_as_venue,
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
         instruments = sorted(instruments, key=lambda x: x.ts_init)
