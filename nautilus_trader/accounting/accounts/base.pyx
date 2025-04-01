@@ -17,6 +17,9 @@ from decimal import Decimal
 
 from nautilus_trader.accounting.error import AccountBalanceNegative
 
+from libc.stdint cimport uint64_t
+
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -441,6 +444,32 @@ cdef class Account:
         cdef Currency currency = commission.currency
         total_commissions = self._commissions.get(currency, Decimal(0))
         self._commissions[currency] = Money(total_commissions + commission.as_decimal(), currency)
+
+    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs = 0):
+        """
+        Purge all account state events which are outside the lookback window.
+
+        Parameters
+        ----------
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
+        lookback_secs : uint64_t, default 0
+            The purge lookback window (seconds) from when the account state event occurred.
+            Only events which are outside the lookback window will be purged.
+            A value of 0 means purge all account state events.
+
+        """
+        cdef uint64_t lookback_ns = nautilus_pyo3.secs_to_nanos(lookback_secs)
+
+        cdef list[AccountState] retained_events = []
+
+        cdef:
+            AccountState event
+        for event in self._events:
+            if event.ts_event + lookback_ns > ts_now:
+                retained_events.append(event)
+
+        self._events = retained_events
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 

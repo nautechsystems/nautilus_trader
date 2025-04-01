@@ -760,6 +760,7 @@ cdef class Cache(CacheFacade):
 
         return residuals
 
+
     cpdef void purge_closed_orders(self, uint64_t ts_now, uint64_t buffer_secs = 0):
         """
         Purge all closed orders from the cache.
@@ -887,6 +888,32 @@ cdef class Cache(CacheFacade):
         self._index_positions.discard(position_id)
         self._index_positions_open.discard(position_id)
         self._index_positions_closed.discard(position_id)
+
+    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs = 0):
+        """
+        Purge all account state events which are outside the lookback window.
+
+        Parameters
+        ----------
+        ts_now : uint64_t
+            The current UNIX timestamp (nanoseconds).
+        lookback_secs : uint64_t, default 0
+            The purge lookback window (seconds) from when the account state event occurred.
+            Only events which are outside the lookback window will be purged.
+            A value of 0 means purge all account state events.
+
+        """
+        cdef str lookback_secs_str = f" with {lookback_secs=:_}" if lookback_secs else ""
+        self._log.debug(f"Purging account events{lookback_secs_str}", LogColor.MAGENTA)
+
+        cdef:
+            Account account
+        for account in self._accounts.values():
+            event_count = account.event_count_c()
+            account.purge_account_events(ts_now, lookback_secs)
+            count_diff = event_count - account.event_count_c()
+            if count_diff > 0:
+                self._log.info(f"Purged {count_diff} event(s) from account {account.id}", LogColor.BLUE)
 
     cpdef void clear_index(self):
         self._log.debug(f"Clearing index")
