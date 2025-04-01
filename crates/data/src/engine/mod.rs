@@ -380,7 +380,7 @@ impl DataEngine {
             SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd)?,
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             _ => {} // Do nothing else
-        };
+        }
 
         if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe_command(cmd.clone());
@@ -402,7 +402,7 @@ impl DataEngine {
             UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd)?,
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
             _ => {} // Do nothing else
-        };
+        }
 
         if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe_command(cmd.clone());
@@ -434,9 +434,9 @@ impl DataEngine {
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
         } else if let Some(mark_price) = data.downcast_ref::<MarkPriceUpdate>() {
-            self.handle_mark_price(*mark_price)
+            self.handle_mark_price(*mark_price);
         } else if let Some(index_price) = data.downcast_ref::<IndexPriceUpdate>() {
-            self.handle_index_price(*index_price)
+            self.handle_index_price(*index_price);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }

@@ -154,7 +154,7 @@ fn parse_spot_instrument(
     }
 
     // Sort ascending by ts_event
-    instruments.sort_by_key(|i| i.ts_event());
+    instruments.sort_by_key(Instrument::ts_event);
     instruments
 }
 
@@ -262,7 +262,7 @@ fn parse_perp_instrument(
     }
 
     // Sort ascending by ts_event
-    instruments.sort_by_key(|i| i.ts_event());
+    instruments.sort_by_key(Instrument::ts_event);
     instruments
 }
 
@@ -376,7 +376,7 @@ fn parse_future_instrument(
     }
 
     // Sort ascending by ts_event
-    instruments.sort_by_key(|i| i.ts_event());
+    instruments.sort_by_key(Instrument::ts_event);
     instruments
 }
 
@@ -490,7 +490,7 @@ fn parse_option_instrument(
     }
 
     // Sort ascending by ts_event
-    instruments.sort_by_key(|i| i.ts_event());
+    instruments.sort_by_key(Instrument::ts_event);
     instruments
 }
 

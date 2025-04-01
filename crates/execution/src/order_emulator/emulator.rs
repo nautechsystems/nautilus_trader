@@ -212,7 +212,7 @@ impl OrderEmulator {
                     if let Err(e) =
                         matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
                     {
-                        log::error!("Error deleting order: {}", e);
+                        log::error!("Error deleting order: {e}");
                     }
                 }
             }
@@ -303,8 +303,7 @@ impl OrderEmulator {
                     (synthetic.id, synthetic.price_increment)
                 } else {
                     log::error!(
-                        "Cannot emulate order: no synthetic instrument {} for trigger",
-                        trigger_instrument_id
+                        "Cannot emulate order: no synthetic instrument {trigger_instrument_id} for trigger"
                     );
                     self.manager.cancel_order(&order);
                     return;
@@ -319,8 +318,7 @@ impl OrderEmulator {
                     (instrument.id(), instrument.price_increment())
                 } else {
                     log::error!(
-                        "Cannot emulate order: no instrument {} for trigger",
-                        trigger_instrument_id
+                        "Cannot emulate order: no instrument {trigger_instrument_id} for trigger"
                     );
                     self.manager.cancel_order(&order);
                     return;
@@ -427,7 +425,7 @@ impl OrderEmulator {
         self.matching_cores
             .insert(trigger_instrument_id, matching_core);
 
-        log::info!("Emulating {}", order);
+        log::info!("Emulating {order}");
     }
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
@@ -453,7 +451,7 @@ impl OrderEmulator {
                 command.position_id,
                 Some(command.client_id),
             ) {
-                log::error!("Error creating new submit order: {}", e);
+                log::error!("Error creating new submit order: {e}");
             }
         }
     }
@@ -498,8 +496,7 @@ impl OrderEmulator {
                 matching_core.match_order(&PassiveOrderAny::from(order.clone()), false);
             } else {
                 log::error!(
-                    "Cannot handle `ModifyOrder`: no matching core for trigger instrument {}",
-                    trigger_instrument_id
+                    "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
                 );
             }
         } else {
@@ -566,9 +563,8 @@ impl OrderEmulator {
 
     pub fn update_order(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
         log::info!(
-            "Updating order {} quantity to {}",
+            "Updating order {} quantity to {new_quantity}",
             order.client_order_id(),
-            new_quantity
         );
 
         // Generate event
@@ -604,7 +600,7 @@ impl OrderEmulator {
     // -----------------------------------------------------------------------------------------------
 
     pub fn on_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
-        log::debug!("Processing OrderBookDeltas:{}", deltas);
+        log::debug!("Processing {deltas:?}");
 
         let instrument_id = &deltas.instrument_id;
         if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
@@ -635,39 +631,39 @@ impl OrderEmulator {
         }
     }
 
-    pub fn on_quote_tick(&mut self, tick: QuoteTick) {
-        log::debug!("Processing QuoteTick:{}", tick);
+    pub fn on_quote_tick(&mut self, quote: QuoteTick) {
+        log::debug!("Processing {quote}:?");
 
-        let instrument_id = &tick.instrument_id;
+        let instrument_id = &quote.instrument_id;
         if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
-            matching_core.set_bid_raw(tick.bid_price);
-            matching_core.set_ask_raw(tick.ask_price);
+            matching_core.set_bid_raw(quote.bid_price);
+            matching_core.set_ask_raw(quote.ask_price);
 
             self.iterate_orders(instrument_id);
         } else {
             log::error!(
                 "Cannot handle `QuoteTick`: no matching core for instrument {}",
-                tick.instrument_id
+                quote.instrument_id
             );
         }
     }
 
-    pub fn on_trade_tick(&mut self, tick: TradeTick) {
-        log::debug!("Processing TradeTick:{}", tick);
+    pub fn on_trade_tick(&mut self, trade: TradeTick) {
+        log::debug!("Processing {trade:?}");
 
-        let instrument_id = &tick.instrument_id;
+        let instrument_id = &trade.instrument_id;
         if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
-            matching_core.set_last_raw(tick.price);
+            matching_core.set_last_raw(trade.price);
             if !self.subscribed_quotes.contains(instrument_id) {
-                matching_core.set_bid_raw(tick.price);
-                matching_core.set_ask_raw(tick.price);
+                matching_core.set_bid_raw(trade.price);
+                matching_core.set_ask_raw(trade.price);
             }
 
             self.iterate_orders(instrument_id);
         } else {
             log::error!(
                 "Cannot handle `TradeTick`: no matching core for instrument {}",
-                tick.instrument_id
+                trade.instrument_id
             );
         }
     }
@@ -678,10 +674,7 @@ impl OrderEmulator {
 
             matching_core.get_orders()
         } else {
-            log::error!(
-                "Cannot iterate orders: no matching core for instrument {}",
-                instrument_id
-            );
+            log::error!("Cannot iterate orders: no matching core for instrument {instrument_id}");
             return;
         };
 
@@ -749,10 +742,7 @@ impl OrderEmulator {
                     None,
                 );
                 self.subscribed_strategies.insert(strategy_id);
-                log::info!(
-                    "Subscribed to strategy {} order and position events",
-                    strategy_id
-                );
+                log::info!("Subscribed to strategy {strategy_id} order and position events");
             }
         }
 
@@ -854,7 +844,7 @@ impl OrderEmulator {
                 Some(command.client_id),
                 true,
             ) {
-                log::error!("Failed to add order: {}", e);
+                log::error!("Failed to add order: {e}");
             }
 
             // Replace commands order with transformed order
@@ -885,7 +875,7 @@ impl OrderEmulator {
             );
 
             if let Err(e) = transformed.apply(OrderEventAny::Released(event)) {
-                log::error!("Failed to apply order event: {}", e);
+                log::error!("Failed to apply order event: {e}");
             }
 
             if let Err(e) = self
@@ -893,7 +883,7 @@ impl OrderEmulator {
                 .borrow_mut()
                 .update_order(&OrderAny::Limit(transformed.clone()))
             {
-                log::error!("Failed to update order: {}", e);
+                log::error!("Failed to update order: {e}");
             }
 
             self.manager.send_risk_event(OrderEventAny::Released(event));
@@ -914,8 +904,7 @@ impl OrderEmulator {
             }
         } else {
             log::error!(
-                "Cannot fill limit order: no matching core for instrument {}",
-                trigger_instrument_id
+                "Cannot fill limit order: no matching core for instrument {trigger_instrument_id}"
             );
         }
     }
@@ -976,7 +965,7 @@ impl OrderEmulator {
                 Some(command.client_id),
                 true,
             ) {
-                log::error!("Failed to add order: {}", e);
+                log::error!("Failed to add order: {e}");
             }
 
             // Replace commands order with transformed order
@@ -1009,7 +998,7 @@ impl OrderEmulator {
             );
 
             if let Err(e) = transformed.apply(OrderEventAny::Released(event)) {
-                log::error!("Failed to apply order event: {}", e);
+                log::error!("Failed to apply order event: {e}");
             }
 
             if let Err(e) = self
@@ -1017,7 +1006,7 @@ impl OrderEmulator {
                 .borrow_mut()
                 .update_order(&OrderAny::Market(transformed))
             {
-                log::error!("Failed to update order: {}", e);
+                log::error!("Failed to update order: {e}");
             }
             self.manager.send_risk_event(OrderEventAny::Released(event));
 
@@ -1037,8 +1026,7 @@ impl OrderEmulator {
             }
         } else {
             log::error!(
-                "Cannot fill limit order: no matching core for instrument {}",
-                trigger_instrument_id
+                "Cannot fill limit order: no matching core for instrument {trigger_instrument_id}"
             );
         }
     }
@@ -1113,10 +1101,10 @@ impl OrderEmulator {
             );
 
             if let Err(e) = order.apply(OrderEventAny::Updated(event)) {
-                log::error!("Failed to apply order event: {}", e);
+                log::error!("Failed to apply order event: {e}");
             }
             if let Err(e) = self.cache.borrow_mut().update_order(order) {
-                log::error!("Failed to update order: {}", e);
+                log::error!("Failed to update order: {e}");
             }
 
             self.manager.send_risk_event(OrderEventAny::Updated(event));
