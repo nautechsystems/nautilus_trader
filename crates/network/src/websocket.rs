@@ -44,6 +44,7 @@ use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
@@ -58,6 +59,19 @@ type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Messa
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
 #[derive(Debug, Clone)]
+pub enum Consumer {
+    Python(Option<Arc<PyObject>>),
+    Rust(Sender<Message>),
+}
+
+impl Consumer {
+    pub fn rust_consumer() -> (Self, Receiver<Message>) {
+        let (tx, rx) = mpsc::channel(100);
+        (Self::Rust(tx), rx)
+    }
+}
+
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
@@ -68,7 +82,7 @@ pub struct WebSocketConfig {
     /// The default headers.
     pub headers: Vec<(String, String)>,
     /// The Python function to handle incoming messages.
-    pub handler: Option<Arc<PyObject>>,
+    pub handler: Consumer,
     /// The optional heartbeat interval (seconds).
     pub heartbeat: Option<u64>,
     /// The optional heartbeat message.
@@ -145,15 +159,21 @@ impl WebSocketClientInner {
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
 
-        // Only spawn read task if handler is provided
-        let read_task = handler.as_ref().map(|handler| {
-            Self::spawn_read_task(
+        let read_task = match &handler {
+            Consumer::Python(handler) => handler.as_ref().map(|handler| {
+                Self::spawn_python_callback_task(
+                    connection_mode.clone(),
+                    reader,
+                    handler.clone(),
+                    ping_handler.clone(),
+                )
+            }),
+            Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
                 connection_mode.clone(),
                 reader,
-                handler.clone(),
-                ping_handler.clone(),
-            )
-        });
+                sender.clone(),
+            )),
+        };
 
         let (writer_tx, writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriterCommand>();
         let write_task = Self::spawn_write_task(connection_mode.clone(), writer, writer_rx);
@@ -237,15 +257,21 @@ impl WebSocketClientInner {
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
-            // Spawn new read task
-            if let Some(ref handler) = self.config.handler {
-                self.read_task = Some(Self::spawn_read_task(
+            self.read_task = match &self.config.handler {
+                Consumer::Python(handler) => handler.as_ref().map(|handler| {
+                    Self::spawn_python_callback_task(
+                        self.connection_mode.clone(),
+                        reader,
+                        handler.clone(),
+                        self.config.ping_handler.clone(),
+                    )
+                }),
+                Consumer::Rust(sender) => Some(Self::spawn_rust_streaming_task(
                     self.connection_mode.clone(),
                     reader,
-                    handler.clone(),
-                    self.config.ping_handler.clone(),
-                ));
-            }
+                    sender.clone(),
+                )),
+            };
 
             tracing::debug!("Reconnect succeeded");
             Ok(())
@@ -278,7 +304,45 @@ impl WebSocketClientInner {
         }
     }
 
-    fn spawn_read_task(
+    fn spawn_rust_streaming_task(
+        connection_state: Arc<AtomicU8>,
+        mut reader: MessageReader,
+        sender: Sender<Message>,
+    ) -> tokio::task::JoinHandle<()> {
+        tracing::debug!("Started streaming task 'read'");
+
+        let check_interval = Duration::from_millis(10);
+
+        tokio::task::spawn(async move {
+            loop {
+                if !ConnectionMode::from_atomic(&connection_state).is_active() {
+                    break;
+                }
+
+                match tokio::time::timeout(check_interval, reader.next()).await {
+                    Ok(Some(Ok(message))) => {
+                        if let Err(e) = sender.send(message).await {
+                            tracing::error!("Failed to send message: {e}");
+                        }
+                    }
+                    Ok(Some(Err(e))) => {
+                        tracing::error!("Received error message - terminating: {e}");
+                        break;
+                    }
+                    Ok(None) => {
+                        tracing::debug!("No message received - terminating");
+                        break;
+                    }
+                    Err(_) => {
+                        // Timeout - continue loop and check connection mode
+                        continue;
+                    }
+                }
+            }
+        })
+    }
+
+    fn spawn_python_callback_task(
         connection_state: Arc<AtomicU8>,
         mut reader: MessageReader,
         handler: Arc<PyObject>,
@@ -836,6 +900,7 @@ impl WebSocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
+    use crate::websocket::Consumer;
     use std::{num::NonZeroU32, sync::Arc};
 
     use futures_util::{SinkExt, StreamExt};
@@ -953,7 +1018,7 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{port}"),
             headers: vec![("test".into(), "test".into())],
-            handler: None,
+            handler: Consumer::Python(None),
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
@@ -997,7 +1062,7 @@ mod tests {
         let config = WebSocketConfig {
             url: "ws://127.0.0.1:9997".into(), // <-- No server
             headers: vec![],
-            handler: None,
+            handler: Consumer::Python(None),
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
@@ -1041,7 +1106,7 @@ mod tests {
         let config = WebSocketConfig {
             url: format!("ws://127.0.0.1:{}", server.port),
             headers: vec![("test".into(), "test".into())],
-            handler: None,
+            handler: Consumer::Python(None),
             heartbeat: None,
             heartbeat_msg: None,
             ping_handler: None,
