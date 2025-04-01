@@ -31,7 +31,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::websocket::{self, MessageReader, WebSocketClient, WebSocketConfig};
+use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
@@ -153,7 +153,7 @@ impl CoinbaseIntxWebSocketClient {
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
-            handler: websocket::Consumer::Python(None),
+            handler: Consumer::Python(None),
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default

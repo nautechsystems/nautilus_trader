@@ -24,6 +24,7 @@ None
 
 ### Internal Improvements
 - Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Added `Consumer` for `WebSocketClient` (#2488), thanks @twitu
 - Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
 - Improved logging for Redis cache database operations
 - Standardized unexpected exception logging to include full stack trace

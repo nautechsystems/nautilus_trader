@@ -43,8 +43,10 @@ use futures_util::{
 use http::HeaderName;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::{
+    net::TcpStream,
+    sync::mpsc::{self, Receiver, Sender},
+};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
@@ -900,7 +902,6 @@ impl WebSocketClient {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use crate::websocket::Consumer;
     use std::{num::NonZeroU32, sync::Arc};
 
     use futures_util::{SinkExt, StreamExt};
@@ -918,7 +919,7 @@ mod tests {
 
     use crate::{
         ratelimiter::quota::Quota,
-        websocket::{WebSocketClient, WebSocketConfig},
+        websocket::{Consumer, WebSocketClient, WebSocketConfig},
     };
 
     struct TestServer {
