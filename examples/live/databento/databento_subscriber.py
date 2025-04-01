@@ -46,7 +46,7 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     InstrumentId.from_str("ES.c.0.GLBX"),  # TODO: Continuous contracts only work with GLBX for now
-    # InstrumentId.from_str("ESZ4.XCME"),
+    # InstrumentId.from_str("ESZ5.XCME"),
     # InstrumentId.from_str("ES.FUT.XCME"),
     # InstrumentId.from_str("CL.FUT.NYMEX"),
     # InstrumentId.from_str("LO.OPT.NYMEX"),
