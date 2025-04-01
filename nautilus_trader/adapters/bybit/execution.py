@@ -1149,14 +1149,15 @@ class BybitExecutionClient(LiveExecutionClient):
                 execution.side,
                 trigger_direction,
             )
+            if strategy_id is None:
+                self._log.warning(
+                    f"Cannot process order execution for {client_order_id!r}: "
+                    "no strategy ID found (most likely due to being an external order)",
+                )
+                return
         else:
             strategy_id = order.strategy_id
             order_type = order.order_type
-
-        if strategy_id is None:
-            raise ValueError(
-                f"Cannot handle trade event: strategy ID not found for {client_order_id!r}",
-            )
 
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
