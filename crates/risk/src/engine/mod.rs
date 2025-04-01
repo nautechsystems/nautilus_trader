@@ -122,7 +122,7 @@ impl RiskEngine {
             "ORDER_SUBMIT_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            UUID4::new(),
+            Ustr::from(&UUID4::new().to_string()),
         )
     }
 
@@ -169,7 +169,7 @@ impl RiskEngine {
             "ORDER_MODIFY_THROTTLER".to_string(),
             success_handler,
             Some(failure_handler),
-            UUID4::new(),
+            Ustr::from(&UUID4::new().to_string()),
         )
     }
 
