@@ -8,11 +8,16 @@ Released on TBD (UTC).
 - Added `Cache.purge_closed_orders(...)`
 - Added `Cache.purge_closed_position(...)`
 - Added `Cache.purge_closed_positions(...)`
+- Added `Cache.purge_account_events(...)`
+- Added `Account.purge_account_events(...)`
 - Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
 - Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
+- Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
 
 ### Breaking Changes
 None
@@ -23,8 +28,10 @@ None
 - Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+- Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
+- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
 - Fixed handling of `PolymarketTickSizeChanged` message
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 

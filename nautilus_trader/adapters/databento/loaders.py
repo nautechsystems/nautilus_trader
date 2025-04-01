@@ -55,10 +55,17 @@ class DatabentoDataLoader:
 
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        venue_dataset_map: dict[str, str] | None = None,
+    ) -> None:
         self._pyo3_loader: nautilus_pyo3.DatabentoDataLoader = nautilus_pyo3.DatabentoDataLoader(
             str(PUBLISHERS_FILEPATH),
         )
+
+        if venue_dataset_map:
+            for venue, dataset in venue_dataset_map.items():
+                self._pyo3_loader.set_dataset_for_venue(dataset, nautilus_pyo3.Venue(venue))
 
     def load_publishers(self, path: PathLike[str] | str) -> None:
         """

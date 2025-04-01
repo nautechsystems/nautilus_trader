@@ -75,18 +75,20 @@ See also [Execution reconciliation](../concepts/execution#execution-reconciliati
 
 #### Memory management
 
-**Purpose**: Periodically purges closed orders and positions from the in-memory cache to optimize resource usage and performance during extended / HFT sessions.
+**Purpose**: Periodically purges closed orders, closed positions, and account events from the in-memory cache to optimize resource usage and performance during extended / HFT operations.
 
 | Setting                                | Default | Description                                                                                                                             |
 |----------------------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------|
 | `purge_closed_orders_interval_mins`    | None    | Sets how frequently (in minutes) closed orders are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) a closed order must wait before purging. Recommended: 60 minutes to ensure processes complete. |
+| `purge_closed_orders_buffer_mins`      | None    | Specifies how long (in minutes) an order must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
 | `purge_closed_positions_interval_mins` | None    | Sets how frequently (in minutes) closed positions are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
-| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a closed position must wait before purging. Recommended: 60 minutes to ensure processes complete. |
+| `purge_closed_positions_buffer_mins`   | None    | Specifies how long (in minutes) a position must have been closed before purging. Recommended: 60 minutes to ensure processes complete. |
+| `purge_account_events_interval_mins`   | None    | Sets how frequently (in minutes) account events are purged from memory. Recommended: 10-15 minutes. Does not affect database records. |
+| `purge_account_events_lookback_mins`   | None    | Specifies how long (in minutes) an account event must have occurred before purging. Recommended: 60 minutes. |
 
 By configuring these memory management settings appropriately, you can prevent memory usage from growing
-indefinitely during long-running / HFT sessions while ensuring that recently closed orders and positions
-remain available in memory for any ongoing operations that might need them.
+indefinitely during long-running / HFT sessions while ensuring that recently closed orders, closed positions, and account events
+remain available in memory for any ongoing operations that might require them.
 
 #### Queue management
 

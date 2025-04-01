@@ -23,12 +23,12 @@ pub mod executor;
 #[cfg(feature = "indicators")]
 pub(crate) mod indicators;
 pub mod registry;
-pub mod registry_v2;
 
 use std::{
     any::{Any, TypeId},
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     collections::{HashMap, HashSet},
+    ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
@@ -46,14 +46,14 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-use registry_v2::{Actor, get_actor, get_actor_unchecked, register_actor};
+use registry::{Actor, get_actor, get_actor_unchecked, register_actor};
 use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::{
     cache::Cache,
     clock::Clock,
-    logging::{CMD, SENT},
+    logging::{CMD, RECV, SENT},
     messages::data::{
         DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument, RequestInstruments,
         RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, SubscribeBars,
@@ -68,7 +68,7 @@ use crate::{
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_custom_topic, get_instrument_topic,
-            get_instruments_topic,
+            get_instruments_topic, get_trades_topic,
         },
     },
 };
@@ -76,8 +76,8 @@ use crate::{
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
 
 impl Actor for DataActorCore {
-    fn id(&self) -> ComponentId {
-        self.actor_id
+    fn id(&self) -> Ustr {
+        self.actor_id.inner()
     }
 
     fn handle(&mut self, msg: &dyn Any) {}
@@ -242,7 +242,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                get_actor_unchecked(&actor_id).borrow_mut().handle(data);
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle(data);
             },
         )));
 
@@ -278,9 +278,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instruments: &Vec<InstrumentAny>| {
-                get_actor_unchecked(&actor_id)
-                    .borrow_mut()
-                    .handle(instruments);
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instruments(instruments);
             },
         )));
 
@@ -310,9 +308,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                get_actor_unchecked(&actor_id)
-                    .borrow_mut()
-                    .handle(instrument);
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument(instrument);
             },
         )));
 
@@ -331,55 +327,86 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    pub fn handle(&mut self, msg: &dyn Any) {
-        // TODO: Optimize
-        let type_id = msg.type_id();
+    /// Subscribe to quotes for the given instrument ID.
+    pub fn subscribe_quotes(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
 
-        if type_id == TypeId::of::<InstrumentAny>() {
-            self.handle_instrument(msg.downcast_ref::<InstrumentAny>().unwrap())
-        } else if type_id == TypeId::of::<Vec<InstrumentAny>>() {
-            self.handle_instruments(msg.downcast_ref::<Vec<InstrumentAny>>().unwrap())
-        } else if type_id == TypeId::of::<OrderBook>() {
-            self.handle_book(msg.downcast_ref::<OrderBook>().unwrap())
-        } else if type_id == TypeId::of::<OrderBookDeltas>() {
-            self.handle_book_deltas(msg.downcast_ref::<OrderBookDeltas>().unwrap())
-        } else if type_id == TypeId::of::<QuoteTick>() {
-            self.handle_quote(msg.downcast_ref::<QuoteTick>().unwrap())
-        } else if type_id == TypeId::of::<TradeTick>() {
-            self.handle_trade(msg.downcast_ref::<TradeTick>().unwrap())
-        } else if type_id == TypeId::of::<MarkPriceUpdate>() {
-            self.handle_mark_price(msg.downcast_ref::<MarkPriceUpdate>().unwrap())
-        } else if type_id == TypeId::of::<IndexPriceUpdate>() {
-            self.handle_index_price(msg.downcast_ref::<IndexPriceUpdate>().unwrap())
-        } else if type_id == TypeId::of::<InstrumentStatus>() {
-            self.handle_instrument_status(msg.downcast_ref::<InstrumentStatus>().unwrap())
-        } else if type_id == TypeId::of::<Bar>() {
-            self.handle_bar(msg.downcast_ref::<Bar>().unwrap())
-        } else {
-            self.handle_data(msg)
-        }
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |quote: &QuoteTick| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_quote(quote);
+            },
+        )));
+
+        let topic = get_trades_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::Quotes(SubscribeQuotes {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    // Handler methods for data processing
-    /// Handle a received instrument
+    /// Subscribe to trades for the given instrument ID.
+    pub fn subscribe_trades(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |trade: &TradeTick| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_trade(trade);
+            },
+        )));
+
+        let topic = get_trades_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::Trades(SubscribeTrades {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Handles a received custom/generic data point.
     pub fn handle_data(&mut self, data: &dyn Any) {
-        // TODO: Log receipt
+        log_received(&data);
         // TODO: Check component state is running
+
         self.on_data(data)
     }
 
-    // Handler methods for data processing
-    /// Handle a received instrument
+    /// Handles a received instrument.
     pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
-        // TODO: Log receipt
+        log_received(&instrument);
         // TODO: Check component state is running
 
         self.on_instrument(instrument);
     }
 
-    /// Handle multiple received instruments
+    /// Handles multiple received instruments.
     pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        // TODO: Log receipt
         // TODO: Check component state is running
 
         for instrument in instruments {
@@ -387,100 +414,229 @@ impl DataActorCore {
         }
     }
 
-    /// Handle receiving order book deltas.
+    /// Handle a received order book reference.
     pub(crate) fn handle_book(&mut self, book: &OrderBook) {
-        // TODO: Log receipt
+        log_received(&book);
         // TODO: Check component state is running
+
         self.on_book(book);
     }
 
-    /// Handle receiving an order book.
+    /// Handles received order book deltas.
     pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        // TODO: Log receipt
+        log_received(&deltas);
         // TODO: Check component state is running
+
         self.on_book_deltas(deltas);
     }
 
-    /// Handle receiving a quote.
+    /// Handles a received quote.
     pub(crate) fn handle_quote(&mut self, quote: &QuoteTick) {
-        // TODO: Log receipt
+        log_received(&quote);
         // TODO: Check component state is running
+
         self.on_quote(quote);
     }
 
-    /// Handle receiving a trade.
+    /// Handles a received trade.
     pub(crate) fn handle_trade(&mut self, trade: &TradeTick) {
-        // TODO: Log receipt
+        log_received(&trade);
         // TODO: Check component state is running
+
         self.on_trade(trade);
     }
 
-    /// Handle receiving a mark price update.
+    /// Handles a received mark price update.
     pub(crate) fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
-        // TODO: Log receipt
+        log_received(&mark_price);
         // TODO: Check component state is running
+
         self.on_mark_price(mark_price);
     }
 
-    /// Handle receiving a mark price update.
+    /// Handles a received index price update.
     pub(crate) fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
-        // TODO: Log receipt
+        log_received(&index_price);
         // TODO: Check component state is running
+
         self.on_index_price(index_price);
     }
 
-    /// Handle receiving a mark price update.
-    pub(crate) fn handle_instrument_status(&mut self, instrument_status: &InstrumentStatus) {
-        // TODO: Log receipt
+    /// Handles a received instrument status.
+    pub(crate) fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
+        log_received(&status);
         // TODO: Check component state is running
-        self.on_instrument_status(instrument_status);
+
+        self.on_instrument_status(status);
     }
 
-    /// Handle receiving a bar.
+    /// Handles a receiving bar.
     pub(crate) fn handle_bar(&mut self, bar: &Bar) {
-        // TODO: Log receipt
+        log_received(&bar);
         // TODO: Check component state is running
+
         self.on_bar(bar);
     }
 }
 
-// TODO: Scratch implementation for development
-
-struct MyDataActor {
-    core: DataActorCore,
+fn log_received<T>(msg: &T)
+where
+    T: std::fmt::Debug,
+{
+    log::debug!("{} {:?}", RECV, msg);
 }
 
-impl Actor for MyDataActor {
-    fn id(&self) -> ComponentId {
-        self.core.actor_id
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{
+        any::Any,
+        cell::{RefCell, UnsafeCell},
+        ops::{Deref, DerefMut},
+        rc::Rc,
+        sync::Arc,
+    };
+
+    use nautilus_model::{
+        data::{QuoteTick, TradeTick},
+        identifiers::ComponentId,
+        instruments::CurrencyPair,
+        orderbook::OrderBook,
+    };
+    use rstest::{fixture, rstest};
+    use ustr::Ustr;
+
+    use super::{
+        DataActor, DataActorCore,
+        config::ActorConfig,
+        registry::{Actor, get_actor, get_actor_unchecked, register_actor},
+    };
+    use crate::{
+        cache::Cache,
+        clock::{Clock, TestClock},
+        msgbus::{
+            self,
+            switchboard::{MessagingSwitchboard, get_trades_topic},
+        },
+    };
+
+    struct TestDataActor {
+        core: DataActorCore,
+        pub trades_received: RefCell<usize>,
     }
 
-    fn handle(&mut self, msg: &dyn Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
+    impl Deref for TestDataActor {
+        type Target = DataActorCore;
+
+        fn deref(&self) -> &Self::Target {
+            &self.core
+        }
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-// User implements DataActor trait overriding handlers are required
-impl DataActor for MyDataActor {
-    fn on_data(&mut self, data: &dyn Any) {
-        println!("Received generic data");
+    impl DerefMut for TestDataActor {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.core
+        }
     }
 
-    fn on_book(&mut self, book: &OrderBook) {
-        println!("Received a book {book}");
+    impl Actor for TestDataActor {
+        fn id(&self) -> Ustr {
+            self.core.actor_id.inner()
+        }
+
+        fn handle(&mut self, msg: &dyn Any) {
+            // Let the core handle message routing
+            self.core.handle(msg);
+        }
+
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
     }
 
-    fn on_quote(&mut self, quote: &QuoteTick) {
-        println!("Received a quote {quote}");
-    }
-}
+    // Implement DataActor trait overriding handlers are required
+    impl DataActor for TestDataActor {
+        fn on_data(&mut self, data: &dyn Any) {
+            println!("Received generic data");
+        }
 
-// Custom functionality as required
-impl MyDataActor {
-    pub fn custom_function(&mut self) {}
+        fn on_book(&mut self, book: &OrderBook) {
+            println!("Received a book {book}");
+        }
+
+        fn on_quote(&mut self, quote: &QuoteTick) {
+            println!("Received a quote {quote}");
+        }
+
+        fn on_trade(&mut self, trade: &TradeTick) {
+            *self.trades_received.borrow_mut() += 1;
+            println!("Received a trade {trade}");
+        }
+    }
+
+    // Custom functionality as required
+    impl TestDataActor {
+        pub fn new(
+            config: ActorConfig,
+            cache: Rc<RefCell<Cache>>,
+            clock: Rc<RefCell<dyn Clock>>,
+            switchboard: Arc<MessagingSwitchboard>,
+        ) -> Self {
+            Self {
+                core: DataActorCore::new(config, cache, clock, switchboard),
+                trades_received: RefCell::new(0),
+            }
+        }
+        pub fn custom_function(&mut self) {}
+    }
+
+    #[fixture]
+    pub fn clock() -> Rc<RefCell<TestClock>> {
+        Rc::new(RefCell::new(TestClock::new()))
+    }
+
+    #[fixture]
+    pub fn cache() -> Rc<RefCell<Cache>> {
+        Rc::new(RefCell::new(Cache::new(None, None)))
+    }
+
+    #[fixture]
+    pub fn switchboard() -> Arc<MessagingSwitchboard> {
+        Arc::new(MessagingSwitchboard::default())
+    }
+
+    fn register_data_actor(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        switchboard: Arc<MessagingSwitchboard>,
+    ) {
+        let config = ActorConfig::default();
+        let actor = TestDataActor::new(config, cache, clock, switchboard);
+        let actor_rc = Rc::new(UnsafeCell::new(actor));
+        register_actor(actor_rc);
+    }
+
+    fn test_subscribe_and_receive_trades(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        switchboard: Arc<MessagingSwitchboard>,
+        audusd_sim: CurrencyPair,
+    ) {
+        register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
+
+        let actor_id = ComponentId::new("Actor").inner(); // TODO: Determine default ID
+        let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+        actor.subscribe_trades(audusd_sim.id, None, None);
+
+        let topic = get_trades_topic(audusd_sim.id);
+        let trade = TradeTick::default();
+
+        msgbus::publish(&topic, &trade);
+        assert_eq!(*actor.trades_received.borrow(), 1);
+
+        msgbus::publish(&topic, &trade);
+        assert_eq!(*actor.trades_received.borrow(), 2);
+    }
 }
