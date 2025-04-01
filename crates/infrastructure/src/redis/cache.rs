@@ -189,7 +189,7 @@ impl RedisCacheDatabase {
         log::debug!("Closing");
 
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
-            log::debug!("Error sending close message: {e:?}")
+            log::debug!("Error sending close command: {e:?}")
         }
 
         log::debug!("Awaiting task '{CACHE_WRITE}'");
@@ -271,13 +271,17 @@ async fn process_commands(
             last_drain = Instant::now();
         } else {
             match rx.recv().await {
-                Some(msg) => {
-                    if let DatabaseOperation::Close = msg.op_type {
+                Some(cmd) => {
+                    tracing::trace!("Received command {cmd:?}");
+                    if let DatabaseOperation::Close = cmd.op_type {
                         break;
                     }
-                    buffer.push_back(msg)
+                    buffer.push_back(cmd)
                 }
-                None => break, // Channel hung up
+                None => {
+                    tracing::debug!("Command channel closed");
+                    break;
+                }
             }
         }
     }
