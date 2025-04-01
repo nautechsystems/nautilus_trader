@@ -28,6 +28,7 @@ None
 - Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+- Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
 - Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
