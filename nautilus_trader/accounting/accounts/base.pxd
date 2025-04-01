@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -72,6 +74,7 @@ cdef class Account:
     cpdef void apply(self, AccountState event)
     cpdef void update_balances(self, list balances, bint allow_zero=*)
     cpdef void update_commissions(self, Money commission)
+    cpdef void purge_account_events(self, uint64_t ts_now, uint64_t lookback_secs=*)
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 

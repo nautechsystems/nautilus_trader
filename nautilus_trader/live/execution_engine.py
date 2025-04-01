@@ -149,6 +149,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._open_check_task: asyncio.Task | None = None
         self._purge_closed_orders_task: asyncio.Task | None = None
         self._purge_closed_positions_task: asyncio.Task | None = None
+        self._purge_account_events_task: asyncio.Task | None = None
         self._kill: bool = False
 
         # Configuration
@@ -167,6 +168,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self.purge_closed_orders_buffer_mins = config.purge_closed_orders_buffer_mins
         self.purge_closed_positions_interval_mins = config.purge_closed_positions_interval_mins
         self.purge_closed_positions_buffer_mins = config.purge_closed_positions_buffer_mins
+        self.purge_account_events_interval_mins = config.purge_account_events_interval_mins
+        self.purge_account_events_lookback_mins = config.purge_account_events_lookback_mins
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
@@ -183,6 +186,8 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.purge_closed_orders_buffer_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_positions_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.purge_closed_positions_buffer_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_account_events_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.purge_account_events_lookback_mins=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -403,6 +408,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 name="purge_closed_positions",
             )
 
+        if self.purge_account_events_interval_mins and not self._purge_account_events_task:
+            self._purge_account_events_task = self._loop.create_task(
+                self._purge_account_events_loop(self.purge_account_events_interval_mins),
+                name="purge_account_events",
+            )
+
     def _on_stop(self) -> None:
         if self._inflight_check_task:
             self._log.debug(f"Canceling task '{self._inflight_check_task.get_name()}'")
@@ -428,6 +439,11 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug(f"Canceling task '{self._purge_closed_positions_task.get_name()}'")
             self._purge_closed_positions_task.cancel()
             self._purge_closed_positions_task = None
+
+        if self._purge_account_events_task:
+            self._log.debug(f"Canceling task '{self._purge_account_events_task.get_name()}'")
+            self._purge_account_events_task.cancel()
+            self._purge_account_events_task = None
 
         if self._kill:
             return  # Avoids enqueuing unnecessary sentinel messages when termination already signaled
@@ -584,8 +600,8 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.exception("Error in check_open_orders", e)
 
     async def _purge_closed_orders_loop(self, interval_mins: int) -> None:
-        buffer_mins = self.purge_closed_orders_buffer_mins or 0
         interval_secs = interval_mins * 60
+        buffer_mins = self.purge_closed_orders_buffer_mins or 0
         buffer_secs = buffer_mins * 60
 
         try:
@@ -599,8 +615,8 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.exception("Error purging closed orders", e)
 
     async def _purge_closed_positions_loop(self, interval_mins: int) -> None:
-        buffer_mins = self.purge_closed_positions_buffer_mins or 0
         interval_secs = interval_mins * 60
+        buffer_mins = self.purge_closed_positions_buffer_mins or 0
         buffer_secs = buffer_mins * 60
 
         try:
@@ -612,6 +628,21 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("Canceled task 'purge_closed_positions_loop'")
         except Exception as e:
             self._log.exception("Error purging closed positions", e)
+
+    async def _purge_account_events_loop(self, interval_mins: int) -> None:
+        interval_secs = interval_mins * 60
+        lookback_mins = self.purge_account_events_lookback_mins or 0
+        lookback_secs = lookback_mins * 60
+
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                ts_now = self._clock.timestamp_ns()
+                self._cache.purge_account_events(ts_now=ts_now, lookback_secs=lookback_secs)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled task 'purge_account_events_loop'")
+        except Exception as e:
+            self._log.exception("Error purging account events", e)
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

@@ -8,10 +8,14 @@ Released on TBD (UTC).
 - Added `Cache.purge_closed_orders(...)`
 - Added `Cache.purge_closed_position(...)`
 - Added `Cache.purge_closed_positions(...)`
+- Added `Cache.purge_account_events(...)`
+- Added `Account.purge_account_events(...)`
 - Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
 - Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
 - Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
 
