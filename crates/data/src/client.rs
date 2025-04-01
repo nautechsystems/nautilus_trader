@@ -419,7 +419,7 @@ impl DataClientAdapter {
         if !self.subscriptions_quotes.contains(&cmd.instrument_id) {
             self.subscriptions_quotes.insert(cmd.instrument_id);
             self.client.subscribe_quotes(cmd)?;
-        };
+        }
         Ok(())
     }
 

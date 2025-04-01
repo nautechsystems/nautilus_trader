@@ -541,12 +541,12 @@ impl OrderManager {
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
-        log::info!("{}{} {}", EVT, SENT, event);
+        log::info!("{EVT}{SENT} {event}");
         msgbus::send(&Ustr::from("RiskEngine.process"), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
-        log::info!("{}{} {}", EVT, SENT, event);
+        log::info!("{EVT}{SENT} {event}");
         msgbus::send(&Ustr::from("ExecEngine.process"), &event);
     }
 }

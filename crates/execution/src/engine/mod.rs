@@ -145,6 +145,7 @@ impl ExecutionEngine {
         self.default_client = Some(client);
     }
 
+    #[must_use]
     pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
         self.clients.get(client_id).cloned()
     }
@@ -602,7 +603,7 @@ impl ExecutionEngine {
         // Check if position ID already exists
         if let Some(position_id) = fill.position_id {
             if self.config.debug {
-                log::debug!("Already had a position ID of: {}", position_id);
+                log::debug!("Already had a position ID of: {position_id}");
             }
             return position_id;
         }
