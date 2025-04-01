@@ -136,5 +136,5 @@ cdef class ExecutionEngine(Component):
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef void _create_order_state_snapshot(self, Order order)
-    cpdef void _create_position_state_snapshot(self, Position position)
+    cpdef void _create_position_state_snapshot(self, Position position, bint open_only)
     cpdef void _snapshot_open_position_states(self, TimeEvent event)
