@@ -54,6 +54,7 @@ pub struct DatabentoLiveClient {
     buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
     symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+    use_exchange_as_venue: bool,
 }
 
 impl DatabentoLiveClient {
@@ -127,7 +128,12 @@ fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
 #[pymethods]
 impl DatabentoLiveClient {
     #[new]
-    pub fn py_new(key: String, dataset: String, publishers_filepath: PathBuf) -> PyResult<Self> {
+    pub fn py_new(
+        key: String,
+        dataset: String,
+        publishers_filepath: PathBuf,
+        use_exchange_as_venue: bool,
+    ) -> PyResult<Self> {
         let publishers_json = fs::read_to_string(publishers_filepath)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&publishers_json).map_err(to_pyvalue_err)?;
@@ -151,6 +157,7 @@ impl DatabentoLiveClient {
             is_closed: false,
             publisher_venue_map,
             symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
+            use_exchange_as_venue,
         })
     }
 
@@ -231,6 +238,7 @@ impl DatabentoLiveClient {
             msg_tx,
             self.publisher_venue_map.clone(),
             self.symbol_venue_map.clone(),
+            self.use_exchange_as_venue,
         );
 
         self.send_command(LiveCommand::Start)?;

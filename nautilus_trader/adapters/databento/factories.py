@@ -66,6 +66,7 @@ def get_cached_databento_instrument_provider(
     live_gateway: str | None = None,
     loader: DatabentoDataLoader | None = None,
     config: InstrumentProviderConfig | None = None,
+    use_exchange_as_venue=True,
 ) -> DatabentoInstrumentProvider:
     """
     Cache and return a Databento instrument provider.
@@ -87,6 +88,8 @@ def get_cached_databento_instrument_provider(
         The loader for the provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    use_exchange_as_venue : bool, default True
+        If the `exchange` field will be used as the venue for instrument IDs.
 
     Returns
     -------
@@ -100,6 +103,7 @@ def get_cached_databento_instrument_provider(
         live_gateway=live_gateway,
         loader=loader,
         config=config,
+        use_exchange_as_venue=use_exchange_as_venue,
     )
 
 
@@ -154,6 +158,7 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             live_gateway=config.live_gateway,
             loader=loader,
             config=config.instrument_provider,
+            use_exchange_as_venue=config.use_exchange_as_venue,
         )
 
         return DatabentoDataClient(

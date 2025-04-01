@@ -4982,6 +4982,7 @@ class DatabentoLiveClient:
         key: str,
         dataset: str,
         publishers_filepath: str,
+        use_exchange_as_venue: bool,
     ) -> None: ...
     @property
     def key(self) -> str: ...
