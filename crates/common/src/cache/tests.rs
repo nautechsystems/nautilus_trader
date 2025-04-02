@@ -286,7 +286,7 @@ fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
     order.apply(OrderEventAny::Accepted(accepted)).unwrap();
     cache.update_order(&order).unwrap();
 
-    let filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
         None,
@@ -427,7 +427,7 @@ fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
         .build();
-    let fill = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
         None,
@@ -439,7 +439,7 @@ fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         None,
         None,
     );
-    let position = Position::new(&audusd_sim, fill.into());
+    let position = Position::new(&audusd_sim, filled.into());
     cache
         .add_position(position.clone(), OmsType::Netting)
         .unwrap();
@@ -868,7 +868,7 @@ fn test_purge_position() {
         .quantity(Quantity::from(100_000))
         .build();
 
-    let fill = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
         None,
@@ -881,7 +881,7 @@ fn test_purge_position() {
         None,
     );
 
-    let position = Position::new(&audusd_sim, fill.into());
+    let position = Position::new(&audusd_sim, filled.into());
     let position_id = position.id;
 
     // Add position to cache

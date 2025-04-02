@@ -1712,9 +1712,9 @@ mod tests {
         )
         .unwrap();
 
-        let order_submitted_event = OrderEventAny::Submitted(order_submitted(&order1));
-        let order_accepted_event = OrderEventAny::Accepted(order_accepted(&order1, None));
-        let order_filled_event = OrderEventAny::Filled(order_filled(
+        let submitted = OrderEventAny::Submitted(order_submitted(&order1));
+        let accepted = OrderEventAny::Accepted(order_accepted(&order1, None));
+        let filled = OrderEventAny::Filled(order_filled(
             &order1,
             &instrument_audusd,
             None,
@@ -1729,9 +1729,9 @@ mod tests {
         ));
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-        exec_engine.process(&order_submitted_event);
-        exec_engine.process(&order_accepted_event);
-        exec_engine.process(&order_filled_event);
+        exec_engine.process(&submitted);
+        exec_engine.process(&accepted);
+        exec_engine.process(&filled);
 
         let submit_order2 = SubmitOrder::new(
             trader_id,
@@ -1852,9 +1852,9 @@ mod tests {
         )
         .unwrap();
 
-        let order_submitted_event = OrderEventAny::Submitted(order_submitted(&order1));
-        let order_accepted_event = OrderEventAny::Accepted(order_accepted(&order1, None));
-        let order_filled_event = OrderEventAny::Filled(order_filled(
+        let submitted = OrderEventAny::Submitted(order_submitted(&order1));
+        let accepted = OrderEventAny::Accepted(order_accepted(&order1, None));
+        let filled = OrderEventAny::Filled(order_filled(
             &order1,
             &instrument_audusd,
             None,
@@ -1869,9 +1869,9 @@ mod tests {
         ));
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-        exec_engine.process(&order_submitted_event);
-        exec_engine.process(&order_accepted_event);
-        exec_engine.process(&order_filled_event);
+        exec_engine.process(&submitted);
+        exec_engine.process(&accepted);
+        exec_engine.process(&filled);
 
         let submit_order2 = SubmitOrder::new(
             trader_id,

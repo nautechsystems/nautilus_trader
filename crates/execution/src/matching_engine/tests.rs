@@ -2377,9 +2377,8 @@ fn test_process_market_to_limit_orders_not_fully_filled(
         .client_order_id(client_order_id)
         .build();
     // Make order submitted
-    let order_submitted_event =
-        TestOrderEventStubs::order_submitted(&market_to_limit_order, account_id);
-    market_to_limit_order.apply(order_submitted_event).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&market_to_limit_order, account_id);
+    market_to_limit_order.apply(submitted).unwrap();
     engine_l2.process_order(&mut market_to_limit_order, account_id);
 
     // Check sequence of events for MARKET-TO-LIMIT order being not fully filled

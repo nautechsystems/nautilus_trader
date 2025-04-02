@@ -67,7 +67,7 @@ pub fn stub_position_long(audusd_sim: CurrencyPair) -> Position {
         .side(OrderSide::Buy)
         .quantity(Quantity::from(1))
         .build();
-    let filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
         None,
@@ -90,7 +90,7 @@ pub fn stub_position_short(audusd_sim: CurrencyPair) -> Position {
         .side(OrderSide::Sell)
         .quantity(Quantity::from(1))
         .build();
-    let filled = TestOrderEventStubs::order_filled(
+    let filled = TestOrderEventStubs::filled(
         &order,
         &audusd_sim,
         None,

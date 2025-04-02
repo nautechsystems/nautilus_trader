@@ -584,7 +584,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -596,7 +596,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -620,7 +620,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -674,7 +674,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -729,7 +729,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -773,7 +773,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -785,7 +785,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -830,7 +830,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(150_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -906,7 +906,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             None,
@@ -920,7 +920,7 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
         // create closing from order from different venue but same strategy
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -932,7 +932,7 @@ mod tests {
             None,
             None,
         );
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -985,7 +985,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -998,7 +998,7 @@ mod tests {
             None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -1056,7 +1056,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(200_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -1068,7 +1068,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -1080,7 +1080,7 @@ mod tests {
             None,
             None,
         );
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &audusd_sim,
             Some(TradeId::new("3")),
@@ -1136,7 +1136,7 @@ mod tests {
             .quantity(quantity1)
             .build();
         let commission1 = calculate_commission(&ethusdt, order1.quantity(), price1, None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &ethusdt,
             Some(TradeId::new("1")),
@@ -1157,7 +1157,7 @@ mod tests {
             .build();
         let price2 = Price::from("99.0");
         let commission2 = calculate_commission(&ethusdt, order2.quantity(), price2, None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &ethusdt,
             Some(TradeId::new("2")),
@@ -1181,7 +1181,7 @@ mod tests {
             .build();
         let price3 = Price::from("101.0");
         let commission3 = calculate_commission(&ethusdt, order3.quantity(), price3, None);
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &ethusdt,
             Some(TradeId::new("3")),
@@ -1205,7 +1205,7 @@ mod tests {
             .quantity(quantity4)
             .build();
         let commission4 = calculate_commission(&ethusdt, order4.quantity(), price4, None);
-        let fill4 = TestOrderEventStubs::order_filled(
+        let fill4 = TestOrderEventStubs::filled(
             &order4,
             &ethusdt,
             Some(TradeId::new("4")),
@@ -1229,7 +1229,7 @@ mod tests {
             .quantity(quantity5)
             .build();
         let commission5 = calculate_commission(&ethusdt, order5.quantity(), price5, None);
-        let fill5 = TestOrderEventStubs::order_filled(
+        let fill5 = TestOrderEventStubs::filled(
             &order5,
             &ethusdt,
             Some(TradeId::new("5")),
@@ -1262,7 +1262,7 @@ mod tests {
             .quantity(quantity1)
             .build();
         let commission1 = calculate_commission(&audusd_sim, quantity1, price1, None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("5")),
@@ -1365,7 +1365,7 @@ mod tests {
             .build();
         let commission1 =
             calculate_commission(&btcusdt, order1.quantity(), Price::from("10000.0"), None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &btcusdt,
             Some(TradeId::from("1")),
@@ -1385,7 +1385,7 @@ mod tests {
             .build();
         let commission2 =
             calculate_commission(&btcusdt, order2.quantity(), Price::from("9999.0"), None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &btcusdt,
             Some(TradeId::from("2")),
@@ -1411,7 +1411,7 @@ mod tests {
             .build();
         let commission3 =
             calculate_commission(&btcusdt, order3.quantity(), Price::from("10001.0"), None);
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &btcusdt,
             Some(TradeId::from("3")),
@@ -1437,7 +1437,7 @@ mod tests {
             .build();
         let commission4 =
             calculate_commission(&btcusdt, order4.quantity(), Price::from("10003.0"), None);
-        let fill4 = TestOrderEventStubs::order_filled(
+        let fill4 = TestOrderEventStubs::filled(
             &order4,
             &btcusdt,
             Some(TradeId::from("4")),
@@ -1463,7 +1463,7 @@ mod tests {
             .build();
         let commission5 =
             calculate_commission(&btcusdt, order5.quantity(), Price::from("10005.0"), None);
-        let fill5 = TestOrderEventStubs::order_filled(
+        let fill5 = TestOrderEventStubs::filled(
             &order5,
             &btcusdt,
             Some(TradeId::from("5")),
@@ -1498,7 +1498,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(12))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1525,7 +1525,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1562,7 +1562,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1599,7 +1599,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1636,7 +1636,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1677,7 +1677,7 @@ mod tests {
             Price::from("10000.0"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             None,
@@ -1717,7 +1717,7 @@ mod tests {
             Price::from("375.95"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &ethusdt_bitmex,
             None,
@@ -1756,7 +1756,7 @@ mod tests {
             .build();
         let commission1 =
             calculate_commission(&btcusdt, order1.quantity(), Price::from("10500.0"), None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &btcusdt,
             Some(TradeId::new("1")),
@@ -1770,7 +1770,7 @@ mod tests {
         );
         let commission2 =
             calculate_commission(&btcusdt, order2.quantity(), Price::from("10500.0"), None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &btcusdt,
             Some(TradeId::new("2")),
@@ -1806,7 +1806,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10505.60"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             Some(TradeId::new("1")),
@@ -1845,7 +1845,7 @@ mod tests {
             Price::from("10500.0"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             Some(TradeId::new("1")),
@@ -1879,7 +1879,7 @@ mod tests {
             Price::from("15500.00"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             Some(TradeId::new("1")),
@@ -1917,7 +1917,7 @@ mod tests {
 
         let commission =
             calculate_commission(&audusd_sim, order.quantity(), Price::from("1.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -1975,7 +1975,7 @@ mod tests {
 
         let position_id = PositionId::new("P-123456");
 
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -1990,7 +1990,7 @@ mod tests {
 
         let mut position = Position::new(&audusd_sim, fill1.into());
 
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
