@@ -292,11 +292,12 @@ impl Log for Logger {
             } else {
                 get_atomic_clock_static().get_time_ns()
             };
+            let level = record.level();
             let key_values = record.key_values();
-            let color = key_values
+            let color: LogColor = key_values
                 .get("color".into())
                 .and_then(|v| v.to_u64().map(|v| (v as u8).into()))
-                .unwrap_or(LogColor::Normal);
+                .unwrap_or(level.into());
             let component = key_values.get("component".into()).map_or_else(
                 || Ustr::from(record.metadata().target()),
                 |v| Ustr::from(&v.to_string()),
@@ -304,7 +305,7 @@ impl Log for Logger {
 
             let line = LogLine {
                 timestamp,
-                level: record.level(),
+                level,
                 color,
                 component,
                 message: format!("{}", record.args()),
@@ -771,7 +772,7 @@ mod tests {
 
         assert_eq!(
             log_contents,
-            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"GREEN\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
         );
     }
 }
