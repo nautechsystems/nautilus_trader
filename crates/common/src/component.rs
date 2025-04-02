@@ -13,93 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::ComponentState;
+use crate::enums::{ComponentState, ComponentTrigger};
 
-pub struct PreInitialized;
-pub struct Ready;
-pub struct Starting;
-pub struct Running;
-pub struct Stopping;
-pub struct Stopped;
-pub struct Resuming;
-pub struct Degrading;
-pub struct Degraded;
-pub struct Faulting;
-pub struct Faulted;
-pub struct Disposed;
-
-pub trait State {
-    fn state() -> ComponentState;
-}
-
-impl State for PreInitialized {
-    fn state() -> ComponentState {
-        ComponentState::PreInitialized
-    }
-}
-
-impl State for Ready {
-    fn state() -> ComponentState {
-        ComponentState::Ready
-    }
-}
-
-impl State for Starting {
-    fn state() -> ComponentState {
-        ComponentState::Starting
-    }
-}
-
-impl State for Running {
-    fn state() -> ComponentState {
-        ComponentState::Running
-    }
-}
-
-impl State for Stopping {
-    fn state() -> ComponentState {
-        ComponentState::Stopping
-    }
-}
-
-impl State for Stopped {
-    fn state() -> ComponentState {
-        ComponentState::Stopped
-    }
-}
-
-impl State for Resuming {
-    fn state() -> ComponentState {
-        ComponentState::Resuming
-    }
-}
-
-impl State for Degrading {
-    fn state() -> ComponentState {
-        ComponentState::Degrading
-    }
-}
-
-impl State for Degraded {
-    fn state() -> ComponentState {
-        ComponentState::Degraded
-    }
-}
-
-impl State for Faulting {
-    fn state() -> ComponentState {
-        ComponentState::Faulting
-    }
-}
-
-impl State for Faulted {
-    fn state() -> ComponentState {
-        ComponentState::Faulted
-    }
-}
-
-impl State for Disposed {
-    fn state() -> ComponentState {
-        ComponentState::Disposed
+impl ComponentState {
+    #[rustfmt::skip]
+    pub fn transition(&mut self, trigger: &ComponentTrigger) -> anyhow::Result<Self> {
+        let new_state = match (&self, trigger) {
+            (Self::PreInitialized, ComponentTrigger::Initialize) => Self::Ready,
+            (Self::Ready, ComponentTrigger::Reset) => Self::Resetting,
+            (Self::Ready, ComponentTrigger::Start) => Self::Starting,
+            (Self::Ready, ComponentTrigger::Dispose) => Self::Disposing,
+            (Self::Resetting, ComponentTrigger::ResetCompleted) => Self::Ready,
+            (Self::Starting, ComponentTrigger::StartCompleted) => Self::Running,
+            (Self::Starting, ComponentTrigger::Stop) => Self::Stopping,
+            (Self::Starting, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Running, ComponentTrigger::Stop) => Self::Stopping,
+            (Self::Running, ComponentTrigger::Degrade) => Self::Degrading,
+            (Self::Running, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Resuming, ComponentTrigger::Stop) => Self::Stopping,
+            (Self::Resuming, ComponentTrigger::ResumeCompleted) => Self::Running,
+            (Self::Resuming, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Stopping, ComponentTrigger::StopCompleted) => Self::Stopped,
+            (Self::Stopping, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Stopped, ComponentTrigger::Reset) => Self::Resetting,
+            (Self::Stopped, ComponentTrigger::Resume) => Self::Resuming,
+            (Self::Stopped, ComponentTrigger::Dispose) => Self::Disposing,
+            (Self::Stopped, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Degrading, ComponentTrigger::DegradeCompleted) => Self::Degraded,
+            (Self::Degraded, ComponentTrigger::Resume) => Self::Resuming,
+            (Self::Degraded, ComponentTrigger::Stop) => Self::Stopping,
+            (Self::Degraded, ComponentTrigger::Fault) => Self::Faulting,
+            (Self::Disposing, ComponentTrigger::DisposeCompleted) => Self::Disposed,
+            (Self::Faulting, ComponentTrigger::FaultCompleted) => Self::Faulted,
+            _ => anyhow::bail!("Invalid state trigger {self} -> {trigger}"),
+        };
+        Ok(new_state)
     }
 }

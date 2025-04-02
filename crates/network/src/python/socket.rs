@@ -213,7 +213,7 @@ impl SocketClient {
                     "Cannot send data ({}): socket closed",
                     String::from_utf8_lossy(&data)
                 );
-                log::error!("{}", msg);
+                log::error!("{msg}");
                 return Ok(());
             }
 

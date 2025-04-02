@@ -14,7 +14,7 @@ nautilus-infrastructure = { path = "../infrastructure" , features = ["postgres"]
 anyhow = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
-clap = { version = "4.5.34", features = ["derive", "env"] }
+clap = { version = "4.5.35", features = ["derive", "env"] }
 dotenvy = { version = "0.15.7" }
 simple_logger = "5.0.0"
 

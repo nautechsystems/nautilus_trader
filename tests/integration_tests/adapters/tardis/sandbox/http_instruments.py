@@ -46,7 +46,11 @@ async def run():
 
     for inst in pyo3_instruments:
         print(inst.id)
-        print(CryptoPerpetual.from_pyo3(inst))
+        print(
+            CryptoPerpetual.from_pyo3(inst),
+            pd.Timestamp(inst.ts_event),
+            pd.Timestamp(inst.ts_init),
+        )
 
     print(f"Received: {len(pyo3_instruments)} instruments")
 

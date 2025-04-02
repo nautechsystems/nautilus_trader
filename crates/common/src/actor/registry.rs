@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    any::Any,
     cell::{RefCell, UnsafeCell},
     rc::Rc,
     sync::OnceLock,
@@ -23,13 +22,7 @@ use std::{
 use ahash::{HashMap, HashMapExt};
 use ustr::Ustr;
 
-use crate::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
-
-pub trait Actor: Any {
-    fn id(&self) -> Ustr;
-    fn handle(&mut self, msg: &dyn Any);
-    fn as_any(&self) -> &dyn Any;
-}
+use super::Actor;
 
 pub struct ActorRegistry {
     actors: RefCell<HashMap<Ustr, Rc<UnsafeCell<dyn Actor>>>>,

@@ -26,11 +26,14 @@ use nautilus_core::{UnixNanos, correctness::FAILED};
 use ustr::Ustr;
 
 use crate::{
-    actor::registry::{Actor, get_actor_unchecked, register_actor},
+    actor::{
+        Actor,
+        registry::{get_actor_unchecked, register_actor},
+    },
     clock::Clock,
     msgbus::{
+        self,
         handler::{MessageHandler, ShareableMessageHandler},
-        {self},
     },
     timer::{TimeEvent, TimeEventCallback},
 };

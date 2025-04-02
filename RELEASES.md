@@ -24,14 +24,19 @@ None
 
 ### Internal Improvements
 - Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Added `Consumer` for `WebSocketClient` (#2488), thanks @twitu
+- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increment and fee changes
 - Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
+- Improved logging for Redis cache database operations
 - Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+- Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
 - Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
+- Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
 - Fixed handling of `PolymarketTickSizeChanged` message
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
