@@ -218,7 +218,7 @@ class BybitWebSocketClient:
         self._reconnecting = False
 
         if self._client is None:
-            self._log.warning("Cannot disconnect: not connected.")
+            self._log.warning("Cannot disconnect: not connected")
             return
 
         try:
