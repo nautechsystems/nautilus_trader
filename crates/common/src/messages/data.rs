@@ -47,10 +47,11 @@ pub enum SubscribeCommand {
     BookSnapshots(SubscribeBookSnapshots),
     Quotes(SubscribeQuotes),
     Trades(SubscribeTrades),
+    Bars(SubscribeBars),
     MarkPrices(SubscribeMarkPrices),
     IndexPrices(SubscribeIndexPrices),
-    Bars(SubscribeBars),
     InstrumentStatus(SubscribeInstrumentStatus),
+    InstrumentClose(SubscribeInstrumentClose),
 }
 
 impl SubscribeCommand {
@@ -68,6 +69,7 @@ impl SubscribeCommand {
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -85,6 +87,7 @@ impl SubscribeCommand {
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
     }
 }
@@ -99,10 +102,11 @@ pub enum UnsubscribeCommand {
     BookSnapshots(UnsubscribeBookSnapshots),
     Quotes(UnsubscribeQuotes),
     Trades(UnsubscribeTrades),
+    Bars(UnsubscribeBars),
     MarkPrices(UnsubscribeMarkPrices),
     IndexPrices(UnsubscribeIndexPrices),
-    Bars(UnsubscribeBars),
     InstrumentStatus(UnsubscribeInstrumentStatus),
+    InstrumentClose(UnsubscribeInstrumentClose),
 }
 
 impl UnsubscribeCommand {
@@ -120,6 +124,7 @@ impl UnsubscribeCommand {
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -137,6 +142,7 @@ impl UnsubscribeCommand {
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
     }
 }
