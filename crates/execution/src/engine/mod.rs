@@ -125,7 +125,7 @@ impl ExecutionEngine {
         self.external_order_claims.keys().copied().collect()
     }
 
-    // -- REGISTRATION --------------------------------------------------------
+    // -- REGISTRATION ----------------------------------------------------------------------------
 
     pub fn register_client(&mut self, client: Rc<dyn ExecutionClient>) -> anyhow::Result<()> {
         if self.clients.contains_key(&client.client_id()) {
@@ -181,7 +181,7 @@ impl ExecutionEngine {
         }
     }
 
-    // -- COMMANDS ------------------------------------------------------------
+    // -- COMMANDS --------------------------------------------------------------------------------
 
     #[allow(clippy::await_holding_refcell_ref)]
     pub async fn load_cache(&mut self) -> anyhow::Result<()> {
@@ -231,7 +231,7 @@ impl ExecutionEngine {
         self.execute_command(command);
     }
 
-    // -- COMMAND HANDLERS ----------------------------------------------------
+    // -- COMMAND HANDLERS ------------------------------------------------------------------------
 
     fn execute_command(&self, command: TradingCommand) {
         if self.config.debug {
@@ -498,7 +498,7 @@ impl ExecutionEngine {
         msgbus::publish(&topic, position);
     }
 
-    // -- EVENT HANDLERS ----------------------------------------------------
+    // -- EVENT HANDLERS --------------------------------------------------------------------------
 
     fn handle_event(&mut self, event: &OrderEventAny) {
         if self.config.debug {
@@ -911,7 +911,7 @@ impl ExecutionEngine {
         }
     }
 
-    // -- INTERNAL ------------------------------------------------------------
+    // -- INTERNAL --------------------------------------------------------------------------------
 
     fn set_position_id_counts(&mut self) {
         // For the internal position ID generator
