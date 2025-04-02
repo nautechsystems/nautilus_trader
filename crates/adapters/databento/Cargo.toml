@@ -41,7 +41,7 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-databento = "0.20.0"
+databento = "=0.20.0"  # Pinned temporarily due datafusion compatibility of xz2 and lzma
 fallible-streaming-iterator = "0.1.9"
 time = "0.3.41"
 
