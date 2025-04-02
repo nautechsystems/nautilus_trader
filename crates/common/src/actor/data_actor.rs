@@ -50,16 +50,19 @@ use crate::{
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, SENT},
-    messages::data::{
-        DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument, RequestInstruments,
-        RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+    messages::{
+        data::{
+            DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument,
+            RequestInstruments, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
+            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
+            UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        },
+        system::ShutdownSystem,
     },
     msgbus::{
         self, get_message_bus,
@@ -438,9 +441,21 @@ impl DataActorCore {
         Ok(())
     }
 
-    // pub fn shutdown_system(&self, reason: Option<String>) {  // TODO
-    //     let command = ShutdownSystem
-    // }
+    pub fn shutdown_system(&self, reason: Option<String>) {
+        self.check_registered();
+
+        // SAFETY: Checked registered before unwrapping trader ID
+        let command = ShutdownSystem::new(
+            self.trader_id().unwrap(),
+            self.actor_id.inner(),
+            reason,
+            UUID4::new(),
+            self.clock.borrow().timestamp_ns(),
+        );
+
+        let topic = Ustr::from("command.system.shutdown");
+        msgbus::send(&topic, command.as_any());
+    }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
