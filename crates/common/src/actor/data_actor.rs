@@ -68,10 +68,10 @@ use crate::{
         self, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
-            self, MessagingSwitchboard, get_bars_topic, get_book_snapshots_topic, get_custom_topic,
-            get_deltas_topic, get_index_price_topic, get_instrument_close_topic,
-            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
-            get_mark_price_topic, get_quotes_topic, get_trades_topic,
+            self, MessagingSwitchboard, get_bars_topic, get_book_deltas_topic,
+            get_book_snapshots_topic, get_custom_topic, get_index_price_topic,
+            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
+            get_instruments_topic, get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -578,7 +578,7 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_deltas_topic(instrument_id);
+        let topic = get_book_deltas_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
@@ -964,7 +964,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_deltas_topic(instrument_id);
+        let topic = get_book_deltas_topic(instrument_id);
         // msgbus::unsubscribe(&topic, self.handle_book_deltas);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
