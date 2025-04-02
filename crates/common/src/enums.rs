@@ -17,6 +17,7 @@
 
 use std::fmt::Debug;
 
+use log::Level;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -288,6 +289,18 @@ impl From<u8> for LogColor {
             5 => Self::Yellow,
             6 => Self::Red,
             _ => Self::Normal,
+        }
+    }
+}
+
+impl From<Level> for LogColor {
+    fn from(value: Level) -> Self {
+        match value {
+            Level::Error => Self::Red,
+            Level::Warn => Self::Yellow,
+            Level::Info => Self::Green,
+            Level::Debug => Self::Blue,
+            Level::Trace => Self::Normal,
         }
     }
 }
