@@ -32,12 +32,14 @@ None
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 - Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
+- Refined time initialization of components in backtest (#2490), thanks @faysou
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
 - Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
 - Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
 - Fixed handling of `PolymarketTickSizeChanged` message
+- Fixed default log colors for Rust (#2489), thanks @filipmacek
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
 ### Documentation Updates
