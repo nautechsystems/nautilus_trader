@@ -447,18 +447,18 @@ mod serial_tests {
 
         pg_cache.add_order(&market_order, None).unwrap();
 
-        let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
+        let submitted = TestOrderEventStubs::submitted(&market_order, account);
         market_order.apply(submitted).unwrap();
 
         pg_cache.update_order(market_order.last_event()).unwrap();
 
         let accepted =
-            TestOrderEventStubs::order_accepted(&market_order, account, VenueOrderId::new("001"));
+            TestOrderEventStubs::accepted(&market_order, account, VenueOrderId::new("001"));
         market_order.apply(accepted).unwrap();
 
         pg_cache.update_order(market_order.last_event()).unwrap();
 
-        let filled = TestOrderEventStubs::order_filled(
+        let filled = TestOrderEventStubs::filled(
             &market_order,
             &instrument,
             Some(TradeId::new("T-19700101-000000-001-001-1")),
@@ -754,7 +754,7 @@ mod serial_tests {
             .quantity(Quantity::from("1.0"))
             .build();
 
-        let filled = TestOrderEventStubs::order_filled(
+        let filled = TestOrderEventStubs::filled(
             &order,
             &instrument,
             Some(TradeId::new("T-19700101-000000-001-001-1")),

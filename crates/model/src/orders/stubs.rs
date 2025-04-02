@@ -33,7 +33,7 @@ use crate::{
 pub struct TestOrderEventStubs;
 
 impl TestOrderEventStubs {
-    pub fn order_submitted(order: &OrderAny, account_id: AccountId) -> OrderEventAny {
+    pub fn submitted(order: &OrderAny, account_id: AccountId) -> OrderEventAny {
         let event = OrderSubmitted::new(
             order.trader_id(),
             order.strategy_id(),
@@ -47,7 +47,7 @@ impl TestOrderEventStubs {
         OrderEventAny::Submitted(event)
     }
 
-    pub fn order_accepted(
+    pub fn accepted(
         order: &OrderAny,
         account_id: AccountId,
         venue_order_id: VenueOrderId,
@@ -68,7 +68,7 @@ impl TestOrderEventStubs {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn order_filled(
+    pub fn filled(
         order: &OrderAny,
         instrument: &InstrumentAny,
         trade_id: Option<TradeId>,
@@ -125,7 +125,7 @@ pub struct TestOrderStubs;
 impl TestOrderStubs {
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
         let mut new_order = order.clone();
-        let accepted_event = TestOrderEventStubs::order_accepted(
+        let accepted_event = TestOrderEventStubs::accepted(
             &new_order,
             AccountId::from("SIM-001"),
             VenueOrderId::from("V-001"),
@@ -140,7 +140,7 @@ impl TestOrderStubs {
         liquidity_side: LiquiditySide,
     ) -> OrderAny {
         let mut accepted_order = TestOrderStubs::make_accepted_order(order);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &accepted_order,
             instrument,
             None,
