@@ -99,7 +99,7 @@ pub fn create_crypto_perpetual(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
             info.settlement_currency
-                .unwrap_or(info.base_currency)
+                .unwrap_or(info.quote_currency)
                 .to_uppercase()
                 .as_str(),
         ),
@@ -150,7 +150,7 @@ pub fn create_crypto_future(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
             info.settlement_currency
-                .unwrap_or(info.base_currency)
+                .unwrap_or(info.quote_currency)
                 .to_uppercase()
                 .as_str(),
         ),
@@ -203,7 +203,7 @@ pub fn create_crypto_option(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
             info.settlement_currency
-                .unwrap_or(info.base_currency)
+                .unwrap_or(info.quote_currency)
                 .to_uppercase()
                 .as_str(),
         ),
