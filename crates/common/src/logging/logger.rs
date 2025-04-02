@@ -772,7 +772,7 @@ mod tests {
 
         assert_eq!(
             log_contents,
-            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"GREEN\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+            "{\"timestamp\":\"1970-01-20T02:20:00.000000000Z\",\"trader_id\":\"TRADER-001\",\"level\":\"INFO\",\"color\":\"NORMAL\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
         );
     }
 }

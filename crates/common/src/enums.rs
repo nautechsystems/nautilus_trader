@@ -298,8 +298,8 @@ impl From<Level> for LogColor {
         match value {
             Level::Error => Self::Red,
             Level::Warn => Self::Yellow,
-            Level::Info => Self::Green,
-            Level::Debug => Self::Blue,
+            Level::Info => Self::Normal,
+            Level::Debug => Self::Normal,
             Level::Trace => Self::Normal,
         }
     }
