@@ -211,6 +211,7 @@ impl FromStr for Currency {
         let map_guard = CURRENCY_MAP
             .lock()
             .map_err(|e| anyhow::anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
+        println!("map_guard: {:?}", map_guard);
         map_guard
             .get(s)
             .copied()

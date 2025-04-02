@@ -254,11 +254,12 @@ class BybitDataClient(LiveMarketDataClient):
             await ws_client.disconnect()
 
     def _send_all_instruments_to_data_engine(self) -> None:
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
-
+        print("sending all instruments to data engine")
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
+
+        for instrument in self._instrument_provider.get_all().values():
+            self._handle_data(instrument)
 
     async def _update_instruments(self, interval_mins: int) -> None:
         try:
