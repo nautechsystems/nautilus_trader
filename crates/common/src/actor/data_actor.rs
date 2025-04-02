@@ -64,6 +64,7 @@ use crate::{
             get_instruments_topic, get_trades_topic,
         },
     },
+    signal::Signal,
 };
 
 /// Configuration for Actor components.
@@ -103,54 +104,117 @@ impl Actor for DataActorCore {
 
 pub trait DataActor: Actor {
     /// Actions to be performed when the actor state is saved.
-    fn on_save(&self) -> HashMap<String, Vec<u8>> {
-        HashMap::new()
+    fn on_save(&self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        Ok(HashMap::new())
     }
+
     /// Actions to be performed when the actor state is loaded.
-    fn on_load(&mut self, state: HashMap<String, Vec<u8>>) {}
+    fn on_load(&mut self, state: HashMap<String, Vec<u8>>) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on start.
-    fn on_start(&mut self) {}
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on stop.
-    fn on_stop(&mut self) {}
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on resume.
-    fn on_resume(&mut self) {}
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on reset.
-    fn on_reset(&mut self) {}
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on dispose.
-    fn on_dispose(&mut self) {}
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on degrade.
-    fn on_degrade(&mut self) {}
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed on fault.
-    fn on_fault(&mut self) {}
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     // Actions to be performed when receiving an event.
     // pub fn on_event(&mut self, event: &i Event) {  // TODO: TBD
     //     // Default empty implementation
     // }
-    fn on_data(&mut self, data: &dyn Any);
+    //
+    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving an instrument status update.
-    fn on_instrument_status(&mut self, data: &InstrumentStatus) {}
+    fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     // Actions to be performed when receiving an instrument close update.  // TODO: Implement data
     // pub fn on_instrument_close(&mut self, update: InstrumentClose) {}
+
     /// Actions to be performed when receiving an instrument.
-    fn on_instrument(&mut self, instrument: &InstrumentAny) {}
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving an order book.
-    fn on_book(&mut self, order_book: &OrderBook) {}
+    fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving order book deltas.
-    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) {}
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving a quote.
-    fn on_quote(&mut self, quote: &QuoteTick);
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving a trade.
-    fn on_trade(&mut self, tick: &TradeTick) {}
+    fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving a mark price update.
-    fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) {}
+    fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving an index price update.
-    fn on_index_price(&mut self, index_price: &IndexPriceUpdate) {}
+    fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving a bar.
-    fn on_bar(&mut self, bar: &Bar) {}
+    fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     // Actions to be performed when receiving a signal. // TODO: TBD
-    // pub fn on_signal(&mut self, signal: &impl Data) {}
+    fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     // Actions to be performed when receiving historical data.
-    fn on_historical_data(&mut self, data: &dyn Any) {} // TODO: Probably break this down further
+    fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        // TODO: Probably break this down into more granular methods
+        Ok(())
+    }
 }
 
 /// Core functionality for all actors.
@@ -173,8 +237,12 @@ pub struct DataActorCore {
 }
 
 impl DataActor for DataActorCore {
-    fn on_data(&mut self, data: &dyn Any) {}
-    fn on_quote(&mut self, quote: &QuoteTick) {}
+    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 impl DataActorCore {
@@ -408,7 +476,9 @@ impl DataActorCore {
         log_received(&data);
         // TODO: Check component state is running
 
-        self.on_data(data)
+        if let Err(e) = self.on_data(data) {
+            log_error(e);
+        }
     }
 
     /// Handles a received instrument.
@@ -416,7 +486,9 @@ impl DataActorCore {
         log_received(&instrument);
         // TODO: Check component state is running
 
-        self.on_instrument(instrument);
+        if let Err(e) = self.on_instrument(instrument) {
+            log_error(e);
+        }
     }
 
     /// Handles multiple received instruments.
@@ -433,7 +505,9 @@ impl DataActorCore {
         log_received(&book);
         // TODO: Check component state is running
 
-        self.on_book(book);
+        if let Err(e) = self.on_book(book) {
+            log_error(e);
+        };
     }
 
     /// Handles received order book deltas.
@@ -441,7 +515,9 @@ impl DataActorCore {
         log_received(&deltas);
         // TODO: Check component state is running
 
-        self.on_book_deltas(deltas);
+        if let Err(e) = self.on_book_deltas(deltas) {
+            log_error(e);
+        }
     }
 
     /// Handles a received quote.
@@ -449,7 +525,9 @@ impl DataActorCore {
         log_received(&quote);
         // TODO: Check component state is running
 
-        self.on_quote(quote);
+        if let Err(e) = self.on_quote(quote) {
+            log_error(e);
+        }
     }
 
     /// Handles a received trade.
@@ -457,7 +535,9 @@ impl DataActorCore {
         log_received(&trade);
         // TODO: Check component state is running
 
-        self.on_trade(trade);
+        if let Err(e) = self.on_trade(trade) {
+            log_error(e);
+        }
     }
 
     /// Handles a received mark price update.
@@ -465,7 +545,9 @@ impl DataActorCore {
         log_received(&mark_price);
         // TODO: Check component state is running
 
-        self.on_mark_price(mark_price);
+        if let Err(e) = self.on_mark_price(mark_price) {
+            log_error(e);
+        }
     }
 
     /// Handles a received index price update.
@@ -473,7 +555,9 @@ impl DataActorCore {
         log_received(&index_price);
         // TODO: Check component state is running
 
-        self.on_index_price(index_price);
+        if let Err(e) = self.on_index_price(index_price) {
+            log_error(e);
+        }
     }
 
     /// Handles a received instrument status.
@@ -481,7 +565,9 @@ impl DataActorCore {
         log_received(&status);
         // TODO: Check component state is running
 
-        self.on_instrument_status(status);
+        if let Err(e) = self.on_instrument_status(status) {
+            log_error(e);
+        }
     }
 
     /// Handles a receiving bar.
@@ -489,8 +575,14 @@ impl DataActorCore {
         log_received(&bar);
         // TODO: Check component state is running
 
-        self.on_bar(bar);
+        if let Err(e) = self.on_bar(bar) {
+            log_error(e);
+        }
     }
+}
+
+fn log_error(e: anyhow::Error) {
+    log::error!("{e}");
 }
 
 fn log_received<T>(msg: &T)
@@ -569,21 +661,25 @@ mod tests {
 
     // Implement DataActor trait overriding handlers are required
     impl DataActor for TestDataActor {
-        fn on_data(&mut self, data: &dyn Any) {
+        fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
             println!("Received generic data");
+            Ok(())
         }
 
-        fn on_book(&mut self, book: &OrderBook) {
+        fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
             println!("Received a book {book}");
+            Ok(())
         }
 
-        fn on_quote(&mut self, quote: &QuoteTick) {
+        fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
             println!("Received a quote {quote}");
+            Ok(())
         }
 
-        fn on_trade(&mut self, trade: &TradeTick) {
+        fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
             *self.trades_received.borrow_mut() += 1;
             println!("Received a trade {trade}");
+            Ok(())
         }
     }
 
