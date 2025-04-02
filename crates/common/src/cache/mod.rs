@@ -33,11 +33,12 @@ pub use config::CacheConfig; // Re-export
 use database::{CacheDatabaseAdapter, CacheMap};
 use index::CacheIndex;
 use nautilus_core::{
-    UUID4,
+    UUID4, UnixNanos,
     correctness::{
         FAILED, check_key_not_in_map, check_predicate_false, check_slice_not_empty,
         check_valid_string,
     },
+    datetime::secs_to_nanos,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -788,6 +789,200 @@ impl Cache {
         }
 
         residuals
+    }
+
+    /// Purges all closed orders from the cache that are older than the given buffer time.
+    ///
+    ///
+    /// Only orders that have been closed for at least this amount of time will be purged.
+    /// A value of 0 means purge all closed orders regardless of when they were closed.
+    pub fn purge_closed_orders(&mut self, ts_now: UnixNanos, buffer_secs: u64) {
+        log::debug!(
+            "Purging closed orders{}",
+            if buffer_secs > 0 {
+                format!(" with buffer_secs={buffer_secs}")
+            } else {
+                String::new()
+            }
+        );
+
+        let buffer_ns = secs_to_nanos(buffer_secs as f64);
+
+        for client_order_id in self.index.orders_closed.clone() {
+            if let Some(order) = self.orders.get(&client_order_id) {
+                if let Some(ts_closed) = order.ts_closed() {
+                    if ts_closed + buffer_ns <= ts_now {
+                        self.purge_order(client_order_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Purges all closed positions from the cache that are older than the given buffer time.
+    pub fn purge_closed_positions(&mut self, ts_now: UnixNanos, buffer_secs: u64) {
+        log::debug!(
+            "Purging closed positions{}",
+            if buffer_secs > 0 {
+                format!(" with buffer_secs={buffer_secs}")
+            } else {
+                String::new()
+            }
+        );
+
+        let buffer_ns = secs_to_nanos(buffer_secs as f64);
+
+        for position_id in self.index.positions_closed.clone() {
+            if let Some(position) = self.positions.get(&position_id) {
+                if let Some(ts_closed) = position.ts_closed {
+                    if ts_closed + buffer_ns <= ts_now {
+                        self.purge_position(position_id);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Purges the order with the given client order ID from the cache (if found).
+    ///
+    /// All `OrderFilled` events for the order will also be purged from any associated position.
+    pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
+        if let Some(order) = self.orders.remove(&client_order_id) {
+            // Remove order from venue index
+            if let Some(venue_orders) = self
+                .index
+                .venue_orders
+                .get_mut(&order.instrument_id().venue)
+            {
+                venue_orders.remove(&client_order_id);
+            }
+
+            // Remove venue order ID index if exists
+            if let Some(venue_order_id) = order.venue_order_id() {
+                self.index.venue_order_ids.remove(&venue_order_id);
+            }
+
+            // Remove from instrument orders index
+            if let Some(instrument_orders) =
+                self.index.instrument_orders.get_mut(&order.instrument_id())
+            {
+                instrument_orders.remove(&client_order_id);
+            }
+
+            // Remove from position orders index if associated with a position
+            if let Some(position_id) = order.position_id() {
+                if let Some(position_orders) = self.index.position_orders.get_mut(&position_id) {
+                    position_orders.remove(&client_order_id);
+                }
+            }
+
+            // Remove from exec algorithm orders index if it has an exec algorithm
+            if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
+                if let Some(exec_algorithm_orders) =
+                    self.index.exec_algorithm_orders.get_mut(&exec_algorithm_id)
+                {
+                    exec_algorithm_orders.remove(&client_order_id);
+                }
+            }
+
+            log::info!("Purged order {client_order_id}");
+        } else {
+            log::warn!("Order {client_order_id} not found when purging");
+        }
+
+        // Remove from all other index collections regardless of whether order was found
+        self.index.order_position.remove(&client_order_id);
+        self.index.order_strategy.remove(&client_order_id);
+        self.index.order_client.remove(&client_order_id);
+        self.index.client_order_ids.remove(&client_order_id);
+        self.index.exec_spawn_orders.remove(&client_order_id);
+        self.index.orders.remove(&client_order_id);
+        self.index.orders_closed.remove(&client_order_id);
+        self.index.orders_emulated.remove(&client_order_id);
+        self.index.orders_inflight.remove(&client_order_id);
+        self.index.orders_pending_cancel.remove(&client_order_id);
+
+        // Purge events from associated position if exists
+        if let Some(position_id) = self.index.order_position.get(&client_order_id) {
+            if let Some(position) = self.positions.get_mut(position_id) {
+                position.purge_events_for_order(client_order_id);
+            }
+        }
+    }
+
+    /// Purges the position with the given position ID from the cache (if found).
+    pub fn purge_position(&mut self, position_id: PositionId) {
+        if let Some(position) = self.positions.remove(&position_id) {
+            // Remove from venue positions index
+            if let Some(venue_positions) = self
+                .index
+                .venue_positions
+                .get_mut(&position.instrument_id.venue)
+            {
+                venue_positions.remove(&position_id);
+            }
+
+            // Remove from instrument positions index
+            if let Some(instrument_positions) = self
+                .index
+                .instrument_positions
+                .get_mut(&position.instrument_id)
+            {
+                instrument_positions.remove(&position_id);
+            }
+
+            // Remove from strategy positions index
+            if let Some(strategy_positions) =
+                self.index.strategy_positions.get_mut(&position.strategy_id)
+            {
+                strategy_positions.remove(&position_id);
+            }
+
+            // Remove position ID from orders that reference it
+            for client_order_id in position.client_order_ids() {
+                self.index.order_position.remove(&client_order_id);
+            }
+
+            log::info!("Purged position {position_id}");
+        } else {
+            log::warn!("Position {position_id} not found when purging");
+        }
+
+        // Remove from all other index collections regardless of whether position was found
+        self.index.position_strategy.remove(&position_id);
+        self.index.position_orders.remove(&position_id);
+        self.index.positions.remove(&position_id);
+        self.index.positions_open.remove(&position_id);
+        self.index.positions_closed.remove(&position_id);
+    }
+
+    /// Purges all account state events which are outside the lookback window.
+    ///
+    /// Only events which are outside the lookback window will be purged.
+    /// A value of 0 means purge all account state events.
+    pub fn purge_account_events(&mut self, _ts_now: UnixNanos, lookback_secs: u64) {
+        log::debug!(
+            "Purging account events{}",
+            if lookback_secs > 0 {
+                format!(" with lookback_secs={lookback_secs}")
+            } else {
+                String::new()
+            }
+        );
+
+        // TODO: Implement purging of account state events
+        // for account in self.accounts.values_mut() {
+        //     let event_count = account.event_count();
+        //     account.purge_account_events(ts_now, lookback_secs);
+        //     let count_diff = event_count - account.event_count();
+        //     if count_diff > 0 {
+        //         log::info!(
+        //             "Purged {} event(s) from account {}",
+        //             count_diff,
+        //             account.id()
+        //         );
+        //     }
+        // }
     }
 
     /// Clears the caches index.
