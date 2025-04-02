@@ -313,6 +313,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
+            UnsubscribeCommand::InstrumentStatus(cmd) => todo!(),
         };
 
         if let Err(e) = result {

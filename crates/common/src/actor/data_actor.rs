@@ -22,6 +22,7 @@ use std::{
     any::{Any, TypeId},
     cell::{RefCell, UnsafeCell},
     collections::{HashMap, HashSet},
+    num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
@@ -33,6 +34,7 @@ use nautilus_model::{
         Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
         OrderBookDeltas, QuoteTick, TradeTick,
     },
+    enums::BookType,
     identifiers::{ClientId, ComponentId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -51,18 +53,21 @@ use crate::{
     messages::data::{
         DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument, RequestInstruments,
         RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks, SubscribeBars,
-        SubscribeCommand, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
-        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-        SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
+        SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+        UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
-            self, MessagingSwitchboard, get_bars_topic, get_custom_topic,
-            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
+            self, MessagingSwitchboard, get_bars_topic, get_book_snapshots_topic, get_custom_topic,
+            get_deltas_topic, get_index_price_topic, get_instrument_status_topic,
+            get_instrument_topic, get_instruments_topic, get_mark_price_topic, get_quotes_topic,
             get_trades_topic,
         },
     },
@@ -301,6 +306,8 @@ impl DataActorCore {
         self.state == ComponentState::Faulted
     }
 
+    // -- REGISTRATION ----------------------------------------------------------------------------
+
     /// Register an executor for the actor.
     pub fn register_executor(&mut self, executor: Arc<dyn ActorExecutor>) {
         self.executor = Some(executor);
@@ -433,7 +440,9 @@ impl DataActorCore {
     //     let command = ShutdownSystem
     // }
 
-    /// Subscribe to data of the given data type.
+    // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
+
+    /// Subscribe to streaming data of the given data type.
     pub fn subscribe_data(
         &self,
         data_type: DataType,
@@ -469,7 +478,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to instrument data for the given venue.
+    /// Subscribe to streaming [`Instrument`] data for the given venue.
     pub fn subscribe_instruments(
         &self,
         venue: Venue,
@@ -480,8 +489,8 @@ impl DataActorCore {
 
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |instruments: &Vec<InstrumentAny>| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instruments(instruments);
+            move |instrument: &InstrumentAny| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument(instrument);
             },
         )));
 
@@ -499,7 +508,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to instrument data for the given instrument ID.
+    /// Subscribe to streaming [`InstrumentAny`] data for the given instrument ID.
     pub fn subscribe_instrument(
         &self,
         instrument_id: InstrumentId,
@@ -530,7 +539,99 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to quotes for the given instrument ID.
+    /// Subscribe to streaming [`OrderBookDeltas`] data for the given instrument ID.
+    ///
+    /// Once subscribed, any matching order book deltas published on the message bus is forwarded
+    /// to the `on_book_deltas` handler.
+    pub fn subscribe_book_deltas(
+        &self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        managed: bool,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |deltas: &OrderBookDeltas| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_book_deltas(deltas);
+            },
+        )));
+
+        let topic = get_deltas_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
+            instrument_id,
+            book_type,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            depth,
+            managed,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the given instrument ID.
+    ///
+    /// Once subscribed, any matching order book snapshots published on the message bus are forwarded
+    /// to the `on_book` handler.
+    ///
+    /// # Warnings
+    ///
+    /// Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
+    pub fn subscribe_book_snapshots(
+        &self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<NonZeroUsize>,
+        interval_ms: NonZeroUsize,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        if book_type == BookType::L1_MBP && depth.is_some_and(|d| d.get() > 1) {
+            log::error!(
+                "Cannot subscribe to order book snapshots: L1 MBP book subscription depth > 1, was {:?}",
+                depth,
+            );
+            return;
+        }
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |book: &OrderBook| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_book(book);
+            },
+        )));
+
+        let topic = get_book_snapshots_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
+            instrument_id,
+            book_type,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            depth,
+            interval_ms,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Subscribe to streaming [`QuoteTick`] data for the given instrument ID.
     pub fn subscribe_quotes(
         &self,
         instrument_id: InstrumentId,
@@ -561,7 +662,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to trades for the given instrument ID.
+    /// Subscribe to streaming [`TradeTick`] data for the given instrument ID.
     pub fn subscribe_trades(
         &self,
         instrument_id: InstrumentId,
@@ -591,6 +692,113 @@ impl DataActorCore {
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
+
+    /// Subscribe to streaming [`MarkPriceUpdate`] data for the given instrument ID.
+    ///
+    /// Once subscribed, any matching mark price updates published on the message bus are forwarded
+    /// to the `on_mark_price` handler.
+    pub fn subscribe_mark_prices(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |mark_price: &MarkPriceUpdate| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_mark_price(mark_price);
+            },
+        )));
+
+        let topic = get_mark_price_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Subscribe to streaming [`IndexPriceUpdate`] data for the given instrument ID.
+    ///
+    /// Once subscribed, any matching index price updates published on the message bus are forwarded
+    /// to the `on_index_price` handler.
+    pub fn subscribe_index_prices(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |index_price: &IndexPriceUpdate| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_index_price(index_price);
+            },
+        )));
+
+        let topic = get_index_price_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    // TODO!
+    // Subscribe to streaming [`InstrumentClose`] data for the given instrument ID.
+    //
+    // Once subscribed, any matching instrument close data published on the message bus is forwarded
+    // to the `on_instrument_close` handler.
+    // pub fn subscribe_instrument_close(
+    //     &self,
+    //     instrument_id: InstrumentId,
+    //     client_id: Option<ClientId>,
+    //     params: Option<HashMap<String, String>>,
+    // ) {
+    //     self.check_registered();
+    //
+    //     let actor_id = self.actor_id.inner();
+    //     let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+    //         move |close: &InstrumentClose| {
+    //             get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_close(close);
+    //         },
+    //     )));
+    //
+    //     // Topic may need to be adjusted to match Python implementation
+    //     let topic = Ustr::from(&format!(
+    //         "data.venue.close_price.{}",
+    //         instrument_id.to_string()
+    //     ));
+    //     msgbus::subscribe(topic, handler, None);
+    //
+    //     let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
+    //         instrument_id,
+    //         client_id,
+    //         venue: Some(instrument_id.venue),
+    //         command_id: UUID4::new(),
+    //         ts_init: self.generate_ts_init(),
+    //         params,
+    //     });
+    //
+    //     self.send_data_cmd(DataCommand::Subscribe(command));
+    // }
 
     /// Subscribe to streaming [`Bar`] data for the given bar type.
     ///
@@ -660,6 +868,302 @@ impl DataActorCore {
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
+
+    /// Unsubscribe from data of the given data type.
+    pub fn unsubscribe_data(
+        &self,
+        data_type: DataType,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_custom_topic(&data_type);
+        // msgbus::unsubscribe(&topic, self.handle_data);  // TODO
+
+        if client_id.is_none() {
+            return;
+        }
+
+        let command = UnsubscribeCommand::Data(UnsubscribeData {
+            data_type,
+            client_id,
+            venue: None,
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from update `Instrument` data for the given venue.
+    pub fn unsubscribe_instruments(
+        &self,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_instruments_topic(venue);
+        // msgbus::unsubscribe(&topic, self.handle_instruments);  // TODO!
+
+        let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    pub fn unsubscribe_instrument(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_instrument_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_instrument);  // TODO
+
+        let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    pub fn unsubscribe_book_deltas(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_deltas_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_book_deltas);
+
+        let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from order book snapshots for the given instrument ID.
+    pub fn unsubscribe_book_snapshots(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_book_snapshots_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_book);  // TODO
+
+        let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
+    pub fn unsubscribe_quote_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_quotes_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_quote);  // TODO
+
+        let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from streaming `TradeTick` data for the given instrument ID.
+    pub fn unsubscribe_trade_ticks(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_trades_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_trade);  // TODO
+
+        let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from streaming `MarkPriceUpdate` data for the given instrument ID.
+    pub fn unsubscribe_mark_prices(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_mark_price_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_mark_price);  // TODO
+
+        let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from streaming `IndexPriceUpdate` data for the given instrument ID.
+    pub fn unsubscribe_index_prices(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_index_price_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_index_price);  // TODO
+
+        let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from streaming `Bar` data for the given bar type.
+    pub fn unsubscribe_bars(
+        &self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_bars_topic(bar_type);
+        // msgbus::unsubscribe(&topic, self.handle_bar);  // TODO
+
+        let command = UnsubscribeCommand::Bars(UnsubscribeBars {
+            bar_type,
+            client_id,
+            venue: Some(bar_type.instrument_id().venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Unsubscribe from instrument status updates for the given instrument ID.
+    pub fn unsubscribe_instrument_status(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_instrument_status_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_instrument_status);  // TODO
+
+        let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    // TODO
+    // Unsubscribe from instrument close updates for the given instrument ID.
+    // pub fn unsubscribe_instrument_close(
+    //     &self,
+    //     instrument_id: InstrumentId,
+    //     client_id: Option<ClientId>,
+    //     params: Option<HashMap<String, String>>,
+    // ) {
+    //     self.check_registered();
+    //
+    //     // Topic may need to be adjusted to match Python implementation
+    //     let topic = Ustr::from(&format!(
+    //         "data.venue.close_price.{}",
+    //         instrument_id.to_string()
+    //     ));
+    //     // msgbus::unsubscribe(&topic, self.handle_instrument_close);  // TODO
+    //
+    //     let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
+    //         instrument_id,
+    //         client_id,
+    //         venue: Some(instrument_id.venue),
+    //         command_id: UUID4::new(),
+    //         ts_init: self.generate_ts_init(),
+    //         params,
+    //     });
+    //
+    //     self.send_data_cmd(DataCommand::Unsubscribe(command));
+    // }
+
+    // -- HANDLERS --------------------------------------------------------------------------------
 
     /// Handles a received custom/generic data point.
     pub fn handle_data(&mut self, data: &dyn Any) {
@@ -772,6 +1276,19 @@ impl DataActorCore {
         }
     }
 
+    /// Handles a receiving bar.
+    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
+        log_received(&bar);
+
+        if !self.is_running() {
+            return;
+        }
+
+        if let Err(e) = self.on_bar(bar) {
+            log_error(&e);
+        }
+    }
+
     /// Handles a received instrument status.
     pub(crate) fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
@@ -785,15 +1302,59 @@ impl DataActorCore {
         }
     }
 
-    /// Handles a receiving bar.
-    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
-        log_received(&bar);
+    // TODO
+    // Handles a received instrument close.
+    // pub(crate) fn handle_instrument_close(&mut self, close: &InstrumentClose) {
+    //     log_received(&close);
+    //
+    //     if !self.is_running() {
+    //         return;
+    //     }
+    //
+    //     if let Err(e) = self.on_instrument_close(close) {
+    //         log_error(&e);
+    //     }
+    // }
+
+    /// Handles multiple received quote ticks.
+    pub(crate) fn handle_quote_ticks(&mut self, quotes: &Vec<QuoteTick>) {
+        for quote in quotes {
+            self.handle_quote(quote);
+        }
+    }
+
+    /// Handles multiple received trade ticks.
+    pub(crate) fn handle_trade_ticks(&mut self, trades: &Vec<TradeTick>) {
+        for trade in trades {
+            self.handle_trade(trade);
+        }
+    }
+
+    /// Handles multiple received bars.
+    pub(crate) fn handle_bars(&mut self, bars: &Vec<Bar>) {
+        for bar in bars {
+            self.handle_bar(bar);
+        }
+    }
+
+    /// Handles a received historical data.
+    pub(crate) fn handle_historical_data(&mut self, data: &dyn Any) {
+        log_received(&data);
+
+        if let Err(e) = self.on_historical_data(data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received signal.
+    pub(crate) fn handle_signal(&mut self, signal: &Signal) {
+        log_received(&signal);
 
         if !self.is_running() {
             return;
         }
 
-        if let Err(e) = self.on_bar(bar) {
+        if let Err(e) = self.on_signal(signal) {
             log_error(&e);
         }
     }
@@ -810,9 +1371,9 @@ where
     log::debug!("{} {:?}", RECV, msg);
 }
 
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
 // Tests
-////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{
