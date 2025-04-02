@@ -32,14 +32,6 @@ pub fn get_custom_topic(data_type: &DataType) -> Ustr {
 }
 
 #[must_use]
-pub fn get_instrument_topic(instrument_id: InstrumentId) -> Ustr {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_instrument_topic(instrument_id)
-}
-
-#[must_use]
 pub fn get_instruments_topic(venue: Venue) -> Ustr {
     get_message_bus()
         .borrow_mut()
@@ -48,11 +40,19 @@ pub fn get_instruments_topic(venue: Venue) -> Ustr {
 }
 
 #[must_use]
+pub fn get_instrument_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_instrument_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_deltas_topic(instrument_id: InstrumentId) -> Ustr {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_deltas_topic(instrument_id)
+        .get_book_deltas_topic(instrument_id)
 }
 
 #[must_use]
@@ -68,7 +68,7 @@ pub fn get_depth_topic(instrument_id: InstrumentId) -> Ustr {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_depth_topic(instrument_id)
+        .get_book_depth_topic(instrument_id)
 }
 
 #[must_use]
@@ -88,6 +88,14 @@ pub fn get_trades_topic(instrument_id: InstrumentId) -> Ustr {
 }
 
 #[must_use]
+pub fn get_bars_topic(bar_type: BarType) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_bars_topic(bar_type)
+}
+
+#[must_use]
 pub fn get_mark_price_topic(instrument_id: InstrumentId) -> Ustr {
     get_message_bus()
         .borrow_mut()
@@ -101,14 +109,6 @@ pub fn get_index_price_topic(instrument_id: InstrumentId) -> Ustr {
         .borrow_mut()
         .switchboard
         .get_index_price_topic(instrument_id)
-}
-
-#[must_use]
-pub fn get_bars_topic(bar_type: BarType) -> Ustr {
-    get_message_bus()
-        .borrow_mut()
-        .switchboard
-        .get_bars_topic(bar_type)
 }
 
 #[must_use]
@@ -165,18 +165,18 @@ pub struct MessagingSwitchboard {
     custom_topics: HashMap<DataType, Ustr>,
     instruments_topics: HashMap<Venue, Ustr>,
     instrument_topics: HashMap<InstrumentId, Ustr>,
-    deltas_topics: HashMap<InstrumentId, Ustr>,
+    book_deltas_topics: HashMap<InstrumentId, Ustr>,
+    book_depth_topics: HashMap<InstrumentId, Ustr>,
     book_snapshots_topics: HashMap<InstrumentId, Ustr>,
-    event_orders_topics: HashMap<StrategyId, Ustr>,
-    event_positions_topics: HashMap<StrategyId, Ustr>,
-    depth_topics: HashMap<InstrumentId, Ustr>,
     quote_topics: HashMap<InstrumentId, Ustr>,
     trade_topics: HashMap<InstrumentId, Ustr>,
+    bar_topics: HashMap<BarType, Ustr>,
     mark_price_topics: HashMap<InstrumentId, Ustr>,
     index_price_topics: HashMap<InstrumentId, Ustr>,
-    bar_topics: HashMap<BarType, Ustr>,
     instrument_status_topics: HashMap<InstrumentId, Ustr>,
     instrument_close_topics: HashMap<InstrumentId, Ustr>,
+    event_orders_topics: HashMap<StrategyId, Ustr>,
+    event_positions_topics: HashMap<StrategyId, Ustr>,
     order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
     positions_snapshots_topics: HashMap<PositionId, Ustr>,
 }
@@ -188,9 +188,9 @@ impl Default for MessagingSwitchboard {
             custom_topics: HashMap::new(),
             instruments_topics: HashMap::new(),
             instrument_topics: HashMap::new(),
-            deltas_topics: HashMap::new(),
+            book_deltas_topics: HashMap::new(),
             book_snapshots_topics: HashMap::new(),
-            depth_topics: HashMap::new(),
+            book_depth_topics: HashMap::new(),
             quote_topics: HashMap::new(),
             trade_topics: HashMap::new(),
             mark_price_topics: HashMap::new(),
@@ -257,23 +257,29 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_deltas_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
-        *self.deltas_topics.entry(instrument_id).or_insert_with(|| {
-            Ustr::from(&format!(
-                "data.book.deltas.{}.{}",
-                instrument_id.venue, instrument_id.symbol
-            ))
-        })
+    pub fn get_book_deltas_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .book_deltas_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.book.deltas.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
     }
 
     #[must_use]
-    pub fn get_depth_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
-        *self.depth_topics.entry(instrument_id).or_insert_with(|| {
-            Ustr::from(&format!(
-                "data.book.depth.{}.{}",
-                instrument_id.venue, instrument_id.symbol
-            ))
-        })
+    pub fn get_book_depth_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .book_depth_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.book.depth.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
     }
 
     #[must_use]
@@ -310,6 +316,14 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
+    pub fn get_bars_topic(&mut self, bar_type: BarType) -> Ustr {
+        *self
+            .bar_topics
+            .entry(bar_type)
+            .or_insert_with(|| Ustr::from(&format!("data.bars.{bar_type}")))
+    }
+
+    #[must_use]
     pub fn get_mark_price_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
         *self
             .mark_price_topics
@@ -333,14 +347,6 @@ impl MessagingSwitchboard {
                     instrument_id.venue, instrument_id.symbol
                 ))
             })
-    }
-
-    #[must_use]
-    pub fn get_bars_topic(&mut self, bar_type: BarType) -> Ustr {
-        *self
-            .bar_topics
-            .entry(bar_type)
-            .or_insert_with(|| Ustr::from(&format!("data.bars.{bar_type}")))
     }
 
     #[must_use]
@@ -448,9 +454,9 @@ mod tests {
     #[rstest]
     fn test_get_deltas_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
         let expected_topic = Ustr::from("data.book.deltas.XCME.ESZ24");
-        let result = switchboard.get_deltas_topic(instrument_id);
+        let result = switchboard.get_book_deltas_topic(instrument_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard.deltas_topics.contains_key(&instrument_id));
+        assert!(switchboard.book_deltas_topics.contains_key(&instrument_id));
     }
 
     #[rstest]
@@ -471,9 +477,9 @@ mod tests {
     #[rstest]
     fn test_get_depth_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
         let expected_topic = Ustr::from("data.book.depth.XCME.ESZ24");
-        let result = switchboard.get_depth_topic(instrument_id);
+        let result = switchboard.get_book_depth_topic(instrument_id);
         assert_eq!(result, expected_topic);
-        assert!(switchboard.depth_topics.contains_key(&instrument_id));
+        assert!(switchboard.book_depth_topics.contains_key(&instrument_id));
     }
 
     #[rstest]

@@ -167,13 +167,8 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    /// Actions to be performed when receiving an instrument status update.
-    fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    /// Actions to be performed when receiving an instrument close update.
-    fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
+    /// Actions to be performed when receiving a signal.
+    fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -182,13 +177,13 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    /// Actions to be performed when receiving an order book.
-    fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+    /// Actions to be performed when receiving order book deltas.
+    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Actions to be performed when receiving order book deltas.
-    fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+    /// Actions to be performed when receiving an order book.
+    fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -202,6 +197,11 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
+    /// Actions to be performed when receiving a bar.
+    fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving a mark price update.
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         Ok(())
@@ -212,13 +212,13 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    /// Actions to be performed when receiving a bar.
-    fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+    /// Actions to be performed when receiving an instrument status update.
+    fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Actions to be performed when receiving a signal.
-    fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+    /// Actions to be performed when receiving an instrument close update.
+    fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -710,6 +710,41 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Subscribe to streaming [`Bar`] data for the given bar type.
+    ///
+    /// Once subscribed, any matching bar data published on the message bus is forwarded
+    /// to the `on_bar` handler.
+    pub fn subscribe_bars(
+        &self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        await_partial: bool,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_bar(bar);
+            })));
+
+        let topic = get_bars_topic(bar_type);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::Bars(SubscribeBars {
+            bar_type,
+            client_id,
+            venue: Some(bar_type.instrument_id().venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            await_partial,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Subscribe to streaming [`MarkPriceUpdate`] data for the given instrument ID.
     ///
     /// Once subscribed, any matching mark price updates published on the message bus are forwarded
@@ -772,41 +807,6 @@ impl DataActorCore {
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
             ts_init: self.generate_ts_init(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
-    }
-
-    /// Subscribe to streaming [`Bar`] data for the given bar type.
-    ///
-    /// Once subscribed, any matching bar data published on the message bus is forwarded
-    /// to the `on_bar` handler.
-    pub fn subscribe_bars(
-        &self,
-        bar_type: BarType,
-        client_id: Option<ClientId>,
-        await_partial: bool,
-        params: Option<HashMap<String, String>>,
-    ) {
-        self.check_registered();
-
-        let actor_id = self.actor_id.inner();
-        let handler =
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_bar(bar);
-            })));
-
-        let topic = get_bars_topic(bar_type);
-        msgbus::subscribe(topic, handler, None);
-
-        let command = SubscribeCommand::Bars(SubscribeBars {
-            bar_type,
-            client_id,
-            venue: Some(bar_type.instrument_id().venue),
-            command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
-            await_partial,
             params,
         });
 
@@ -1051,6 +1051,30 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
+    /// Unsubscribe from streaming `Bar` data for the given bar type.
+    pub fn unsubscribe_bars(
+        &self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_bars_topic(bar_type);
+        // msgbus::unsubscribe(&topic, self.handle_bar);  // TODO
+
+        let command = UnsubscribeCommand::Bars(UnsubscribeBars {
+            bar_type,
+            client_id,
+            venue: Some(bar_type.instrument_id().venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
     /// Unsubscribe from streaming `MarkPriceUpdate` data for the given instrument ID.
     pub fn unsubscribe_mark_prices(
         &self,
@@ -1091,30 +1115,6 @@ impl DataActorCore {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Unsubscribe(command));
-    }
-
-    /// Unsubscribe from streaming `Bar` data for the given bar type.
-    pub fn unsubscribe_bars(
-        &self,
-        bar_type: BarType,
-        client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
-    ) {
-        self.check_registered();
-
-        let topic = get_bars_topic(bar_type);
-        // msgbus::unsubscribe(&topic, self.handle_bar);  // TODO
-
-        let command = UnsubscribeCommand::Bars(UnsubscribeBars {
-            bar_type,
-            client_id,
-            venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
             ts_init: self.generate_ts_init(),
             params,
@@ -1199,10 +1199,16 @@ impl DataActorCore {
         }
     }
 
-    /// Handles multiple received instruments.
-    pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        for instrument in instruments {
-            self.handle_instrument(instrument);
+    /// Handles received order book deltas.
+    pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        log_received(&deltas);
+
+        if !self.is_running() {
+            return;
+        }
+
+        if let Err(e) = self.on_book_deltas(deltas) {
+            log_error(&e);
         }
     }
 
@@ -1217,19 +1223,6 @@ impl DataActorCore {
         if let Err(e) = self.on_book(book) {
             log_error(&e);
         };
-    }
-
-    /// Handles received order book deltas.
-    pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        log_received(&deltas);
-
-        if !self.is_running() {
-            return;
-        }
-
-        if let Err(e) = self.on_book_deltas(deltas) {
-            log_error(&e);
-        }
     }
 
     /// Handles a received quote.
@@ -1254,6 +1247,19 @@ impl DataActorCore {
         }
 
         if let Err(e) = self.on_trade(trade) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a receiving bar.
+    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
+        log_received(&bar);
+
+        if !self.is_running() {
+            return;
+        }
+
+        if let Err(e) = self.on_bar(bar) {
             log_error(&e);
         }
     }
@@ -1284,19 +1290,6 @@ impl DataActorCore {
         }
     }
 
-    /// Handles a receiving bar.
-    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
-        log_received(&bar);
-
-        if !self.is_running() {
-            return;
-        }
-
-        if let Err(e) = self.on_bar(bar) {
-            log_error(&e);
-        }
-    }
-
     /// Handles a received instrument status.
     pub(crate) fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
@@ -1323,15 +1316,22 @@ impl DataActorCore {
         }
     }
 
+    /// Handles multiple received instruments.
+    pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
+        for instrument in instruments {
+            self.handle_instrument(instrument);
+        }
+    }
+
     /// Handles multiple received quote ticks.
-    pub(crate) fn handle_quote_ticks(&mut self, quotes: &Vec<QuoteTick>) {
+    pub(crate) fn handle_quotes(&mut self, quotes: &Vec<QuoteTick>) {
         for quote in quotes {
             self.handle_quote(quote);
         }
     }
 
     /// Handles multiple received trade ticks.
-    pub(crate) fn handle_trade_ticks(&mut self, trades: &Vec<TradeTick>) {
+    pub(crate) fn handle_trades(&mut self, trades: &Vec<TradeTick>) {
         for trade in trades {
             self.handle_trade(trade);
         }

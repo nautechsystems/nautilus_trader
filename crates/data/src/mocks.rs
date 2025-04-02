@@ -22,11 +22,11 @@ use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{
-        DataRequest, Payload, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepths10,
+        DataRequest, Payload, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeBookSnapshots, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepths10, UnsubscribeBookSnapshots, UnsubscribeData,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeData,
         UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
         UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
         UnsubscribeQuotes, UnsubscribeTrades,
@@ -95,7 +95,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depths10(&mut self, _cmd: SubscribeBookDepths10) -> anyhow::Result<()> {
+    fn subscribe_book_depths10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -115,6 +115,14 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
+    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn subscribe_instrument_status(
         &mut self,
         _cmd: SubscribeInstrumentStatus,
@@ -123,14 +131,6 @@ impl DataClient for MockDataClient {
     }
 
     fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depths10(&mut self, _cmd: UnsubscribeBookDepths10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depths10(&mut self, _cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -170,6 +170,14 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
+    fn unsubscribe_mark_prices(&mut self, _cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, _cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn unsubscribe_instrument_status(
         &mut self,
         _cmd: UnsubscribeInstrumentStatus,
@@ -181,14 +189,6 @@ impl DataClient for MockDataClient {
         &mut self,
         _cmd: UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, _cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, _cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
