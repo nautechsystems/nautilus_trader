@@ -71,11 +71,11 @@ fn parse_spot_instrument(
     let raw_symbol = Symbol::new(info.id);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = parse_fee_rate(info.maker_fee);
-    let taker_fee = parse_fee_rate(info.taker_fee);
 
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
+    let mut maker_fee = parse_fee_rate(info.maker_fee);
+    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
         Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
@@ -125,6 +125,8 @@ fn parse_spot_instrument(
                 size_increment = change
                     .amount_increment
                     .map_or(size_increment, parse_size_increment);
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -157,6 +159,8 @@ fn parse_spot_instrument(
                 size_increment = change
                     .amount_increment
                     .map_or(size_increment, parse_size_increment);
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -202,12 +206,12 @@ fn parse_perp_instrument(
     let raw_symbol = Symbol::new(info.id);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = parse_fee_rate(info.maker_fee);
-    let taker_fee = parse_fee_rate(info.taker_fee);
 
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let mut maker_fee = parse_fee_rate(info.maker_fee);
+    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
         Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
@@ -262,6 +266,8 @@ fn parse_perp_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -299,6 +305,8 @@ fn parse_perp_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -347,12 +355,12 @@ fn parse_future_instrument(
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = parse_fee_rate(info.maker_fee);
-    let taker_fee = parse_fee_rate(info.taker_fee);
 
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let mut maker_fee = parse_fee_rate(info.maker_fee);
+    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
         Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
@@ -409,6 +417,8 @@ fn parse_future_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -448,6 +458,8 @@ fn parse_future_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -498,12 +510,12 @@ fn parse_option_instrument(
     let expiration = parse_datetime_to_unix_nanos(info.expiry);
     let margin_init = dec!(0); // TBD
     let margin_maint = dec!(0); // TBD
-    let maker_fee = parse_fee_rate(info.maker_fee);
-    let taker_fee = parse_fee_rate(info.taker_fee);
 
     let mut price_increment = parse_price_increment(info.price_increment);
     let mut size_increment = parse_size_increment(info.amount_increment);
     let mut multiplier = parse_multiplier(info.contract_multiplier);
+    let mut maker_fee = parse_fee_rate(info.maker_fee);
+    let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
         Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
@@ -560,6 +572,8 @@ fn parse_option_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
 
             // Replace with single instrument reflecting effective state
@@ -599,6 +613,8 @@ fn parse_option_instrument(
                     Some(value) => Some(Quantity::from(value.to_string())),
                     None => multiplier,
                 };
+                maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
+                taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
@@ -661,6 +677,19 @@ fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
         .unwrap_or_default()
 }
 
+/// Parses the settlement currency for the given Tardis instrument definition.
+pub fn parse_settlement_currency(info: &InstrumentInfo, is_inverse: bool) -> String {
+    info.settlement_currency
+        .unwrap_or({
+            if is_inverse {
+                info.base_currency
+            } else {
+                info.quote_currency
+            }
+        })
+        .to_uppercase()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -701,8 +730,8 @@ mod tests {
         assert_eq!(inst0.max_notional(), None);
         assert_eq!(inst0.maker_fee(), dec!(0));
         assert_eq!(inst0.taker_fee(), dec!(0));
-        assert_eq!(inst0.ts_event(), 1_682_341_202_000_000_000);
-        assert_eq!(inst0.ts_init(), 1_682_341_202_000_000_000);
+        assert_eq!(inst0.ts_event().to_rfc3339(), "2023-04-24T13:00:02+00:00");
+        assert_eq!(inst0.ts_init().to_rfc3339(), "2023-04-24T13:00:02+00:00");
 
         assert_eq!(inst1.id(), InstrumentId::from("BTC_USDC.DERIBIT"));
         assert_eq!(inst1.raw_symbol(), Symbol::from("BTC_USDC"));
@@ -724,8 +753,8 @@ mod tests {
         assert_eq!(inst1.max_notional(), None);
         assert_eq!(inst1.maker_fee(), dec!(0));
         assert_eq!(inst1.taker_fee(), dec!(0));
-        assert_eq!(inst1.ts_event(), 1_712_059_800_000_000_000);
-        assert_eq!(inst1.ts_init(), 1_712_059_800_000_000_000);
+        assert_eq!(inst1.ts_event().to_rfc3339(), "2024-04-02T12:10:00+00:00");
+        assert_eq!(inst1.ts_init().to_rfc3339(), "2024-04-02T12:10:00+00:00");
     }
 
     #[rstest]
@@ -745,7 +774,7 @@ mod tests {
         assert_eq!(instrument.underlying(), None);
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::USD());
-        assert_eq!(instrument.settlement_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1);
         assert_eq!(instrument.size_precision(), 0);
@@ -777,7 +806,7 @@ mod tests {
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
         assert_eq!(instrument.base_currency(), None);
         assert_eq!(instrument.quote_currency(), Currency::USD());
-        assert_eq!(instrument.settlement_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1); // from priceIncrement 2.5
         assert_eq!(instrument.size_precision(), 0); // from amountIncrement 10
@@ -818,7 +847,7 @@ mod tests {
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
         assert_eq!(instrument.base_currency(), None);
         assert_eq!(instrument.quote_currency(), Currency::USD());
-        assert_eq!(instrument.settlement_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1); // from priceIncrement 0.5
         assert_eq!(instrument.size_precision(), 0); // from amountIncrement 10
