@@ -292,6 +292,7 @@ impl DataClientAdapter {
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
             SubscribeCommand::InstrumentStatus(cmd) => todo!(),
+            SubscribeCommand::InstrumentClose(cmd) => todo!(),
         };
 
         if let Err(e) = result {
@@ -310,10 +311,11 @@ impl DataClientAdapter {
             UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd),
             UnsubscribeCommand::Quotes(cmd) => self.unsubscribe_quotes(cmd),
             UnsubscribeCommand::Trades(cmd) => self.unsubscribe_trades(cmd),
+            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
-            UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => todo!(),
+            UnsubscribeCommand::InstrumentClose(cmd) => todo!(),
         };
 
         if let Err(e) = result {

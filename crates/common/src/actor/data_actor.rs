@@ -32,7 +32,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDeltas, QuoteTick, TradeTick,
+        OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
@@ -58,17 +58,17 @@ use crate::{
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
         SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_bars_topic, get_book_snapshots_topic, get_custom_topic,
-            get_deltas_topic, get_index_price_topic, get_instrument_status_topic,
-            get_instrument_topic, get_instruments_topic, get_mark_price_topic, get_quotes_topic,
-            get_trades_topic,
+            get_deltas_topic, get_index_price_topic, get_instrument_close_topic,
+            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
+            get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     signal::Signal,
@@ -169,8 +169,10 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    // Actions to be performed when receiving an instrument close update.  // TODO: Implement data
-    // pub fn on_instrument_close(&mut self, update: InstrumentClose) {}
+    /// Actions to be performed when receiving an instrument close update.
+    fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     /// Actions to be performed when receiving an instrument.
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
@@ -212,12 +214,12 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    // Actions to be performed when receiving a signal. // TODO: TBD
+    /// Actions to be performed when receiving a signal.
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
 
-    // Actions to be performed when receiving historical data.
+    /// Actions to be performed when receiving historical data.
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         // TODO: Probably break this down into more granular methods
         Ok(())
@@ -761,45 +763,6 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    // TODO!
-    // Subscribe to streaming [`InstrumentClose`] data for the given instrument ID.
-    //
-    // Once subscribed, any matching instrument close data published on the message bus is forwarded
-    // to the `on_instrument_close` handler.
-    // pub fn subscribe_instrument_close(
-    //     &self,
-    //     instrument_id: InstrumentId,
-    //     client_id: Option<ClientId>,
-    //     params: Option<HashMap<String, String>>,
-    // ) {
-    //     self.check_registered();
-    //
-    //     let actor_id = self.actor_id.inner();
-    //     let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-    //         move |close: &InstrumentClose| {
-    //             get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_close(close);
-    //         },
-    //     )));
-    //
-    //     // Topic may need to be adjusted to match Python implementation
-    //     let topic = Ustr::from(&format!(
-    //         "data.venue.close_price.{}",
-    //         instrument_id.to_string()
-    //     ));
-    //     msgbus::subscribe(topic, handler, None);
-    //
-    //     let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
-    //         instrument_id,
-    //         client_id,
-    //         venue: Some(instrument_id.venue),
-    //         command_id: UUID4::new(),
-    //         ts_init: self.generate_ts_init(),
-    //         params,
-    //     });
-    //
-    //     self.send_data_cmd(DataCommand::Subscribe(command));
-    // }
-
     /// Subscribe to streaming [`Bar`] data for the given bar type.
     ///
     /// Once subscribed, any matching bar data published on the message bus is forwarded
@@ -858,6 +821,41 @@ impl DataActorCore {
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Subscribe to streaming [`InstrumentClose`] data for the given instrument ID.
+    ///
+    /// Once subscribed, any matching instrument close data published on the message bus is forwarded
+    /// to the `on_instrument_close` handler.
+    pub fn subscribe_instrument_close(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |close: &InstrumentClose| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_close(close);
+            },
+        )));
+
+        // Topic may need to be adjusted to match Python implementation
+        let topic = get_instrument_close_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
@@ -1134,34 +1132,29 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    // TODO
-    // Unsubscribe from instrument close updates for the given instrument ID.
-    // pub fn unsubscribe_instrument_close(
-    //     &self,
-    //     instrument_id: InstrumentId,
-    //     client_id: Option<ClientId>,
-    //     params: Option<HashMap<String, String>>,
-    // ) {
-    //     self.check_registered();
-    //
-    //     // Topic may need to be adjusted to match Python implementation
-    //     let topic = Ustr::from(&format!(
-    //         "data.venue.close_price.{}",
-    //         instrument_id.to_string()
-    //     ));
-    //     // msgbus::unsubscribe(&topic, self.handle_instrument_close);  // TODO
-    //
-    //     let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
-    //         instrument_id,
-    //         client_id,
-    //         venue: Some(instrument_id.venue),
-    //         command_id: UUID4::new(),
-    //         ts_init: self.generate_ts_init(),
-    //         params,
-    //     });
-    //
-    //     self.send_data_cmd(DataCommand::Unsubscribe(command));
-    // }
+    /// Unsubscribe from instrument close updates for the given instrument ID.
+    pub fn unsubscribe_instrument_close(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let topic = get_instrument_close_topic(instrument_id);
+        // msgbus::unsubscribe(&topic, self.handle_instrument_close);  // TODO
+
+        let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
 
     // -- HANDLERS --------------------------------------------------------------------------------
 
@@ -1302,19 +1295,18 @@ impl DataActorCore {
         }
     }
 
-    // TODO
-    // Handles a received instrument close.
-    // pub(crate) fn handle_instrument_close(&mut self, close: &InstrumentClose) {
-    //     log_received(&close);
-    //
-    //     if !self.is_running() {
-    //         return;
-    //     }
-    //
-    //     if let Err(e) = self.on_instrument_close(close) {
-    //         log_error(&e);
-    //     }
-    // }
+    /// Handles a received instrument close.
+    pub(crate) fn handle_instrument_close(&mut self, close: &InstrumentClose) {
+        log_received(&close);
+
+        if !self.is_running() {
+            return;
+        }
+
+        if let Err(e) = self.on_instrument_close(close) {
+            log_error(&e);
+        }
+    }
 
     /// Handles multiple received quote ticks.
     pub(crate) fn handle_quote_ticks(&mut self, quotes: &Vec<QuoteTick>) {
