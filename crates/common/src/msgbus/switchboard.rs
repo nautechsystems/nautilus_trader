@@ -112,6 +112,14 @@ pub fn get_bars_topic(bar_type: BarType) -> Ustr {
 }
 
 #[must_use]
+pub fn get_instrument_status_topic(instrument_id: InstrumentId) -> Ustr {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_instrument_status_topic(instrument_id)
+}
+
+#[must_use]
 pub fn get_order_snapshots_topic(client_order_id: ClientOrderId) -> Ustr {
     get_message_bus()
         .borrow_mut()
@@ -159,6 +167,7 @@ pub struct MessagingSwitchboard {
     mark_price_topics: HashMap<InstrumentId, Ustr>,
     index_price_topics: HashMap<InstrumentId, Ustr>,
     bar_topics: HashMap<BarType, Ustr>,
+    instrument_status_topics: HashMap<InstrumentId, Ustr>,
     order_snapshots_topics: HashMap<ClientOrderId, Ustr>,
     positions_snapshots_topics: HashMap<PositionId, Ustr>,
 }
@@ -178,6 +187,7 @@ impl Default for MessagingSwitchboard {
             mark_price_topics: HashMap::new(),
             index_price_topics: HashMap::new(),
             bar_topics: HashMap::new(),
+            instrument_status_topics: HashMap::new(),
             order_snapshots_topics: HashMap::new(),
             event_orders_topics: HashMap::new(),
             event_positions_topics: HashMap::new(),
@@ -321,6 +331,19 @@ impl MessagingSwitchboard {
             .bar_topics
             .entry(bar_type)
             .or_insert_with(|| Ustr::from(&format!("data.bars.{bar_type}")))
+    }
+
+    #[must_use]
+    pub fn get_instrument_status_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .instrument_status_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.status.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
     }
 
     #[must_use]

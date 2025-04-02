@@ -291,6 +291,7 @@ impl DataClientAdapter {
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
+            SubscribeCommand::InstrumentStatus(cmd) => todo!(),
         };
 
         if let Err(e) = result {
