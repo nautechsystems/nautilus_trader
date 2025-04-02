@@ -1096,6 +1096,7 @@ cdef class BacktestEngine:
         else:
             start = pd.to_datetime(start, utc=True)
             start_ns = start.value
+
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
@@ -1122,7 +1123,6 @@ cdef class BacktestEngine:
 
             for exchange in self._venues.values():
                 exchange.initialize_account()
-                ###################################################################################
                 open_orders = self._kernel.cache.orders_open(venue=exchange.id)
 
                 for order in open_orders:
@@ -1139,22 +1139,23 @@ cdef class BacktestEngine:
                         continue
 
                     matching_engine.process_order(order, order.account_id)
-                ###################################################################################
 
             # Reset any previously set FORCE_STOP
             set_backtest_force_stop(False)
 
-            # Common kernel start-up sequence
-            self._kernel.start()
+            # Set start time of all components including logging
+            for clock in get_component_clocks(self._instance_id):
+                clock.set_time(start_ns)
 
-            # Change logger clock for the run
-            self._kernel.clock.set_time(start_ns)
             set_logging_clock_static_mode()
             set_logging_clock_static_time(start_ns)
 
             if LOGGING_PYO3:
                 nautilus_pyo3.logging_clock_set_static_mode()
                 nautilus_pyo3.logging_clock_set_static_time(start_ns)
+
+            # Common kernel start-up sequence
+            self._kernel.start()
 
             self._log_pre_run()
 
