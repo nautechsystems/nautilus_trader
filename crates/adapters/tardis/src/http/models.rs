@@ -61,6 +61,8 @@ pub struct InstrumentInfo {
     pub instrument_type: InstrumentType,
     /// If the instrument is actively listed.
     pub active: bool,
+    /// The listing date in ISO format.
+    pub listing: Option<DateTime<Utc>>,
     /// The available from date in ISO format.
     pub available_since: DateTime<Utc>,
     /// The available to date in ISO format.
