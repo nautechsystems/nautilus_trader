@@ -24,11 +24,11 @@ use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{
-        DataRequest, Payload, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepths10,
+        DataRequest, Payload, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeBookSnapshots, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepths10, UnsubscribeBookSnapshots, UnsubscribeData,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeData,
         UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
         UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
         UnsubscribeQuotes, UnsubscribeTrades,
@@ -95,7 +95,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depths10(&mut self, _cmd: SubscribeBookDepths10) -> anyhow::Result<()> {
+    fn subscribe_book_depths10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depths10(&mut self, _cmd: UnsubscribeBookDepths10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depths10(&mut self, _cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 

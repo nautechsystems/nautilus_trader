@@ -26,7 +26,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepths10,
+        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
         SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
         UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
@@ -786,7 +786,7 @@ fn test_process_book_depth10(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeBookDepths10::new(
+    let cmd = SubscribeBookDepth10::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -797,7 +797,7 @@ fn test_process_book_depth10(
         true,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepths10(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {

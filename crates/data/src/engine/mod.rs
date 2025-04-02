@@ -57,8 +57,8 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         DataCommand, DataRequest, DataResponse, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepths10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepths10, UnsubscribeBookSnapshots,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand,
     },
     msgbus::{
@@ -284,16 +284,6 @@ impl DataEngine {
     }
 
     #[must_use]
-    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
-    }
-
-    #[must_use]
-    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
-    }
-
-    #[must_use]
     pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_mark_prices)
     }
@@ -301,6 +291,16 @@ impl DataEngine {
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
     pub fn on_start(self) {
@@ -376,7 +376,7 @@ impl DataEngine {
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
-            SubscribeCommand::BookDepths10(cmd) => self.subscribe_book_depths(cmd)?,
+            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depths(cmd)?,
             SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd)?,
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             _ => {} // Do nothing else
@@ -398,7 +398,7 @@ impl DataEngine {
     pub fn execute_unsubscribe(&mut self, cmd: UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
-            UnsubscribeCommand::BookDepths10(cmd) => self.unsubscribe_book_depths(cmd)?,
+            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depths(cmd)?,
             UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd)?,
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
             _ => {} // Do nothing else
@@ -453,6 +453,7 @@ impl DataEngine {
         }
     }
 
+    // TODO: Upgrade to response message handling
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
@@ -656,7 +657,7 @@ impl DataEngine {
         Ok(())
     }
 
-    fn subscribe_book_depths(&mut self, cmd: &SubscribeBookDepths10) -> anyhow::Result<()> {
+    fn subscribe_book_depths(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         if cmd.instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
@@ -765,7 +766,7 @@ impl DataEngine {
         Ok(())
     }
 
-    fn unsubscribe_book_depths(&mut self, cmd: &UnsubscribeBookDepths10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depths(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
             return Ok(());
