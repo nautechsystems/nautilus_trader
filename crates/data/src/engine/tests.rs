@@ -719,7 +719,7 @@ fn test_process_book_delta(
 
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = switchboard::get_deltas_topic(delta.instrument_id);
+    let topic = switchboard::get_book_deltas_topic(delta.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -764,7 +764,7 @@ fn test_process_book_deltas(
     // TODO: Using FFI API wrapper temporarily until Cython gone
     let deltas = OrderBookDeltas_API::new(stub_deltas());
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = switchboard::get_deltas_topic(deltas.instrument_id);
+    let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -809,7 +809,7 @@ fn test_process_book_depth10(
 
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
-    let topic = switchboard::get_depth_topic(depth.instrument_id);
+    let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();

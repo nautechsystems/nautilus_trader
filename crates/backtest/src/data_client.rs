@@ -95,7 +95,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn subscribe_book_depths10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe_book_depths10(&mut self, _cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, _cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 

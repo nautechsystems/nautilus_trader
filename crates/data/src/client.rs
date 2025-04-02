@@ -71,7 +71,7 @@ pub trait DataClient {
     fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()>;
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()>;
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()>;
-    fn subscribe_book_depths10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()>;
+    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()>;
     fn subscribe_book_snapshots(&mut self, cmd: SubscribeBookSnapshots) -> anyhow::Result<()>;
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()>;
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()>;
@@ -85,7 +85,7 @@ pub trait DataClient {
     fn unsubscribe_instruments(&mut self, cmd: UnsubscribeInstruments) -> anyhow::Result<()>;
     fn unsubscribe_instrument(&mut self, cmd: UnsubscribeInstrument) -> anyhow::Result<()>;
     fn unsubscribe_book_deltas(&mut self, cmd: UnsubscribeBookDeltas) -> anyhow::Result<()>;
-    fn unsubscribe_book_depths10(&mut self, cmd: UnsubscribeBookDepth10) -> anyhow::Result<()>;
+    fn unsubscribe_book_depth10(&mut self, cmd: UnsubscribeBookDepth10) -> anyhow::Result<()>;
     fn unsubscribe_book_snapshots(&mut self, cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()>;
     fn unsubscribe_quotes(&mut self, cmd: UnsubscribeQuotes) -> anyhow::Result<()>;
     fn unsubscribe_trades(&mut self, cmd: UnsubscribeTrades) -> anyhow::Result<()>;
@@ -166,7 +166,7 @@ pub struct DataClientAdapter {
     pub handles_book_snapshots: bool,
     pub subscriptions_generic: HashSet<DataType>,
     pub subscriptions_book_deltas: HashSet<InstrumentId>,
-    pub subscriptions_book_depths: HashSet<InstrumentId>,
+    pub subscriptions_book_depth10: HashSet<InstrumentId>,
     pub subscriptions_book_snapshots: HashSet<InstrumentId>,
     pub subscriptions_quotes: HashSet<InstrumentId>,
     pub subscriptions_trades: HashSet<InstrumentId>,
@@ -202,7 +202,10 @@ impl Debug for DataClientAdapter {
             .field("handles_book_snapshots", &self.handles_book_snapshots)
             .field("subscriptions_generic", &self.subscriptions_generic)
             .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
-            .field("subscriptions_book_depths", &self.subscriptions_book_depths)
+            .field(
+                "subscriptions_book_depth10",
+                &self.subscriptions_book_depth10,
+            )
             .field(
                 "subscriptions_book_snapshot",
                 &self.subscriptions_book_snapshots,
@@ -252,7 +255,7 @@ impl DataClientAdapter {
             handles_book_snapshots: handles_order_book_snapshots,
             subscriptions_generic: HashSet::new(),
             subscriptions_book_deltas: HashSet::new(),
-            subscriptions_book_depths: HashSet::new(),
+            subscriptions_book_depth10: HashSet::new(),
             subscriptions_book_snapshots: HashSet::new(),
             subscriptions_quotes: HashSet::new(),
             subscriptions_trades: HashSet::new(),
@@ -284,7 +287,7 @@ impl DataClientAdapter {
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd),
-            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depths10(cmd),
+            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd),
             SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd),
             SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(cmd),
             SubscribeCommand::Trades(cmd) => self.subscribe_trades(cmd),
@@ -378,18 +381,18 @@ impl DataClientAdapter {
     }
 
     fn subscribe_order_book_depths10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
-        if !self.subscriptions_book_depths.contains(&cmd.instrument_id) {
-            self.subscriptions_book_depths.insert(cmd.instrument_id);
-            self.client.subscribe_book_depths10(cmd)?;
+        if !self.subscriptions_book_depth10.contains(&cmd.instrument_id) {
+            self.subscriptions_book_depth10.insert(cmd.instrument_id);
+            self.client.subscribe_book_depth10(cmd)?;
         }
 
         Ok(())
     }
 
     fn unsubscribe_book_depths10(&mut self, cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        if self.subscriptions_book_depths.contains(&cmd.instrument_id) {
-            self.subscriptions_book_depths.remove(&cmd.instrument_id);
-            self.client.unsubscribe_book_depths10(cmd)?;
+        if self.subscriptions_book_depth10.contains(&cmd.instrument_id) {
+            self.subscriptions_book_depth10.remove(&cmd.instrument_id);
+            self.client.unsubscribe_book_depth10(cmd)?;
         }
 
         Ok(())
