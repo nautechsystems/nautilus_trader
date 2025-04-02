@@ -282,6 +282,23 @@ impl Position {
         self.sell_qty += last_qty_object;
     }
 
+    /// Purges all order fill events for the given client order ID.
+    pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+        // Create new vectors without the events from the specified order
+        let mut filtered_events = Vec::new();
+        let mut filtered_trade_ids = Vec::new();
+
+        for event in &self.events {
+            if event.client_order_id != client_order_id {
+                filtered_events.push(*event);
+                filtered_trade_ids.push(event.trade_id);
+            }
+        }
+
+        self.events = filtered_events;
+        self.trade_ids = filtered_trade_ids;
+    }
+
     #[must_use]
     pub fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
         let start_cost = avg_pg * qty;
@@ -531,7 +548,9 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::OrderFilled,
-        identifiers::{AccountId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4},
+        identifiers::{
+            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
+        },
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*},
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -1933,5 +1952,63 @@ mod tests {
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
+    }
+
+    #[rstest]
+    fn test_cache_purge_order_events() {
+        let audusd_sim = audusd_sim();
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-1"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-2"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let position_id = PositionId::new("P-123456");
+
+        let fill1 = TestOrderEventStubs::order_filled(
+            &order1,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            Some(position_id),
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill1.into());
+
+        let fill2 = TestOrderEventStubs::order_filled(
+            &order2,
+            &audusd_sim,
+            Some(TradeId::new("2")),
+            Some(position_id),
+            Some(Price::from("1.00002")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        position.apply(&fill2.into());
+        position.purge_events_for_order(order1.client_order_id());
+
+        assert_eq!(position.events.len(), 1);
+        assert_eq!(position.trade_ids.len(), 1);
+        assert_eq!(position.events[0].client_order_id, order2.client_order_id());
+        assert_eq!(position.trade_ids[0], TradeId::new("2"));
     }
 }
