@@ -50,6 +50,7 @@ pub enum SubscribeCommand {
     MarkPrices(SubscribeMarkPrices),
     IndexPrices(SubscribeIndexPrices),
     Bars(SubscribeBars),
+    InstrumentStatus(SubscribeInstrumentStatus),
 }
 
 impl SubscribeCommand {
@@ -66,6 +67,7 @@ impl SubscribeCommand {
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -82,6 +84,7 @@ impl SubscribeCommand {
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::Bars(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
         }
     }
 }

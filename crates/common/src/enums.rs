@@ -26,6 +26,7 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -46,6 +47,7 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
 )]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
+    #[default]
     PreInitialized = 0,
     /// When a component is able to be started.
     Ready = 1,

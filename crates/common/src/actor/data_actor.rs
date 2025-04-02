@@ -46,6 +46,7 @@ use super::{
 use crate::{
     cache::Cache,
     clock::Clock,
+    enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, SENT},
     messages::data::{
         DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument, RequestInstruments,
@@ -60,8 +61,9 @@ use crate::{
         self, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
-            self, MessagingSwitchboard, get_custom_topic, get_instrument_topic,
-            get_instruments_topic, get_trades_topic,
+            self, MessagingSwitchboard, get_bars_topic, get_custom_topic,
+            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
+            get_trades_topic,
         },
     },
     signal::Signal,
@@ -227,6 +229,7 @@ pub struct DataActorCore {
     pub clock: Rc<RefCell<dyn Clock>>,
     /// The read-only cache for the actor.
     pub cache: Rc<RefCell<Cache>>,
+    state: ComponentState,
     trader_id: Option<TraderId>,
     executor: Option<Arc<dyn ActorExecutor>>, // TODO: TBD
     warning_events: HashSet<String>,          // TODO: TBD
@@ -236,14 +239,7 @@ pub struct DataActorCore {
     indicators: Indicators,
 }
 
-impl DataActor for DataActorCore {
-    fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
+impl DataActor for DataActorCore {}
 
 impl DataActorCore {
     /// Creates a new [`Actor`] instance.
@@ -260,6 +256,7 @@ impl DataActorCore {
             config,
             clock,
             cache,
+            state: ComponentState::default(),
             trader_id: None, // None until registered
             executor: None,
             warning_events: HashSet::new(),
@@ -273,6 +270,35 @@ impl DataActorCore {
     /// Returns the trader ID this actor is registered to.
     pub fn trader_id(&self) -> Option<TraderId> {
         self.trader_id
+    }
+
+    // TODO: Extract this common state logic and handling out to some component module
+    pub fn state(&self) -> ComponentState {
+        self.state
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.state == ComponentState::Ready
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.state == ComponentState::Running
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.state == ComponentState::Stopped
+    }
+
+    pub fn is_disposed(&self) -> bool {
+        self.state == ComponentState::Disposed
+    }
+
+    pub fn is_degraded(&self) -> bool {
+        self.state == ComponentState::Degraded
+    }
+
+    pub fn is_faulting(&self) -> bool {
+        self.state == ComponentState::Faulted
     }
 
     /// Register an executor for the actor.
@@ -311,6 +337,101 @@ impl DataActorCore {
         let endpoint = MessagingSwitchboard::data_engine_execute();
         msgbus::send(&endpoint, command.as_any())
     }
+
+    pub fn start(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Start)?; // -> Starting
+
+        if let Err(e) = self.on_start() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::StartCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn stop(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Stop)?; // -> Stopping
+
+        if let Err(e) = self.on_stop() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::StopCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn resume(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Resume)?; // -> Resuming
+
+        if let Err(e) = self.on_stop() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::ResumeCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn reset(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Reset)?; // -> Resetting
+
+        if let Err(e) = self.on_reset() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::ResetCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn dispose(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Dispose)?; // -> Disposing
+
+        if let Err(e) = self.on_dispose() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::DisposeCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn degrade(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Degrade)?; // -> Degrading
+
+        if let Err(e) = self.on_degrade() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::DegradeCompleted)?;
+
+        Ok(())
+    }
+
+    pub fn fault(&mut self) -> anyhow::Result<()> {
+        self.state.transition(&ComponentTrigger::Fault)?; // -> Faulting
+
+        if let Err(e) = self.on_fault() {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.state.transition(&ComponentTrigger::FaultCompleted)?;
+
+        Ok(())
+    }
+
+    // pub fn shutdown_system(&self, reason: Option<String>) {  // TODO
+    //     let command = ShutdownSystem
+    // }
 
     /// Subscribe to data of the given data type.
     pub fn subscribe_data(
@@ -471,30 +592,103 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Subscribe to streaming [`Bar`] data for the given bar type.
+    ///
+    /// Once subscribed, any matching bar data published on the message bus is forwarded
+    /// to the `on_bar` handler.
+    pub fn subscribe_bars(
+        &self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        await_partial: bool,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_bar(bar);
+            })));
+
+        let topic = get_bars_topic(bar_type);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::Bars(SubscribeBars {
+            bar_type,
+            client_id,
+            venue: Some(bar_type.instrument_id().venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            await_partial,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Subscribe to streaming [`InstrumentStatus`] data for the given instrument ID.
+    ///
+    /// Once subscribed, any matching bar data published on the message bus is forwarded
+    /// to the `on_bar` handler.
+    pub fn subscribe_instrument_status(
+        &self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |status: &InstrumentStatus| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_status(status);
+            },
+        )));
+
+        let topic = get_instrument_status_topic(instrument_id);
+        msgbus::subscribe(topic, handler, None);
+
+        let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Handles a received custom/generic data point.
     pub fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_data(data) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received instrument.
     pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log_received(&instrument);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_instrument(instrument) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles multiple received instruments.
     pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        // TODO: Check component state is running
-
         for instrument in instruments {
             self.handle_instrument(instrument);
         }
@@ -503,85 +697,109 @@ impl DataActorCore {
     /// Handle a received order book reference.
     pub(crate) fn handle_book(&mut self, book: &OrderBook) {
         log_received(&book);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_book(book) {
-            log_error(e);
+            log_error(&e);
         };
     }
 
     /// Handles received order book deltas.
     pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         log_received(&deltas);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_book_deltas(deltas) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received quote.
     pub(crate) fn handle_quote(&mut self, quote: &QuoteTick) {
         log_received(&quote);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_quote(quote) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received trade.
     pub(crate) fn handle_trade(&mut self, trade: &TradeTick) {
         log_received(&trade);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_trade(trade) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received mark price update.
     pub(crate) fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
         log_received(&mark_price);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_mark_price(mark_price) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received index price update.
     pub(crate) fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
         log_received(&index_price);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_index_price(index_price) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a received instrument status.
     pub(crate) fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_instrument_status(status) {
-            log_error(e);
+            log_error(&e);
         }
     }
 
     /// Handles a receiving bar.
     pub(crate) fn handle_bar(&mut self, bar: &Bar) {
         log_received(&bar);
-        // TODO: Check component state is running
+
+        if !self.is_running() {
+            return;
+        }
 
         if let Err(e) = self.on_bar(bar) {
-            log_error(e);
+            log_error(&e);
         }
     }
 }
 
-fn log_error(e: anyhow::Error) {
+fn log_error(e: &anyhow::Error) {
     log::error!("{e}");
 }
 
@@ -621,13 +839,14 @@ mod tests {
         clock::{Clock, TestClock},
         msgbus::{
             self,
-            switchboard::{MessagingSwitchboard, get_trades_topic},
+            switchboard::{MessagingSwitchboard, get_quotes_topic, get_trades_topic},
         },
     };
 
     struct TestDataActor {
         core: DataActorCore,
-        pub trades_received: RefCell<usize>,
+        pub received_quotes: Vec<TradeTick>,
+        pub received_trades: Vec<TradeTick>,
     }
 
     impl Deref for TestDataActor {
@@ -662,23 +881,19 @@ mod tests {
     // Implement DataActor trait overriding handlers are required
     impl DataActor for TestDataActor {
         fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-            println!("Received generic data");
             Ok(())
         }
 
         fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
-            println!("Received a book {book}");
             Ok(())
         }
 
         fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-            println!("Received a quote {quote}");
             Ok(())
         }
 
         fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-            *self.trades_received.borrow_mut() += 1;
-            println!("Received a trade {trade}");
+            self.received_trades.push(*trade);
             Ok(())
         }
     }
@@ -693,7 +908,8 @@ mod tests {
         ) -> Self {
             Self {
                 core: DataActorCore::new(config, cache, clock, switchboard),
-                trades_received: RefCell::new(0),
+                received_quotes: Vec::new(),
+                received_trades: Vec::new(),
             }
         }
         pub fn custom_function(&mut self) {}
@@ -725,6 +941,26 @@ mod tests {
         register_actor(actor_rc);
     }
 
+    fn test_subscribe_and_receive_quotes(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        switchboard: Arc<MessagingSwitchboard>,
+        audusd_sim: CurrencyPair,
+    ) {
+        register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
+
+        let actor_id = ComponentId::new("Actor").inner(); // TODO: Determine default ID
+        let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+        actor.subscribe_quotes(audusd_sim.id, None, None);
+
+        let topic = get_quotes_topic(audusd_sim.id);
+        let trade = QuoteTick::default();
+        msgbus::publish(&topic, &trade);
+        msgbus::publish(&topic, &trade);
+
+        assert_eq!(actor.received_quotes.len(), 2);
+    }
+
     fn test_subscribe_and_receive_trades(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -739,11 +975,9 @@ mod tests {
 
         let topic = get_trades_topic(audusd_sim.id);
         let trade = TradeTick::default();
-
         msgbus::publish(&topic, &trade);
-        assert_eq!(*actor.trades_received.borrow(), 1);
-
         msgbus::publish(&topic, &trade);
-        assert_eq!(*actor.trades_received.borrow(), 2);
+
+        assert_eq!(actor.received_trades.len(), 2);
     }
 }
