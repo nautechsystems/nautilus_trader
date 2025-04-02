@@ -35,7 +35,7 @@ use nautilus_model::{
         OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::BookType,
-    identifiers::{ClientId, ComponentId, InstrumentId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -78,7 +78,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct DataActorConfig {
     /// The custom identifier for the Actor.
-    pub actor_id: Option<ComponentId>, // TODO: Define ActorId
+    pub actor_id: Option<ActorId>,
     /// Whether to log events.
     pub log_events: bool,
     /// Whether to log commands.
@@ -227,7 +227,7 @@ pub trait DataActor: Actor {
 /// Core functionality for all actors.
 pub struct DataActorCore {
     /// The component ID for the actor.
-    pub actor_id: ComponentId, // TODO: Probably just add an ActorId now?
+    pub actor_id: ActorId,
     /// The actors configuration.
     pub config: DataActorConfig,
     /// The actors clock.
@@ -254,7 +254,7 @@ impl DataActorCore {
         clock: Rc<RefCell<dyn Clock>>,
         switchboard: Arc<MessagingSwitchboard>,
     ) -> Self {
-        let actor_id = config.actor_id.unwrap_or(ComponentId::new("Actor")); // TODO: Determine default ID
+        let actor_id = config.actor_id.unwrap_or(ActorId::new("DataActor")); // TODO: Determine default ID
 
         Self {
             actor_id,
@@ -1386,7 +1386,7 @@ mod tests {
 
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
-        identifiers::ComponentId,
+        identifiers::ActorId,
         instruments::CurrencyPair,
         orderbook::OrderBook,
     };
@@ -1510,7 +1510,7 @@ mod tests {
     ) {
         register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
 
-        let actor_id = ComponentId::new("Actor").inner(); // TODO: Determine default ID
+        let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
         let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
         actor.subscribe_quotes(audusd_sim.id, None, None);
 
@@ -1530,7 +1530,7 @@ mod tests {
     ) {
         register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
 
-        let actor_id = ComponentId::new("Actor").inner(); // TODO: Determine default ID
+        let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
         let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
         actor.subscribe_trades(audusd_sim.id, None, None);
 
