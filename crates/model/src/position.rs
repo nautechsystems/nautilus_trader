@@ -113,7 +113,7 @@ impl Position {
             is_inverse: instrument.is_inverse(),
             base_currency: instrument.base_currency(),
             quote_currency: instrument.quote_currency(),
-            settlement_currency: instrument.settlement_currency(),
+            settlement_currency: instrument.cost_currency(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,

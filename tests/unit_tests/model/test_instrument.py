@@ -475,7 +475,7 @@ class TestInstrument:
             [AUDUSD_SIM, USD],
             [BTCUSDT_BINANCE, USDT],
             [XBTUSD_BITMEX, BTC],
-            [ETHUSD_BITMEX, ETH],
+            [ETHUSD_BITMEX, BTC],  # Quanto
         ],
     )
     def test_settlement_currency_for_various_instruments(self, instrument, expected):

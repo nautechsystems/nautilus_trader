@@ -47,7 +47,7 @@ cdef class Instrument(Data):
     cdef readonly Currency quote_currency
     """The quote currency for the instrument.\n\n:returns: `Currency`"""
     cdef readonly bint is_inverse
-    """If the quantity is expressed in quote currency.\n\n:returns: `Currency`"""
+    """If the quantity is expressed in quote currency.\n\n:returns: `bool`"""
     cdef readonly int price_precision
     """The price precision of the instrument.\n\n:returns: `int`"""
     cdef readonly int size_precision
@@ -97,6 +97,7 @@ cdef class Instrument(Data):
 
     cpdef Currency get_base_currency(self)
     cpdef Currency get_settlement_currency(self)
+    cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)

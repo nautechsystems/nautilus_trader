@@ -69,6 +69,14 @@ pub trait Instrument: 'static + Send {
     fn base_currency(&self) -> Option<Currency>;
     fn quote_currency(&self) -> Currency;
     fn settlement_currency(&self) -> Currency;
+    fn cost_currency(&self) -> Currency {
+        if self.is_inverse() {
+            self.base_currency()
+                .expect("Inverse instruments must have a base currency")
+        } else {
+            self.quote_currency()
+        }
+    }
     fn isin(&self) -> Option<Ustr>;
     fn option_kind(&self) -> Option<OptionKind>;
     fn exchange(&self) -> Option<Ustr>;
@@ -76,6 +84,13 @@ pub trait Instrument: 'static + Send {
     fn activation_ns(&self) -> Option<UnixNanos>;
     fn expiration_ns(&self) -> Option<UnixNanos>;
     fn is_inverse(&self) -> bool;
+    fn is_quanto(&self) -> bool {
+        if let Some(base_currency) = self.base_currency() {
+            self.settlement_currency() != base_currency
+        } else {
+            false
+        }
+    }
     fn price_precision(&self) -> u8;
     fn size_precision(&self) -> u8;
     fn price_increment(&self) -> Price;
