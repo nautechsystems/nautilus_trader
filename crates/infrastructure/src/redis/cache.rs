@@ -272,7 +272,7 @@ async fn process_commands(
         } else {
             match rx.recv().await {
                 Some(cmd) => {
-                    tracing::trace!("Received command {cmd:?}");
+                    tracing::debug!("Received {cmd:?}");
                     if let DatabaseOperation::Close = cmd.op_type {
                         break;
                     }
