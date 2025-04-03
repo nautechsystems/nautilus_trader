@@ -33,6 +33,7 @@ None
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 - Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
 - Refined time initialization of components in backtest (#2490), thanks @faysou
+- Upgraded Rust MSRV to 1.86.0
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
