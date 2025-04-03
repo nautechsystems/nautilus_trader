@@ -121,11 +121,19 @@ impl PostgresCacheDatabase {
                 last_drain = Instant::now();
             } else {
                 match rx.recv().await {
-                    Some(msg) => match msg {
-                        DatabaseQuery::Close => break,
-                        _ => buffer.push_back(msg),
-                    },
-                    None => break, // Channel hung up
+                    Some(msg) => {
+                        tracing::debug!("Received {msg:?}");
+                        match msg {
+                            DatabaseQuery::Close => break,
+                            _ => {
+                                buffer.push_back(msg);
+                            }
+                        }
+                    }
+                    None => {
+                        tracing::debug!("Command channel closed");
+                        break;
+                    }
                 }
             }
         }
