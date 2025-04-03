@@ -200,7 +200,7 @@ cdef class AccountsManager:
         total_locked = Decimal(0)
         base_xrate  = Decimal(0)
 
-        cdef Currency currency = instrument.get_settlement_currency()
+        cdef Currency currency = instrument.get_cost_currency()
         cdef:
             Order order
         for order in orders_open:
@@ -232,7 +232,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate balance locked: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
+                            f"{instrument.get_cost_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -288,7 +288,7 @@ cdef class AccountsManager:
         total_margin_init = Decimal(0)
         base_xrate = Decimal(0)
 
-        cdef Currency currency = instrument.get_settlement_currency()
+        cdef Currency currency = instrument.get_cost_currency()
 
         cdef Order order
         for order in orders_open:
@@ -319,7 +319,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate initial (order) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
+                            f"{instrument.get_cost_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -377,7 +377,7 @@ cdef class AccountsManager:
         total_margin_maint = Decimal(0)
         base_xrate = Decimal(0)
 
-        cdef Currency currency = instrument.get_settlement_currency()
+        cdef Currency currency = instrument.get_cost_currency()
 
         cdef Position position
         for position in positions_open:
@@ -409,7 +409,7 @@ cdef class AccountsManager:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
                             f"insufficient data for "
-                            f"{instrument.get_settlement_currency()}/{account.base_currency}"
+                            f"{instrument.get_cost_currency()}/{account.base_currency}"
                         )
                         return None  # Cannot calculate
 
@@ -619,7 +619,7 @@ cdef class AccountsManager:
 
         return Decimal(self._cache.get_xrate(
             venue=instrument.id.venue,
-            from_currency=instrument.get_settlement_currency(),
+            from_currency=instrument.get_cost_currency(),
             to_currency=account.base_currency,
             price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
         ) or 0.0)  # Retain original behavior of returning zero for now

@@ -432,6 +432,24 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instruments TBD
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.base_currency
+        else:
+            return self.quote_currency
+
     cpdef Price make_price(self, value):
         """
         Return a new price from the given value using the instruments price
