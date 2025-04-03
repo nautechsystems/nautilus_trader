@@ -125,9 +125,7 @@ impl PostgresCacheDatabase {
                         tracing::debug!("Received {msg:?}");
                         match msg {
                             DatabaseQuery::Close => break,
-                            _ => {
-                                buffer.push_back(msg);
-                            }
+                            _ => buffer.push_back(msg),
                         }
                     }
                     None => {
