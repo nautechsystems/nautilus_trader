@@ -92,7 +92,7 @@ pub fn create_crypto_perpetual(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
-    let is_inverse = info.inverse.expect("Perpetual should have `inverse` field");
+    let is_inverse = info.inverse.unwrap_or(false);
 
     InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
         instrument_id,
@@ -140,7 +140,7 @@ pub fn create_crypto_future(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> InstrumentAny {
-    let is_inverse = info.inverse.expect("Future should have `inverse` field");
+    let is_inverse = info.inverse.unwrap_or(false);
 
     InstrumentAny::CryptoFuture(CryptoFuture::new(
         instrument_id,

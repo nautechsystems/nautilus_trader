@@ -804,7 +804,7 @@ mod tests {
         assert_eq!(instrument.id(), InstrumentId::from("BTC-14FEB25.DERIBIT"));
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-14FEB25"));
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
-        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::USD());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
@@ -845,7 +845,7 @@ mod tests {
         );
         assert_eq!(instrument.raw_symbol(), Symbol::from("BTC-FS-28MAR25_PERP"));
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
-        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::USD());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(instrument.is_inverse());
@@ -889,7 +889,7 @@ mod tests {
             Symbol::from("BTC-25APR25-200000-P")
         );
         assert_eq!(instrument.underlying().unwrap().as_str(), "BTC");
-        assert_eq!(instrument.base_currency(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::BTC());
         assert_eq!(instrument.settlement_currency(), Currency::BTC());
         assert!(!instrument.is_inverse());
