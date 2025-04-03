@@ -762,7 +762,7 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let effective = UnixNanos::from("2024-08-01T08:00:00+00:00");
+        let effective = UnixNanos::from("2020-08-01T08:00:00+00:00");
         let instrument =
             parse_instrument_any(info, Some(effective), Some(UnixNanos::default()), false)
                 .first()
@@ -778,8 +778,8 @@ mod tests {
         assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1);
         assert_eq!(instrument.size_precision(), 0);
-        assert_eq!(instrument.price_increment(), Price::from("0.1"));
-        assert_eq!(instrument.size_increment(), Quantity::from(100));
+        assert_eq!(instrument.price_increment(), Price::from("0.5"));
+        assert_eq!(instrument.size_increment(), Quantity::from(1));
         assert_eq!(instrument.multiplier(), Quantity::from(1));
         assert_eq!(instrument.activation_ns(), None);
         assert_eq!(instrument.expiration_ns(), None);
