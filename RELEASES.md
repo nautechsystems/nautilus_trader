@@ -40,6 +40,7 @@ None
 - Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
 - Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
 - Fixed handling of `PolymarketTickSizeChanged` message
+- Fixed parsing spot instruments for Tardis where `size_increment` was zero, now inferred from base currency
 - Fixed default log colors for Rust (#2489), thanks @filipmacek
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 

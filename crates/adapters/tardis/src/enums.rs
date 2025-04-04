@@ -228,7 +228,7 @@ impl Exchange {
             Self::HuobiDm => "HUOBI",
             Self::HuobiDmLinearSwap => "HUOBI",
             Self::HuobiDmOptions => "HUOBI",
-            Self::HuobiDmSwap => "HUOBI",
+            Self::HuobiDmSwap => "HUOBI_DELIVERY",
             Self::Kraken => "KRAKEN",
             Self::Kucoin => "KUCOIN",
             Self::Mango => "MANGO",

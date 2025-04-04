@@ -27,7 +27,7 @@ use super::{models::InstrumentInfo, parse::parse_settlement_currency};
 use crate::parse::parse_option_kind;
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
-fn get_currency(code: &str) -> Currency {
+pub(crate) fn get_currency(code: &str) -> Currency {
     CURRENCY_MAP
         .lock()
         .unwrap()

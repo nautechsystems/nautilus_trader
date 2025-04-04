@@ -130,7 +130,8 @@ The table below outlines the mappings between Nautilus venues and corresponding 
 | `GATE_IO`               | `gate-io`, `gate-io-futures`                          |
 | `GEMINI`                | `gemini`                                              |
 | `HITBTC`                | `hitbtc`                                              |
-| `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options`, `huobi-dm-swap` |
+| `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options` |
+| `HUOBI_DELIVERY`        | `huobi-dm-swap`                                       |
 | `KRAKEN`                | `kraken`                                              |
 | `KUCOIN`                | `kucoin`                                              |
 | `MANGO`                 | `mango`                                               |

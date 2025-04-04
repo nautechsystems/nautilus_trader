@@ -44,6 +44,7 @@ _VENUES = [
     Venue("GATE_IO"),
     Venue("GEMINI"),
     Venue("HUOBI"),
+    Venue("HUOBI_DELIVERY"),
     Venue("KRAKEN"),
     Venue("KUCOIN"),
     Venue("OKCOIN"),
@@ -61,39 +62,46 @@ async def run():
 
     http_client = get_tardis_http_client()
 
+    total_instrument_count = 0
+
     # Test loading all instrument for specified exchanges
-    exchanges = ["bybit"]
-    filters = {
-        "venues": frozenset(exchanges),
-        # "quote_currency": frozenset(["BTC"]),
-        # "base_currency": frozenset(["USDC"]),
-        # "instrument_type": frozenset(["perpetual"]),
-        # "start": pd.Timestamp("2021-01-01").value,
-        # "end": pd.Timestamp("2023-01-01").value,
-        # "effective": pd.Timestamp("2022-01-01").value,
-    }
+    for exchange in _VENUES:
+        exchanges = [str(exchange)]
+        filters = {
+            "venues": frozenset(exchanges),
+            # "quote_currency": frozenset(["BTC"]),
+            # "base_currency": frozenset(["USDC"]),
+            # "instrument_type": frozenset(["spot"]),
+            # "start": pd.Timestamp("2021-01-01").value,
+            # "end": pd.Timestamp("2023-01-01").value,
+            # "effective": pd.Timestamp("2022-01-01").value,
+        }
 
-    # config = InstrumentProviderConfig(load_all=True, filters=filters)
-    # provider = get_tardis_instrument_provider(http_client, config)
-    #
-    # await provider.initialize()
+        # config = InstrumentProviderConfig(load_all=True, filters=filters)
+        # provider = get_tardis_instrument_provider(http_client, config)
+        #
+        # await provider.initialize()
 
-    # Test loading only specified instruments
-    # instrument_ids = [
-    #     "XBT-USD.OKEX",
-    #     "ETH-USD.OKEX",
-    # ]
+        # Test loading only specified instruments
+        # instrument_ids = [
+        #     "XBT-USD.OKEX",
+        #     "ETH-USD.OKEX",
+        # ]
 
-    # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
-    config = InstrumentProviderConfig(load_all=True, filters=filters)
-    provider = get_tardis_instrument_provider(http_client, config)
+        # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
+        config = InstrumentProviderConfig(load_all=True, filters=filters)
+        provider = get_tardis_instrument_provider(http_client, config)
 
-    await provider.initialize()
+        await provider.initialize()
 
-    for instrument in provider.list_all():
-        print(instrument.id)
+        for instrument in provider.list_all():
+            print(instrument.id)
+            print(instrument.size_increment)
 
-    print(f"Loaded {len(provider.list_all())} instruments")
+        count = len(provider.list_all())
+        total_instrument_count += count
+        print(f"Loaded {count} instruments")
+        print(f"Total loaded count {total_instrument_count}")
 
 
 if __name__ == "__main__":
