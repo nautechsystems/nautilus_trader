@@ -1,6 +1,6 @@
 # NautilusTrader 1.215.0 Beta
 
-Released on TBD (UTC).
+Released on 4th April 2025 (UTC).
 
 ### Enhancements
 - Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
