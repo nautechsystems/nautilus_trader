@@ -33,4 +33,3 @@ For more information, visit https://nautilustrader.io.
 Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 
 ![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ns-logo.png "nautechsystems")
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ferris.png" width="128">
