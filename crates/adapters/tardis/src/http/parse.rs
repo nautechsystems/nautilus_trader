@@ -118,7 +118,7 @@ fn parse_spot_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.available_since)
+                    ts_event = UnixNanos::from(info.available_since);
                 }
 
                 price_increment = change
@@ -255,7 +255,7 @@ fn parse_perp_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.available_since)
+                    ts_event = UnixNanos::from(info.available_since);
                 }
 
                 price_increment = change
@@ -406,7 +406,7 @@ fn parse_future_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.available_since)
+                    ts_event = UnixNanos::from(info.available_since);
                 }
 
                 price_increment = change
@@ -561,7 +561,7 @@ fn parse_option_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.available_since)
+                    ts_event = UnixNanos::from(info.available_since);
                 }
 
                 price_increment = change
@@ -664,7 +664,7 @@ fn parse_size_increment(value: f64) -> Quantity {
 /// Parses the spot size increment from the given `value`.
 fn parse_spot_size_increment(value: f64, currency: Currency) -> Quantity {
     if value == 0.0 {
-        let exponent = -(currency.precision as i32);
+        let exponent = -i32::from(currency.precision);
         Quantity::from(format!("{}", 10.0_f64.powi(exponent)))
     } else {
         Quantity::from(value.to_string())
@@ -690,6 +690,7 @@ fn parse_datetime_to_unix_nanos(value: Option<DateTime<Utc>>) -> UnixNanos {
 }
 
 /// Parses the settlement currency for the given Tardis instrument definition.
+#[must_use]
 pub fn parse_settlement_currency(info: &InstrumentInfo, is_inverse: bool) -> String {
     info.settlement_currency
         .unwrap_or({
