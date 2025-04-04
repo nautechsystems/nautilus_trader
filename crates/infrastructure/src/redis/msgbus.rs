@@ -144,7 +144,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     }
 
     /// Returns whether the message bus database adapter publishing channel is closed.
-    #[must_use]
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
     }
