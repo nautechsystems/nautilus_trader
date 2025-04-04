@@ -346,7 +346,7 @@ latency-sensitive applications, we recommend using Cython. Below are some exampl
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
 - [indicator](/nautilus_trader/indicators/) examples written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
+- [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
