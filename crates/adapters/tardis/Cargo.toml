@@ -23,12 +23,14 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-serialization/extension-module",
 ]
 python = [
   "pyo3",
   "pyo3-async-runtimes",
   "nautilus-core/python",
   "nautilus-model/python",
+  "nautilus-serialization/python",
 ]
 
 [package.metadata.docs.rs]
