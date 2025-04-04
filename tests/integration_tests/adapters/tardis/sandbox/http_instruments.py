@@ -38,19 +38,16 @@ async def run():
         base_currency=["BTC"],
         quote_currency=["USD"],
         instrument_type=["perpetual"],
-        active=True,
+        # active=True,
         # start=pd.Timestamp("2021-01-01").value,
         # end=pd.Timestamp("2022-01-01").value,
         effective=pd.Timestamp("2020-08-01 08:00:00").value,
     )
 
-    for inst in pyo3_instruments:
-        print(inst.id)
-        print(
-            CryptoPerpetual.from_pyo3(inst),
-            pd.Timestamp(inst.ts_event),
-            pd.Timestamp(inst.ts_init),
-        )
+    for pyo3_inst in pyo3_instruments:
+        inst = CryptoPerpetual.from_pyo3(pyo3_inst)  # Remove/change this if not filtering for perps
+        print(repr(inst))
+        print(pd.Timestamp(inst.ts_event))
 
     print(f"Received: {len(pyo3_instruments)} instruments")
 

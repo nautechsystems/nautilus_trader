@@ -71,7 +71,7 @@ async def run():
             "venues": frozenset(exchanges),
             # "quote_currency": frozenset(["BTC"]),
             # "base_currency": frozenset(["USDC"]),
-            # "instrument_type": frozenset(["spot"]),
+            # "instrument_type": frozenset(["perpetual"]),
             # "start": pd.Timestamp("2021-01-01").value,
             # "end": pd.Timestamp("2023-01-01").value,
             # "effective": pd.Timestamp("2022-01-01").value,
@@ -96,7 +96,6 @@ async def run():
 
         for instrument in provider.list_all():
             print(instrument.id)
-            print(instrument.size_increment)
 
         count = len(provider.list_all())
         total_instrument_count += count
