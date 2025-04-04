@@ -23,7 +23,7 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-python = ["pyo3", "pyo3-async-runtimes"]
+python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python"]
 std = []
 
 [package.metadata.docs.rs]
