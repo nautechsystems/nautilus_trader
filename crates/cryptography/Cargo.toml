@@ -31,7 +31,7 @@ rand = { workspace = true }
 ring = { workspace = true }
 tracing = { workspace = true }
 rustls = { version = "0.23.25", features = ["ring"] }
-rustls-platform-verifier = "0.5.0"
+rustls-platform-verifier = "0.5.1"
 pem = "3.0.5"
 
 [dev-dependencies]
