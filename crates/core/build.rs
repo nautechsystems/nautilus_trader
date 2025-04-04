@@ -30,10 +30,9 @@ fn main() {
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {
-        if pyproject_version != nautilus_version {
+        if !pyproject_version.starts_with(nautilus_version) {
             panic!(
-                "cargo:warning=Version mismatch: pyproject.toml={}, hardcoded={}",
-                pyproject_version, nautilus_version
+                "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
             );
         }
     }
@@ -44,8 +43,10 @@ fn main() {
 
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
-        use std::fs::File;
-        use std::io::{Read, Write};
+        use std::{
+            fs::File,
+            io::{Read, Write},
+        };
 
         use cbindgen;
 
