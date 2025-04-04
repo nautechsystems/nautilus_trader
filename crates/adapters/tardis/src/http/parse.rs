@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::Symbol,
     instruments::InstrumentAny,
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -28,6 +28,7 @@ use rust_decimal_macros::dec;
 use super::{
     instruments::{
         create_crypto_future, create_crypto_option, create_crypto_perpetual, create_currency_pair,
+        get_currency,
     },
     models::InstrumentInfo,
 };
@@ -73,12 +74,13 @@ fn parse_spot_instrument(
     let margin_maint = dec!(0); // TBD
 
     let mut price_increment = parse_price_increment(info.price_increment);
-    let mut size_increment = parse_size_increment(info.amount_increment);
+    let base_currency = get_currency(info.base_currency.to_uppercase().as_str());
+    let mut size_increment = parse_spot_size_increment(info.amount_increment, base_currency);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
+        Some(_) | None => UnixNanos::from(info.available_since),
     };
 
     // Current instrument definition
@@ -116,15 +118,15 @@ fn parse_spot_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    ts_event = UnixNanos::from(info.available_since)
                 }
 
                 price_increment = change
                     .price_increment
                     .map_or(price_increment, parse_price_increment);
-                size_increment = change
-                    .amount_increment
-                    .map_or(size_increment, parse_size_increment);
+                size_increment = change.amount_increment.map_or(size_increment, |value| {
+                    parse_spot_size_increment(value, base_currency)
+                });
                 maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
                 taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
             }
@@ -156,15 +158,15 @@ fn parse_spot_instrument(
                 price_increment = change
                     .price_increment
                     .map_or(price_increment, parse_price_increment);
-                size_increment = change
-                    .amount_increment
-                    .map_or(size_increment, parse_size_increment);
+                size_increment = change.amount_increment.map_or(size_increment, |value| {
+                    parse_spot_size_increment(value, base_currency)
+                });
                 maker_fee = change.maker_fee.map_or(maker_fee, parse_fee_rate);
                 taker_fee = change.taker_fee.map_or(taker_fee, parse_fee_rate);
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
-                    UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    UnixNanos::from(info.available_since)
                 } else {
                     UnixNanos::from(change.until)
                 };
@@ -214,7 +216,7 @@ fn parse_perp_instrument(
     let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
+        Some(_) | None => UnixNanos::from(info.available_since),
     };
 
     // Current instrument definition
@@ -253,7 +255,7 @@ fn parse_perp_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    ts_event = UnixNanos::from(info.available_since)
                 }
 
                 price_increment = change
@@ -310,7 +312,7 @@ fn parse_perp_instrument(
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
-                    UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    UnixNanos::from(info.available_since)
                 } else {
                     UnixNanos::from(change.until)
                 };
@@ -363,7 +365,7 @@ fn parse_future_instrument(
     let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
+        Some(_) | None => UnixNanos::from(info.available_since),
     };
 
     // Current instrument definition
@@ -404,7 +406,7 @@ fn parse_future_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    ts_event = UnixNanos::from(info.available_since)
                 }
 
                 price_increment = change
@@ -463,7 +465,7 @@ fn parse_future_instrument(
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
-                    UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    UnixNanos::from(info.available_since)
                 } else {
                     UnixNanos::from(change.until)
                 };
@@ -518,7 +520,7 @@ fn parse_option_instrument(
     let mut taker_fee = parse_fee_rate(info.taker_fee);
     let mut ts_event = match info.changes {
         Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.listing.unwrap_or(info.available_since)),
+        Some(_) | None => UnixNanos::from(info.available_since),
     };
 
     // Current instrument definition
@@ -559,7 +561,7 @@ fn parse_option_instrument(
                 if ts_event < effective_time {
                     break; // Early exit since changes are sorted newest to oldest
                 } else if i == sorted_changes.len() - 1 {
-                    ts_event = UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    ts_event = UnixNanos::from(info.available_since)
                 }
 
                 price_increment = change
@@ -618,7 +620,7 @@ fn parse_option_instrument(
 
                 // Get the timestamp for when the change occurred
                 ts_event = if i == sorted_changes.len() - 1 {
-                    UnixNanos::from(info.listing.unwrap_or(info.available_since))
+                    UnixNanos::from(info.available_since)
                 } else {
                     UnixNanos::from(change.until)
                 };
@@ -657,6 +659,16 @@ fn parse_price_increment(value: f64) -> Price {
 /// Parses the size increment from the given `value`.
 fn parse_size_increment(value: f64) -> Quantity {
     Quantity::from(value.to_string())
+}
+
+/// Parses the spot size increment from the given `value`.
+fn parse_spot_size_increment(value: f64, currency: Currency) -> Quantity {
+    if value == 0.0 {
+        let exponent = -(currency.precision as i32);
+        Quantity::from(format!("{}", 10.0_f64.powi(exponent)))
+    } else {
+        Quantity::from(value.to_string())
+    }
 }
 
 /// Parses the multiplier from the given `value`.
@@ -730,8 +742,8 @@ mod tests {
         assert_eq!(inst0.max_notional(), None);
         assert_eq!(inst0.maker_fee(), dec!(0));
         assert_eq!(inst0.taker_fee(), dec!(0));
-        assert_eq!(inst0.ts_event().to_rfc3339(), "2023-04-24T13:00:02+00:00");
-        assert_eq!(inst0.ts_init().to_rfc3339(), "2023-04-24T13:00:02+00:00");
+        assert_eq!(inst0.ts_event().to_rfc3339(), "2023-04-24T00:00:00+00:00");
+        assert_eq!(inst0.ts_init().to_rfc3339(), "2023-04-24T00:00:00+00:00");
 
         assert_eq!(inst1.id(), InstrumentId::from("BTC_USDC.DERIBIT"));
         assert_eq!(inst1.raw_symbol(), Symbol::from("BTC_USDC"));

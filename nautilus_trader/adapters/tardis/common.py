@@ -26,10 +26,10 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoOption
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.instruments import OptionContract
 
 
 def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMiniInfo:
@@ -49,7 +49,7 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
         case "BINANCE":
             if isinstance(instrument, CurrencyPair):
                 return "binance"
-            elif isinstance(instrument, OptionContract):
+            elif isinstance(instrument, CryptoOption):
                 return "binance-options"
             else:
                 return "binance-futures"
@@ -65,7 +65,7 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
         case "BYBIT":
             if isinstance(instrument, CurrencyPair):
                 return "bybit-spot"
-            elif isinstance(instrument, OptionContract):
+            elif isinstance(instrument, CryptoOption):
                 return "bybit-options"
             else:
                 return "bybit"
@@ -82,7 +82,9 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "huobi"
             elif isinstance(instrument, CryptoPerpetual):
                 return "huobi-dm-linear-swap"
-            elif isinstance(instrument, OptionContract):
+            elif isinstance(instrument, CryptoFuture):
+                return "huobi-dm"
+            elif isinstance(instrument, CryptoOption):
                 return "huobi-dm-options"
         case "HUOBI_DELIVERY":
             return "huobi-dm-swap"
@@ -91,14 +93,14 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "kraken"
             else:
                 return "kraken-futures"
-        case "OKX":
+        case "OKEX":
             if isinstance(instrument, CurrencyPair):
                 return "okex"
             elif isinstance(instrument, CryptoPerpetual):
                 return "okex-swap"
             elif isinstance(instrument, CryptoFuture):
                 return "okex-futures"
-            elif isinstance(instrument, OptionContract):
+            elif isinstance(instrument, CryptoOption):
                 return "okex-options"
 
     return venue.lower().replace("_", "-")
