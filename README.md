@@ -437,7 +437,7 @@ developer looking to contribute or just want to learn more about the platform, a
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard Contributor License Agreement (CLA).
+Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---
 

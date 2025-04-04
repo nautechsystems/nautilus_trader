@@ -26,12 +26,18 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.86.0"
 version = "0.45.0"
 edition = "2024"
+rust-version = "1.86.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
+license = "LGPL-3.0"
+readme = "README.md"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
+categories = ["finance", "simulation", "asynchronous"]
+keywords = ["finance", "trading", "trading-platform", "algorithmic-trading", "quantitative-finance"]
 documentation = "https://nautilustrader.io/docs"
+repository = "https://github.com/nautechsystems/nautilus_trader"
+homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
 ahash = "0.8.11"
@@ -133,5 +139,6 @@ codegen-units = 1
 [profile.release-debugging]
 inherits = "release"
 incremental = true
-debug = true
+debug = "full"
 strip = false
+lto = false
