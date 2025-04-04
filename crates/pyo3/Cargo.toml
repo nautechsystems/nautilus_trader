@@ -1,12 +1,12 @@
 [package]
 name = "nautilus-pyo3"
+readme = "README.md"
 publish = false  # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -53,20 +53,22 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { path = "../common" , features = ["python"] }
-nautilus-core = { path = "../core" , features = ["python"] }
-nautilus-cryptography = { path = "../cryptography" , features = ["python"] }
-nautilus-execution = { path = "../execution" , features = ["python"] }
-nautilus-indicators = { path = "../indicators" , features = ["python"] }
-nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
-nautilus-model = { path = "../model" , features = ["python"] }
-nautilus-network = { path = "../network" , features = ["python"] }
-nautilus-persistence = { path = "../persistence" , features = ["python"] }
-nautilus-serialization = { path = "../serialization" , features = ["python"] }
-nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
-nautilus-trading = { path = "../trading", features = ["python"] }
+nautilus-common = { workspace = true, features = ["python"] }
+nautilus-core = { workspace = true, features = ["python"] }
+nautilus-cryptography = { workspace = true, features = ["python"] }
+nautilus-execution = { workspace = true, features = ["python"] }
+nautilus-indicators = { workspace = true, features = ["python"] }
+nautilus-infrastructure = { workspace = true, features = ["python"] }
+nautilus-model = { workspace = true, features = ["python"] }
+nautilus-network = { workspace = true, features = ["python"] }
+nautilus-persistence = { workspace = true, features = ["python"] }
+nautilus-serialization = { workspace = true, features = ["python"] }
+nautilus-test-kit = { workspace = true, features = ["python"] }
+nautilus-trading = { workspace = true, features = ["python"] }
+
 # Adapters
-nautilus-coinbase-intx = { path = "../adapters/coinbase_intx", features = ["python"] }
-nautilus-databento = { path = "../adapters/databento", features = ["python"] }
-nautilus-tardis = { path = "../adapters/tardis", features = ["python"] }
+nautilus-coinbase-intx = { workspace = true, features = ["python"] }
+nautilus-databento = { workspace = true, features = ["python"] }
+nautilus-tardis = { workspace = true, features = ["python"] }
+
 pyo3 = { workspace = true }

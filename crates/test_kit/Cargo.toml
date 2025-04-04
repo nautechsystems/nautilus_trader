@@ -1,12 +1,12 @@
 [package]
 name = "nautilus-test-kit"
+readme = "README.md"
 publish = false  # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -30,9 +30,10 @@ python = ["pyo3", "nautilus-core/python", "nautilus-common/python", "nautilus-mo
 high-precision = ["nautilus-model/high-precision"]
 
 [dependencies]
-nautilus-core = { path = "../core" }
-nautilus-common = { path = "../common" }
-nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-core = { workspace = true }
+nautilus-common = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+
 anyhow = { workspace = true }
 hex = { workspace = true }
 pyo3 = { workspace = true, optional = true }

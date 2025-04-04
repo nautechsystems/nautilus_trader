@@ -1,11 +1,11 @@
 [package]
 name = "nautilus-serialization"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -32,9 +32,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+
 anyhow = { workspace = true }
-nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
 arrow = { workspace = true }
 parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }

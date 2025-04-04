@@ -1,11 +1,11 @@
 [package]
 name = "nautilus-coinbase-intx"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -42,11 +42,12 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { path = "../../common" }
-nautilus-core = { path = "../../core" }
-nautilus-execution = { path = "../../execution" }
-nautilus-model = { path = "../../model" }
-nautilus-network = { path = "../../network" }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 base64 = { workspace = true }

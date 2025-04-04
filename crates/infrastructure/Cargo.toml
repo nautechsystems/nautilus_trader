@@ -1,11 +1,11 @@
 [package]
 name = "nautilus-infrastructure"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -34,10 +34,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { path = "../common", features = ["python"] }
-nautilus-core = { path = "../core" , features = ["python"] }
-nautilus-cryptography = { path = "../cryptography" }
-nautilus-model = { path = "../model" , features = ["python", "stubs"] }
+nautilus-common = { workspace = true, features = ["python"] }
+nautilus-core = { workspace = true, features = ["python"] }
+nautilus-cryptography = { workspace = true }
+nautilus-model = { workspace = true, features = ["python", "stubs"] }
+
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
