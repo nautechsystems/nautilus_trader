@@ -241,7 +241,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
             await asyncio.gather(*tasks)
         except Exception as e:
-            self._log.error(f"Failed to fetch the orderbooks: {e}")
+            self._log.exception("Failed to fetch the orderbooks", e)
 
     async def _fetch_orderbook(self, symbol: str) -> None:
         """
@@ -271,7 +271,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
                 self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
         except Exception as e:
-            self._log.error(f"Failed to fetch the orderbook for {symbol}: {e}")
+            self._log.exception(f"Failed to fetch the orderbook for {symbol}", e)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -324,7 +324,7 @@ class DYDXDataClient(LiveMarketDataClient):
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
                 )
         except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse websocket message: {raw.decode()}", e)
 
     def _handle_trade(self, raw: bytes) -> None:
         try:
@@ -348,7 +348,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 self._handle_data(trade_tick)
 
         except Exception as e:
-            self._log.error(f"Failed to parse trade tick: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse trade tick: {raw.decode()}", e)
 
     def _handle_trade_subscribed(self, raw: bytes) -> None:
         # Do not send the historical trades to the DataEngine for the initial subscribed message.
@@ -379,7 +379,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
 
         except Exception as e:
-            self._log.error(f"Failed to parse orderbook: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse orderbook: {raw.decode()}", e)
 
     def _handle_orderbook_batched(self, raw: bytes) -> None:
         try:
@@ -406,7 +406,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
 
         except Exception as e:
-            self._log.error(f"Failed to parse orderbook: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse orderbook: {raw.decode()}", e)
 
     def _handle_orderbook_snapshot(self, raw: bytes) -> None:
         try:
@@ -437,7 +437,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
 
         except Exception as e:
-            self._log.error(f"Failed to parse orderbook snapshot: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse orderbook snapshot: {raw.decode()}", e)
 
     def _resolve_crossed_order_book(
         self,
@@ -710,7 +710,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._bars[bar_type] = parsed_bar
 
         except Exception as e:
-            self._log.error(f"Failed to parse kline data: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse kline data: {raw.decode()}", e)
 
     def _handle_kline_subscribed(self, raw: bytes) -> None:
         # Do not send the historical bars to the DataEngine for the initial subscribed message.
@@ -749,7 +749,7 @@ class DYDXDataClient(LiveMarketDataClient):
                     self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_oracle_price)
 
         except Exception as e:
-            self._log.error(f"Failed to parse market data: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse market data: {raw.decode()}", e)
 
     def _handle_markets_subscribed(self, raw: bytes) -> None:
         try:
@@ -779,7 +779,7 @@ class DYDXDataClient(LiveMarketDataClient):
                     self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_oracle_price)
 
         except Exception as e:
-            self._log.error(f"Failed to parse market channel data: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse market channel data: {raw.decode()}", e)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)

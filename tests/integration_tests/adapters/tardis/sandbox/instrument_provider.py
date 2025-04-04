@@ -15,14 +15,45 @@
 
 import asyncio
 
-import pandas as pd
-
 from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.adapters.tardis.factories import get_tardis_instrument_provider
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.identifiers import Venue
+
+
+_VENUES = [
+    Venue("ASCENDEX"),
+    Venue("BINANCE"),
+    Venue("BITFINEX"),
+    Venue("BITFLYER"),
+    Venue("BITGET"),
+    Venue("BITMEX"),
+    Venue("BITNOMIAL"),
+    Venue("BITSTAMP"),
+    Venue("BLOCKCHAIN_COM"),
+    Venue("BYBIT"),
+    Venue("COINBASE"),
+    Venue("CRYPTO_COM"),
+    Venue("CRYPTOFACILITIES"),
+    Venue("DERIBIT"),
+    Venue("DYDX"),
+    Venue("FTX"),
+    Venue("GATE_IO"),
+    Venue("GEMINI"),
+    Venue("HUOBI"),
+    Venue("HUOBI_DELIVERY"),
+    Venue("KRAKEN"),
+    Venue("KUCOIN"),
+    Venue("OKCOIN"),
+    Venue("OKEX"),
+    Venue("PHEMEX"),
+    Venue("POLONIEX"),
+    Venue("UPBIT"),
+    Venue("WOO_X"),
+]
 
 
 async def run():
@@ -31,39 +62,45 @@ async def run():
 
     http_client = get_tardis_http_client()
 
+    total_instrument_count = 0
+
     # Test loading all instrument for specified exchanges
-    exchanges = ["binance-delivery"]
-    filters = {
-        "venues": frozenset(exchanges),
-        # "quote_currency": frozenset(["BTC"]),
-        # "base_currency": frozenset(["USDC"]),
-        "instrument_type": frozenset(["perpetual"]),
-        "start": pd.Timestamp("2021-01-01").value,
-        "end": pd.Timestamp("2023-01-01").value,
-        "effective": pd.Timestamp("2022-01-01").value,
-    }
+    for exchange in _VENUES:
+        exchanges = [str(exchange)]
+        filters = {
+            "venues": frozenset(exchanges),
+            # "quote_currency": frozenset(["BTC"]),
+            # "base_currency": frozenset(["USDC"]),
+            # "instrument_type": frozenset(["perpetual"]),
+            # "start": pd.Timestamp("2021-01-01").value,
+            # "end": pd.Timestamp("2023-01-01").value,
+            # "effective": pd.Timestamp("2022-01-01").value,
+        }
 
-    # config = InstrumentProviderConfig(load_all=True, filters=filters)
-    # provider = get_tardis_instrument_provider(http_client, config)
-    #
-    # await provider.initialize()
+        # config = InstrumentProviderConfig(load_all=True, filters=filters)
+        # provider = get_tardis_instrument_provider(http_client, config)
+        #
+        # await provider.initialize()
 
-    # Test loading only specified instruments
-    # instrument_ids = [
-    #     "XBT-USD.OKEX",
-    #     "ETH-USD.OKEX",
-    # ]
+        # Test loading only specified instruments
+        # instrument_ids = [
+        #     "XBT-USD.OKEX",
+        #     "ETH-USD.OKEX",
+        # ]
 
-    # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
-    config = InstrumentProviderConfig(load_all=True, filters=filters)
-    provider = get_tardis_instrument_provider(http_client, config)
+        # config = InstrumentProviderConfig(load_ids=frozenset(instrument_ids))
+        config = InstrumentProviderConfig(load_all=True, filters=filters)
+        provider = get_tardis_instrument_provider(http_client, config)
 
-    await provider.initialize()
+        await provider.initialize()
 
-    for instrument in provider.list_all():
-        print(instrument.id)
+        for instrument in provider.list_all():
+            print(instrument.id)
 
-    print(f"Loaded {len(provider.list_all())} instruments")
+        count = len(provider.list_all())
+        total_instrument_count += count
+        print(f"Loaded {count} instruments")
+        print(f"Total loaded count {total_instrument_count}")
 
 
 if __name__ == "__main__":

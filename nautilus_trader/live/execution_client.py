@@ -213,10 +213,9 @@ class LiveExecutionClient(ExecutionClient):
                 try:
                     actions()
                 except Exception as e:
-                    tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                    self._log.error(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
-                        f"{e!r}\n{tb_str}",
+                    self._log.exception(
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                        e,
                     )
             if success_msg:
                 self._log.info(success_msg, success_color)

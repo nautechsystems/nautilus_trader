@@ -161,6 +161,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Set release output
         id: vars

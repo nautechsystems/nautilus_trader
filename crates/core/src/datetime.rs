@@ -41,49 +41,42 @@ pub const WEEKDAYS: [Weekday; 5] = [
 ];
 
 /// Converts seconds to nanoseconds (ns).
-#[inline]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
     (secs * NANOSECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts seconds to milliseconds (ms).
-#[inline]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
     (secs * MILLISECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
-#[inline]
 #[unsafe(no_mangle)]
 pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
     (millis * NANOSECONDS_IN_MILLISECOND as f64) as u64
 }
 
 /// Converts microseconds (μs) to nanoseconds (ns).
-#[inline]
 #[unsafe(no_mangle)]
 pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
     (micros * NANOSECONDS_IN_MICROSECOND as f64) as u64
 }
 
 /// Converts nanoseconds (ns) to seconds.
-#[inline]
 #[unsafe(no_mangle)]
 pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
     nanos as f64 / NANOSECONDS_IN_SECOND as f64
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
-#[inline]
 #[unsafe(no_mangle)]
 pub const extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
-#[inline]
 #[unsafe(no_mangle)]
 pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND

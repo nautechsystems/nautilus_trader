@@ -929,7 +929,7 @@ cdef class Portfolio(PortfolioFacade):
             if not xrate_result:
                 self._log.error(
                     f"Cannot calculate net exposures: "
-                    f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
+                    f"no {self._log_xrate} exchange rate for {instrument.get_cost_currency()}/{account.base_currency}",
                 )
                 return None  # Cannot calculate
 
@@ -938,7 +938,7 @@ cdef class Portfolio(PortfolioFacade):
             if self._convert_to_account_base_currency and account.base_currency is not None:
                 settlement_currency = account.base_currency
             else:
-                settlement_currency = instrument.get_settlement_currency()
+                settlement_currency = instrument.get_cost_currency()
 
             if isinstance(instrument, BettingInstrument):
                 bet_position = self._bet_positions.get(position.id)
@@ -1099,7 +1099,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=instrument_id,
         )
         if not positions_open:
-            return Money(0, instrument.get_settlement_currency())
+            return Money(0, instrument.get_cost_currency())
 
         cdef double net_exposure = 0.0
 
@@ -1127,7 +1127,7 @@ cdef class Portfolio(PortfolioFacade):
             if not xrate_result:
                 self._log.error(
                     f"Cannot calculate net exposure: "
-                    f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
+                    f"no {self._log_xrate} exchange rate for {instrument.get_cost_currency()}/{account.base_currency}",
                 )
                 return None  # Cannot calculate
 
@@ -1150,7 +1150,7 @@ cdef class Portfolio(PortfolioFacade):
         if self._convert_to_account_base_currency and account.base_currency is not None:
             return Money(net_exposure, account.base_currency)
         else:
-            return Money(net_exposure, instrument.get_settlement_currency())
+            return Money(net_exposure, instrument.get_cost_currency())
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
@@ -1352,7 +1352,7 @@ cdef class Portfolio(PortfolioFacade):
         if self._convert_to_account_base_currency and account.base_currency is not None:
             currency = account.base_currency
         else:
-            currency = instrument.get_settlement_currency()
+            currency = instrument.get_cost_currency()
 
         cdef list[Position] positions = self._cache.positions(
             venue=None,  # Faster query filtering
@@ -1398,7 +1398,7 @@ cdef class Portfolio(PortfolioFacade):
                 if not xrate_result:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"no {self._log_xrate} exchange rate yet for {instrument.get_settlement_currency()}/{account.base_currency}",
+                        f"no {self._log_xrate} exchange rate yet for {instrument.get_cost_currency()}/{account.base_currency}",
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
@@ -1437,7 +1437,7 @@ cdef class Portfolio(PortfolioFacade):
         if self._convert_to_account_base_currency and account.base_currency is not None:
             currency = account.base_currency
         else:
-            currency = instrument.get_settlement_currency()
+            currency = instrument.get_cost_currency()
 
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
@@ -1496,7 +1496,7 @@ cdef class Portfolio(PortfolioFacade):
                 if not xrate_result:
                     self._log.debug(
                         f"Cannot calculate unrealized PnL: "
-                        f"no {self._log_xrate} exchange rate for {instrument.get_settlement_currency()}/{account.base_currency}",
+                        f"no {self._log_xrate} exchange rate for {instrument.get_cost_currency()}/{account.base_currency}",
                     )
                     self._pending_calcs.add(instrument.id)
                     return None  # Cannot calculate
@@ -1539,13 +1539,13 @@ cdef class Portfolio(PortfolioFacade):
 
         if self._use_mark_xrates:
             return self._cache.get_mark_xrate(
-                from_currency=instrument.get_settlement_currency(),
+                from_currency=instrument.get_cost_currency(),
                 to_currency=account.base_currency,
             )
 
         return self._cache.get_xrate(
             venue=self._venue or instrument.id.venue,
-            from_currency=instrument.get_settlement_currency(),
+            from_currency=instrument.get_cost_currency(),
             to_currency=account.base_currency,
             price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
         )

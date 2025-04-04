@@ -1307,6 +1307,127 @@ class TestCache:
         # Assert
         assert True  # No exception raised
 
+    def test_purge_closed_orders_when_empty_does_nothing(self):
+        # Arrange, Act, Assert
+        self.cache.purge_closed_orders(ts_now=0)
+
+    def test_purge_closed_positions_when_empty_does_nothing(self):
+        # Arrange, Act, Assert
+        self.cache.purge_closed_positions(ts_now=0)
+
+    def test_purge_order_when_empty_does_nothing(self):
+        # Arrange, Act, Assert
+        self.cache.purge_order(client_order_id=ClientOrderId("O-123456789"))
+
+    def test_purge_position_when_empty_does_nothing(self):
+        # Arrange, Act, Assert
+        self.cache.purge_position(position_id=PositionId("P-1"))
+
+    def test_purge_closed_orders(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        order1.apply(TestEventStubs.order_submitted(order1))
+        self.cache.update_order(order1)
+
+        order1.apply(TestEventStubs.order_accepted(order1))
+        self.cache.update_order(order1)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        order1.apply(fill1)
+        self.cache.update_order(order1)
+
+        order2 = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")))
+        self.cache.update_order(order2)
+
+        # Act
+        self.cache.purge_closed_orders(ts_now=0)
+
+        # Assert
+        assert not self.cache.order_exists(order1.client_order_id)
+        assert self.cache.order(order1.client_order_id) is None
+        assert self.cache.venue_order_id(order1.client_order_id) is None
+        assert order1 not in self.cache.orders_open()
+        assert order1 not in self.cache.orders_closed()
+        assert self.cache.orders_total_count() == 1
+        assert self.cache.orders_closed_count() == 0
+
+    def test_purge_closed_positions(self):
+        # Arrange
+        order1 = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+        )
+
+        position1_id = PositionId("P-1")
+        self.cache.add_order(order1, position1_id)
+
+        order1.apply(TestEventStubs.order_submitted(order1))
+        self.cache.update_order(order1)
+
+        order1.apply(TestEventStubs.order_accepted(order1))
+        self.cache.update_order(order1)
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=position1_id,
+            last_px=Price.from_str("1.00000"),
+        )
+        order1.apply(fill1)
+        self.cache.update_order(order1)
+
+        order2 = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+
+        position2_id = PositionId("P-2")
+        self.cache.add_order(order2, position2_id)
+        order2.apply(TestEventStubs.order_submitted(order2))
+        self.cache.update_order(order2)
+
+        order2.apply(TestEventStubs.order_accepted(order2, venue_order_id=VenueOrderId("2")))
+        self.cache.update_order(order2)
+
+        # Act
+        self.cache.purge_closed_positions(ts_now=0)
+
+        # Assert
+        assert not self.cache.position_exists(position1_id)
+        assert self.cache.position(position1_id) is None
+        assert position1_id not in self.cache.positions_open()
+        assert position1_id not in self.cache.positions_closed()
+        assert self.cache.positions_total_count() == 0
+        assert self.cache.positions_closed_count() == 0
+
 
 class TestExecutionCacheIntegrityCheck:
     def setup(self):

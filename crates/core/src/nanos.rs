@@ -22,7 +22,7 @@
 //! # Features
 //!
 //! - Zero-cost abstraction with appropriate operator implementations.
-//! - Conversion to/from DateTime<Utc>.
+//! - Conversion to/from `DateTime<Utc>`.
 //! - RFC 3339 string formatting.
 //! - Duration calculations.
 //! - Flexible parsing and serialization.
@@ -114,7 +114,7 @@ impl UnixNanos {
     fn parse_string(s: &str) -> Result<Self, String> {
         // Try parsing as an integer (nanoseconds)
         if let Ok(int_value) = s.parse::<u64>() {
-            return Ok(UnixNanos(int_value));
+            return Ok(Self(int_value));
         }
 
         // Try parsing as a floating point number (seconds)
@@ -123,7 +123,7 @@ impl UnixNanos {
                 return Err("Unix timestamp cannot be negative".into());
             }
             let nanos = (float_value * 1_000_000_000.0).round() as u64;
-            return Ok(UnixNanos(nanos));
+            return Ok(Self(nanos));
         }
 
         // Try parsing as an RFC 3339 timestamp
@@ -134,7 +134,7 @@ impl UnixNanos {
             if nanos < 0 {
                 return Err("Unix timestamp cannot be negative".into());
             }
-            return Ok(UnixNanos(nanos as u64));
+            return Ok(Self(nanos as u64));
         }
 
         // Try parsing as a simple date string (YYYY-MM-DD format)
@@ -145,7 +145,7 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
-            return Ok(UnixNanos(nanos as u64));
+            return Ok(Self(nanos as u64));
         }
 
         Err(format!("Invalid format: {s}"))
@@ -240,7 +240,7 @@ impl FromStr for UnixNanos {
     type Err = Box<dyn std::error::Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse_string(s).map_err(|e| e.into())
+        Self::parse_string(s).map_err(std::convert::Into::into)
     }
 }
 

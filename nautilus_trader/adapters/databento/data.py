@@ -71,6 +71,7 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import bar_aggregation_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -138,6 +139,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
         self._parent_symbols: dict[Dataset, set[str]] = defaultdict(set)
+        self._venue_dataset_map: dict[Venue, Dataset] | None = config.venue_dataset_map
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
 
         self._log.info(f"{config.use_exchange_as_venue=}", LogColor.BLUE)
@@ -252,7 +254,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
                 await asyncio.gather(*tasks)
             except Exception as e:  # Create specific exception type
-                self._log.error(f"Error updating dataset range: {e}")
+                self._log.exception("Error updating dataset range", e)
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'update_dataset_ranges'")
                 break
@@ -282,6 +284,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 key=self._live_api_key,
                 dataset=dataset,
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
+                use_exchange_as_venue=self._use_exchange_as_venue,
             )
             self._live_clients[dataset] = live_client
 
@@ -296,6 +299,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 key=self._live_api_key,
                 dataset=dataset,
                 publishers_filepath=str(PUBLISHERS_FILEPATH),
+                use_exchange_as_venue=self._use_exchange_as_venue,
             )
             self._live_clients_mbo[dataset] = live_client
 
@@ -380,7 +384,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.warning("Canceled task 'get_dataset_range'")
             return (None, pd.Timestamp.utcnow())
         except Exception as e:  # More specific exception
-            self._log.error(f"Error requesting dataset range: {e}")
+            self._log.exception("Error requesting dataset range", e)
             return (None, pd.Timestamp.utcnow())
         finally:
             self._dataset_ranges_requested.discard(dataset)
@@ -872,7 +876,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=[instrument_id_to_pyo3(request.instrument_id)],
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
@@ -897,8 +900,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        use_exchange_as_venue = request.params.get("use_exchange_as_venue", False)
-
         # parent_symbols can be equal to ["ES.OPT", "ES.FUT"] for example in order to not query all instruments of an exchange
         parent_symbols = request.params.get("parent_symbols") or [ALL_SYMBOLS]
         pyo3_instrument_ids = [
@@ -911,7 +912,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             instrument_ids=pyo3_instrument_ids,
             start=start.value,
             end=end.value,
-            use_exchange_as_venue=use_exchange_as_venue,
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
 

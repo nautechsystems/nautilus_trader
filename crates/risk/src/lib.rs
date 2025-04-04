@@ -25,7 +25,6 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]

@@ -444,6 +444,7 @@ impl LiveTimer {
     ///
     /// Time events will begin triggering at the specified intervals.
     /// The generated events are handled by the provided callback function.
+    #[allow(unused_variables)] // callback is used
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;

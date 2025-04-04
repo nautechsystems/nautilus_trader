@@ -464,7 +464,7 @@ impl MessageBus {
     /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
         if let Some(handler) = self.get_endpoint(message.client_id.inner()) {
-            handler.0.handle_response(message);
+            handler.0.handle(&message);
         }
     }
 
@@ -473,7 +473,7 @@ impl MessageBus {
         let matching_subs = self.matching_subscriptions(topic);
 
         for sub in matching_subs {
-            sub.handler.0.handle_data(message.clone());
+            sub.handler.0.handle(&message);
         }
     }
 

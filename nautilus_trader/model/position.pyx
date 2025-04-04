@@ -94,7 +94,7 @@ cdef class Position:
         self.is_inverse = instrument.is_inverse
         self.quote_currency = instrument.quote_currency
         self.base_currency = instrument.get_base_currency()  # Can be None
-        self.settlement_currency = instrument.get_settlement_currency()
+        self.settlement_currency = instrument.get_cost_currency()  # TBD handling quanto
 
         self.realized_return = 0.0
         self.realized_pnl = None
@@ -109,6 +109,31 @@ cdef class Position:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.info()}, id={self.id})"
+
+    def purge_events_for_order(self, ClientOrderId client_order_id) -> None:
+        """
+        Purge all order events for the given client order ID.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID for the events to purge.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        cdef list[OrderFilled] events = []
+        cdef list[TradeId] trade_ids = []
+
+        cdef:
+            OrderFilled event
+        for event in self._events:
+            if event.client_order_id != client_order_id:
+                events.append(event)
+                trade_ids.append(event.trade_id)
+
+        self._events = events
+        self._trade_ids = trade_ids
 
     cpdef str info(self):
         """

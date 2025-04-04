@@ -18,55 +18,10 @@ use std::{any::Any, collections::HashMap, num::NonZeroUsize, sync::Arc};
 use chrono::{DateTime, Utc};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, Data, DataType},
+    data::{BarType, DataType},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
 };
-
-#[derive(Clone, Debug)]
-pub struct DataRequest {
-    pub correlation_id: UUID4,
-    pub client_id: ClientId,
-    pub venue: Venue,
-    pub data_type: DataType,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
-}
-
-pub type Payload = Arc<dyn Any + Send + Sync>;
-
-#[derive(Clone, Debug)]
-pub struct DataResponse {
-    pub correlation_id: UUID4,
-    pub client_id: ClientId,
-    pub venue: Venue,
-    pub data_type: DataType,
-    pub data: Payload,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
-}
-
-impl DataResponse {
-    pub fn new<T: Any + Send + Sync>(
-        correlation_id: UUID4,
-        client_id: ClientId,
-        venue: Venue,
-        data_type: DataType,
-        data: T,
-        ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
-    ) -> Self {
-        Self {
-            correlation_id,
-            client_id,
-            venue,
-            data_type,
-            data: Arc::new(data),
-            ts_init,
-            params,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub enum DataCommand {
@@ -75,11 +30,11 @@ pub enum DataCommand {
     Unsubscribe(UnsubscribeCommand),
 }
 
-// TODO: Refine this to reduce disparity between enum sizes
-#[allow(clippy::large_enum_variant)]
-pub enum DataEvent {
-    Response(DataResponse),
-    Data(Data),
+impl DataCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -88,13 +43,15 @@ pub enum SubscribeCommand {
     Instruments(SubscribeInstruments),
     Instrument(SubscribeInstrument),
     BookDeltas(SubscribeBookDeltas),
-    BookDepths10(SubscribeBookDepths10),
+    BookDepth10(SubscribeBookDepth10),
     BookSnapshots(SubscribeBookSnapshots),
     Quotes(SubscribeQuotes),
     Trades(SubscribeTrades),
+    Bars(SubscribeBars),
     MarkPrices(SubscribeMarkPrices),
     IndexPrices(SubscribeIndexPrices),
-    Bars(SubscribeBars),
+    InstrumentStatus(SubscribeInstrumentStatus),
+    InstrumentClose(SubscribeInstrumentClose),
 }
 
 impl SubscribeCommand {
@@ -104,13 +61,15 @@ impl SubscribeCommand {
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
-            Self::BookDepths10(cmd) => cmd.client_id.as_ref(),
+            Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
             Self::Bars(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -120,13 +79,15 @@ impl SubscribeCommand {
             Self::Instruments(cmd) => Some(&cmd.venue),
             Self::Instrument(cmd) => cmd.venue.as_ref(),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
-            Self::BookDepths10(cmd) => cmd.venue.as_ref(),
+            Self::BookDepth10(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
             Self::Quotes(cmd) => cmd.venue.as_ref(),
             Self::Trades(cmd) => cmd.venue.as_ref(),
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::Bars(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
     }
 }
@@ -137,13 +98,15 @@ pub enum UnsubscribeCommand {
     Instruments(UnsubscribeInstruments),
     Instrument(UnsubscribeInstrument),
     BookDeltas(UnsubscribeBookDeltas),
-    BookDepths10(UnsubscribeBookDepths10),
+    BookDepth10(UnsubscribeBookDepth10),
     BookSnapshots(UnsubscribeBookSnapshots),
     Quotes(UnsubscribeQuotes),
     Trades(UnsubscribeTrades),
+    Bars(UnsubscribeBars),
     MarkPrices(UnsubscribeMarkPrices),
     IndexPrices(UnsubscribeIndexPrices),
-    Bars(UnsubscribeBars),
+    InstrumentStatus(UnsubscribeInstrumentStatus),
+    InstrumentClose(UnsubscribeInstrumentClose),
 }
 
 impl UnsubscribeCommand {
@@ -153,13 +116,15 @@ impl UnsubscribeCommand {
             Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
-            Self::BookDepths10(cmd) => cmd.client_id.as_ref(),
+            Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
+            Self::Bars(cmd) => cmd.client_id.as_ref(),
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
-            Self::Bars(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.client_id.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -169,13 +134,15 @@ impl UnsubscribeCommand {
             Self::Instruments(cmd) => Some(&cmd.venue),
             Self::Instrument(cmd) => cmd.venue.as_ref(),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
-            Self::BookDepths10(cmd) => cmd.venue.as_ref(),
+            Self::BookDepth10(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
             Self::Quotes(cmd) => cmd.venue.as_ref(),
             Self::Trades(cmd) => cmd.venue.as_ref(),
+            Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
-            Self::Bars(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
+            Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
     }
 }
@@ -318,7 +285,7 @@ impl SubscribeBookDeltas {
 }
 
 #[derive(Clone, Debug)]
-pub struct SubscribeBookDepths10 {
+pub struct SubscribeBookDepth10 {
     pub instrument_id: InstrumentId,
     pub book_type: BookType,
     pub client_id: Option<ClientId>,
@@ -330,7 +297,7 @@ pub struct SubscribeBookDepths10 {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl SubscribeBookDepths10 {
+impl SubscribeBookDepth10 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -462,6 +429,40 @@ impl SubscribeTrades {
 }
 
 #[derive(Clone, Debug)]
+pub struct SubscribeBars {
+    pub bar_type: BarType,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub await_partial: bool,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl SubscribeBars {
+    pub fn new(
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        await_partial: bool,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            bar_type,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            await_partial,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct SubscribeMarkPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -518,40 +519,6 @@ impl SubscribeIndexPrices {
             venue,
             command_id,
             ts_init,
-            params,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct SubscribeBars {
-    pub bar_type: BarType,
-    pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
-    pub command_id: UUID4,
-    pub ts_init: UnixNanos,
-    pub await_partial: bool,
-    pub params: Option<HashMap<String, String>>,
-}
-
-impl SubscribeBars {
-    pub fn new(
-        bar_type: BarType,
-        client_id: Option<ClientId>,
-        venue: Option<Venue>,
-        command_id: UUID4,
-        ts_init: UnixNanos,
-        await_partial: bool,
-        params: Option<HashMap<String, String>>,
-    ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
-        Self {
-            bar_type,
-            client_id,
-            venue,
-            command_id,
-            ts_init,
-            await_partial,
             params,
         }
     }
@@ -742,7 +709,7 @@ impl UnsubscribeBookDeltas {
 }
 
 #[derive(Clone, Debug)]
-pub struct UnsubscribeBookDepths10 {
+pub struct UnsubscribeBookDepth10 {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
@@ -751,7 +718,7 @@ pub struct UnsubscribeBookDepths10 {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl UnsubscribeBookDepths10 {
+impl UnsubscribeBookDepth10 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -870,6 +837,38 @@ impl UnsubscribeTrades {
 }
 
 #[derive(Clone, Debug)]
+pub struct UnsubscribeBars {
+    pub bar_type: BarType,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl UnsubscribeBars {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            bar_type,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct UnsubscribeMarkPrices {
     pub instrument_id: InstrumentId,
     pub client_id: Option<ClientId>,
@@ -924,38 +923,6 @@ impl UnsubscribeIndexPrices {
         check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
-            client_id,
-            venue,
-            command_id,
-            ts_init,
-            params,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct UnsubscribeBars {
-    pub bar_type: BarType,
-    pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
-    pub command_id: UUID4,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
-}
-
-impl UnsubscribeBars {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        bar_type: BarType,
-        client_id: Option<ClientId>,
-        venue: Option<Venue>,
-        command_id: UUID4,
-        ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
-    ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
-        Self {
-            bar_type,
             client_id,
             venue,
             command_id,
@@ -1255,6 +1222,51 @@ impl RequestBars {
             client_id,
             venue,
             request_id,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DataRequest {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+pub type Payload = Arc<dyn Any + Send + Sync>;
+
+#[derive(Clone, Debug)]
+pub struct DataResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
+    pub data: Payload,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl DataResponse {
+    pub fn new<T: Any + Send + Sync>(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
+        data: T,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            venue,
+            data_type,
+            data: Arc::new(data),
             ts_init,
             params,
         }

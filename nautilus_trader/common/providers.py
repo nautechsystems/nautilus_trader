@@ -184,7 +184,7 @@ class InstrumentProvider:
         except Exception as e:
             # Catch unexpected exception to ensure that the self._loading flag
             # is reset to False
-            self._log.error(f"Failed to load the instruments: {e}")
+            self._log.exception("Failed to load instruments", e)
 
         if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")

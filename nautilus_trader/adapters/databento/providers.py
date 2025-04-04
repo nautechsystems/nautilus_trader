@@ -66,6 +66,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         live_gateway: str | None = None,
         loader: DatabentoDataLoader | None = None,
         config: InstrumentProviderConfig | None = None,
+        use_exchange_as_venue: bool = True,
     ) -> None:
         super().__init__(config=config)
 
@@ -76,6 +77,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         self._http_client = http_client
         self._loader = loader or DatabentoDataLoader()
+        self._use_exchange_as_venue = use_exchange_as_venue
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         raise RuntimeError(
@@ -115,19 +117,17 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         PyCondition.not_empty(instrument_ids, "instrument_ids")
-
         instrument_ids_to_decode: set[str] = {i.value for i in instrument_ids}
-
         dataset = self._check_all_datasets_equal(instrument_ids)
+
         live_client = nautilus_pyo3.DatabentoLiveClient(
             key=self._live_api_key,
             dataset=dataset,
             publishers_filepath=str(PUBLISHERS_FILEPATH),
+            use_exchange_as_venue=self._use_exchange_as_venue,
         )
 
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
-        # use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
-
         pyo3_instruments = []
 
         success_msg = "All instruments received and decoded"
@@ -158,7 +158,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 [instrument_id_to_pyo3(instrument_id) for instrument_id in instrument_ids],
             ),
             start=0,  # From start of current week (latest definitions)
-            # use_exchange_as_venue=use_exchange_as_venue,  # TODO
         )
 
         if parent_symbols:
@@ -174,8 +173,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         async def monitor_inactivity():
             nonlocal last_received_time
+
             while True:
                 await asyncio.sleep(check_interval_secs)
+
                 if started_receiving and (
                     self._clock.timestamp() - last_received_time > timeout_secs
                 ):
@@ -194,7 +195,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             else:
                 self._log.warning(str(e))
         except Exception as e:
-            self._log.error(repr(e))
+            self._log.exception(repr(e), e)
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
@@ -264,7 +265,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         """
         dataset = self._check_all_datasets_equal(instrument_ids)
-        use_exchange_as_venue = filters.get("use_exchange_as_venue", True) if filters else True
 
         # Here the NULL venue is overridden and so is used as a
         # placeholder to conform to instrument ID conventions.
@@ -273,18 +273,18 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             instrument_ids=[instrument_id_to_pyo3(InstrumentId.from_str(f"{ALL_SYMBOLS}.NULL"))],
             start=pd.Timestamp(start, tz=pytz.utc).value,
             end=pd.Timestamp(end, tz=pytz.utc).value if end is not None else None,
-            use_exchange_as_venue=use_exchange_as_venue,
         )
-
         instruments = instruments_from_pyo3(pyo3_instruments)
-
         instruments = sorted(instruments, key=lambda x: x.ts_init)
+
         return instruments
 
     def _check_all_datasets_equal(self, instrument_ids: list[InstrumentId]) -> str:
         first_dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
+
         for instrument_id in instrument_ids:
             next_dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
             if first_dataset != next_dataset:
                 raise ValueError(
                     "Databento datasets for the provided `instrument_ids` were not equal, "

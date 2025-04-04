@@ -1,3 +1,57 @@
+# NautilusTrader 1.215.0 Beta
+
+Released on 5th April 2025 (UTC).
+
+### Enhancements
+- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
+- Added `Cache.purge_closed_order(...)`
+- Added `Cache.purge_closed_orders(...)`
+- Added `Cache.purge_closed_position(...)`
+- Added `Cache.purge_closed_positions(...)`
+- Added `Cache.purge_account_events(...)`
+- Added `Account.purge_account_events(...)`
+- Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
+- Added `Order.ts_closed` property
+- Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Added `Consumer` for `WebSocketClient` (#2488), thanks @twitu
+- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increment and fee changes
+- Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
+- Improved logging for Redis cache database operations
+- Standardized unexpected exception logging to include full stack trace
+- Refined type handling for backtest configs
+- Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
+- Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
+- Refined time initialization of components in backtest (#2490), thanks @faysou
+- Upgraded Rust MSRV to 1.86.0
+- Upgraded `pyo3` crate to v0.24.1
+
+### Fixes
+- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
+- Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
+- Fixed handling of `PolymarketTickSizeChanged` message
+- Fixed parsing spot instruments for Tardis where `size_increment` was zero, now inferred from base currency
+- Fixed default log colors for Rust (#2489), thanks @filipmacek
+- Fixed sccache key for uv in CI (#2482), thanks @davidsblom
+
+### Documentation Updates
+- Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
+
+### Deprecations
+- Strategies written in Cython are deprecated and the example `ema_cross_cython` strategy was removed
+
+---
+
 # NautilusTrader 1.214.0 Beta
 
 Released on 28th March 2025 (UTC).
@@ -20,8 +74,8 @@ Released on 28th March 2025 (UTC).
 - Added `Cache.index_prices(...)`
 - Added `Cache.mark_price_count(...)`
 - Added `Cache.index_price_count(...)`
-- Added `Cache.has_mark_prices()`
-- Added `Cache.has_index_prices()`
+- Added `Cache.has_mark_prices(...)`
+- Added `Cache.has_index_prices(...)`
 - Added `UnixNanos.to_rfc3339()` for ISO 8601 (RFC 3339) strings
 - Added `recv_window_ms` config for Bybit WebSocket order client (#2466), thanks @sunlei
 - Enhanced `UnixNanos` string parsing to support YYYY-MM-DD date format (interpreted as midnight UTC)

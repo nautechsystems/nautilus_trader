@@ -16,9 +16,9 @@
 
 | Platform           | Rust    | Python      |
 | :----------------- | :------ | :---------- |
-| `Linux (x86_64)`   | 1.85.1+ | 3.11, 3.12  |
-| `macOS (arm64)`    | 1.85.1+ | 3.11, 3.12  |
-| `Windows (x86_64)` | 1.85.1+ | 3.11, 3.12  |
+| `Linux (x86_64)`   | 1.86.0+ | 3.11, 3.12  |
+| `macOS (arm64)`    | 1.86.0+ | 3.11, 3.12  |
+| `Windows (x86_64)` | 1.86.0+ | 3.11, 3.12  |
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
@@ -346,7 +346,7 @@ latency-sensitive applications, we recommend using Cython. Below are some exampl
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
 - [indicator](/nautilus_trader/indicators/) examples written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
+- [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
@@ -437,7 +437,7 @@ developer looking to contribute or just want to learn more about the platform, a
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard Contributor License Agreement (CLA).
+Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---
 

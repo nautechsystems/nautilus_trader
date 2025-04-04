@@ -17,6 +17,7 @@
 
 pub mod bar;
 pub mod bet;
+pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;

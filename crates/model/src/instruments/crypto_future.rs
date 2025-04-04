@@ -279,7 +279,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn base_currency(&self) -> Option<Currency> {
-        None
+        Some(self.underlying)
     }
 
     fn quote_currency(&self) -> Currency {

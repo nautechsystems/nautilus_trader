@@ -229,6 +229,28 @@ cdef class CryptoOption(Instrument):
             f"info={self.info})"
         )
 
+    cpdef Currency get_base_currency(self):
+        """
+        Return the instruments base currency (underlying).
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.underlying
+
+    cpdef Currency get_settlement_currency(self):
+        """
+        Return the currency used to settle a trade of the instrument.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.settlement_currency
+
     @property
     def activation_utc(self) -> pd.Timestamp:
         """

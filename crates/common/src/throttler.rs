@@ -22,17 +22,18 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
-use nautilus_model::data::Data;
+use nautilus_core::{UnixNanos, correctness::FAILED};
 use ustr::Ustr;
 
 use crate::{
-    actor::{Actor, get_actor_unchecked, register_actor},
+    actor::{
+        Actor,
+        registry::{get_actor_unchecked, register_actor},
+    },
     clock::Clock,
-    messages::data::DataResponse,
     msgbus::{
+        self,
         handler::{MessageHandler, ShareableMessageHandler},
-        {self},
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -72,7 +73,7 @@ pub struct Throttler<T, F> {
     /// The clock used to keep track of time.
     pub clock: Rc<RefCell<dyn Clock>>,
     /// The actor ID of the throttler.
-    pub actor_id: UUID4,
+    pub actor_id: Ustr,
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The name of the timer.
@@ -88,16 +89,14 @@ where
     T: 'static,
     F: Fn(T) + 'static,
 {
-    fn id(&self) -> UUID4 {
+    fn id(&self) -> Ustr {
         self.actor_id
     }
 
+    fn handle(&mut self, _msg: &dyn Any) {}
+
     fn as_any(&self) -> &dyn Any {
         self
-    }
-
-    fn handle(&self, _resp: DataResponse) {
-        // TODO: Implement
     }
 }
 
@@ -128,7 +127,7 @@ impl<T, F> Throttler<T, F> {
         timer_name: String,
         output_send: F,
         output_drop: Option<F>,
-        actor_id: UUID4,
+        actor_id: Ustr,
     ) -> Self {
         Self {
             recv_count: 0,
@@ -287,14 +286,14 @@ where
 /// When limit is reached, schedules a timer event to call self again. The handler
 /// is registered as a separated endpoint on the message bus as `{actor_id}_process`.
 struct ThrottlerProcess<T, F> {
-    actor_id: UUID4,
+    actor_id: Ustr,
     endpoint: Ustr,
     phantom_t: PhantomData<T>,
     phantom_f: PhantomData<F>,
 }
 
 impl<T, F> ThrottlerProcess<T, F> {
-    pub fn new(actor_id: UUID4) -> Self {
+    pub fn new(actor_id: Ustr) -> Self {
         let endpoint = Ustr::from(&format!("{}_process", actor_id));
         Self {
             actor_id,
@@ -346,21 +345,13 @@ where
         throttler.is_limiting = false;
     }
 
-    fn handle_response(&self, _resp: DataResponse) {
-        // TODO: Implement
-    }
-
-    fn handle_data(&self, _data: Data) {
-        // TODO: Implement
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
 /// Sets throttler to resume sending messages
-pub fn throttler_resume<T, F>(actor_id: UUID4) -> TimeEventCallback
+pub fn throttler_resume<T, F>(actor_id: Ustr) -> TimeEventCallback
 where
     T: 'static,
     F: Fn(T) + 'static,
@@ -385,6 +376,7 @@ mod tests {
 
     use nautilus_core::UUID4;
     use rstest::{fixture, rstest};
+    use ustr::Ustr;
 
     use super::{RateLimit, Throttler};
     use crate::clock::TestClock;
@@ -417,7 +409,7 @@ mod tests {
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
         let interval = rate_limit.interval_ns;
-        let actor_id = UUID4::new();
+        let actor_id = Ustr::from(&UUID4::new().to_string());
 
         TestThrottler {
             throttler: Throttler::new(
@@ -447,7 +439,7 @@ mod tests {
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
         let interval = rate_limit.interval_ns;
-        let actor_id = UUID4::new();
+        let actor_id = Ustr::from(&UUID4::new().to_string());
 
         TestThrottler {
             throttler: Throttler::new(
