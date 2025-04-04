@@ -1,11 +1,11 @@
 [package]
 name = "nautilus-system"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -31,14 +31,14 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-data = { path = "../data" }
-nautilus-risk = { path = "../risk" }
-nautilus-execution = { path = "../execution" }
-nautilus-portfolio = { path = "../portfolio" }
-nautilus-persistence = { path = "../persistence" }
+nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-data = { workspace = true }
+nautilus-risk = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-portfolio = { workspace = true }
+nautilus-persistence = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
 

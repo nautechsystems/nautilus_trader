@@ -1,11 +1,11 @@
 [package]
 name = "nautilus-persistence"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
-readme.workspace = true
 description.workspace = true
 categories.workspace = true
 keywords.workspace = true
@@ -44,10 +44,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-core = { path = "../core", features = ["ffi"] }
-nautilus-common = { path = "../common" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-serialization = { path = "../serialization" , features = ["python"]}
+nautilus-core = { workspace = true, features = ["ffi"] }
+nautilus-common = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-serialization = { workspace = true, features = ["python"]}
+
 futures = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }

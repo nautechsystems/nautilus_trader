@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, fs, path::PathBuf};
-
-use toml::Value;
+use std::{env, path::PathBuf};
 
 #[allow(clippy::expect_used)]
 fn main() {
@@ -28,21 +26,17 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let project_dir = crate_dir
-        .parent()
-        .expect("Failed to get workspace root")
-        .parent()
-        .expect("Failed to get project root");
+    let nautilus_version = "1.215.0"; // Hardcode to avoid including pyproject.toml in package
 
-    let filepath = project_dir.join("pyproject.toml");
-    let data = fs::read_to_string(filepath).expect("Unable to read pyproject.toml");
-    let parsed_toml: Value = toml::from_str(&data).expect("Unable to parse pyproject.toml");
-
-    let nautilus_version = parsed_toml["project"]["version"]
-        .as_str()
-        .expect("Unable to find version in pyproject.toml")
-        .to_string();
+    // Verify the hardcoded version matches the version from the top-level pyproject.toml
+    if let Some(pyproject_version) = try_read_pyproject_version() {
+        if pyproject_version != nautilus_version {
+            panic!(
+                "cargo:warning=Version mismatch: pyproject.toml={}, hardcoded={}",
+                pyproject_version, nautilus_version
+            );
+        }
+    }
 
     // Set compile-time environment variables
     println!("cargo:rustc-env=NAUTILUS_VERSION={nautilus_version}");
@@ -50,10 +44,12 @@ fn main() {
 
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
+        use std::fs::File;
         use std::io::{Read, Write};
 
         use cbindgen;
-        use fs::File;
+
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         // Generate C headers
         let config_c = cbindgen::Config::from_file("cbindgen.toml")
@@ -87,4 +83,33 @@ fn main() {
         dst.write_all(new_data.as_bytes())
             .expect("I/O error on `dist.write`");
     }
+}
+
+fn try_read_pyproject_version() -> Option<String> {
+    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path1 = crate_dir.join("pyproject.toml");
+    let path2 = crate_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("pyproject.toml"));
+
+    let paths_to_check: Vec<PathBuf> = vec![path1].into_iter().chain(path2).collect();
+
+    for path in paths_to_check {
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                if let Ok(value) = toml::from_str::<toml::Value>(&contents) {
+                    if let Some(version) = value
+                        .get("project")
+                        .and_then(|p| p.get("version"))
+                        .and_then(|v| v.as_str())
+                    {
+                        return Some(version.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
