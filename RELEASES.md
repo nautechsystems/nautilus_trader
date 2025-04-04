@@ -1,6 +1,6 @@
 # NautilusTrader 1.215.0 Beta
 
-Released on 4th April 2025 (UTC).
+Released on 5th April 2025 (UTC).
 
 ### Enhancements
 - Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
@@ -48,7 +48,7 @@ None
 - Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
 
 ### Deprecations
-None
+- Strategies written in Cython are deprecated and the example `ema_cross_cython` strategy was removed
 
 ---
 
