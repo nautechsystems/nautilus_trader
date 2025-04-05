@@ -3,7 +3,6 @@
 Released on 5th April 2025 (UTC).
 
 ### Enhancements
-- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
 - Added `Cache.purge_closed_order(...)`
 - Added `Cache.purge_closed_orders(...)`
 - Added `Cache.purge_closed_position(...)`
@@ -17,15 +16,16 @@ Released on 5th April 2025 (UTC).
 - Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
 - Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
+- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
 - Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
-- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s associated with a client order ID
 - Added `Consumer` for `WebSocketClient` (#2488), thanks @twitu
-- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increment and fee changes
+- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increments and fees changes
 - Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
 - Improved logging for Redis cache database operations
 - Standardized unexpected exception logging to include full stack trace
@@ -37,7 +37,7 @@ None
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
-- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
+- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size (#2476), thanks for reporting @JackWCollins
 - Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
 - Fixed handling of `PolymarketTickSizeChanged` message
 - Fixed parsing spot instruments for Tardis where `size_increment` was zero, now inferred from base currency
@@ -45,10 +45,10 @@ None
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
 ### Documentation Updates
-- Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
+- Clarified partial fills in backtesting concept guide (#2481), thanks @stefansimik
 
 ### Deprecations
-- Strategies written in Cython are deprecated and the example `ema_cross_cython` strategy was removed
+- Deprecated strategies written in Cython and removed `ema_cross_cython` strategy example
 
 ---
 
