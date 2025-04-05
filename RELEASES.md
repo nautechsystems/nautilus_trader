@@ -1,3 +1,28 @@
+# NautilusTrader 1.216.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Internal Improvements
+None
+- Upgraded `tokio` crate to v1.44.2
+
+### Fixes
+None
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.215.0 Beta
 
 Released on 5th April 2025 (UTC).
@@ -9,12 +34,12 @@ Released on 5th April 2025 (UTC).
 - Added `Cache.purge_closed_positions(...)`
 - Added `Cache.purge_account_events(...)`
 - Added `Account.purge_account_events(...)`
-- Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
-- Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
-- Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_buffer_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_buffer_mins` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_lookback_mins` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
 - Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
 - Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
