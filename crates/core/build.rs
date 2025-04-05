@@ -30,11 +30,10 @@ fn main() {
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {
-        if !pyproject_version.starts_with(nautilus_version) {
-            panic!(
-                "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
-            );
-        }
+        assert!(
+            pyproject_version.starts_with(nautilus_version),
+            "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
+        );
     }
 
     // Set compile-time environment variables
