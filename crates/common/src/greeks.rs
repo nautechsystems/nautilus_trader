@@ -30,15 +30,14 @@ use ustr::Ustr;
 
 use crate::{cache::Cache, clock::Clock, msgbus};
 
-/// Class used to calculate instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
+/// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
 /// Useful for risk management of options and futures portfolios.
-/// Accessible from any class inheriting from the actor class including strategies.
 ///
 /// Currently implemented greeks are:
-/// - Delta (first derivative of price with respect to spot move)
-/// - Gamma (second derivative of price with respect to spot move)
-/// - Vega (first derivative of price with respect to implied volatility of an option)
+/// - Delta (first derivative of price with respect to spot move).
+/// - Gamma (second derivative of price with respect to spot move).
+/// - Vega (first derivative of price with respect to implied volatility of an option).
 /// - Theta (first derivative of price with respect to time to expiry).
 ///
 /// Vega is expressed in terms of absolute percent changes ((dV / dVol) / 100).
@@ -52,12 +51,12 @@ pub struct GreeksCalculator {
 }
 
 impl GreeksCalculator {
-    /// Creates a new GreeksCalculator instance.
+    /// Creates a new [`GreeksCalculator`] instance.
     pub fn new(cache: Rc<RefCell<Cache>>, clock: Rc<RefCell<dyn Clock>>) -> Self {
         Self { cache, clock }
     }
 
-    /// Calculate option or underlying greeks for a given instrument and a quantity of 1.
+    /// Calculates option or underlying greeks for a given instrument and a quantity of 1.
     ///
     /// Additional features:
     /// - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
@@ -316,7 +315,7 @@ impl GreeksCalculator {
         Ok(greeks_data)
     }
 
-    /// Modify delta and gamma based on beta weighting and percentage calculations.
+    /// Modifies delta and gamma based on beta weighting and percentage calculations.
     ///
     /// The beta weighting of delta and gamma follows this equation linking the returns of a stock x to the ones of an index I:
     /// (x - x0) / x0 = alpha + beta (I - I0) / I0 + epsilon
@@ -393,7 +392,7 @@ impl GreeksCalculator {
         (delta, gamma)
     }
 
-    /// Calculate the portfolio Greeks for a given set of positions.
+    /// Calculates the portfolio Greeks for a given set of positions.
     ///
     /// Aggregates the Greeks data for all open positions that match the specified criteria.
     ///
@@ -503,7 +502,7 @@ impl GreeksCalculator {
         Ok(portfolio_greeks)
     }
 
-    /// Subscribe to Greeks data for a given underlying instrument.
+    /// Subscribes to Greeks data for a given underlying instrument.
     ///
     /// Useful for reading greeks from a backtesting data catalog and caching them for later use.
     pub fn subscribe_greeks<F>(&self, underlying: &str, handler: Option<F>)
