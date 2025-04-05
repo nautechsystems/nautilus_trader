@@ -14,16 +14,19 @@
 // -------------------------------------------------------------------------------------------------
 
 #[inline]
+#[must_use]
 pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
     (x - x1) / (x2 - x1)
 }
 
 #[inline]
+#[must_use]
 pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
-    y1 + x1_diff * (y2 - y1)
+    x1_diff.mul_add(y2 - y1, y1)
 }
 
 #[inline]
+#[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
     let n_elem = xs.len();
     let pos = xs.partition_point(|&val| val < x);
@@ -31,19 +34,22 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 }
 
 #[inline]
+#[must_use]
 pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: f64) -> f64 {
     y0 * (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))
         + y1 * (x - x0) * (x - x2) / ((x1 - x0) * (x1 - x2))
         + y2 * (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1))
 }
 
+#[must_use]
 pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     let n_elem = xs.len();
     let epsilon = 1e-8;
 
-    if n_elem < 3 {
-        panic!("Need at least 3 points for quadratic interpolation");
-    }
+    assert!(
+        (n_elem >= 3),
+        "Need at least 3 points for quadratic interpolation"
+    );
 
     if x <= xs[0] {
         return ys[0];
