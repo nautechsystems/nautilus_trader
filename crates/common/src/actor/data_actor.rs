@@ -125,21 +125,41 @@ pub trait DataActor: Actor {
 
     /// Actions to be performed on start.
     fn on_start(&mut self) -> anyhow::Result<()> {
+        log::warn!(
+            "The `on_start` handler was called when not overridden, \
+            it's expected that any actions required when starting the actor \
+            occur here, such as subscribing/requesting data"
+        );
         Ok(())
     }
 
     /// Actions to be performed on stop.
     fn on_stop(&mut self) -> anyhow::Result<()> {
+        log::warn!(
+            "The `on_stop` handler was called when not overridden, \
+            it's expected that any actions required when stopping the actor \
+            occur here, such as unsubscribing from data",
+        );
         Ok(())
     }
 
     /// Actions to be performed on resume.
     fn on_resume(&mut self) -> anyhow::Result<()> {
+        log::warn!(
+            "The `on_resume` handler was called when not overridden, \
+            it's expected that any actions required when resuming the actor \
+            following a stop occur here"
+        );
         Ok(())
     }
 
     /// Actions to be performed on reset.
     fn on_reset(&mut self) -> anyhow::Result<()> {
+        log::warn!(
+            "The `on_reset` handler was called when not overridden, \
+            it's expected that any actions required when resetting the actor \
+            occur here, such as resetting indicators and other state"
+        );
         Ok(())
     }
 
@@ -359,6 +379,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::StartCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -372,6 +393,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::StopCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -385,6 +407,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::ResumeCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -398,6 +421,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::ResetCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -411,6 +435,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::DisposeCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -424,6 +449,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::DegradeCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
@@ -437,6 +463,7 @@ impl DataActorCore {
         }
 
         self.state.transition(&ComponentTrigger::FaultCompleted)?;
+        log::info!("{}", self.state);
 
         Ok(())
     }
