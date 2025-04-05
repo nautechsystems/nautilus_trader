@@ -791,9 +791,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.17"
+version = "1.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fcb57c740ae1daf453ae85f16e37396f672b039e00d9d866e07ddb24e328e3a"
+checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
 dependencies = [
  "jobserver",
  "libc",
@@ -1766,9 +1766,9 @@ dependencies = [
 
 [[package]]
 name = "deranged"
-version = "0.4.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28cfac68e08048ae1883171632c2aef3ebc555621ae56fbccce1cbf22dd7f058"
+checksum = "9c9e6a11ca8224451684bc0d7d5a7adbf8f2fd6887261a1cfc3c0432f9d4068e"
 dependencies = [
  "powerfmt",
  "serde",
@@ -2616,9 +2616,9 @@ checksum = "7df09bead3db9e4242837da061a2e16726cf6552eace818c9d3297e1746c27ea"
 
 [[package]]
 name = "indexmap"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3954d50fe15b02142bf25d3b8bdadb634ec3948f103d04ffe3031bc8fe9d7058"
+checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
@@ -3014,7 +3014,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3050,7 +3050,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3066,7 +3066,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase-intx"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3105,7 +3105,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3140,7 +3140,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3163,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3182,7 +3182,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3199,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3227,7 +3227,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3254,7 +3254,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -3266,7 +3266,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3323,7 +3323,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3355,7 +3355,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3425,7 +3425,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "criterion",
  "log",
@@ -3444,7 +3444,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "nautilus-coinbase-intx",
  "nautilus-common",
@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "criterion",
  "log",
@@ -3484,7 +3484,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3519,7 +3519,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3558,7 +3558,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-test-kit"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3577,7 +3577,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.45.0"
+version = "0.46.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -4121,9 +4121,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.31"
+version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5316f57387668042f561aae71480de936257848f9c43ce528e311d89a07cadeb"
+checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
 dependencies = [
  "proc-macro2",
  "syn 2.0.100",
@@ -4496,9 +4496,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.29.2"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b110459d6e323b7cda23980c46c77157601199c9da6241552b284cd565a7a133"
+checksum = "5ccbf02626b0bfd9c0b34837c0e2d3305ad6d20c5a816bc25d622b971dae88a6"
 dependencies = [
  "arc-swap",
  "backon",
@@ -4525,9 +4525,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.10"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b8c0c260b63a8219631167be35e6a988e9554dbd323f8bd08439c8ed1302bd1"
+checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
 dependencies = [
  "bitflags 2.9.0",
 ]
@@ -5170,9 +5170,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.14.0"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
+checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
 dependencies = [
  "serde",
 ]
@@ -5783,9 +5783,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.44.1"
+version = "1.44.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f382da615b842244d4b8738c82ed1275e6c5dd90c459a30941cd07080b06c91a"
+checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
 dependencies = [
  "backtrace",
  "bytes",

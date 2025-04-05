@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.45.0"
+version = "0.46.0"
 edition = "2024"
 rust-version = "1.86.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -40,32 +40,32 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-nautilus-analysis = { path = "crates/analysis", version = "0.45.0" }
-nautilus-backtest = { path = "crates/backtest", version = "0.45.0" }
-nautilus-cli = { path = "crates/cli", version = "0.45.0" }
-nautilus-common = { path = "crates/common", version = "0.45.0" }
-nautilus-core = { path = "crates/core", version = "0.45.0" }
-nautilus-cryptography = { path = "crates/cryptography", version = "0.45.0" }
-nautilus-data = { path = "crates/data", version = "0.45.0" }
-nautilus-execution = { path = "crates/execution", version = "0.45.0" }
-nautilus-indicators = { path = "crates/indicators", version = "0.45.0" }
-nautilus-infrastructure = { path = "crates/infrastructure", version = "0.45.0" }
-nautilus-live = { path = "crates/live", version = "0.45.0" }
-nautilus-model = { path = "crates/model", version = "0.45.0" }
-nautilus-network = { path = "crates/network", version = "0.45.0" }
-nautilus-persistence = { path = "crates/persistence", version = "0.45.0" }
-nautilus-portfolio = { path = "crates/portfolio", version = "0.45.0" }
-nautilus-pyo3 = { path = "crates/pyo3", version = "0.45.0" }
-nautilus-risk = { path = "crates/risk", version = "0.45.0" }
-nautilus-serialization = { path = "crates/serialization", version = "0.45.0" }
-nautilus-system = { path = "crates/system", version = "0.45.0" }
-nautilus-test-kit = { path = "crates/test_kit", version = "0.45.0" }
-nautilus-trading = { path = "crates/trading", version = "0.45.0" }
+nautilus-analysis = { path = "crates/analysis", version = "0.46.0" }
+nautilus-backtest = { path = "crates/backtest", version = "0.46.0" }
+nautilus-cli = { path = "crates/cli", version = "0.46.0" }
+nautilus-common = { path = "crates/common", version = "0.46.0" }
+nautilus-core = { path = "crates/core", version = "0.46.0" }
+nautilus-cryptography = { path = "crates/cryptography", version = "0.46.0" }
+nautilus-data = { path = "crates/data", version = "0.46.0" }
+nautilus-execution = { path = "crates/execution", version = "0.46.0" }
+nautilus-indicators = { path = "crates/indicators", version = "0.46.0" }
+nautilus-infrastructure = { path = "crates/infrastructure", version = "0.46.0" }
+nautilus-live = { path = "crates/live", version = "0.46.0" }
+nautilus-model = { path = "crates/model", version = "0.46.0" }
+nautilus-network = { path = "crates/network", version = "0.46.0" }
+nautilus-persistence = { path = "crates/persistence", version = "0.46.0" }
+nautilus-portfolio = { path = "crates/portfolio", version = "0.46.0" }
+nautilus-pyo3 = { path = "crates/pyo3", version = "0.46.0" }
+nautilus-risk = { path = "crates/risk", version = "0.46.0" }
+nautilus-serialization = { path = "crates/serialization", version = "0.46.0" }
+nautilus-system = { path = "crates/system", version = "0.46.0" }
+nautilus-test-kit = { path = "crates/test_kit", version = "0.46.0" }
+nautilus-trading = { path = "crates/trading", version = "0.46.0" }
 
 # Adapters
-nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.45.0" }
-nautilus-databento = { path = "crates/adapters/databento", version = "0.45.0" }
-nautilus-tardis = { path = "crates/adapters/tardis", version = "0.45.0" }
+nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.46.0" }
+nautilus-databento = { path = "crates/adapters/databento", version = "0.46.0" }
+nautilus-tardis = { path = "crates/adapters/tardis", version = "0.46.0" }
 
 ahash = "0.8.11"
 anyhow = "1.0.97"
@@ -83,7 +83,7 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
-indexmap = { version = "2.8.0", features = ["serde"] }
+indexmap = { version = "2.9.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
 log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
