@@ -15,7 +15,12 @@
 
 //! Example showing how to use the GreeksCalculator with a DataActor.
 
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::Arc,
+};
 
 use nautilus_common::{
     actor::{
@@ -36,7 +41,7 @@ struct GreeksActor {
 }
 
 impl GreeksActor {
-    /// Creates a new GreeksActor instance.
+    /// Creates a new [`GreeksActor`] instance.
     pub fn new(
         config: DataActorConfig,
         cache: Rc<RefCell<Cache>>,
@@ -54,7 +59,7 @@ impl GreeksActor {
         }
     }
 
-    /// Calculate greeks for a specific instrument.
+    /// Calculates greeks for a specific instrument.
     pub fn calculate_instrument_greeks(
         &self,
         instrument_id: InstrumentId,
@@ -93,7 +98,7 @@ impl GreeksActor {
         )
     }
 
-    /// Calculate portfolio greeks.
+    /// Calculates portfolio greeks.
     pub fn calculate_portfolio_greeks(
         &self,
     ) -> anyhow::Result<nautilus_model::data::greeks::PortfolioGreeks> {
@@ -136,7 +141,7 @@ impl GreeksActor {
         )
     }
 
-    /// Subscribe to greeks data for a specific underlying.
+    /// Subscribes to greeks data for a specific underlying.
     pub fn subscribe_to_greeks(&self, underlying: &str) {
         // Subscribe to greeks data
         self.greeks_calculator
@@ -159,25 +164,39 @@ impl Actor for GreeksActor {
     }
 }
 
+// We need to explicitly implement `Deref` for actors to improve API ergonomics.
+// In the future we can probably create a macro to do this.
+impl Deref for GreeksActor {
+    type Target = DataActorCore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+// We need to explicitly implement `DerefMut` for actors to improve API ergonomics.
+// In the future we can probably create a macro to do this.
+impl DerefMut for GreeksActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
 impl DataActor for GreeksActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        println!("GreeksActor started");
-
         // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");
-
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        println!("GreeksActor stopped");
         Ok(())
     }
 
     fn on_data(&mut self, data: &dyn std::any::Any) -> anyhow::Result<()> {
         // Handle received data
         if let Some(greeks_data) = data.downcast_ref::<GreeksData>() {
-            println!("Received greeks data: {:?}", greeks_data);
+            println!("Received greeks data: {greeks_data:?}");
         }
 
         Ok(())
@@ -197,19 +216,19 @@ fn main() -> anyhow::Result<()> {
     let mut actor = GreeksActor::new(config, cache, clock, switchboard);
 
     // Start the actor
-    actor.on_start()?;
+    actor.start()?;
 
     // Example: Calculate greeks for an instrument
     let instrument_id = InstrumentId::from("SPY.AMEX");
     match actor.calculate_instrument_greeks(instrument_id.clone()) {
-        Ok(greeks) => println!("Calculated greeks for {}: {:?}", instrument_id, greeks),
-        Err(e) => println!("Error calculating greeks: {}", e),
+        Ok(greeks) => println!("Calculated greeks for {instrument_id}: {greeks:?}"),
+        Err(e) => println!("Error calculating greeks: {e}"),
     }
 
     // Example: Calculate portfolio greeks
     match actor.calculate_portfolio_greeks() {
-        Ok(portfolio_greeks) => println!("Portfolio greeks: {:?}", portfolio_greeks),
-        Err(e) => println!("Error calculating portfolio greeks: {}", e),
+        Ok(portfolio_greeks) => println!("Portfolio greeks: {portfolio_greeks:?}"),
+        Err(e) => println!("Error calculating portfolio greeks: {e}"),
     }
 
     // Stop the actor
