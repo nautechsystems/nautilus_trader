@@ -149,15 +149,11 @@ cdef class GreeksCalculator:
           Contains price, delta, gamma, vega, theta as well as additional information used for the computation.
 
         """
-        instrument_definition = self._cache.instrument(instrument_id)
+        instrument = self._cache.instrument(instrument_id)
 
-        if instrument_definition.instrument_class is not InstrumentClass.OPTION:
-            if instrument_definition.instrument_class is InstrumentClass.FUTURE:
-                multiplier = float(instrument_definition.multiplier)
-            else:
-                multiplier = 1.
-
-            underlying_instrument_id = instrument_definition.id
+        if instrument.instrument_class is not InstrumentClass.OPTION:
+            multiplier = float(instrument.multiplier)
+            underlying_instrument_id = instrument.id
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
 
             delta = self.modify_greeks(multiplier, 0., underlying_instrument_id, underlying_price + spot_shock, underlying_price,
@@ -171,7 +167,7 @@ cdef class GreeksCalculator:
             return greeks_data
 
         greeks_data = None
-        underlying_instrument_id = InstrumentId.from_str(f"{instrument_definition.underlying}.{instrument_id.venue}")
+        underlying_instrument_id = InstrumentId.from_str(f"{instrument.underlying}.{instrument_id.venue}")
 
         if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
             pass
@@ -179,11 +175,11 @@ cdef class GreeksCalculator:
             utc_now_ns = ts_event if ts_event is not None else self._clock.timestamp_ns()
             utc_now = unix_nanos_to_dt(utc_now_ns)
 
-            expiry_utc = instrument_definition.expiration_utc
+            expiry_utc = instrument.expiration_utc
             expiry_int = int(expiry_utc.strftime("%Y%m%d"))
             expiry_in_years = min((expiry_utc - utc_now).days, 1) / 365.25
 
-            currency = instrument_definition.quote_currency.code
+            currency = instrument.quote_currency.code
 
             if (yield_curve := self._cache.yield_curve(currency)) is not None:
                 interest_rate = yield_curve(expiry_in_years)
@@ -200,9 +196,9 @@ cdef class GreeksCalculator:
                 # Use a dividend rate of 0. to have a cost of carry of interest rate for options on stocks
                 cost_of_carry = interest_rate - flat_dividend_yield
 
-            multiplier = float(instrument_definition.multiplier)
-            is_call = instrument_definition.option_kind is OptionKind.CALL
-            strike = float(instrument_definition.strike_price)
+            multiplier = float(instrument.multiplier)
+            is_call = instrument.option_kind is OptionKind.CALL
+            strike = float(instrument.strike_price)
 
             option_mid_price = float(self._cache.price(instrument_id, PriceType.MID))
             underlying_price = float(self._cache.price(underlying_instrument_id, PriceType.LAST))
