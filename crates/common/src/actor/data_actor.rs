@@ -277,7 +277,6 @@ impl DataActorCore {
         config: DataActorConfig,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
-        switchboard: Arc<MessagingSwitchboard>,
     ) -> Self {
         let actor_id = config.actor_id.unwrap_or(ActorId::new("DataActor")); // TODO: Determine default ID
 
@@ -1402,7 +1401,7 @@ fn log_received<T>(msg: &T)
 where
     T: std::fmt::Debug,
 {
-    log::debug!("{} {:?}", RECV, msg);
+    log::debug!("{RECV} {msg:?}");
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1499,10 +1498,9 @@ mod tests {
             config: DataActorConfig,
             cache: Rc<RefCell<Cache>>,
             clock: Rc<RefCell<dyn Clock>>,
-            switchboard: Arc<MessagingSwitchboard>,
         ) -> Self {
             Self {
-                core: DataActorCore::new(config, cache, clock, switchboard),
+                core: DataActorCore::new(config, cache, clock),
                 received_quotes: Vec::new(),
                 received_trades: Vec::new(),
             }
@@ -1520,18 +1518,9 @@ mod tests {
         Rc::new(RefCell::new(Cache::new(None, None)))
     }
 
-    #[fixture]
-    pub fn switchboard() -> Arc<MessagingSwitchboard> {
-        Arc::new(MessagingSwitchboard::default())
-    }
-
-    fn register_data_actor(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        switchboard: Arc<MessagingSwitchboard>,
-    ) {
+    fn register_data_actor(clock: Rc<RefCell<TestClock>>, cache: Rc<RefCell<Cache>>) {
         let config = DataActorConfig::default();
-        let actor = TestDataActor::new(config, cache, clock, switchboard);
+        let actor = TestDataActor::new(config, cache, clock);
         let actor_rc = Rc::new(UnsafeCell::new(actor));
         register_actor(actor_rc);
     }
@@ -1542,7 +1531,7 @@ mod tests {
         switchboard: Arc<MessagingSwitchboard>,
         audusd_sim: CurrencyPair,
     ) {
-        register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
+        register_data_actor(clock.clone(), cache.clone());
 
         let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
         let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
@@ -1559,10 +1548,9 @@ mod tests {
     fn test_subscribe_and_receive_trades(
         clock: Rc<RefCell<TestClock>>,
         cache: Rc<RefCell<Cache>>,
-        switchboard: Arc<MessagingSwitchboard>,
         audusd_sim: CurrencyPair,
     ) {
-        register_data_actor(clock.clone(), cache.clone(), switchboard.clone());
+        register_data_actor(clock.clone(), cache.clone());
 
         let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
         let actor = get_actor_unchecked::<TestDataActor>(&actor_id);

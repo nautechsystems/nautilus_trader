@@ -19,7 +19,6 @@ use std::{
     cell::RefCell,
     ops::{Deref, DerefMut},
     rc::Rc,
-    sync::Arc,
 };
 
 use nautilus_common::{
@@ -30,7 +29,6 @@ use nautilus_common::{
     cache::Cache,
     clock::LiveClock,
     greeks::GreeksCalculator,
-    msgbus::switchboard::MessagingSwitchboard,
 };
 use nautilus_model::{data::greeks::GreeksData, enums::PositionSide, identifiers::InstrumentId};
 
@@ -46,9 +44,8 @@ impl GreeksActor {
         config: DataActorConfig,
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<LiveClock>>,
-        switchboard: Arc<MessagingSwitchboard>,
     ) -> Self {
-        let core = DataActorCore::new(config, cache.clone(), clock.clone(), switchboard.clone());
+        let core = DataActorCore::new(config, cache.clone(), clock.clone());
 
         // Create the GreeksCalculator with the same clock and cache
         let greeks_calculator = GreeksCalculator::new(cache, clock);
@@ -207,13 +204,12 @@ fn main() -> anyhow::Result<()> {
     // Create components
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(LiveClock::default()));
-    let switchboard = Arc::new(MessagingSwitchboard::default());
 
     // Create actor config
     let config = DataActorConfig::default();
 
     // Create the GreeksActor
-    let mut actor = GreeksActor::new(config, cache, clock, switchboard);
+    let mut actor = GreeksActor::new(config, cache, clock);
 
     // Start the actor
     actor.start()?;
@@ -232,7 +228,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Stop the actor
-    actor.on_stop()?;
+    actor.stop()?;
 
     Ok(())
 }
