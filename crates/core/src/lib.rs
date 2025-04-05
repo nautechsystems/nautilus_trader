@@ -37,6 +37,7 @@
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
+pub mod math;
 pub mod message;
 pub mod nanos;
 pub mod parsing;

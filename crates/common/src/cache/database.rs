@@ -25,7 +25,7 @@ use bytes::Bytes;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, DataType, QuoteTick, TradeTick},
+    data::{Bar, DataType, GreeksData, QuoteTick, TradeTick, YieldCurveData},
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
@@ -49,6 +49,8 @@ pub struct CacheMap {
     pub accounts: HashMap<AccountId, AccountAny>,
     pub orders: HashMap<ClientOrderId, OrderAny>,
     pub positions: HashMap<PositionId, Position>,
+    pub greeks: HashMap<InstrumentId, GreeksData>,
+    pub yield_curves: HashMap<String, YieldCurveData>,
 }
 
 #[async_trait::async_trait]
@@ -72,6 +74,14 @@ pub trait CacheDatabaseAdapter {
     async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
     async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
+
+    async fn load_greeks(&self) -> anyhow::Result<HashMap<InstrumentId, GreeksData>> {
+        Ok(HashMap::new())
+    }
+
+    async fn load_yield_curves(&self) -> anyhow::Result<HashMap<String, YieldCurveData>> {
+        Ok(HashMap::new())
+    }
 
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
 
@@ -149,6 +159,14 @@ pub trait CacheDatabaseAdapter {
     fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()>;
 
     fn add_bar(&self, bar: &Bar) -> anyhow::Result<()>;
+
+    fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_yield_curve(&self, yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
 

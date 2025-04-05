@@ -221,6 +221,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {}", e))?;
 
+        // For now, we don't load greeks and yield curves from the database
+        // This will be implemented in the future
+        let greeks = HashMap::new();
+        let yield_curves = HashMap::new();
+
         Ok(CacheMap {
             currencies,
             instruments,
@@ -228,6 +233,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             accounts,
             orders,
             positions,
+            greeks,
+            yield_curves,
         })
     }
 

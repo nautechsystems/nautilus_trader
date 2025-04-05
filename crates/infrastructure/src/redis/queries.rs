@@ -143,6 +143,11 @@ impl DatabaseQueries {
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
+        // For now, we don't load greeks and yield curves from the database
+        // This will be implemented in the future
+        let greeks = HashMap::new();
+        let yield_curves = HashMap::new();
+
         Ok(CacheMap {
             currencies,
             instruments,
@@ -150,6 +155,8 @@ impl DatabaseQueries {
             accounts,
             orders,
             positions,
+            greeks,
+            yield_curves,
         })
     }
 

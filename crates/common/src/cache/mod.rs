@@ -43,7 +43,7 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, BarType, QuoteTick, TradeTick,
+        Bar, BarType, GreeksData, QuoteTick, TradeTick, YieldCurveData,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType, TriggerType},
@@ -78,6 +78,8 @@ pub struct Cache {
     mark_prices: HashMap<InstrumentId, VecDeque<MarkPriceUpdate>>,
     index_prices: HashMap<InstrumentId, VecDeque<IndexPriceUpdate>>,
     bars: HashMap<BarType, VecDeque<Bar>>,
+    greeks: HashMap<InstrumentId, GreeksData>,
+    yield_curves: HashMap<String, YieldCurveData>,
     accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
@@ -115,6 +117,8 @@ impl Cache {
             mark_prices: HashMap::new(),
             index_prices: HashMap::new(),
             bars: HashMap::new(),
+            greeks: HashMap::new(),
+            yield_curves: HashMap::new(),
             accounts: HashMap::new(),
             orders: HashMap::new(),
             order_lists: HashMap::new(),
@@ -1014,6 +1018,8 @@ impl Cache {
         self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
+        self.greeks.clear();
+        self.yield_curves.clear();
 
         self.clear_index();
 
@@ -1238,6 +1244,49 @@ impl Cache {
             bars_deque.push_front(*bar);
         }
         Ok(())
+    }
+
+    /// Adds the given `greeks` data to the cache.
+    pub fn add_greeks(&mut self, greeks: GreeksData) -> anyhow::Result<()> {
+        log::debug!("Adding `GreeksData` {}", greeks.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(_database) = &mut self.database {
+                // TODO: Implement database.add_greeks(&greeks) when database adapter is updated
+            }
+        }
+
+        self.greeks.insert(greeks.instrument_id, greeks);
+        Ok(())
+    }
+
+    /// Gets the greeks data for the given instrument ID.
+    pub fn greeks(&self, instrument_id: &InstrumentId) -> Option<GreeksData> {
+        self.greeks.get(instrument_id).cloned()
+    }
+
+    /// Adds the given `yield_curve` data to the cache.
+    pub fn add_yield_curve(&mut self, yield_curve: YieldCurveData) -> anyhow::Result<()> {
+        log::debug!("Adding `YieldCurveData` {}", yield_curve.curve_name);
+
+        if self.config.save_market_data {
+            if let Some(_database) = &mut self.database {
+                // TODO: Implement database.add_yield_curve(&yield_curve) when database adapter is updated
+            }
+        }
+
+        self.yield_curves
+            .insert(yield_curve.curve_name.clone(), yield_curve);
+        Ok(())
+    }
+
+    /// Gets the yield curve for the given key.
+    pub fn yield_curve(&self, key: &str) -> Option<Box<dyn Fn(f64) -> f64>> {
+        self.yield_curves.get(key).map(|curve| {
+            let curve_clone = curve.clone();
+            Box::new(move |expiry_in_years: f64| curve_clone.get_rate(expiry_in_years))
+                as Box<dyn Fn(f64) -> f64>
+        })
     }
 
     /// Adds the given `currency` to the cache.
