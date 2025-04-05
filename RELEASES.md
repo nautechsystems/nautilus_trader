@@ -9,11 +9,11 @@ None
 None
 
 ### Internal Improvements
-None
+- Ported `GreeksCalculator` to Rust (#2493), thanks @faysou
 - Upgraded `tokio` crate to v1.44.2
 
 ### Fixes
-None
+- Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 
 ### Documentation Updates
 None
