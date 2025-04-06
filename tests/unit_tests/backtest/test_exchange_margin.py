@@ -189,6 +189,14 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert self.exchange.fill_model == fill_model
 
+    def test_update_instrument_for_existing_matching_engine(self) -> None:
+        # Arrange, Act, Assert
+        self.exchange.update_instrument(_USDJPY_SIM)
+
+    def test_update_instrument_for_new_matching_engine(self) -> None:
+        # Arrange, Act, Assert
+        self.exchange.update_instrument(TestInstrumentProvider.default_fx_ccy("GBP/USD"))
+
     def test_get_matching_engines_when_engine_returns_expected_dict(self) -> None:
         # Arrange, Act
         matching_engines = self.exchange.get_matching_engines()

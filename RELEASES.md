@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added instrument updating for exchange and matching engine
 
 ### Breaking Changes
 None
