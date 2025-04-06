@@ -1,4 +1,4 @@
-# <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-trader-logo.png" width="500">
+# <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader-logo.png" width="500">
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
@@ -42,7 +42,7 @@ The platform is also universal, and asset-class-agnostic —  with any REST API 
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
-![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-trader.png "nautilus-trader")
+![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader.png "nautilus-trader")
 
 ## Features
 
@@ -57,7 +57,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-art.png "nautilus")
+![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
 > _nautilus - from ancient Greek 'sailor' and naus 'ship'._
 >
@@ -450,5 +450,5 @@ For more information, visit https://nautilustrader.io.
 
 Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 
-![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ns-logo.png "nautechsystems")
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ferris.png" width="128">
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/ns-logo.png "nautechsystems")
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/ferris.png" width="128">
