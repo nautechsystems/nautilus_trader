@@ -9,7 +9,7 @@ None
 None
 
 ### Internal Improvements
-- Ported `GreeksCalculator` to Rust (#2493), thanks @faysou
+- Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded `tokio` crate to v1.44.2
 
 ### Fixes
