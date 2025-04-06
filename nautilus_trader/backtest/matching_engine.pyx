@@ -303,6 +303,23 @@ cdef class OrderMatchingEngine:
 
         self._log.debug(f"Changed `FillModel` to {self._fill_model}")
 
+    cpdef void update_instrument(self, Instrument instrument):
+        """
+        Update the matching engines current instrument definition with the given instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument definition to update.
+
+        """
+        Condition.not_none(instrument, "instrument")
+        Condition.equal(instrument.id, self.instrument.id, "instrument.id", "self.instrument.id")
+
+        self.instrument = instrument
+
+        self._log.debug(f"Updated instrument definition for {instrument.id}")
+
 # -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self):

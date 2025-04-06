@@ -1188,7 +1188,10 @@ cdef class BacktestEngine:
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through exchange
-                if isinstance(data, OrderBookDelta):
+                if isinstance(data, Instrument):
+                    exchange = self._venues[data.id.venue]
+                    exchange.update_instrument(data)
+                elif isinstance(data, OrderBookDelta):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
