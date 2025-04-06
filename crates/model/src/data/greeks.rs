@@ -399,6 +399,21 @@ impl Add for PortfolioGreeks {
     }
 }
 
+impl From<GreeksData> for PortfolioGreeks {
+    fn from(greeks: GreeksData) -> Self {
+        Self {
+            ts_init: greeks.ts_init,
+            ts_event: greeks.ts_event,
+            pnl: greeks.pnl,
+            price: greeks.price,
+            delta: greeks.delta,
+            gamma: greeks.gamma,
+            vega: greeks.vega,
+            theta: greeks.theta,
+        }
+    }
+}
+
 impl GetTsInit for PortfolioGreeks {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init

@@ -90,6 +90,7 @@ impl GreeksCalculator {
         let publish_greeks = publish_greeks.unwrap_or(false);
         let ts_event = ts_event.unwrap_or_default();
         let percent_greeks = percent_greeks.unwrap_or(false);
+
         let cache = self.cache.borrow();
         let instrument = cache.instrument(&instrument_id);
         let instrument = match instrument {
@@ -106,7 +107,6 @@ impl GreeksCalculator {
                 .price(&underlying_instrument_id, PriceType::Last)
                 .unwrap_or_default()
                 .as_f64();
-
             let (delta, _) = self.modify_greeks(
                 multiplier.as_f64(),
                 0.0,
@@ -117,7 +117,6 @@ impl GreeksCalculator {
                 index_instrument_id,
                 beta_weights.as_ref(),
             );
-
             let mut greeks_data =
                 GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
 
@@ -130,7 +129,7 @@ impl GreeksCalculator {
         }
 
         let mut greeks_data = None;
-        let underlying = instrument.underlying().unwrap_or_default();
+        let underlying = instrument.underlying().unwrap();
         let underlying_str = format!("{}.{}", underlying, instrument_id.venue);
         let underlying_instrument_id = InstrumentId::from(underlying_str.as_str());
 
@@ -147,8 +146,8 @@ impl GreeksCalculator {
             } else {
                 self.clock.borrow().timestamp_ns()
             };
-            let utc_now = utc_now_ns.to_datetime_utc();
 
+            let utc_now = utc_now_ns.to_datetime_utc();
             let expiry_utc = instrument
                 .expiration_ns()
                 .map(|ns| ns.to_datetime_utc())
@@ -159,9 +158,7 @@ impl GreeksCalculator {
                 .parse::<i32>()
                 .unwrap_or(0);
             let expiry_in_years = (expiry_utc - utc_now).num_days().min(1) as f64 / 365.25;
-
             let currency = instrument.quote_currency().code.to_string();
-
             let interest_rate = match cache.yield_curve(&currency) {
                 Some(yield_curve) => yield_curve(expiry_in_years),
                 None => flat_interest_rate,
@@ -181,7 +178,6 @@ impl GreeksCalculator {
             let multiplier = instrument.multiplier();
             let is_call = instrument.option_kind().unwrap_or(OptionKind::Call) == OptionKind::Call;
             let strike = instrument.strike_price().unwrap_or_default().as_f64();
-
             let option_mid_price = cache
                 .price(&instrument_id, PriceType::Mid)
                 .unwrap_or_default()
@@ -211,7 +207,6 @@ impl GreeksCalculator {
                 index_instrument_id,
                 beta_weights.as_ref(),
             );
-
             greeks_data = Some(GreeksData::new(
                 utc_now_ns,
                 utc_now_ns,
@@ -272,7 +267,6 @@ impl GreeksCalculator {
                 shocked_time_to_expiry,
                 greeks_data.multiplier,
             );
-
             let (delta, gamma) = self.modify_greeks(
                 greeks.delta,
                 greeks.gamma,
@@ -283,7 +277,6 @@ impl GreeksCalculator {
                 index_instrument_id,
                 beta_weights.as_ref(),
             );
-
             greeks_data = GreeksData::new(
                 greeks_data.ts_event,
                 greeks_data.ts_event,
@@ -483,20 +476,7 @@ impl GreeksCalculator {
                 index_instrument_id,
                 beta_weights.clone(),
             )?;
-
-            // Apply quantity to the greeks
-            let position_greeks = PortfolioGreeks::new(
-                instrument_greeks.ts_init,
-                instrument_greeks.ts_event,
-                instrument_greeks.pnl * quantity,
-                instrument_greeks.price * quantity,
-                instrument_greeks.delta * quantity,
-                instrument_greeks.gamma * quantity,
-                instrument_greeks.vega * quantity,
-                instrument_greeks.theta * quantity,
-            );
-
-            portfolio_greeks = portfolio_greeks + position_greeks;
+            portfolio_greeks = portfolio_greeks + (quantity * &instrument_greeks).into();
         }
 
         Ok(portfolio_greeks)
@@ -509,14 +489,6 @@ impl GreeksCalculator {
     where
         F: Fn(GreeksData) + 'static + Send + Sync,
     {
-        let cache_ref = self.cache.clone();
-        let default_handler =
-            msgbus::handler::TypedMessageHandler::with_any(move |greeks: &dyn std::any::Any| {
-                if let Some(greeks_data) = greeks.downcast_ref::<GreeksData>() {
-                    let mut cache = cache_ref.borrow_mut();
-                    cache.add_greeks(greeks_data.clone()).unwrap_or_default();
-                }
-            });
         let topic_str = format!("data.GreeksData.instrument_id={}*", underlying);
         let topic = Ustr::from(topic_str.as_str());
 
@@ -530,13 +502,22 @@ impl GreeksCalculator {
             );
             msgbus::subscribe(
                 topic.as_str(),
-                crate::msgbus::handler::ShareableMessageHandler(Rc::new(handler)),
+                msgbus::handler::ShareableMessageHandler(Rc::new(handler)),
                 None,
             );
         } else {
+            let cache_ref = self.cache.clone();
+            let default_handler = msgbus::handler::TypedMessageHandler::with_any(
+                move |greeks: &dyn std::any::Any| {
+                    if let Some(greeks_data) = greeks.downcast_ref::<GreeksData>() {
+                        let mut cache = cache_ref.borrow_mut();
+                        cache.add_greeks(greeks_data.clone()).unwrap_or_default();
+                    }
+                },
+            );
             msgbus::subscribe(
                 topic.as_str(),
-                crate::msgbus::handler::ShareableMessageHandler(Rc::new(default_handler)),
+                msgbus::handler::ShareableMessageHandler(Rc::new(default_handler)),
                 None,
             );
         }
