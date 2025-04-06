@@ -18,6 +18,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use anyhow;
+use derive_builder::Builder;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::greeks::{GreeksData, PortfolioGreeks, black_scholes_greeks, imply_vol_and_greeks},
@@ -29,6 +30,107 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{cache::Cache, clock::Clock, msgbus};
+
+/// Parameters for instrument greeks calculation.
+#[derive(Debug, Clone, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct InstrumentGreeksParams {
+    /// The instrument ID for which to calculate greeks.
+    pub instrument_id: InstrumentId,
+    /// The flat interest rate to use for calculations.
+    #[builder(default = "Some(0.0425)")]
+    pub flat_interest_rate: Option<f64>,
+    /// The flat dividend yield to use for calculations.
+    #[builder(default)]
+    pub flat_dividend_yield: Option<f64>,
+    /// The shock to apply to the spot price.
+    #[builder(default = "Some(0.0)")]
+    pub spot_shock: Option<f64>,
+    /// The shock to apply to the implied volatility.
+    #[builder(default = "Some(0.0)")]
+    pub vol_shock: Option<f64>,
+    /// The shock to apply to the time to expiry.
+    #[builder(default = "Some(0.0)")]
+    pub time_to_expiry_shock: Option<f64>,
+    /// Whether to use cached greeks.
+    #[builder(default = "Some(false)")]
+    pub use_cached_greeks: Option<bool>,
+    /// Whether to cache the calculated greeks.
+    #[builder(default = "Some(false)")]
+    pub cache_greeks: Option<bool>,
+    /// Whether to publish the calculated greeks.
+    #[builder(default = "Some(false)")]
+    pub publish_greeks: Option<bool>,
+    /// The event timestamp.
+    #[builder(default)]
+    pub ts_event: Option<UnixNanos>,
+    /// The position for which to calculate greeks.
+    #[builder(default)]
+    pub position: Option<Position>,
+    /// Whether to calculate percent greeks.
+    #[builder(default = "Some(false)")]
+    pub percent_greeks: Option<bool>,
+    /// The index instrument ID for beta weighting.
+    #[builder(default)]
+    pub index_instrument_id: Option<InstrumentId>,
+    /// The beta weights for beta weighting.
+    #[builder(default)]
+    pub beta_weights: Option<HashMap<InstrumentId, f64>>,
+}
+
+/// Parameters for portfolio greeks calculation.
+#[derive(Debug, Clone, Builder)]
+#[builder(setter(into, strip_option))]
+pub struct PortfolioGreeksParams {
+    /// The underlyings to filter positions by.
+    #[builder(default)]
+    pub underlyings: Option<Vec<String>>,
+    /// The venue to filter positions by.
+    #[builder(default)]
+    pub venue: Option<Venue>,
+    /// The instrument ID to filter positions by.
+    #[builder(default)]
+    pub instrument_id: Option<InstrumentId>,
+    /// The strategy ID to filter positions by.
+    #[builder(default)]
+    pub strategy_id: Option<StrategyId>,
+    /// The position side to filter positions by.
+    #[builder(default = "Some(PositionSide::NoPositionSide)")]
+    pub side: Option<PositionSide>,
+    /// The flat interest rate to use for calculations.
+    #[builder(default = "Some(0.0425)")]
+    pub flat_interest_rate: Option<f64>,
+    /// The flat dividend yield to use for calculations.
+    #[builder(default)]
+    pub flat_dividend_yield: Option<f64>,
+    /// The shock to apply to the spot price.
+    #[builder(default = "Some(0.0)")]
+    pub spot_shock: Option<f64>,
+    /// The shock to apply to the implied volatility.
+    #[builder(default = "Some(0.0)")]
+    pub vol_shock: Option<f64>,
+    /// The shock to apply to the time to expiry.
+    #[builder(default = "Some(0.0)")]
+    pub time_to_expiry_shock: Option<f64>,
+    /// Whether to use cached greeks.
+    #[builder(default = "Some(false)")]
+    pub use_cached_greeks: Option<bool>,
+    /// Whether to cache the calculated greeks.
+    #[builder(default = "Some(false)")]
+    pub cache_greeks: Option<bool>,
+    /// Whether to publish the calculated greeks.
+    #[builder(default = "Some(false)")]
+    pub publish_greeks: Option<bool>,
+    /// Whether to calculate percent greeks.
+    #[builder(default = "Some(false)")]
+    pub percent_greeks: Option<bool>,
+    /// The index instrument ID for beta weighting.
+    #[builder(default)]
+    pub index_instrument_id: Option<InstrumentId>,
+    /// The beta weights for beta weighting.
+    #[builder(default)]
+    pub beta_weights: Option<HashMap<InstrumentId, f64>>,
+}
 
 /// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
@@ -62,41 +164,25 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
-    #[allow(clippy::too_many_arguments)]
-    pub fn instrument_greeks(
-        &self,
-        instrument_id: InstrumentId,
-        flat_interest_rate: Option<f64>,
-        flat_dividend_yield: Option<f64>,
-        spot_shock: Option<f64>,
-        vol_shock: Option<f64>,
-        time_to_expiry_shock: Option<f64>,
-        use_cached_greeks: Option<bool>,
-        cache_greeks: Option<bool>,
-        publish_greeks: Option<bool>,
-        ts_event: Option<UnixNanos>,
-        position: Option<Position>,
-        percent_greeks: Option<bool>,
-        index_instrument_id: Option<InstrumentId>,
-        beta_weights: Option<HashMap<InstrumentId, f64>>,
-    ) -> anyhow::Result<GreeksData> {
-        // Set default values
-        let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
-        let spot_shock = spot_shock.unwrap_or(0.0);
-        let vol_shock = vol_shock.unwrap_or(0.0);
-        let time_to_expiry_shock = time_to_expiry_shock.unwrap_or(0.0);
-        let use_cached_greeks = use_cached_greeks.unwrap_or(false);
-        let cache_greeks = cache_greeks.unwrap_or(false);
-        let publish_greeks = publish_greeks.unwrap_or(false);
-        let ts_event = ts_event.unwrap_or_default();
-        let percent_greeks = percent_greeks.unwrap_or(false);
+    pub fn instrument_greeks(&self, params: InstrumentGreeksParams) -> anyhow::Result<GreeksData> {
+        // Use values from params (defaults are already set in the struct)
+        let flat_interest_rate = params.flat_interest_rate.unwrap_or_default();
+        let spot_shock = params.spot_shock.unwrap_or_default();
+        let vol_shock = params.vol_shock.unwrap_or_default();
+        let time_to_expiry_shock = params.time_to_expiry_shock.unwrap_or_default();
+        let use_cached_greeks = params.use_cached_greeks.unwrap_or_default();
+        let cache_greeks = params.cache_greeks.unwrap_or_default();
+        let publish_greeks = params.publish_greeks.unwrap_or_default();
+        let ts_event = params.ts_event.unwrap_or_default();
+        let percent_greeks = params.percent_greeks.unwrap_or_default();
 
         let cache = self.cache.borrow();
-        let instrument = cache.instrument(&instrument_id);
+        let instrument = cache.instrument(&params.instrument_id);
         let instrument = match instrument {
             Some(instrument) => instrument,
             None => anyhow::bail!(format!(
-                "Instrument definition for {instrument_id} not found."
+                "Instrument definition for {} not found.",
+                params.instrument_id
             )),
         };
 
@@ -114,13 +200,13 @@ impl GreeksCalculator {
                 underlying_price + spot_shock,
                 underlying_price,
                 percent_greeks,
-                index_instrument_id,
-                beta_weights.as_ref(),
+                params.index_instrument_id,
+                params.beta_weights.as_ref(),
             );
             let mut greeks_data =
-                GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
+                GreeksData::from_delta(params.instrument_id, delta, multiplier.as_f64(), ts_event);
 
-            if let Some(pos) = position {
+            if let Some(pos) = params.position {
                 greeks_data.pnl = multiplier * ((underlying_price + spot_shock) - pos.avg_px_open);
                 greeks_data.price = greeks_data.pnl;
             }
@@ -130,12 +216,12 @@ impl GreeksCalculator {
 
         let mut greeks_data = None;
         let underlying = instrument.underlying().unwrap();
-        let underlying_str = format!("{}.{}", underlying, instrument_id.venue);
+        let underlying_str = format!("{}.{}", underlying, params.instrument_id.venue);
         let underlying_instrument_id = InstrumentId::from(underlying_str.as_str());
 
         // Use cached greeks if requested
         if use_cached_greeks {
-            if let Some(cached_greeks) = cache.greeks(&instrument_id) {
+            if let Some(cached_greeks) = cache.greeks(&params.instrument_id) {
                 greeks_data = Some(cached_greeks);
             }
         }
@@ -170,7 +256,7 @@ impl GreeksCalculator {
             if let Some(dividend_curve) = cache.yield_curve(&underlying_instrument_id.to_string()) {
                 let dividend_yield = dividend_curve(expiry_in_years);
                 cost_of_carry = interest_rate - dividend_yield;
-            } else if let Some(div_yield) = flat_dividend_yield {
+            } else if let Some(div_yield) = params.flat_dividend_yield {
                 // Use a dividend rate of 0. to have a cost of carry of interest rate for options on stocks
                 cost_of_carry = interest_rate - div_yield;
             }
@@ -179,7 +265,7 @@ impl GreeksCalculator {
             let is_call = instrument.option_kind().unwrap_or(OptionKind::Call) == OptionKind::Call;
             let strike = instrument.strike_price().unwrap_or_default().as_f64();
             let option_mid_price = cache
-                .price(&instrument_id, PriceType::Mid)
+                .price(&params.instrument_id, PriceType::Mid)
                 .unwrap_or_default()
                 .as_f64();
             let underlying_price = cache
@@ -204,13 +290,13 @@ impl GreeksCalculator {
                 underlying_price,
                 underlying_price,
                 percent_greeks,
-                index_instrument_id,
-                beta_weights.as_ref(),
+                params.index_instrument_id,
+                params.beta_weights.as_ref(),
             );
             greeks_data = Some(GreeksData::new(
                 utc_now_ns,
                 utc_now_ns,
-                instrument_id,
+                params.instrument_id,
                 is_call,
                 strike,
                 expiry_int,
@@ -242,7 +328,7 @@ impl GreeksCalculator {
             if publish_greeks {
                 let topic_str = format!(
                     "data.GreeksData.instrument_id={}",
-                    instrument_id.symbol.as_str()
+                    params.instrument_id.symbol.as_str()
                 );
                 let topic = Ustr::from(topic_str.as_str());
                 msgbus::publish(&topic, &greeks_data.clone().unwrap());
@@ -274,8 +360,8 @@ impl GreeksCalculator {
                 shocked_underlying_price,
                 underlying_price,
                 percent_greeks,
-                index_instrument_id,
-                beta_weights.as_ref(),
+                params.index_instrument_id,
+                params.beta_weights.as_ref(),
             );
             greeks_data = GreeksData::new(
                 greeks_data.ts_event,
@@ -301,7 +387,7 @@ impl GreeksCalculator {
             );
         }
 
-        if let Some(pos) = position {
+        if let Some(pos) = params.position {
             greeks_data.pnl = greeks_data.price - greeks_data.multiplier * pos.avg_px_open;
         }
 
@@ -393,46 +479,30 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
-    #[allow(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,
-        underlyings: Option<Vec<String>>,
-        venue: Option<Venue>,
-        instrument_id: Option<InstrumentId>,
-        strategy_id: Option<StrategyId>,
-        side: Option<PositionSide>,
-        flat_interest_rate: Option<f64>,
-        flat_dividend_yield: Option<f64>,
-        spot_shock: Option<f64>,
-        vol_shock: Option<f64>,
-        time_to_expiry_shock: Option<f64>,
-        use_cached_greeks: Option<bool>,
-        cache_greeks: Option<bool>,
-        publish_greeks: Option<bool>,
-        percent_greeks: Option<bool>,
-        index_instrument_id: Option<InstrumentId>,
-        beta_weights: Option<HashMap<InstrumentId, f64>>,
+        params: PortfolioGreeksParams,
     ) -> anyhow::Result<PortfolioGreeks> {
         let ts_event = self.clock.borrow().timestamp_ns();
         let mut portfolio_greeks =
             PortfolioGreeks::new(ts_event, ts_event, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
-        // Set default values
-        let flat_interest_rate = flat_interest_rate.unwrap_or(0.0425);
-        let spot_shock = spot_shock.unwrap_or(0.0);
-        let vol_shock = vol_shock.unwrap_or(0.0);
-        let time_to_expiry_shock = time_to_expiry_shock.unwrap_or(0.0);
-        let use_cached_greeks = use_cached_greeks.unwrap_or(false);
-        let cache_greeks = cache_greeks.unwrap_or(false);
-        let publish_greeks = publish_greeks.unwrap_or(false);
-        let percent_greeks = percent_greeks.unwrap_or(false);
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
+        // Use values from params (defaults are already set in the struct)
+        let flat_interest_rate = params.flat_interest_rate.unwrap_or_default();
+        let spot_shock = params.spot_shock.unwrap_or_default();
+        let vol_shock = params.vol_shock.unwrap_or_default();
+        let time_to_expiry_shock = params.time_to_expiry_shock.unwrap_or_default();
+        let use_cached_greeks = params.use_cached_greeks.unwrap_or_default();
+        let cache_greeks = params.cache_greeks.unwrap_or_default();
+        let publish_greeks = params.publish_greeks.unwrap_or_default();
+        let percent_greeks = params.percent_greeks.unwrap_or_default();
+        let side = params.side.unwrap_or_default();
 
         let cache = self.cache.borrow();
         let open_positions = cache.positions(
-            venue.as_ref(),
-            instrument_id.as_ref(),
-            strategy_id.as_ref(),
+            params.venue.as_ref(),
+            params.instrument_id.as_ref(),
+            params.strategy_id.as_ref(),
             Some(side),
         );
         let open_positions: Vec<Position> = open_positions.iter().map(|&p| p.clone()).collect();
@@ -440,7 +510,7 @@ impl GreeksCalculator {
         for position in open_positions {
             let position_instrument_id = position.instrument_id;
 
-            if let Some(ref underlyings_list) = underlyings {
+            if let Some(ref underlyings_list) = params.underlyings {
                 let mut skip_position = true;
 
                 for underlying in underlyings_list {
@@ -460,22 +530,29 @@ impl GreeksCalculator {
             }
 
             let quantity = position.signed_qty;
-            let instrument_greeks = self.instrument_greeks(
-                position_instrument_id,
-                Some(flat_interest_rate),
-                flat_dividend_yield,
-                Some(spot_shock),
-                Some(vol_shock),
-                Some(time_to_expiry_shock),
-                Some(use_cached_greeks),
-                Some(cache_greeks),
-                Some(publish_greeks),
-                Some(ts_event),
-                Some(position),
-                Some(percent_greeks),
-                index_instrument_id,
-                beta_weights.clone(),
-            )?;
+            let mut instrument_params = InstrumentGreeksParamsBuilder::default()
+                .instrument_id(position_instrument_id)
+                .flat_interest_rate(flat_interest_rate)
+                .spot_shock(spot_shock)
+                .vol_shock(vol_shock)
+                .time_to_expiry_shock(time_to_expiry_shock)
+                .use_cached_greeks(use_cached_greeks)
+                .cache_greeks(cache_greeks)
+                .publish_greeks(publish_greeks)
+                .ts_event(ts_event)
+                .position(position)
+                .percent_greeks(percent_greeks)
+                .build()
+                .unwrap();
+
+            // Handle optional parameters separately
+            if let Some(div_yield) = params.flat_dividend_yield {
+                instrument_params.flat_dividend_yield = Some(div_yield);
+            }
+
+            instrument_params.index_instrument_id = params.index_instrument_id;
+            instrument_params.beta_weights = params.beta_weights.clone();
+            let instrument_greeks = self.instrument_greeks(instrument_params)?;
             portfolio_greeks = portfolio_greeks + (quantity * &instrument_greeks).into();
         }
 

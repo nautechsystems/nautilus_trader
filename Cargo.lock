@@ -3114,6 +3114,7 @@ dependencies = [
  "cbindgen",
  "chrono",
  "criterion",
+ "derive_builder",
  "futures",
  "indexmap",
  "log",

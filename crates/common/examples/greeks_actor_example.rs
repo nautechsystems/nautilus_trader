@@ -28,7 +28,7 @@ use nautilus_common::{
     },
     cache::Cache,
     clock::LiveClock,
-    greeks::GreeksCalculator,
+    greeks::{GreeksCalculator, InstrumentGreeksParamsBuilder, PortfolioGreeksParamsBuilder},
 };
 use nautilus_model::{data::greeks::GreeksData, enums::PositionSide, identifiers::InstrumentId};
 
@@ -77,22 +77,31 @@ impl GreeksActor {
         let beta_weights = None;
 
         // Calculate greeks
-        self.greeks_calculator.instrument_greeks(
-            instrument_id,
-            Some(flat_interest_rate),
-            flat_dividend_yield,
-            Some(spot_shock),
-            Some(vol_shock),
-            Some(time_to_expiry_shock),
-            Some(use_cached_greeks),
-            Some(cache_greeks),
-            Some(publish_greeks),
-            Some(ts_event),
-            position,
-            Some(percent_greeks),
-            index_instrument_id,
-            beta_weights,
-        )
+        let mut params = InstrumentGreeksParamsBuilder::default()
+            .instrument_id(instrument_id)
+            .flat_interest_rate(flat_interest_rate)
+            .spot_shock(spot_shock)
+            .vol_shock(vol_shock)
+            .time_to_expiry_shock(time_to_expiry_shock)
+            .use_cached_greeks(use_cached_greeks)
+            .cache_greeks(cache_greeks)
+            .publish_greeks(publish_greeks)
+            .ts_event(ts_event)
+            .percent_greeks(percent_greeks)
+            .build()
+            .unwrap();
+
+        // Set optional parameters
+        if let Some(div_yield) = flat_dividend_yield {
+            params.flat_dividend_yield = Some(div_yield);
+        }
+        if let Some(pos) = position {
+            params.position = Some(pos);
+        }
+        params.index_instrument_id = index_instrument_id;
+        params.beta_weights = beta_weights;
+
+        self.greeks_calculator.instrument_greeks(params)
     }
 
     /// Calculates portfolio greeks.
@@ -118,24 +127,31 @@ impl GreeksActor {
         let beta_weights = None;
 
         // Calculate portfolio greeks
-        self.greeks_calculator.portfolio_greeks(
-            underlyings,
-            venue,
-            instrument_id,
-            strategy_id,
-            side,
-            Some(flat_interest_rate),
-            flat_dividend_yield,
-            Some(spot_shock),
-            Some(vol_shock),
-            Some(time_to_expiry_shock),
-            Some(use_cached_greeks),
-            Some(cache_greeks),
-            Some(publish_greeks),
-            Some(percent_greeks),
-            index_instrument_id,
-            beta_weights,
-        )
+        let mut params = PortfolioGreeksParamsBuilder::default()
+            .flat_interest_rate(flat_interest_rate)
+            .spot_shock(spot_shock)
+            .vol_shock(vol_shock)
+            .time_to_expiry_shock(time_to_expiry_shock)
+            .use_cached_greeks(use_cached_greeks)
+            .cache_greeks(cache_greeks)
+            .publish_greeks(publish_greeks)
+            .percent_greeks(percent_greeks)
+            .build()
+            .unwrap();
+
+        // Set optional parameters
+        params.underlyings = underlyings;
+        params.venue = venue;
+        params.instrument_id = instrument_id;
+        params.strategy_id = strategy_id;
+        params.side = side;
+        if let Some(div_yield) = flat_dividend_yield {
+            params.flat_dividend_yield = Some(div_yield);
+        }
+        params.index_instrument_id = index_instrument_id;
+        params.beta_weights = beta_weights;
+
+        self.greeks_calculator.portfolio_greeks(params)
     }
 
     /// Subscribes to greeks data for a specific underlying.
