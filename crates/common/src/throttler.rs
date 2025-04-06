@@ -160,7 +160,7 @@ impl<T, F> Throttler<T, F> {
         let alert_ts = clock.timestamp_ns() + delta;
 
         clock
-            .set_time_alert_ns(&self.timer_name, alert_ts, callback)
+            .set_time_alert_ns(&self.timer_name, alert_ts, callback, None)
             .expect(FAILED);
     }
 

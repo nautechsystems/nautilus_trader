@@ -369,7 +369,8 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
 void test_clock_set_time_alert(struct TestClock_API *clock,
                                const char *name_ptr,
                                uint64_t alert_time_ns,
-                               PyObject *callback_ptr);
+                               PyObject *callback_ptr,
+                               uint8_t allow_past);
 
 /**
  * # Safety
@@ -382,7 +383,8 @@ void test_clock_set_timer(struct TestClock_API *clock,
                           uint64_t interval_ns,
                           uint64_t start_time_ns,
                           uint64_t stop_time_ns,
-                          PyObject *callback_ptr);
+                          PyObject *callback_ptr,
+                          uint8_t allow_past);
 
 /**
  * # Safety
@@ -447,7 +449,8 @@ uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
 void live_clock_set_time_alert(struct LiveClock_API *clock,
                                const char *name_ptr,
                                uint64_t alert_time_ns,
-                               PyObject *callback_ptr);
+                               PyObject *callback_ptr,
+                               uint8_t allow_past);
 
 /**
  * # Safety
@@ -466,7 +469,8 @@ void live_clock_set_timer(struct LiveClock_API *clock,
                           uint64_t interval_ns,
                           uint64_t start_time_ns,
                           uint64_t stop_time_ns,
-                          PyObject *callback_ptr);
+                          PyObject *callback_ptr,
+                          uint8_t allow_past);
 
 /**
  * # Safety
