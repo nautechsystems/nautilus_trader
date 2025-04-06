@@ -319,7 +319,7 @@ cdef class Clock:
             If override is set to True an alert with a given name can be overwritten if it exists already.
         allow_past : bool, default True
             If True, allows an `alert_time` in the past and adjusts it to the current time
-            for immediate execution. If False, panics when the `alert_time` is in the
+            for immediate firing. If False, panics when the `alert_time` is in the
             past, requiring it to be in the future.
 
         Raises
@@ -373,7 +373,7 @@ cdef class Clock:
             The callback to receive time events.
         allow_past : bool, default True
             If True, allows an `alert_time_ns` in the past and adjusts it to the current time
-            for immediate execution. If False, panics when the `alert_time_ns` is in the
+            for immediate firing. If False, panics when the `alert_time_ns` is in the
             past, requiring it to be in the future.
 
         Raises
