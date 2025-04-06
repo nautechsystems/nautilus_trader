@@ -3,6 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)
+- Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
 - Added instrument updating for exchange and matching engine
 
 ### Breaking Changes

@@ -298,6 +298,7 @@ cdef class Clock:
         datetime alert_time,
         callback: Callable[[TimeEvent], None] = None,
         bint override = False,
+        bint allow_past = True,
     ):
         """
         Set a time alert for the given time.
@@ -314,8 +315,12 @@ cdef class Clock:
             The time for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
-        override: bool
+        override: bool, default False
             If override is set to True an alert with a given name can be overwritten if it exists already.
+        allow_past : bool, default True
+            If True, allows an `alert_time` in the past and adjusts it to the current time
+            for immediate execution. If False, panics when the `alert_time` is in the
+            past, requiring it to be in the future.
 
         Raises
         ------
@@ -341,6 +346,7 @@ cdef class Clock:
             name=name,
             alert_time_ns=dt_to_unix_nanos(alert_time),
             callback=callback,
+            allow_past=allow_past,
         )
 
     cpdef void set_time_alert_ns(
@@ -348,6 +354,7 @@ cdef class Clock:
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] = None,
+        bint allow_past = True,
     ):
         """
         Set a time alert for the given time.
@@ -364,6 +371,10 @@ cdef class Clock:
             The UNIX timestamp (nanoseconds) for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows an `alert_time_ns` in the past and adjusts it to the current time
+            for immediate execution. If False, panics when the `alert_time_ns` is in the
+            past, requiring it to be in the future.
 
         Raises
         ------
@@ -391,6 +402,7 @@ cdef class Clock:
         datetime start_time = None,
         datetime stop_time = None,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         """
         Set a timer to run.
@@ -412,6 +424,9 @@ cdef class Clock:
             The stop time for the timer (if None then repeats indefinitely).
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows a `start_time` in the past for immediate start.
+            If False, panics when the `start_time` is in the past.
 
         Raises
         ------
@@ -437,6 +452,7 @@ cdef class Clock:
             start_time_ns=maybe_dt_to_unix_nanos(start_time) or 0,
             stop_time_ns=maybe_dt_to_unix_nanos(stop_time) or 0,
             callback=callback,
+            allow_past=allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -446,6 +462,7 @@ cdef class Clock:
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         """
         Set a timer to run.
@@ -467,6 +484,9 @@ cdef class Clock:
             The stop UNIX timestamp (nanoseconds) for the timer.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows a `start_time` in the past for immediate start.
+            If False, panics when the `start_time` is in the past.
 
         Raises
         ------
@@ -620,6 +640,7 @@ cdef class TestClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -629,6 +650,7 @@ cdef class TestClock(Clock):
             pystr_to_cstr(name),
             alert_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -638,6 +660,7 @@ cdef class TestClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -658,6 +681,7 @@ cdef class TestClock(Clock):
             start_time_ns,
             stop_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef uint64_t next_time_ns(self, str name):
@@ -796,6 +820,7 @@ cdef class LiveClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -808,6 +833,7 @@ cdef class LiveClock(Clock):
             pystr_to_cstr(name),
             alert_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -817,6 +843,7 @@ cdef class LiveClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -832,6 +859,7 @@ cdef class LiveClock(Clock):
             start_time_ns,
             stop_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef uint64_t next_time_ns(self, str name):
