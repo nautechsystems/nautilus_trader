@@ -264,7 +264,7 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             self._log.info(
-                "PRE-TRADE RISK CHECKS BYPASSED. This is not advisable for live trading",
+                "PRE-TRADE RISK CHECKS BYPASSED. This is not recommended for live trading",
                 color=LogColor.RED,
             )
 
