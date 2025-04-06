@@ -441,11 +441,8 @@ Contributions to the project are welcome and require the completion of a standar
 
 ---
 
-NautilusTrader is developed and maintained by Nautech Systems, a technology
+NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
-Although the project utilizes the Rust programming language and benefits from its ecosystem,
-Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official
-work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
 Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
