@@ -3,7 +3,7 @@ set -eo pipefail
 
 # Function to update Cython version in pyproject.toml
 update_cython_version() {
-    local old_version="3.1.0a1"
+    local old_version="3.1.0b1"
     local new_version="3.0.11"
 
     # Create backup of original file

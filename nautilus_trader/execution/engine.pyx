@@ -1200,7 +1200,7 @@ cdef class ExecutionEngine(Component):
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
             if self.snapshot_positions:
-                self._create_position_state_snapshot(position)
+                self._create_position_state_snapshot(position, open_only=True)
         else:
             try:
                 # Always snapshot opening positions to handle NETTING OMS
@@ -1236,7 +1236,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_position(position)
         if self.snapshot_positions:
-            self._create_position_state_snapshot(position)
+            self._create_position_state_snapshot(position, open_only=False)
 
         cdef PositionEvent event
         if position.is_closed_c():
@@ -1365,7 +1365,7 @@ cdef class ExecutionEngine(Component):
                 msg=self._msgbus.serializer.serialize(order.to_dict())
             )
 
-    cpdef void _create_position_state_snapshot(self, Position position):
+    cpdef void _create_position_state_snapshot(self, Position position, bint open_only):
         if self.debug:
             self._log.debug(f"Creating position state snapshot for {position}", LogColor.MAGENTA)
 
@@ -1375,7 +1375,8 @@ cdef class ExecutionEngine(Component):
         cdef dict[str, object] position_state = position.to_dict()
         if unrealized_pnl is not None:
             position_state["unrealized_pnl"] = str(unrealized_pnl)
-            position_state["ts_snapshot"] = ts_snapshot
+
+        position_state["ts_snapshot"] = ts_snapshot
 
         self._msgbus.publish_c(
             topic=f"snapshots.positions.{position.id}",
@@ -1388,6 +1389,7 @@ cdef class ExecutionEngine(Component):
                 position,
                 ts_snapshot,
                 unrealized_pnl,
+                open_only,
             )
 
         if self._msgbus.has_backing and self._msgbus.serializer is not None:
@@ -1399,4 +1401,4 @@ cdef class ExecutionEngine(Component):
     cpdef void _snapshot_open_position_states(self, TimeEvent event):
         cdef Position position
         for position in self._cache.positions_open():
-            self._create_position_state_snapshot(position)
+            self._create_position_state_snapshot(position, open_only=True)

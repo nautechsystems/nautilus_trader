@@ -1556,9 +1556,7 @@ impl OrderMatchingEngine {
                                     )
                                     .unwrap();
                                 log::debug!(
-                                    "Added position id {} to cache for order {}",
-                                    position_id,
-                                    client_order_id
+                                    "Added position id {position_id} to cache for order {client_order_id}"
                                 );
                             }
 

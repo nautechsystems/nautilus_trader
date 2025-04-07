@@ -885,7 +885,7 @@ where
 
             self.clock
                 .borrow_mut()
-                .set_time_alert_ns(&self.timer_name, alert_time_ns, Some(callback.into()))
+                .set_time_alert_ns(&self.timer_name, alert_time_ns, Some(callback.into()), None)
                 .expect(FAILED);
         } else {
             self.clock
@@ -896,6 +896,7 @@ where
                     start_time_ns,
                     None,
                     Some(callback.into()),
+                    None,
                 )
                 .expect(FAILED);
         }
@@ -1033,7 +1034,7 @@ where
 
             self.clock
                 .borrow_mut()
-                .set_time_alert_ns(&self.timer_name, next_alert_ns, None)
+                .set_time_alert_ns(&self.timer_name, next_alert_ns, None, None)
                 .expect(FAILED);
 
             self.next_close_ns = next_alert_ns;

@@ -192,6 +192,17 @@ cdef class CryptoPerpetual(Instrument):
         """
         return self.base_currency
 
+    cpdef Currency get_settlement_currency(self):
+        """
+        Return the currency used to settle a trade of the instrument.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.settlement_currency
+
     @staticmethod
     cdef CryptoPerpetual from_dict_c(dict values):
         Condition.not_none(values, "values")

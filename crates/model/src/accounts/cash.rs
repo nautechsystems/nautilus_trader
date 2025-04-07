@@ -475,7 +475,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1000000"))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -505,7 +505,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from("0.5"))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &btcusdt,
             None,
@@ -530,7 +530,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from("0.5"))
             .build();
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &btcusdt,
             None,

@@ -259,9 +259,7 @@ impl BaseExecutionClient {
             if let Some(existing_order) = existing_order_result {
                 if *existing_order != venue_order_id {
                     log::error!(
-                        "Existing venue order id {} does not match provided venue order id {}",
-                        existing_order,
-                        venue_order_id
+                        "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
                     );
                 }
             }

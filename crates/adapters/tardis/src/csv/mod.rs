@@ -954,7 +954,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(quotes.len(), 10_000);
-        assert_eq!(quotes[0].instrument_id, InstrumentId::from("BTC-USD.HUOBI"));
+        assert_eq!(
+            quotes[0].instrument_id,
+            InstrumentId::from("BTC-USD.HUOBI_DELIVERY")
+        );
         assert_eq!(quotes[0].bid_price, Price::from("8629.2"));
         assert_eq!(quotes[0].bid_size, Quantity::from("806"));
         assert_eq!(quotes[0].ask_price, Price::from("8629.3"));

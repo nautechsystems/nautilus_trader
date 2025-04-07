@@ -24,26 +24,6 @@ use crate::{
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-/// The changes info returned by the exchanges API.
-pub struct InstrumentChanges {
-    /// Date in ISO format.
-    pub until: DateTime<Utc>,
-    /// The minimum price increment (tick size).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub price_increment: Option<f64>,
-    /// The minimum size increment.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub amount_increment: Option<f64>,
-    /// The instrument contract multiplier (only for derivatives).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub contract_multiplier: Option<f64>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
 /// The metadata of a particular instrument.
 /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
 pub struct InstrumentInfo {
@@ -61,6 +41,8 @@ pub struct InstrumentInfo {
     pub instrument_type: InstrumentType,
     /// If the instrument is actively listed.
     pub active: bool,
+    /// The listing date in ISO format.
+    pub listing: Option<DateTime<Utc>>,
     /// The available from date in ISO format.
     pub available_since: DateTime<Utc>,
     /// The available to date in ISO format.
@@ -91,4 +73,32 @@ pub struct InstrumentInfo {
     pub option_type: Option<OptionType>,
     /// The changes for the instrument (best-effort basis from Tardis).
     pub changes: Option<Vec<InstrumentChanges>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// The changes info returned by the exchanges API.
+pub struct InstrumentChanges {
+    /// Date in ISO format.
+    pub until: DateTime<Utc>,
+    /// The minimum price increment (tick size).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub price_increment: Option<f64>,
+    /// The minimum size increment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub amount_increment: Option<f64>,
+    /// The instrument contract multiplier (only for derivatives).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub contract_multiplier: Option<f64>,
+    /// The maker fee rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub maker_fee: Option<f64>,
+    /// The taker fee rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub taker_fee: Option<f64>,
 }

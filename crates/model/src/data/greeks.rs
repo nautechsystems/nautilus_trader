@@ -13,7 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{
+    fmt,
+    ops::{Add, Mul},
+};
+
 use implied_vol::{implied_black_volatility, norm_cdf, norm_pdf};
+use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
+
+use crate::{data::GetTsInit, identifiers::InstrumentId};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
@@ -117,9 +125,366 @@ pub fn imply_vol_and_greeks(
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
+#[derive(Debug, Clone)]
+pub struct GreeksData {
+    pub ts_init: UnixNanos,
+    pub ts_event: UnixNanos,
+    pub instrument_id: InstrumentId,
+    pub is_call: bool,
+    pub strike: f64,
+    pub expiry: i32,
+    pub expiry_in_years: f64,
+    pub multiplier: f64,
+    pub quantity: f64,
+    pub underlying_price: f64,
+    pub interest_rate: f64,
+    pub cost_of_carry: f64,
+    pub vol: f64,
+    pub pnl: f64,
+    pub price: f64,
+    pub delta: f64,
+    pub gamma: f64,
+    pub vega: f64,
+    pub theta: f64,
+    // in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
+    pub itm_prob: f64,
+}
+
+impl GreeksData {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        ts_init: UnixNanos,
+        ts_event: UnixNanos,
+        instrument_id: InstrumentId,
+        is_call: bool,
+        strike: f64,
+        expiry: i32,
+        expiry_in_years: f64,
+        multiplier: f64,
+        quantity: f64,
+        underlying_price: f64,
+        interest_rate: f64,
+        cost_of_carry: f64,
+        vol: f64,
+        pnl: f64,
+        price: f64,
+        delta: f64,
+        gamma: f64,
+        vega: f64,
+        theta: f64,
+        itm_prob: f64,
+    ) -> Self {
+        Self {
+            ts_init,
+            ts_event,
+            instrument_id,
+            is_call,
+            strike,
+            expiry,
+            expiry_in_years,
+            multiplier,
+            quantity,
+            underlying_price,
+            interest_rate,
+            cost_of_carry,
+            vol,
+            pnl,
+            price,
+            delta,
+            gamma,
+            vega,
+            theta,
+            itm_prob,
+        }
+    }
+
+    pub fn from_delta(
+        instrument_id: InstrumentId,
+        delta: f64,
+        multiplier: f64,
+        ts_event: UnixNanos,
+    ) -> Self {
+        Self {
+            ts_init: ts_event,
+            ts_event,
+            instrument_id,
+            is_call: true,
+            strike: 0.0,
+            expiry: 0,
+            expiry_in_years: 0.0,
+            multiplier,
+            quantity: 1.0,
+            underlying_price: 0.0,
+            interest_rate: 0.0,
+            cost_of_carry: 0.0,
+            vol: 0.0,
+            pnl: 0.0,
+            price: 0.0,
+            delta,
+            gamma: 0.0,
+            vega: 0.0,
+            theta: 0.0,
+            itm_prob: 0.0,
+        }
+    }
+}
+
+impl Default for GreeksData {
+    fn default() -> Self {
+        Self {
+            ts_init: UnixNanos::default(),
+            ts_event: UnixNanos::default(),
+            instrument_id: InstrumentId::from("ES.GLBX"),
+            is_call: true,
+            strike: 0.0,
+            expiry: 0,
+            expiry_in_years: 0.0,
+            multiplier: 0.0,
+            quantity: 0.0,
+            underlying_price: 0.0,
+            interest_rate: 0.0,
+            cost_of_carry: 0.0,
+            vol: 0.0,
+            pnl: 0.0,
+            price: 0.0,
+            delta: 0.0,
+            gamma: 0.0,
+            vega: 0.0,
+            theta: 0.0,
+            itm_prob: 0.0,
+        }
+    }
+}
+
+impl fmt::Display for GreeksData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "GreeksData(instrument_id={}, expiry={}, itm_prob={:.2}%, vol={:.2}%, pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, quantity={}, ts_init={})",
+            self.instrument_id,
+            self.expiry,
+            self.itm_prob * 100.0,
+            self.vol * 100.0,
+            self.pnl,
+            self.price,
+            self.delta,
+            self.gamma,
+            self.vega,
+            self.theta,
+            self.quantity,
+            unix_nanos_to_iso8601(self.ts_init)
+        )
+    }
+}
+
+// Implement multiplication for quantity * greeks
+impl Mul<&GreeksData> for f64 {
+    type Output = GreeksData;
+
+    fn mul(self, greeks: &GreeksData) -> GreeksData {
+        GreeksData {
+            ts_init: greeks.ts_init,
+            ts_event: greeks.ts_event,
+            instrument_id: greeks.instrument_id,
+            is_call: greeks.is_call,
+            strike: greeks.strike,
+            expiry: greeks.expiry,
+            expiry_in_years: greeks.expiry_in_years,
+            multiplier: greeks.multiplier,
+            quantity: greeks.quantity,
+            underlying_price: greeks.underlying_price,
+            interest_rate: greeks.interest_rate,
+            cost_of_carry: greeks.cost_of_carry,
+            vol: greeks.vol,
+            pnl: self * greeks.pnl,
+            price: self * greeks.price,
+            delta: self * greeks.delta,
+            gamma: self * greeks.gamma,
+            vega: self * greeks.vega,
+            theta: self * greeks.theta,
+            itm_prob: greeks.itm_prob,
+        }
+    }
+}
+
+impl GetTsInit for GreeksData {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PortfolioGreeks {
+    pub ts_init: UnixNanos,
+    pub ts_event: UnixNanos,
+    pub pnl: f64,
+    pub price: f64,
+    pub delta: f64,
+    pub gamma: f64,
+    pub vega: f64,
+    pub theta: f64,
+}
+
+impl PortfolioGreeks {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        ts_init: UnixNanos,
+        ts_event: UnixNanos,
+        pnl: f64,
+        price: f64,
+        delta: f64,
+        gamma: f64,
+        vega: f64,
+        theta: f64,
+    ) -> Self {
+        Self {
+            ts_init,
+            ts_event,
+            pnl,
+            price,
+            delta,
+            gamma,
+            vega,
+            theta,
+        }
+    }
+}
+
+impl Default for PortfolioGreeks {
+    fn default() -> Self {
+        Self {
+            ts_init: UnixNanos::default(),
+            ts_event: UnixNanos::default(),
+            pnl: 0.0,
+            price: 0.0,
+            delta: 0.0,
+            gamma: 0.0,
+            vega: 0.0,
+            theta: 0.0,
+        }
+    }
+}
+
+impl fmt::Display for PortfolioGreeks {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "PortfolioGreeks(pnl={:.2}, price={:.2}, delta={:.2}, gamma={:.2}, vega={:.2}, theta={:.2}, ts_event={}, ts_init={})",
+            self.pnl,
+            self.price,
+            self.delta,
+            self.gamma,
+            self.vega,
+            self.theta,
+            unix_nanos_to_iso8601(self.ts_event),
+            unix_nanos_to_iso8601(self.ts_init)
+        )
+    }
+}
+
+impl Add for PortfolioGreeks {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            ts_init: self.ts_init,
+            ts_event: self.ts_event,
+            pnl: self.pnl + other.pnl,
+            price: self.price + other.price,
+            delta: self.delta + other.delta,
+            gamma: self.gamma + other.gamma,
+            vega: self.vega + other.vega,
+            theta: self.theta + other.theta,
+        }
+    }
+}
+
+impl From<GreeksData> for PortfolioGreeks {
+    fn from(greeks: GreeksData) -> Self {
+        Self {
+            ts_init: greeks.ts_init,
+            ts_event: greeks.ts_event,
+            pnl: greeks.pnl,
+            price: greeks.price,
+            delta: greeks.delta,
+            gamma: greeks.gamma,
+            vega: greeks.vega,
+            theta: greeks.theta,
+        }
+    }
+}
+
+impl GetTsInit for PortfolioGreeks {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct YieldCurveData {
+    pub ts_init: UnixNanos,
+    pub ts_event: UnixNanos,
+    pub curve_name: String,
+    pub tenors: Vec<f64>,
+    pub interest_rates: Vec<f64>,
+}
+
+impl YieldCurveData {
+    pub fn new(
+        ts_init: UnixNanos,
+        ts_event: UnixNanos,
+        curve_name: String,
+        tenors: Vec<f64>,
+        interest_rates: Vec<f64>,
+    ) -> Self {
+        Self {
+            ts_init,
+            ts_event,
+            curve_name,
+            tenors,
+            interest_rates,
+        }
+    }
+
+    // Interpolate the yield curve for a given expiry time
+    pub fn get_rate(&self, expiry_in_years: f64) -> f64 {
+        if self.interest_rates.len() == 1 {
+            return self.interest_rates[0];
+        }
+
+        quadratic_interpolation(expiry_in_years, &self.tenors, &self.interest_rates)
+    }
+}
+
+impl fmt::Display for YieldCurveData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "InterestRateCurve(curve_name={}, ts_event={}, ts_init={})",
+            self.curve_name,
+            unix_nanos_to_iso8601(self.ts_event),
+            unix_nanos_to_iso8601(self.ts_init)
+        )
+    }
+}
+
+impl GetTsInit for YieldCurveData {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl Default for YieldCurveData {
+    fn default() -> Self {
+        Self {
+            ts_init: UnixNanos::default(),
+            ts_event: UnixNanos::default(),
+            curve_name: "USD".to_string(),
+            tenors: vec![0.5, 1.0, 1.5, 2.0, 2.5],
+            interest_rates: vec![0.04, 0.04, 0.04, 0.04, 0.04],
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

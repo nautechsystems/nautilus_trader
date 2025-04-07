@@ -596,9 +596,7 @@ impl AccountsManager {
             } else {
                 if pnl.as_decimal() < Decimal::ZERO {
                     log::error!(
-                        "Cannot complete transaction: no {} to deduct a {} realized PnL from",
-                        currency,
-                        pnl
+                        "Cannot complete transaction: no {currency} to deduct a {pnl} realized PnL from"
                     );
                     return;
                 }
@@ -624,9 +622,7 @@ impl AccountsManager {
             } else {
                 if commission.as_decimal() > Decimal::ZERO {
                     log::error!(
-                        "Cannot complete transaction: no {} balance to deduct a {} commission from",
-                        currency,
-                        commission
+                        "Cannot complete transaction: no {currency} balance to deduct a {commission} commission from"
                     );
                     return;
                 }

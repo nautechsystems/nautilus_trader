@@ -114,20 +114,28 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         This parameter only applies if the **check_open_orders** task is running.
     purge_closed_orders_interval_mins : PositiveInt, optional
         The interval (minutes) between purging closed orders from the in-memory cache,
-        **will not purge from the database**. If None, closed orders will not be automatically purged.
-        A recommended setting is 10-15 minutes.
+        **will not purge from the database**. If None, closed orders will **not** be automatically purged.
+        A recommended setting is 10-15 minutes for HFT.
     purge_closed_orders_buffer_mins : NonNegativeInt, optional
         The time buffer (minutes) from when an order was closed before it can be purged.
         Only orders closed for at least this amount of time will be purged.
-        A recommended setting is 60 minutes.
+        A recommended setting is 60 minutes for HFT.
     purge_closed_positions_interval_mins : PositiveInt, optional
         The interval (minutes) between purging closed positions from the in-memory cache,
-        **will not purge from the database**. If None, closed positions will not be automatically purged.
-        A recommended setting is 10-15 minutes.
+        **will not purge from the database**. If None, closed positions will **not** be automatically purged.
+        A recommended setting is 10-15 minutes for HFT.
     purge_closed_positions_buffer_mins : NonNegativeInt, optional
         The time buffer (minutes) from when a position was closed before it can be purged.
         Only positions closed for at least this amount of time will be purged.
-        A recommended setting is 60 minutes.
+        A recommended setting is 60 minutes for HFT.
+    purge_account_events_interval_mins : PositiveInt, optional
+        The interval (minutes) between purging account events from the in-memory cache,
+        **will not purge from the database**. If None, closed orders will **not** be automatically purged.
+        A recommended setting is 10-15 minutes for HFT.
+    purge_account_events_lookback_mins : NonNegativeInt, optional
+        The time buffer (minutes) from when an account event occurred before it can be purged.
+        Only events outside the lookback window will be purged.
+        A recommended setting is 60 minutes for HFT.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
@@ -148,6 +156,8 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     purge_closed_orders_buffer_mins: NonNegativeInt | None = None
     purge_closed_positions_interval_mins: PositiveInt | None = None
     purge_closed_positions_buffer_mins: NonNegativeInt | None = None
+    purge_account_events_interval_mins: PositiveInt | None = None
+    purge_account_events_lookback_mins: NonNegativeInt | None = None
     qsize: PositiveInt = 100_000
 
 
@@ -237,7 +247,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : TraderId, default "TRADER-000"
+    trader_id : TraderId, default "TRADER-001"
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
@@ -255,9 +265,13 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.LIVE
-    trader_id: TraderId = TraderId("TRADER-001")
+    trader_id: TraderId = "TRADER-001"
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
+
+    def __post_init__(self):
+        if isinstance(self.trader_id, str):
+            msgspec.structs.force_setattr(self, "trader_id", TraderId(self.trader_id))

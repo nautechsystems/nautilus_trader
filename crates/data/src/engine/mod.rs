@@ -57,8 +57,8 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         DataCommand, DataRequest, DataResponse, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepths10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepths10, UnsubscribeBookSnapshots,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand,
     },
     msgbus::{
@@ -284,16 +284,6 @@ impl DataEngine {
     }
 
     #[must_use]
-    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
-    }
-
-    #[must_use]
-    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
-    }
-
-    #[must_use]
     pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_mark_prices)
     }
@@ -301,6 +291,16 @@ impl DataEngine {
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
     pub fn on_start(self) {
@@ -376,11 +376,11 @@ impl DataEngine {
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
-            SubscribeCommand::BookDepths10(cmd) => self.subscribe_book_depths(cmd)?,
+            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
             SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd)?,
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             _ => {} // Do nothing else
-        };
+        }
 
         if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe_command(cmd.clone());
@@ -398,11 +398,11 @@ impl DataEngine {
     pub fn execute_unsubscribe(&mut self, cmd: UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
-            UnsubscribeCommand::BookDepths10(cmd) => self.unsubscribe_book_depths(cmd)?,
+            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
             UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd)?,
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
             _ => {} // Do nothing else
-        };
+        }
 
         if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe_command(cmd.clone());
@@ -434,9 +434,9 @@ impl DataEngine {
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
         } else if let Some(mark_price) = data.downcast_ref::<MarkPriceUpdate>() {
-            self.handle_mark_price(*mark_price)
+            self.handle_mark_price(*mark_price);
         } else if let Some(index_price) = data.downcast_ref::<IndexPriceUpdate>() {
-            self.handle_index_price(*index_price)
+            self.handle_index_price(*index_price);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -453,6 +453,7 @@ impl DataEngine {
         }
     }
 
+    // TODO: Upgrade to response message handling
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
@@ -521,7 +522,7 @@ impl DataEngine {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
 
-        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
+        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
         msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
@@ -554,12 +555,12 @@ impl DataEngine {
             deltas
         };
 
-        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
+        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
         msgbus::publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
-        let topic = switchboard::get_depth_topic(depth.instrument_id);
+        let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
         msgbus::publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
@@ -656,7 +657,7 @@ impl DataEngine {
         Ok(())
     }
 
-    fn subscribe_book_depths(&mut self, cmd: &SubscribeBookDepths10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         if cmd.instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
@@ -718,6 +719,7 @@ impl DataEngine {
                         start_time_ns.into(),
                         None,
                         Some(callback),
+                        None,
                     )
                     .expect(FAILED);
             }
@@ -754,8 +756,8 @@ impl DataEngine {
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -765,15 +767,15 @@ impl DataEngine {
         Ok(())
     }
 
-    fn unsubscribe_book_depths(&mut self, cmd: &UnsubscribeBookDepths10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
             return Ok(());
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -790,8 +792,8 @@ impl DataEngine {
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -902,12 +904,12 @@ impl DataEngine {
 
         let handler = ShareableMessageHandler(updater);
 
-        let topic = switchboard::get_deltas_topic(*instrument_id);
+        let topic = switchboard::get_book_deltas_topic(*instrument_id);
         if !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
-        let topic = switchboard::get_depth_topic(*instrument_id);
+        let topic = switchboard::get_book_depth10_topic(*instrument_id);
         if !only_deltas && !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler, Some(self.msgbus_priority));
         }

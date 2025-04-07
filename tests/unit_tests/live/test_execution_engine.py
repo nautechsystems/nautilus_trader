@@ -516,3 +516,70 @@ class TestLiveExecutionEngine:
 
         # Assert
         await eventually(lambda: self.exec_engine.command_count >= 1, timeout=3.0)
+
+    @pytest.mark.asyncio
+    async def test_resolve_inflight_order_when_submitted(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+
+        await eventually(lambda: order.status == OrderStatus.SUBMITTED)
+
+        self.exec_engine._resolve_inflight_order(order)
+
+        # Assert
+        assert order.status == OrderStatus.REJECTED
+
+    @pytest.mark.asyncio
+    async def test_resolve_inflight_order_when_pending_update(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_pending_update(order))
+
+        await eventually(lambda: order.status == OrderStatus.PENDING_UPDATE)
+
+        self.exec_engine._resolve_inflight_order(order)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED
+
+    @pytest.mark.asyncio
+    async def test_resolve_inflight_order_when_pending_cancel(self):
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            price=AUDUSD_SIM.make_price(0.70000),
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exec_engine.process(TestEventStubs.order_submitted(order))
+        self.exec_engine.process(TestEventStubs.order_accepted(order))
+        self.exec_engine.process(TestEventStubs.order_pending_cancel(order))
+
+        await eventually(lambda: order.status == OrderStatus.PENDING_CANCEL)
+
+        self.exec_engine._resolve_inflight_order(order)
+
+        # Assert
+        assert order.status == OrderStatus.CANCELED

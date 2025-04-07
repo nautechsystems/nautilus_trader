@@ -229,7 +229,8 @@ cdef extern from "../includes/common.h":
     void test_clock_set_time_alert(TestClock_API *clock,
                                    const char *name_ptr,
                                    uint64_t alert_time_ns,
-                                   PyObject *callback_ptr);
+                                   PyObject *callback_ptr,
+                                   uint8_t allow_past);
 
     # # Safety
     #
@@ -240,7 +241,8 @@ cdef extern from "../includes/common.h":
                               uint64_t interval_ns,
                               uint64_t start_time_ns,
                               uint64_t stop_time_ns,
-                              PyObject *callback_ptr);
+                              PyObject *callback_ptr,
+                              uint8_t allow_past);
 
     # # Safety
     #
@@ -295,7 +297,8 @@ cdef extern from "../includes/common.h":
     void live_clock_set_time_alert(LiveClock_API *clock,
                                    const char *name_ptr,
                                    uint64_t alert_time_ns,
-                                   PyObject *callback_ptr);
+                                   PyObject *callback_ptr,
+                                   uint8_t allow_past);
 
     # # Safety
     #
@@ -312,7 +315,8 @@ cdef extern from "../includes/common.h":
                               uint64_t interval_ns,
                               uint64_t start_time_ns,
                               uint64_t stop_time_ns,
-                              PyObject *callback_ptr);
+                              PyObject *callback_ptr,
+                              uint8_t allow_past);
 
     # # Safety
     #

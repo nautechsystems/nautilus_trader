@@ -17,6 +17,7 @@
 
 use std::fmt::Debug;
 
+use log::Level;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -26,6 +27,7 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -46,6 +48,7 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
 )]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
+    #[default]
     PreInitialized = 0,
     /// When a component is able to be started.
     Ready = 1,
@@ -286,6 +289,18 @@ impl From<u8> for LogColor {
             5 => Self::Yellow,
             6 => Self::Red,
             _ => Self::Normal,
+        }
+    }
+}
+
+impl From<Level> for LogColor {
+    fn from(value: Level) -> Self {
+        match value {
+            Level::Error => Self::Red,
+            Level::Warn => Self::Yellow,
+            Level::Info => Self::Normal,
+            Level::Debug => Self::Normal,
+            Level::Trace => Self::Normal,
         }
     }
 }

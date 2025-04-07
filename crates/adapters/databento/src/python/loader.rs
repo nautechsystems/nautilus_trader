@@ -29,6 +29,7 @@ use pyo3::{
     prelude::*,
     types::{PyCapsule, PyList},
 };
+use ustr::Ustr;
 
 use crate::{
     loader::DatabentoDataLoader,
@@ -58,18 +59,22 @@ impl DatabentoDataLoader {
             .collect::<HashMap<u16, DatabentoPublisher>>()
     }
 
+    #[pyo3(name = "set_dataset_for_venue")]
+    fn py_set_dataset_for_venue(&mut self, dataset: String, venue: Venue) {
+        self.set_dataset_for_venue(Ustr::from(&dataset), venue);
+    }
+
     #[must_use]
     #[pyo3(name = "get_dataset_for_venue")]
     fn py_get_dataset_for_venue(&self, venue: &Venue) -> Option<String> {
-        self.get_dataset_for_venue(venue)
-            .map(std::string::ToString::to_string)
+        self.get_dataset_for_venue(venue).map(ToString::to_string)
     }
 
     #[must_use]
     #[pyo3(name = "get_venue_for_publisher")]
     fn py_get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<String> {
         self.get_venue_for_publisher(publisher_id)
-            .map(std::string::ToString::to_string)
+            .map(ToString::to_string)
     }
 
     #[pyo3(name = "schema_for_file")]

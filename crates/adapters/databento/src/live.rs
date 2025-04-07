@@ -18,8 +18,9 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use ahash::{HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, Publisher, Record, SymbolIndex, VersionUpgradePolicy},
+    dbn::{self, PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
 };
 use indexmap::IndexMap;
@@ -74,6 +75,7 @@ pub struct DatabentoFeedHandler {
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
     replay: bool,
+    use_exchange_as_venue: bool,
 }
 
 impl DatabentoFeedHandler {
@@ -86,6 +88,7 @@ impl DatabentoFeedHandler {
         tx: tokio::sync::mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
         symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+        use_exchange_as_venue: bool,
     ) -> Self {
         Self {
             key,
@@ -95,6 +98,7 @@ impl DatabentoFeedHandler {
             publisher_venue_map,
             symbol_venue_map,
             replay: false,
+            use_exchange_as_venue,
         }
     }
 
@@ -201,6 +205,7 @@ impl DatabentoFeedHandler {
             };
 
             let ts_init = clock.get_time_ns();
+            let mut initialized_books = HashSet::new();
 
             // Decode record
             if let Some(msg) = record.get::<dbn::ErrorMsg>() {
@@ -212,9 +217,7 @@ impl DatabentoFeedHandler {
                 instrument_id_map.remove(&msg.hd.instrument_id);
                 handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map);
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                // TODO: Make this configurable so that exchange can be used as venue
-                let use_exchange_as_venue = false;
-                if use_exchange_as_venue && msg.publisher()? == Publisher::GlbxMdp3Glbx {
+                if self.use_exchange_as_venue {
                     update_instrument_id_map_with_exchange(
                         &symbol_map,
                         &self.symbol_venue_map,
@@ -274,6 +277,7 @@ impl DatabentoFeedHandler {
                     &self.symbol_venue_map.read().unwrap(),
                     &mut instrument_id_map,
                     ts_init,
+                    &initialized_books,
                 ) {
                     Ok(decoded) => decoded,
                     Err(e) => {
@@ -283,6 +287,13 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
+                    // Check if should mark book initialized
+                    if let Some(Data::Delta(delta)) = &data1 {
+                        initialized_books.insert(delta.instrument_id);
+                    } else {
+                        continue; // No delta yet
+                    }
+
                     if let Data::Delta(delta) = data1.clone().expect("MBO should decode a delta") {
                         let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
                         buffer.push(delta);
@@ -380,7 +391,11 @@ fn update_instrument_id_map_with_exchange(
     let symbol = Symbol::from(raw_symbol.as_str());
     let venue = Venue::from(exchange);
     let instrument_id = InstrumentId::new(symbol, venue);
-    symbol_venue_map.write().unwrap().insert(symbol, venue);
+    symbol_venue_map
+        .write()
+        .unwrap()
+        .entry(symbol)
+        .or_insert(venue);
     instrument_id_map.insert(raw_instrument_id, instrument_id);
     instrument_id
 }
@@ -509,6 +524,7 @@ fn handle_record(
     symbol_venue_map: &HashMap<Symbol, Venue>,
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
+    initialized_books: &HashSet<InstrumentId>,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let instrument_id = update_instrument_id_map(
         &record,
@@ -519,12 +535,13 @@ fn handle_record(
     );
 
     let price_precision = 2; // Hard-coded for now
+    let include_trades = initialized_books.contains(&instrument_id);
 
     decode_record(
         &record,
         instrument_id,
         price_precision,
         Some(ts_init),
-        true, // Always include trades
+        include_trades,
     )
 }

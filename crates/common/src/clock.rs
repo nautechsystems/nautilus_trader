@@ -82,6 +82,7 @@ pub trait Clock {
         name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()>;
 
     /// Set a `Timer` to start alerting at every interval
@@ -94,6 +95,7 @@ pub trait Clock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()>;
 
     /// Returns the time interval in which the timer `name` is triggered.
@@ -150,8 +152,7 @@ impl TestClock {
         // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` {} was < `self.time.get_time_ns()` {}",
-            to_time_ns,
+            "`to_time_ns` {to_time_ns} was < `self.time.get_time_ns()` {}",
             self.time.get_time_ns()
         );
 
@@ -182,8 +183,7 @@ impl TestClock {
         // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` {} was < `self.time.get_time_ns()` {}",
-            to_time_ns,
+            "`to_time_ns` {to_time_ns} was < `self.time.get_time_ns()` {}",
             self.time.get_time_ns()
         );
 
@@ -296,12 +296,14 @@ impl Clock for TestClock {
     fn set_time_alert_ns(
         &mut self,
         name: &str,
-        alert_time_ns: UnixNanos,
+        mut alert_time_ns: UnixNanos, // mut allows adjustment based on allow_past
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
 
         let name = Ustr::from(name);
+        let allow_past = allow_past.unwrap_or(true);
 
         check_predicate_true(
             callback.is_some()
@@ -318,9 +320,27 @@ impl Clock for TestClock {
         // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts
         self.cancel_timer(name.as_str());
 
-        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
-        let ts_now = self.time.get_time_ns();
-        let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
+        let ts_now = self.get_time_ns();
+
+        if alert_time_ns < ts_now {
+            if allow_past {
+                alert_time_ns = ts_now;
+                log::warn!(
+                    "Timer '{name}' alert time {} was in the past, adjusted to current time for immediate firing",
+                    alert_time_ns.to_rfc3339(),
+                );
+            } else {
+                anyhow::bail!(
+                    "Timer '{name}' alert time {} was in the past (current time is {})",
+                    alert_time_ns.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
+        }
+
+        // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
+        let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+
         let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns));
         self.timers.insert(name, timer);
 
@@ -334,6 +354,7 @@ impl Clock for TestClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
@@ -343,13 +364,39 @@ impl Clock for TestClock {
         )?;
 
         let name = Ustr::from(name);
+        let allow_past = allow_past.unwrap_or(true);
 
         match callback {
             Some(callback_py) => self.callbacks.insert(name, callback_py),
             None => None,
         };
 
+        let mut start_time_ns = start_time_ns;
+        let ts_now = self.get_time_ns();
+
+        if start_time_ns == 0 {
+            // Zero start time indicates no explicit start; we use the current time
+            start_time_ns = self.timestamp_ns();
+        } else if start_time_ns < ts_now && !allow_past {
+            anyhow::bail!(
+                "Timer '{name}' start time {} was in the past (current time is {})",
+                start_time_ns.to_rfc3339(),
+                ts_now.to_rfc3339(),
+            );
+        }
+
+        if let Some(stop_time) = stop_time_ns {
+            if stop_time <= start_time_ns {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} must be after start time {}",
+                    stop_time.to_rfc3339(),
+                    start_time_ns.to_rfc3339(),
+                );
+            }
+        }
+
         let interval_ns = create_valid_interval(interval_ns);
+
         let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
         self.timers.insert(name, timer);
 
@@ -501,12 +548,14 @@ impl Clock for LiveClock {
     fn set_time_alert_ns(
         &mut self,
         name: &str,
-        mut alert_time_ns: UnixNanos,
+        mut alert_time_ns: UnixNanos, // mut allows adjustment based on allow_past
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
 
         let name = Ustr::from(name);
+        let allow_past = allow_past.unwrap_or(true);
 
         check_predicate_true(
             callback.is_some()
@@ -534,13 +583,30 @@ impl Clock for LiveClock {
             }
         };
 
-        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts.
+        // This allows to reuse a time alert without updating the callback, for example for non regular monthly alerts
         self.cancel_timer(name.as_str());
 
-        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
         let ts_now = self.get_time_ns();
-        alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
-        let interval_ns = create_valid_interval(std::cmp::max((alert_time_ns - ts_now).into(), 1));
+
+        // Handle past timestamps based on flag
+        if alert_time_ns < ts_now {
+            if allow_past {
+                alert_time_ns = ts_now;
+                log::warn!(
+                    "Timer '{name}' alert time {} was in the past, adjusted to current time for immediate firing",
+                    alert_time_ns.to_rfc3339(),
+                );
+            } else {
+                anyhow::bail!(
+                    "Timer '{name}' alert time {} was in the past (current time is {})",
+                    alert_time_ns.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
+        }
+
+        // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
+        let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
@@ -570,6 +636,7 @@ impl Clock for LiveClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
@@ -579,6 +646,7 @@ impl Clock for LiveClock {
         )?;
 
         let name = Ustr::from(name);
+        let allow_past = allow_past.unwrap_or(true);
 
         let callback = match callback {
             Some(callback) => callback,
@@ -590,13 +658,30 @@ impl Clock for LiveClock {
             self.callbacks.insert(name, callback.clone());
         }
 
-        // TODO: For now we accommodate immediate alerts in the past, consider an `allow_past` flag
-
         let mut start_time_ns = start_time_ns;
+        let ts_now = self.get_time_ns();
+
         if start_time_ns == 0 {
             // Zero start time indicates no explicit start; we use the current time
             start_time_ns = self.timestamp_ns();
+        } else if start_time_ns < ts_now && !allow_past {
+            anyhow::bail!(
+                "Timer '{name}' start time {} was in the past (current time is {})",
+                start_time_ns.to_rfc3339(),
+                ts_now.to_rfc3339(),
+            );
         }
+
+        if let Some(stop_time) = stop_time_ns {
+            if stop_time <= start_time_ns {
+                anyhow::bail!(
+                    "Timer '{name}' stop time {} must be after start time {}",
+                    stop_time.to_rfc3339(),
+                    start_time_ns.to_rfc3339(),
+                );
+            }
+        }
+
         let interval_ns = create_valid_interval(interval_ns);
 
         #[cfg(not(feature = "clock_v2"))]
@@ -735,6 +820,7 @@ mod tests {
                 "test_timer",
                 (*test_clock.timestamp_ns() + 1000).into(),
                 None,
+                None,
             )
             .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
@@ -745,7 +831,7 @@ mod tests {
     fn test_timer_expiration(mut test_clock: TestClock) {
         let alert_time = (*test_clock.timestamp_ns() + 1000).into();
         test_clock
-            .set_time_alert_ns("test_timer", alert_time, None)
+            .set_time_alert_ns("test_timer", alert_time, None, None)
             .unwrap();
         let events = test_clock.advance_time(alert_time, true);
         assert_eq!(events.len(), 1);
@@ -759,6 +845,7 @@ mod tests {
                 "test_timer",
                 (*test_clock.timestamp_ns() + 1000).into(),
                 None,
+                None,
             )
             .unwrap();
         assert_eq!(test_clock.timer_count(), 1);
@@ -770,7 +857,7 @@ mod tests {
     fn test_time_advancement(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("test_timer", 1000, start_time, None, None)
+            .set_timer_ns("test_timer", 1000, start_time, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2500).into(), true);
         assert_eq!(events.len(), 2);
@@ -789,13 +876,19 @@ mod tests {
 
         clock.register_default_handler(TimeEventCallback::from(default_callback));
         clock
-            .set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None)
+            .set_time_alert_ns(
+                "default_timer",
+                (*clock.timestamp_ns() + 1000).into(),
+                None,
+                None,
+            )
             .unwrap();
         clock
             .set_time_alert_ns(
                 "custom_timer",
                 (*clock.timestamp_ns() + 1000).into(),
                 Some(TimeEventCallback::from(custom_callback)),
+                None,
             )
             .unwrap();
 
@@ -814,15 +907,78 @@ mod tests {
     fn test_multiple_timers(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("timer1", 1000, start_time, None, None)
+            .set_timer_ns("timer1", 1000, start_time, None, None, None)
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 2000, start_time, None, None)
+            .set_timer_ns("timer2", 2000, start_time, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2000).into(), true);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].name.as_str(), "timer1");
         assert_eq!(events[1].name.as_str(), "timer1");
         assert_eq!(events[2].name.as_str(), "timer2");
+    }
+
+    #[rstest]
+    fn test_allow_past_parameter_true(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(2000));
+        let current_time = test_clock.timestamp_ns();
+        let past_time = UnixNanos::from(current_time.as_u64() - 1000);
+
+        // With allow_past=true (default), should adjust to current time and succeed
+        test_clock
+            .set_time_alert_ns("past_timer", past_time, None, Some(true))
+            .unwrap();
+
+        // Verify timer was created with adjusted time
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_names(), vec!["past_timer"]);
+
+        // Next time should be at or after current time, not in the past
+        let next_time = test_clock.next_time_ns("past_timer");
+        assert!(next_time >= current_time);
+    }
+
+    #[rstest]
+    fn test_allow_past_parameter_false(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(2000));
+        let current_time = test_clock.timestamp_ns();
+        let past_time = (current_time - 1000).into();
+
+        // With allow_past=false, should fail for past times
+        let result = test_clock.set_time_alert_ns("past_timer", past_time, None, Some(false));
+
+        // Verify the operation failed with appropriate error
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("was in the past"));
+
+        // Verify no timer was created
+        assert_eq!(test_clock.timer_count(), 0);
+        assert!(test_clock.timer_names().is_empty());
+    }
+
+    #[rstest]
+    fn test_invalid_stop_time_validation(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(2000));
+        let current_time = test_clock.timestamp_ns();
+        let start_time = (current_time + 1000).into();
+        let stop_time = (current_time + 500).into(); // Stop time before start time
+
+        // Should fail because stop_time < start_time
+        let result = test_clock.set_timer_ns(
+            "invalid_timer",
+            100,
+            start_time,
+            Some(stop_time),
+            None,
+            None,
+        );
+
+        // Verify the operation failed with appropriate error
+        assert!(result.is_err());
+        assert!(format!("{}", result.unwrap_err()).contains("must be after start time"));
+
+        // Verify no timer was created
+        assert_eq!(test_clock.timer_count(), 0);
     }
 }

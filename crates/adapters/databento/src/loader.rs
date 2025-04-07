@@ -147,24 +147,30 @@ impl DatabentoDataLoader {
         Ok(())
     }
 
-    /// Return the internal Databento publishers currently held by the loader.
+    /// Returns the internal Databento publishers currently held by the loader.
     #[must_use]
     pub const fn get_publishers(&self) -> &IndexMap<u16, DatabentoPublisher> {
         &self.publishers_map
     }
 
-    // Return the dataset which matches the given `venue` (if found).
+    /// Sets the `venue` to map to the given `dataset`.
+    pub fn set_dataset_for_venue(&mut self, dataset: Dataset, venue: Venue) {
+        _ = self.venue_dataset_map.insert(venue, dataset);
+    }
+
+    /// Returns the dataset which matches the given `venue` (if found).
     #[must_use]
     pub fn get_dataset_for_venue(&self, venue: &Venue) -> Option<&Dataset> {
         self.venue_dataset_map.get(venue)
     }
 
-    // Return the venue which matches the given `publisher_id` (if found).
+    /// Returns the venue which matches the given `publisher_id` (if found).
     #[must_use]
     pub fn get_venue_for_publisher(&self, publisher_id: PublisherId) -> Option<&Venue> {
         self.publisher_venue_map.get(&publisher_id)
     }
 
+    /// Returns the schema for the given `filepath`.
     pub fn schema_from_file(&self, filepath: &Path) -> anyhow::Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata();
@@ -584,7 +590,8 @@ impl DatabentoDataLoader {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use rstest::*;
+    use rstest::{fixture, rstest};
+    use ustr::Ustr;
 
     use super::*;
 
@@ -592,7 +599,8 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("test_data")
     }
 
-    fn data_loader() -> DatabentoDataLoader {
+    #[fixture]
+    fn loader() -> DatabentoDataLoader {
         let publishers_filepath = Path::new(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
         DatabentoDataLoader::new(Some(publishers_filepath)).unwrap()
     }
@@ -600,19 +608,27 @@ mod tests {
     // TODO: Improve the below assertions that we've actually read the records we expected
 
     #[rstest]
+    fn test_set_dataset_venue_mapping(mut loader: DatabentoDataLoader) {
+        let dataset = Ustr::from("EQUS.PLUS");
+        let venue = Venue::from("XNAS");
+        loader.set_dataset_for_venue(dataset, venue);
+
+        let result = loader.get_dataset_for_venue(&venue).unwrap();
+        assert_eq!(*result, dataset);
+    }
+
+    #[rstest]
     // #[case(test_data_path().join("test_data.definition.dbn.zst"))] // TODO: Fails
     #[case(test_data_path().join("test_data.definition.v1.dbn.zst"))]
-    fn test_load_instruments(#[case] path: PathBuf) {
-        let mut loader = data_loader();
+    fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instruments = loader.load_instruments(&path, false).unwrap();
 
         assert_eq!(instruments.len(), 2);
     }
 
     #[rstest]
-    fn test_load_order_book_deltas() {
+    fn test_load_order_book_deltas(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.mbo.dbn.zst");
-        let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let deltas = loader
@@ -623,9 +639,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_order_book_depth10() {
+    fn test_load_order_book_depth10(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.mbp-10.dbn.zst");
-        let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let depths = loader
@@ -636,9 +651,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_quotes() {
+    fn test_load_quotes(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.mbp-1.dbn.zst");
-        let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let quotes = loader
@@ -651,8 +665,7 @@ mod tests {
     #[rstest]
     #[case(test_data_path().join("test_data.bbo-1s.dbn.zst"))]
     #[case(test_data_path().join("test_data.bbo-1m.dbn.zst"))]
-    fn test_load_bbo_quotes(#[case] path: PathBuf) {
-        let loader = data_loader();
+    fn test_load_bbo_quotes(loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let quotes = loader
@@ -663,9 +676,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_tbbo_trades() {
+    fn test_load_tbbo_trades(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.tbbo.dbn.zst");
-        let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let _trades = loader
@@ -676,10 +688,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_load_trades() {
+    fn test_load_trades(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.trades.dbn.zst");
-        let loader = data_loader();
-
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let trades = loader
             .load_trades(&path, Some(instrument_id), None)
@@ -693,9 +703,7 @@ mod tests {
     #[case(test_data_path().join("test_data.ohlcv-1h.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1m.dbn.zst"))]
     #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
-    fn test_load_bars(#[case] path: PathBuf) {
-        let loader = data_loader();
-
+    fn test_load_bars(loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let bars = loader.load_bars(&path, Some(instrument_id), None).unwrap();
 

@@ -55,12 +55,14 @@ cdef class Clock:
         datetime alert_time,
         callback: Callable[[TimeEvent], None]=*,
         bint override=*,
+        bint allow_past=*,
     )
     cpdef void set_time_alert_ns(
         self,
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None]=*,
+        bint allow_past=*,
     )
     cpdef void set_timer(
         self,
@@ -69,6 +71,7 @@ cdef class Clock:
         datetime start_time=*,
         datetime stop_time=*,
         callback: Callable[[TimeEvent], None]=*,
+        bint allow_past=*,
     )
     cpdef void set_timer_ns(
         self,
@@ -77,6 +80,7 @@ cdef class Clock:
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=*,
+        bint allow_past=*,
     )
     cpdef void cancel_timer(self, str name)
     cpdef void cancel_timers(self)
