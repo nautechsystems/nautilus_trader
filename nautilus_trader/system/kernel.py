@@ -456,6 +456,7 @@ class NautilusKernel:
             risk_engine=self._risk_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
+            environment=self._environment,
             has_controller=self._config.controller is not None,
             loop=self._loop,
         )

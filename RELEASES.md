@@ -15,6 +15,7 @@ None
 - Upgraded `tokio` crate to v1.44.2
 
 ### Fixes
+- Fixed setting component clocks to backtest start time
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 
 ### Documentation Updates
