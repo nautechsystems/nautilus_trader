@@ -247,7 +247,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : TraderId, default "TRADER-000"
+    trader_id : TraderId, default "TRADER-001"
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
@@ -265,9 +265,13 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.LIVE
-    trader_id: TraderId = TraderId("TRADER-001")
+    trader_id: TraderId = "TRADER-001"
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
+
+    def __post_init__(self):
+        if isinstance(self.trader_id, str):
+            msgspec.structs.force_setattr(self, "trader_id", TraderId(self.trader_id))
