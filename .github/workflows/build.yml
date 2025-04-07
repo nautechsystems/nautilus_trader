@@ -36,7 +36,7 @@ jobs:
         os:
           - ubuntu-latest
         python-version:
-          - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -119,6 +119,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -203,6 +204,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -260,6 +262,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
