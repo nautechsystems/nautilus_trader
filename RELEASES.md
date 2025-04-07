@@ -2230,13 +2230,14 @@ Released on 12th December 2022 (UTC).
 
 Released on 10th December 2022 (UTC).
 
+This release adds support for Python 3.11.
+
 ### Breaking Changes
 - Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
 - Renamed `OrderFactory.bracket_limit` to `OrderFactory.bracket_limit_entry`
 - Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
 
 ### Enhancements
-- Added support for Python 3.11
 - Consolidated config objects to `msgspec` providing better performance and correctness
 - Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
 - Numerous improvements to the Interactive Brokers adapter, thanks @limx0 and @rsmb7z

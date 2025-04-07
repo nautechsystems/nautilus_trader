@@ -1,6 +1,6 @@
 # Installation
 
-NautilusTrader is officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
+NautilusTrader is officially supported for Python 3.11, 3.12, and 3.13 for the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
