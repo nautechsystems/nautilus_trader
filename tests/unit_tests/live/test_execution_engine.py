@@ -520,7 +520,6 @@ class TestLiveExecutionEngine:
     @pytest.mark.asyncio
     async def test_resolve_inflight_order_when_submitted(self):
         # Arrange
-        # Deregister test fixture ExecutionEngine from msgbus
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -542,7 +541,6 @@ class TestLiveExecutionEngine:
     @pytest.mark.asyncio
     async def test_resolve_inflight_order_when_pending_update(self):
         # Arrange
-        # Deregister test fixture ExecutionEngine from msgbus
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -564,9 +562,8 @@ class TestLiveExecutionEngine:
         assert order.status == OrderStatus.CANCELED
 
     @pytest.mark.asyncio
-    async def test_resolve_inflight_order_when_pending_canceled(self):
+    async def test_resolve_inflight_order_when_pending_cancel(self):
         # Arrange
-        # Deregister test fixture ExecutionEngine from msgbus
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
