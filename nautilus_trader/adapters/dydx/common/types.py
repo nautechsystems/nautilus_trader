@@ -26,24 +26,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 @customdataclass
-class DYDXInternalError(Data):
-    """
-    Represents an internal error of the indexer.
-    """
-
-    error_msg: str
-
-    _schema = pa.schema(
-        {
-            "error_msg": pa.string(),
-            "ts_event": pa.int64(),
-            "ts_init": pa.int64(),
-        },
-        metadata={"type": "DYDXInternalError"},
-    )
-
-
-@customdataclass
 class DYDXOraclePrice(Data):
     """
     Represents an oracle price.

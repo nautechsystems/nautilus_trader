@@ -18,26 +18,8 @@ Unit tests for the dYdX types.
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.dydx.common.types import DYDXInternalError
 from nautilus_trader.adapters.dydx.common.types import DYDXOraclePrice
 from nautilus_trader.model.identifiers import InstrumentId
-
-
-def test_dydx_internal_error() -> None:
-    """
-    Test the DYDXInternalError type.
-    """
-    # Arrange
-    data = DYDXInternalError(error_msg="internal error", ts_init=5, ts_event=6)
-
-    # Act
-    data_dict = data.to_dict()
-    data_from_dict = DYDXInternalError.from_dict(data_dict)
-
-    # Assert
-    assert data.error_msg == data_from_dict.error_msg
-    assert data.ts_event == data_from_dict.ts_event
-    assert data.ts_init == data_from_dict.ts_init
 
 
 def test_dydx_oracle_price(instrument_id: InstrumentId) -> None:
