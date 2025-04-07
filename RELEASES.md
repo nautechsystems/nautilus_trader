@@ -2,6 +2,8 @@
 
 Released on TBD (UTC).
 
+This release adds support for Python 3.13 (*not* yet compatible with free-threading).
+
 ### Enhancements
 - Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)
 - Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)

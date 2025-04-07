@@ -23,7 +23,7 @@ classifiers = [
 ]
 license = {text = "LGPL-3.0-or-later"}
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "click>=8.1.8,<9.0.0",
     "fsspec>=2025.2.0,<2026.0.0",
