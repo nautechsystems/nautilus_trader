@@ -462,11 +462,36 @@ cdef class OrderMatchingEngine:
         tick : QuoteTick
             The tick to process.
 
+        Raises
+        ------
+        RuntimeError
+            If a price precision does not match the instrument for the matching engine.
+        RuntimeError
+            If a size precision does not match the instrument for the matching engine.
+
         """
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
             self._log.debug(f"Processing {tick!r}")
+
+        # Validate precisions
+        if tick._mem.bid_price.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {tick.bid_price.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if tick._mem.ask_price.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {tick.ask_price.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if tick._mem.bid_size.precision != self.instrument.size_precision:
+            raise RuntimeError(
+                f"invalid {tick.bid_size.precision=} did not match {self.instrument.size_precision=}",
+            )
+        if tick._mem.ask_size.precision != self.instrument.size_precision:
+            raise RuntimeError(
+                f"invalid {tick.ask_size.precision=} did not match {self.instrument.size_precision=}",
+            )
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
@@ -484,11 +509,28 @@ cdef class OrderMatchingEngine:
         tick : TradeTick
             The tick to process.
 
+        Raises
+        ------
+        RuntimeError
+            If the trades price precision does not match the instrument for the matching engine.
+        RuntimeError
+            If the trades size precision does not match the instrument for the matching engine.
+
         """
         Condition.not_none(tick, "tick")
 
         if is_logging_initialized():
             self._log.debug(f"Processing {tick!r}")
+
+        # Validate precisions
+        if tick._mem.price.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {tick.price.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if tick._mem.size.precision != self.instrument.size_precision:
+            raise RuntimeError(
+                f"invalid {tick.size.precision=} did not match {self.instrument.size_precision=}",
+            )
 
         if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
@@ -527,6 +569,13 @@ cdef class OrderMatchingEngine:
         bar : Bar
             The bar to process.
 
+        Raises
+        ------
+        RuntimeError
+            If a price precision does not match the instrument for the matching engine.
+        RuntimeError
+            If a size precision does not match the instrument for the matching engine.
+
         """
         Condition.not_none(bar, "bar")
 
@@ -542,6 +591,28 @@ cdef class OrderMatchingEngine:
 
         if bar_type.spec.aggregation == BarAggregation.MONTH:
             return  # Do not process monthly bars (there is no available `timedelta`)
+
+        # Validate precisions
+        if bar._mem.open.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {bar.open.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if bar._mem.high.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {bar.high.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if bar._mem.low.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {bar.low.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if bar._mem.close.precision != self.instrument.price_precision:
+            raise RuntimeError(
+                f"invalid {bar.close.precision=} did not match {self.instrument.price_precision=}",
+            )
+        if bar._mem.volume.precision != self.instrument.size_precision:
+            raise RuntimeError(
+                f"invalid {bar.volume.precision=} did not match {self.instrument.size_precision=}",
+            )
 
         cdef InstrumentId instrument_id = bar_type.instrument_id
         cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
