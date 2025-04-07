@@ -116,6 +116,7 @@ class Controller(Actor):
 
         """
         self._trader.add_actor(actor)
+
         if start:
             actor.start()
 
@@ -139,6 +140,7 @@ class Controller(Actor):
 
         """
         self._trader.add_strategy(strategy)
+
         if start:
             strategy.start()
 
