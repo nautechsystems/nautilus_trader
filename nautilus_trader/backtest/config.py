@@ -18,6 +18,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+import msgspec
 import pandas as pd
 
 from nautilus_trader.common import Environment
@@ -350,11 +351,15 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.BACKTEST
-    trader_id: TraderId = TraderId("BACKTESTER-001")
+    trader_id: TraderId = "BACKTESTER-001"
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
     exec_engine: ExecEngineConfig = ExecEngineConfig()
     run_analysis: bool = True
+
+    def __post_init__(self):
+        if isinstance(self.trader_id, str):
+            msgspec.structs.force_setattr(self, "trader_id", TraderId(self.trader_id))
 
 
 class BacktestRunConfig(NautilusConfig, frozen=True):

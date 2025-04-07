@@ -81,6 +81,24 @@ def resolve_config_path(path: str) -> type[NautilusConfig]:
     return config
 
 
+def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
+    if issubclass(type_, Identifier):
+        return {"type": "string"}
+    if type_ in (Currency, Price, Quantity, Money, BarType, BarSpecification):
+        return {"type": "string"}
+    if type_ in (Decimal, UUID4):
+        return {"type": "string"}
+    if type_ == pd.Timestamp:
+        return {"type": "string", "format": "date-time"}
+    if type_ == pd.Timedelta:
+        return {"type": "string"}
+    if type_ == Environment:
+        return {"type": "string"}
+    if type_ is type:  # Handle <class 'type'>
+        return {"type": "string"}  # Represent type objects as strings
+    raise TypeError(f"Unsupported type for schema generation: {type_}")
+
+
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
@@ -181,6 +199,18 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
 
         """
         return cls.__module__ + ":" + cls.__qualname__
+
+    @classmethod
+    def json_schema(cls) -> dict[str, Any]:
+        """
+        Generate a JSON schema for this configuration class.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        return msgspec.json.schema(cls, schema_hook=nautilus_schema_hook)
 
     @classmethod
     def parse(cls, raw: bytes | str) -> Any:
