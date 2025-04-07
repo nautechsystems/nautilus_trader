@@ -332,18 +332,24 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
 
 impl LogWriter for FileWriter {
     fn write(&mut self, line: &str) {
-        // Check if we need to rotate the file
-        if self.should_rotate_file() {
-            self.rotate_file();
-        }
-
         let line = strip_ansi_codes(line);
+        let line_size = line.len() as u64;
+
+        // Check if we need to rotate the file
+        // Only rotate if the current file size plus the new line size exceeds max_file_size
+        if let Some(rotate_config) = &mut self.file_config.file_rotate {
+            if rotate_config.cur_file_size > 0
+                && rotate_config.cur_file_size + line_size > rotate_config.max_file_size
+            {
+                self.rotate_file();
+            }
+        }
 
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {
                 // Update current file size
                 if let Some(rotate_config) = &mut self.file_config.file_rotate {
-                    rotate_config.cur_file_size += line.len() as u64;
+                    rotate_config.cur_file_size += line_size;
                 }
             }
             Err(e) => tracing::error!("Error writing to file: {e:?}"),
