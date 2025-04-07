@@ -30,6 +30,20 @@ from nautilus_trader.model.enums import TimeInForce
 
 
 @unique
+class DYDXChannel(Enum):
+    """
+    Represents a dYdX websocket channel.
+    """
+
+    TRADES = "v4_trades"
+    ORDERBOOK = "v4_orderbook"
+    CANDLES = "v4_candles"
+    MARKETS = "v4_markets"
+    SUBACCOUNTS = "v4_subaccounts"
+    BLOCK_HEIGHT = "v4_block_height"
+
+
+@unique
 class DYDXLiquidity(Enum):
     """
     Represents a dYdX liquidity type.
