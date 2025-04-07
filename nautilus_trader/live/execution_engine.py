@@ -515,6 +515,7 @@ class LiveExecutionEngine(ExecutionEngine):
         for order in inflight_orders:
             retries = self._inflight_check_retries[order.client_order_id]
             if retries >= self.inflight_check_max_retries:
+                self._inflight_check_retries.pop(order.client_order_id, None)
                 self._resolve_inflight_order(order)
                 continue
 
@@ -539,22 +540,38 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._inflight_check_retries[order.client_order_id] += 1
 
     def _resolve_inflight_order(self, order: Order) -> None:
+        ts_now = self._clock.timestamp_ns()
+
         if order.status == OrderStatus.SUBMITTED:
-            self.generate_order_rejected(
+            rejected = OrderRejected(
+                trader_id=order.trader_id,
                 strategy_id=order.strategy_id,
-                instrument_id=order.instrumentId,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
+                account_id=order.account_id,
                 reason="UNKNOWN",
-                ts_event=self._clock.timstamp_ns(),
+                event_id=UUID4(),
+                ts_event=ts_now,
+                ts_init=ts_now,
+                reconciliation=True,
             )
+            self._log.debug(f"Generated {rejected}")
+            self._handle_event(rejected)
         elif order.status in (OrderStatus.PENDING_UPDATE, OrderStatus.PENDING_CANCEL):
-            self.generate_order_canceled(
+            canceled = OrderCanceled(
+                trader_id=order.trader_id,
                 strategy_id=order.strategy_id,
-                instrument_id=order.instrumentId,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timstamp_ns(),
+                account_id=order.account_id,
+                event_id=UUID4(),
+                ts_event=ts_now,
+                ts_init=ts_now,
+                reconciliation=True,
             )
+            self._log.debug(f"Generated {canceled}")
+            self._handle_event(canceled)
         else:
             raise RuntimeError(f"Invalid status for in-flight order, was '{order.status_string()}'")
 
