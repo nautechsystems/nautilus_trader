@@ -5,7 +5,7 @@ trading environment with no code changes. This seamless transition from backtest
 is a core feature of the platform, ensuring consistency and reliability. However, there are
 key differences to be aware of between backtesting and live trading.
 
-This guide provides an overview of the live trading process and its key aspects.
+This guide provides an overview of the key aspects of live trading.
 
 ## Configuration
 
@@ -51,10 +51,19 @@ See also [Execution reconciliation](../concepts/execution#execution-reconciliati
 
 **Purpose**: Regularly checks the status of in-flight orders (orders that have been submitted, modified or canceled but not yet confirmed) to ensure they are processed correctly and promptly.
 
-| Setting                       | Default  | Description                                                                                                                         |
-|-------------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `inflight_check_interval_ms`  | 2,000 ms | Determines how frequently the system checks in-flight order status.                                                                 |
-| `inflight_check_threshold_ms` | 5,000 ms | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
+| Setting                       | Default   | Description                                                                                                                         |
+|-------------------------------|-----------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `inflight_check_interval_ms`  | 2,000 ms  | Determines how frequently the system checks in-flight order status.                                                                 |
+| `inflight_check_threshold_ms` | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
+| `inflight_check_retries`      | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
+
+If an in-flight order’s status cannot be reconciled after exhausting all retries, the system resolves it by generating one of these events based on its status:
+
+- `SUBMITTED` -> `REJECTED`: Assumes the submission failed if no confirmation is received.
+- `PENDING_UPDATE` -> `CANCELED`: Treats a pending modification as canceled if unresolved.
+- `PENDING_CANCEL` -> `CANCELED`: Assumes cancellation if the venue doesn’t respond.
+
+This ensures the trading node maintains a consistent execution state even under unreliable conditions.
 
 #### Open order checks
 
@@ -205,7 +214,7 @@ methods to produce an execution mass status:
 - `generate_fill_reports`
 - `generate_position_status_reports`
 
-The system state is then reconciled with the reports, which represent the external reality:
+The system state is then reconciled with the reports, which represent external "reality":
 
 - **Duplicate Check**:
     - Check for duplicate order IDs and trade IDs.
