@@ -23,10 +23,10 @@ from typing import TYPE_CHECKING
 import msgspec
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
+from nautilus_trader.adapters.dydx.common.enums import DYDXChannel
 from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.parsing import get_interval_from_bar_type
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
-from nautilus_trader.adapters.dydx.common.types import DYDXInternalError
 from nautilus_trader.adapters.dydx.common.types import DYDXOraclePrice
 from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
@@ -309,16 +309,6 @@ class DYDXDataClient(LiveMarketDataClient):
                     self._handle_kline_unsubscribed(ws_message)
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
-            elif ws_message.type == "error":
-                self._log.warning(f"Websocket error: {ws_message.message}")
-                ts_init = self._clock.timestamp_ns()
-                dydx_internal_error = DYDXInternalError(
-                    error_msg=ws_message.message,
-                    ts_event=ts_init,
-                    ts_init=ts_init,
-                )
-                data_type = DataType(DYDXInternalError)
-                self._msgbus.publish(topic=f"data.{data_type.topic}", msg=dydx_internal_error)
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
@@ -795,13 +785,15 @@ class DYDXDataClient(LiveMarketDataClient):
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is already subscribed.
-        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
         self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
         if command.instrument_id not in self._books:
             self._books[command.instrument_id] = OrderBook(command.instrument_id, command.book_type)
 
-        if not self._ws_client.has_subscription(subscription):
+        if not self._ws_client.has_subscription(
+            channel=DYDXChannel.ORDERBOOK,
+            channel_id=dydx_symbol.raw_symbol,
+        ):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
@@ -813,9 +805,11 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is already subscribed.
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
-        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
-        if not self._ws_client.has_subscription(subscription):
+        if not self._ws_client.has_subscription(
+            channel=DYDXChannel.ORDERBOOK,
+            channel_id=dydx_symbol.raw_symbol,
+        ):
             order_book_command = SubscribeOrderBook(
                 command_id=command.id,
                 instrument_id=command.instrument_id,
@@ -843,21 +837,23 @@ class DYDXDataClient(LiveMarketDataClient):
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
-        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
-
         if dydx_symbol.raw_symbol in self._orderbook_subscriptions:
             self._orderbook_subscriptions.remove(dydx_symbol.raw_symbol)
 
-        if self._ws_client.has_subscription(subscription):
+        if self._ws_client.has_subscription(
+            channel=DYDXChannel.ORDERBOOK,
+            channel_id=dydx_symbol.raw_symbol,
+        ):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
     async def _unsubscribe_quote_ticks(self, command: UnsubscribeQuoteTicks) -> None:
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)
 
         # Check if the websocket client is subscribed.
-        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
-
-        if self._ws_client.has_subscription(subscription):
+        if self._ws_client.has_subscription(
+            channel=DYDXChannel.ORDERBOOK,
+            channel_id=dydx_symbol.raw_symbol,
+        ):
             order_book_command = UnsubscribeOrderBook(
                 command_id=command.id,
                 instrument_id=command.instrument_id,
