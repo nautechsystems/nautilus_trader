@@ -23,6 +23,7 @@ None
 
 ### Fixes
 - Fixed setting component clocks to backtest start time
+- Fixed overflow error in trailing stop calculations
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 
 ### Documentation Updates
