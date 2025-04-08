@@ -13,8 +13,12 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Debug github_ref
+      shell: bash
+      run: echo "Received github_ref:" ${{ inputs.github_ref }}
+
     - name: Update version in pyproject.toml
-      if: inputs.github_ref != 'refs/heads/master'
+      if: ${{ inputs.github_ref != 'refs/heads/master' }}
       shell: bash
       run: |
         bash ./scripts/ci/update-pyproject-version.sh
