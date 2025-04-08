@@ -44,7 +44,7 @@ cdef class TrailingStopCalculator:
         if order.order_type not in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             raise TypeError(f"invalid `OrderType` for calculation, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
-        cdef int64_t trailing_offset_raw = int(order.trailing_offset * int(FIXED_SCALAR))
+        cdef int64_t trailing_offset_raw = <int64_t>(order.trailing_offset * <int64_t>FIXED_SCALAR)
         cdef int64_t limit_offset_raw = 0
 
         cdef Price trigger_price = order.trigger_price
@@ -54,7 +54,7 @@ cdef class TrailingStopCalculator:
 
         if order.order_type == OrderType.TRAILING_STOP_LIMIT:
             price = order.price
-            limit_offset_raw = int(order.limit_offset * int(FIXED_SCALAR))
+            limit_offset_raw = <int64_t>(order.limit_offset * <int64_t>FIXED_SCALAR)
 
         cdef:
             Price temp_trigger_price
