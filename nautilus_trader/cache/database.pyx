@@ -646,8 +646,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         position_id_pyo3 = nautilus_pyo3.PositionId.from_str(str(position_id))
         position_pyo3 = self._backing.load_position(position_id_pyo3)
+        instrument_id = InstrumentId.from_str_c(str(position_pyo3.instrument_id))
+        instrument = self._backing.load_instrument(instrument_id)
+        instrument_pyo3 = transform_instrument_to_pyo3(instrument)
+
         if position_pyo3:
-            return transform_position_from_pyo3(position_pyo3)
+            return transform_position_from_pyo3(position_pyo3, instrument_pyo3)
         return None
 
     cpdef dict load_actor(self, ComponentId component_id):
@@ -827,11 +831,10 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(order, "order")
 
-        cdef order_pyo3 = transform_order_to_pyo3(order)
-        self._backing.add_order(order_pyo3, position_id, client_id)
+        # TODO: Copy Cython and just convert the order initialized event
+        # self._backing.add_order(order_pyo3, position_id, client_id)
 
         self._log.debug(f"Added {order}")
-
 
     cpdef void add_position(self, Position position):
         """
@@ -845,8 +848,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         """
         Condition.not_none(position, "position")
 
-        cdef position_pyo3 = transform_position_to_pyo3(position)
-        self._backing.add_position(position_pyo3)
+        # TODO: Copy Cython and just convert the initial (last) order filled event
+        # self._backing.add_position(position_pyo3)
 
         self._log.debug(f"Added {position}")
 
