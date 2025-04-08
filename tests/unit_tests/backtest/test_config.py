@@ -112,7 +112,7 @@ class TestBacktestConfig:
 
         # Assert
         assert len(result.data) == 86985
-        assert result.instrument is None
+        assert result.instruments is None
         assert result.client_id == ClientId("NewsClient")
         assert result.data[0].data_type.metadata == {"kind": "news"}
 
@@ -153,7 +153,7 @@ class TestBacktestConfig:
 
         # Assert
         assert len(result.data) == 2
-        assert result.instrument is None
+        assert result.instruments is None
         assert result.client_id is None
 
     def test_resolve_cls(self):
@@ -213,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1146  # UNIX
+        assert result == 1198  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -234,7 +234,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 856  # UNIX
+        assert len(raw) == 895  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -255,7 +255,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1894
+        assert result == 2050
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -263,7 +263,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "1401fab0644a974c8879852405102b4c94dba62e4a6a087cf42f9fc0a62805c4"
+        assert token == "bb8070e2b9c260bd6e51b1ef57c93d338b0d31a3798e0b6bc4787cbc7f25fd1b"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
@@ -279,13 +279,13 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_data_config,
                 ("catalog",),
                 {},
-                ("949ef3abd03a447949d298f38a9aab669afc740720d747d4df2a9a121d78d110",),
+                ("22a83df0e65c304aff0a92070c6c55cef8a91392892a99dd6a992ad6ed829556",),
             ),
             (
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("56ae93eb49fe4b05643eb9715bd55c508de5b8804159a56c9d4bc70e109d514c",),
+                ("3b5e22077a7bed33fce968327a32d665dbc98e3ba4b12358b404bf3931604981",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
@@ -309,7 +309,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.streaming_config,
                 ("catalog",),
                 {},
-                ("302b840b10cdd0cc2664ee5f3bb8623ada23d6a6c7ecb8f41117fddecc6bea9a",),
+                ("fe0f050d36c142fa3ed2d7de1a0155f2ac4741b8abb8b0788165268a3ece77b9",),
             ),
         ],
     )

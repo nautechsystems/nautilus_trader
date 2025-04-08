@@ -20,6 +20,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from nautilus_trader.accounting.factory import AccountFactory
+from nautilus_trader.common import Environment
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
@@ -182,6 +183,7 @@ def trader(
         risk_engine=risk_engine,
         exec_engine=exec_engine,
         clock=clock,
+        environment=Environment.BACKTEST,
         loop=event_loop,
     )
 

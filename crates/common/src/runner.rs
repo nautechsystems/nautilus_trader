@@ -19,9 +19,11 @@ use std::{
     rc::Rc,
 };
 
+use nautilus_model::data::Data;
+
 use crate::{
     clock::Clock,
-    messages::data::{DataEvent, DataResponse, SubscriptionCommand},
+    messages::data::{DataResponse, SubscribeCommand},
     timer::TimeEvent,
 };
 
@@ -30,6 +32,13 @@ pub trait DataQueue {
 }
 
 pub type GlobalDataQueue = Rc<RefCell<dyn DataQueue>>;
+
+// TODO: Refine this to reduce disparity between enum sizes
+#[allow(clippy::large_enum_variant)]
+pub enum DataEvent {
+    Response(DataResponse),
+    Data(Data),
+}
 
 pub struct SyncDataQueue(VecDeque<DataEvent>);
 
@@ -80,7 +89,7 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
         .expect("Should be able to access thread local clock");
 }
 
-pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscriptionCommand>>>;
+pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>; // TODO: Use DataCommand?
 
 /// Get globally shared message bus command queue
 #[must_use]

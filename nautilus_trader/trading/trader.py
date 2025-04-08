@@ -29,6 +29,7 @@ import pandas as pd
 
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Component
@@ -74,6 +75,8 @@ class Trader(Component):
         The execution engine for the trader.
     clock : Clock
         The clock for the trader.
+    environment : Environment { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }
+        The environment context.
     has_controller : bool, default False
         If the trader has a controller.
     loop : asyncio.AbstractEventLoop, optional
@@ -103,6 +106,7 @@ class Trader(Component):
         risk_engine: RiskEngine,
         exec_engine: Any,
         clock: Clock,
+        environment: Environment,
         has_controller: bool = False,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
@@ -117,6 +121,7 @@ class Trader(Component):
         )
 
         self._instance_id = instance_id
+        self._environment = environment
         self._loop = loop
         self._cache = cache
         self._portfolio = portfolio
@@ -243,13 +248,22 @@ class Trader(Component):
     # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     def _start(self) -> None:
-        for actor in self._actors.values():
+        is_backtest = self._environment == Environment.BACKTEST
+        now_ns = self._clock.timestamp_ns()
+
+        for actor in list(self._actors.values()):
+            if is_backtest:
+                actor.clock.set_time(now_ns)
             actor.start()
 
-        for strategy in self._strategies.values():
+        for strategy in list(self._strategies.values()):
+            if is_backtest:
+                strategy.clock.set_time(now_ns)
             strategy.start()
 
-        for exec_algorithm in self._exec_algorithms.values():
+        for exec_algorithm in list(self._exec_algorithms.values()):
+            if is_backtest:
+                exec_algorithm.clock.set_time(now_ns)
             exec_algorithm.start()
 
     def _stop(self) -> None:

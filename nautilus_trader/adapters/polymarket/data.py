@@ -38,6 +38,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
@@ -175,6 +176,11 @@ class PolymarketDataClient(LiveMarketDataClient):
             loop=self._loop,
         )
 
+    def _create_local_book(self, instrument_id: InstrumentId) -> OrderBook:
+        local_book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
+        self._local_books[instrument_id] = local_book
+        return local_book
+
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
@@ -197,7 +203,7 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _delayed_ws_client_connection(
         self,
         ws_client: PolymarketWebSocketClient,
-        sleep_secs: int,
+        sleep_secs: float,
     ) -> None:
         try:
             await asyncio.sleep(sleep_secs)
@@ -214,6 +220,9 @@ class PolymarketDataClient(LiveMarketDataClient):
             create_connect_task = True
 
         token_id = get_polymarket_token_id(instrument_id)
+        if token_id in self._ws_client_pending_connection.asset_subscriptions():
+            return  # Already subscribed
+
         self._ws_client_pending_connection.subscribe_book(token_id)
 
         if create_connect_task:
@@ -239,13 +248,15 @@ class PolymarketDataClient(LiveMarketDataClient):
             )
             return
 
-        if self._config.compute_effective_deltas:
-            local_book = OrderBook(command.instrument_id, book_type=BookType.L2_MBP)
-            self._local_books[command.instrument_id] = local_book
+        if command.instrument_id not in self._local_books:
+            self._create_local_book(command.instrument_id)
 
         await self._subscribe_asset_book(command.instrument_id)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
+        if command.instrument_id not in self._local_books:
+            self._create_local_book(command.instrument_id)
+
         await self._subscribe_asset_book(command.instrument_id)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
@@ -364,7 +375,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                     else:
                         self._log.error(f"Unknown websocket message topic: {ws_message}")
         except Exception as e:
-            self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+            self._log.exception(f"Failed to parse websocket message: {raw.decode()} with error", e)
 
     def _handle_book_snapshot(
         self,
@@ -408,35 +419,35 @@ class PolymarketDataClient(LiveMarketDataClient):
         now_ns = self._clock.timestamp_ns()
         deltas = ws_message.parse_to_deltas(instrument=instrument, ts_init=now_ns)
 
-        if self._config.compute_effective_deltas:
-            local_book = self._local_books.get(instrument.id)
-            if local_book:
-                local_book.apply_deltas(deltas)
+        local_book = self._local_books[instrument.id]
+        local_book.apply(deltas)
 
         self._handle_data(deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
-            last_quote = self._last_quotes.get(instrument.id)
-            if last_quote is None:
-                return
-
-            # Check if top-of-book change
-            quotes = ws_message.parse_to_quote_ticks(
-                instrument=instrument,
-                last_quote=last_quote,
+            quote = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=local_book.best_bid_price(),
+                ask_price=local_book.best_ask_price(),
+                bid_size=local_book.best_bid_size(),
+                ask_size=local_book.best_ask_size(),
+                ts_event=millis_to_nanos(float(ws_message.timestamp)),
                 ts_init=self._clock.timestamp_ns(),
             )
-            for quote in quotes:
+
+            last_quote = self._last_quotes.get(instrument.id)
+
+            if last_quote is not None:
                 if (
                     quote.bid_price == last_quote.bid_price
                     and quote.ask_price == last_quote.ask_price
                     and quote.bid_size == last_quote.bid_size
                     and quote.ask_size == last_quote.ask_size
                 ):
-                    continue  # No top-of-book change
+                    return  # No top-of-book change
 
-                self._last_quotes[instrument.id] = quote
-                self._handle_data(quote)
+            self._last_quotes[instrument.id] = quote
+            self._handle_data(quote)
 
     def _handle_trade(
         self,

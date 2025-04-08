@@ -71,12 +71,17 @@ pub struct DatabentoHistoricalClient {
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+    use_exchange_as_venue: bool,
 }
 
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_filepath: PathBuf) -> PyResult<Self> {
+    fn py_new(
+        key: String,
+        publishers_filepath: PathBuf,
+        use_exchange_as_venue: bool,
+    ) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
             .key(key.clone())
             .map_err(to_pyvalue_err)?
@@ -98,6 +103,7 @@ impl DatabentoHistoricalClient {
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
             key,
+            use_exchange_as_venue,
         })
     }
 
@@ -126,9 +132,9 @@ impl DatabentoHistoricalClient {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "get_range_instruments")]
-    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, use_exchange_as_venue=false))]
+    #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_instruments<'py>(
         &self,
         py: Python<'py>,
@@ -137,7 +143,6 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
-        use_exchange_as_venue: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
         let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
@@ -165,6 +170,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
+        let use_exchange_as_venue = self.use_exchange_as_venue;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -418,8 +424,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_bars")]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (dataset, instrument_ids, aggregation, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
@@ -510,8 +516,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_imbalance")]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
@@ -583,8 +589,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_statistics")]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
@@ -657,8 +663,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_status")]
-    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (dataset, instrument_ids, start, end=None, limit=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_status<'py>(
         &self,
         py: Python<'py>,

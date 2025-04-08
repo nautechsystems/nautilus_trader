@@ -629,6 +629,25 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
+    cpdef void update_instrument(self, Instrument instrument):
+        """
+        Update the venues current instrument definition with the given instrument.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument definition to update.
+
+        """
+        Condition.not_none(instrument, "instrument")
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(instrument.id)
+        if matching_engine is None:
+            self.add_instrument(instrument)
+            return
+
+        matching_engine.update_instrument(instrument)
+
     cpdef void send(self, TradingCommand command):
         """
         Send the given trading command into the exchange.

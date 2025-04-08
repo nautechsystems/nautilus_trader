@@ -13,14 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use futures_util::StreamExt;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     identifiers::InstrumentId,
-    instruments::Instrument,
     python::{
         data::data_to_pycapsule,
         events::order::order_event_to_pyobject,
@@ -75,10 +72,10 @@ impl CoinbaseIntxWebSocketClient {
         instruments: Vec<PyObject>,
         callback: PyObject,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let mut instruments_any = HashMap::new();
+        let mut instruments_any = Vec::new();
         for inst in instruments {
             let inst_any = pyobject_to_instrument_any(py, inst)?;
-            instruments_any.insert(inst_any.raw_symbol().inner(), inst_any);
+            instruments_any.push(inst_any);
         }
 
         get_runtime().block_on(async {

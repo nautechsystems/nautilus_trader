@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-core"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_core"
@@ -15,6 +22,10 @@ default = []
 extension-module = ["pyo3/extension-module"]
 ffi = ["cbindgen"]
 python = ["pyo3"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 anyhow = { workspace = true }

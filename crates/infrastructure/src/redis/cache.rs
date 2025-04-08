@@ -47,6 +47,7 @@ use nautilus_model::{
     types::Currency,
 };
 use redis::{Pipeline, aio::ConnectionManager};
+use tokio::try_join;
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -189,7 +190,7 @@ impl RedisCacheDatabase {
         log::debug!("Closing");
 
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
-            log::debug!("Error sending close message: {e:?}")
+            log::debug!("Error sending close command: {e:?}")
         }
 
         log::debug!("Awaiting task '{CACHE_WRITE}'");
@@ -274,13 +275,17 @@ async fn process_commands(
             last_drain = Instant::now();
         } else {
             match rx.recv().await {
-                Some(msg) => {
-                    if let DatabaseOperation::Close = msg.op_type {
+                Some(cmd) => {
+                    tracing::debug!("Received {cmd:?}");
+                    if let DatabaseOperation::Close = cmd.op_type {
                         break;
                     }
-                    buffer.push_back(msg)
+                    buffer.push_back(cmd)
                 }
-                None => break, // Channel hung up
+                None => {
+                    tracing::debug!("Command channel closed");
+                    break;
+                }
             }
         }
     }
@@ -624,7 +629,38 @@ impl CacheDatabaseAdapter for RedisCacheDatabase {
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         tracing::debug!("Loading all data");
-        DatabaseQueries::load_all(&self.con, self.encoding, &self.trader_key).await
+
+        let (
+            currencies,
+            instruments,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+            greeks,
+            yield_curves,
+        ) = try_join!(
+            self.load_currencies(),
+            self.load_instruments(),
+            self.load_synthetics(),
+            self.load_accounts(),
+            self.load_orders(),
+            self.load_positions(),
+            self.load_greeks(),
+            self.load_yield_curves()
+        )
+        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
+
+        Ok(CacheMap {
+            currencies,
+            instruments,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+            greeks,
+            yield_curves,
+        })
     }
 
     async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {

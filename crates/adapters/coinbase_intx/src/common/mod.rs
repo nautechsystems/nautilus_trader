@@ -19,13 +19,4 @@ pub mod enums;
 pub mod parse;
 
 #[cfg(test)]
-#[must_use]
-pub fn load_test_json(file_name: &str) -> String {
-    use std::{fs, path::PathBuf};
-
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("test_data")
-        .join(file_name);
-
-    fs::read_to_string(path).expect("Failed to read test data JSON file")
-}
+pub(crate) mod testing;

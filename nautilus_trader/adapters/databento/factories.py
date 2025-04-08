@@ -34,6 +34,7 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 def get_cached_databento_http_client(
     key: str | None = None,
     gateway: str | None = None,
+    use_exchange_as_venue: bool = True,
 ) -> nautilus_pyo3.DatabentoHistoricalClient:
     """
     Cache and return a Databento historical HTTP client with the given key and gateway.
@@ -46,6 +47,8 @@ def get_cached_databento_http_client(
         The Databento API secret key for the client.
     gateway : str, optional
         The Databento historical HTTP client gateway override.
+    use_exchange_as_venue : bool, default True
+        If the `exchange` field will be used as the venue for instrument IDs.
 
     Returns
     -------
@@ -55,6 +58,7 @@ def get_cached_databento_http_client(
     return nautilus_pyo3.DatabentoHistoricalClient(
         key=key or get_env_key("DATABENTO_API_KEY"),
         publishers_filepath=str(PUBLISHERS_FILEPATH),
+        use_exchange_as_venue=use_exchange_as_venue,
     )
 
 
@@ -66,6 +70,7 @@ def get_cached_databento_instrument_provider(
     live_gateway: str | None = None,
     loader: DatabentoDataLoader | None = None,
     config: InstrumentProviderConfig | None = None,
+    use_exchange_as_venue=True,
 ) -> DatabentoInstrumentProvider:
     """
     Cache and return a Databento instrument provider.
@@ -87,6 +92,8 @@ def get_cached_databento_instrument_provider(
         The loader for the provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    use_exchange_as_venue : bool, default True
+        If the `exchange` field will be used as the venue for instrument IDs.
 
     Returns
     -------
@@ -100,6 +107,7 @@ def get_cached_databento_instrument_provider(
         live_gateway=live_gateway,
         loader=loader,
         config=config,
+        use_exchange_as_venue=use_exchange_as_venue,
     )
 
 
@@ -144,9 +152,10 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
         http_client = get_cached_databento_http_client(
             key=config.api_key,
             gateway=config.http_gateway,
+            use_exchange_as_venue=config.use_exchange_as_venue,
         )
 
-        loader = DatabentoDataLoader()
+        loader = DatabentoDataLoader(config.venue_dataset_map)
         provider = get_cached_databento_instrument_provider(
             http_client=http_client,
             clock=clock,
@@ -154,6 +163,7 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             live_gateway=config.live_gateway,
             loader=loader,
             config=config.instrument_provider,
+            use_exchange_as_venue=config.use_exchange_as_venue,
         )
 
         return DatabentoDataClient(

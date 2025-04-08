@@ -191,6 +191,7 @@ class TestEventStubs:
     def order_submitted(
         order: Order,
         account_id: AccountId | None = None,
+        ts_event: int = 0,
     ) -> OrderSubmitted:
         return OrderSubmitted(
             trader_id=order.trader_id,
@@ -198,7 +199,7 @@ class TestEventStubs:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             account_id=account_id or TestIdStubs.account_id(),
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
@@ -208,6 +209,7 @@ class TestEventStubs:
         order: Order,
         account_id: AccountId | None = None,
         venue_order_id: VenueOrderId | None = None,
+        ts_event: int = 0,
     ) -> OrderAccepted:
         return OrderAccepted(
             trader_id=order.trader_id,
@@ -216,7 +218,7 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id or TestIdStubs.venue_order_id(),
             account_id=account_id or TestIdStubs.account_id(),
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
@@ -225,6 +227,7 @@ class TestEventStubs:
     def order_rejected(
         order: Order,
         account_id: AccountId | None = None,
+        ts_event: int = 0,
     ) -> OrderRejected:
         return OrderRejected(
             trader_id=order.trader_id,
@@ -233,13 +236,16 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             account_id=account_id or TestIdStubs.account_id(),
             reason="ORDER_REJECTED",
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
 
     @staticmethod
-    def order_pending_update(order: Order) -> OrderPendingUpdate:
+    def order_pending_update(
+        order: Order,
+        ts_event: int = 0,
+    ) -> OrderPendingUpdate:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -247,7 +253,7 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
@@ -258,6 +264,7 @@ class TestEventStubs:
         quantity: Quantity | None = None,
         price: Price | None = None,
         trigger_price: Price | None = None,
+        ts_event: int = 0,
     ) -> OrderUpdated:
         return OrderUpdated(
             trader_id=order.trader_id,
@@ -270,12 +277,15 @@ class TestEventStubs:
             quantity=quantity or order.quantity,
             price=price,
             trigger_price=trigger_price,
+            ts_event=ts_event,
             ts_init=0,
-            ts_event=0,
         )
 
     @staticmethod
-    def order_pending_cancel(order: Order) -> OrderPendingCancel:
+    def order_pending_cancel(
+        order: Order,
+        ts_event: int = 0,
+    ) -> OrderPendingCancel:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -283,7 +293,7 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=order.account_id,
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
@@ -301,8 +311,8 @@ class TestEventStubs:
         last_px: Price | None = None,
         side: OrderSide | None = None,  # For linearizing: flip side & use 1/price for prob space
         liquidity_side: LiquiditySide = LiquiditySide.TAKER,
-        ts_filled_ns: int = 0,
         account: Account | None = None,
+        ts_event: int = 0,
     ) -> OrderFilled:
         strategy_id = strategy_id or order.strategy_id
         account_id = account_id or order.account_id or TestIdStubs.account_id()
@@ -343,13 +353,16 @@ class TestEventStubs:
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            ts_event=ts_filled_ns,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
 
     @staticmethod
-    def order_canceled(order: Order) -> OrderCanceled:
+    def order_canceled(
+        order: Order,
+        ts_event: int = 0,
+    ) -> OrderCanceled:
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -357,13 +370,16 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=TestIdStubs.account_id(),
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
 
     @staticmethod
-    def order_expired(order: Order) -> OrderExpired:
+    def order_expired(
+        order: Order,
+        ts_event: int = 0,
+    ) -> OrderExpired:
         return OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -371,13 +387,16 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=TestIdStubs.account_id(),
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )
 
     @staticmethod
-    def order_triggered(order: Order) -> OrderTriggered:
+    def order_triggered(
+        order: Order,
+        ts_event: int = 0,
+    ) -> OrderTriggered:
         return OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -385,7 +404,7 @@ class TestEventStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             account_id=TestIdStubs.account_id(),
-            ts_event=0,
+            ts_event=ts_event,
             event_id=UUID4(),
             ts_init=0,
         )

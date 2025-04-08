@@ -110,7 +110,7 @@ runs:
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.SCCACHE_DIR }}
-        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/poetry.lock') }}
+        key: sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock', '**/uv.lock') }}
         restore-keys: |
           sccache-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
           sccache-${{ runner.os }}-${{ github.workflow }}-
@@ -145,7 +145,7 @@ runs:
 
     - name: Install pre-commit
       shell: bash
-      run: pip install pre-commit==4.1.0
+      run: pip install pre-commit==4.2.0
 
     # > --------------------------------------------------
     # > UV

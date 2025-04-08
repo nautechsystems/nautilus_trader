@@ -846,7 +846,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 else:
                     self._log.error(f"Unrecognized websocket message {msg}")
         except Exception as e:
-            self._log.error(f"Error handling websocket message: {e} {raw.decode()}")
+            self._log.exception(f"Error handling websocket message: {raw.decode()}", e)
 
     def _add_trade_to_cache(self, msg: PolymarketUserTrade, raw: bytes) -> None:
         start_us = self._clock.timestamp_us()

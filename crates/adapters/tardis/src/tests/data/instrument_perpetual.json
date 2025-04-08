@@ -4,15 +4,33 @@
   "exchange": "bitmex",
   "baseCurrency": "BTC",
   "quoteCurrency": "USD",
+  "settlementCurrency": "BTC",
   "type": "perpetual",
   "active": true,
   "availableSince": "2019-03-30T00:00:00.000Z",
-  "priceIncrement": 0.5,
-  "amountIncrement": 1,
-  "minTradeAmount": 1,
-  "makerFee": -0.00025,
-  "takerFee": 0.00075,
+  "priceIncrement": 0.1,
+  "amountIncrement": 100,
+  "minTradeAmount": 100,
+  "makerFee": 0.0005,
+  "takerFee": 0.0005,
   "inverse": true,
   "contractType": "inverse_perpetual",
-  "contractMultiplier": 1
+  "contractMultiplier": 1,
+  "underlyingIndex": ".BXBT",
+  "changes": [
+    {
+      "until": "2021-06-08T04:30:00.000Z",
+      "amountIncrement": 1,
+      "minTradeAmount": 1
+    },
+    {
+      "until": "2024-07-31T04:00:00.000Z",
+      "priceIncrement": 0.5
+    },
+    {
+      "until": "2024-10-22T00:00:00.000Z",
+      "makerFee": 0.0002,
+      "takerFee": 0.00075
+    }
+  ]
 }

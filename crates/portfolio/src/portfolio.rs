@@ -27,7 +27,10 @@ use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{self, handler::ShareableMessageHandler},
+    msgbus::{
+        self,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
+    },
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -42,16 +45,8 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
 use ustr::Ustr;
-use uuid::Uuid;
 
-use crate::{
-    config::PortfolioConfig,
-    handlers::{
-        UpdateAccountHandler, UpdateBarHandler, UpdateOrderHandler, UpdatePositionHandler,
-        UpdateQuoteTickHandler,
-    },
-    manager::AccountsManager,
-};
+use crate::{config::PortfolioConfig, manager::AccountsManager};
 
 struct PortfolioState {
     accounts: AccountsManager,
@@ -131,60 +126,53 @@ impl Portfolio {
     ) {
         let update_account_handler = {
             let cache = cache.clone();
-            ShareableMessageHandler(Rc::new(UpdateAccountHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &AccountState| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &AccountState| {
                     update_account(cache.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_position_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdatePositionHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &PositionEvent| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &PositionEvent| {
                     update_position(cache.clone(), clock.clone(), inner.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_quote_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdateQuoteTickHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |quote: &QuoteTick| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |quote: &QuoteTick| {
                     update_quote_tick(cache.clone(), clock.clone(), inner.clone(), quote);
-                }),
-            }))
+                },
+            )))
         };
 
         let update_bar_handler = {
             let cache = cache.clone();
             let clock = clock.clone();
             let inner = inner.clone();
-            ShareableMessageHandler(Rc::new(UpdateBarHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |bar: &Bar| {
-                    update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
-                }),
-            }))
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                update_bar(cache.clone(), clock.clone(), inner.clone(), bar);
+            })))
         };
 
         let update_order_handler = {
             let cache = cache;
             let clock = clock.clone();
             let inner = inner;
-            ShareableMessageHandler(Rc::new(UpdateOrderHandler {
-                id: Ustr::from(&Uuid::new_v4().to_string()),
-                callback: Box::new(move |event: &OrderEventAny| {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |event: &OrderEventAny| {
                     update_order(cache.clone(), clock.clone(), inner.clone(), event);
-                }),
-            }))
+                },
+            )))
         };
 
         msgbus::register("Portfolio.update_account", update_account_handler.clone());
@@ -215,10 +203,7 @@ impl Portfolio {
     pub fn balances_locked(&self, venue: &Venue) -> HashMap<Currency, Money> {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
-                log::error!(
-                    "Cannot get balances locked: no account generated for {}",
-                    venue
-                );
+                log::error!("Cannot get balances locked: no account generated for {venue}");
                 HashMap::new()
             },
             AccountAny::balances_locked,
@@ -230,8 +215,7 @@ impl Portfolio {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
-                    "Cannot get initial (order) margins: no account registered for {}",
-                    venue
+                    "Cannot get initial (order) margins: no account registered for {venue}"
                 );
                 HashMap::new()
             },
@@ -250,8 +234,7 @@ impl Portfolio {
         self.cache.borrow().account_for_venue(venue).map_or_else(
             || {
                 log::error!(
-                    "Cannot get maintenance (position) margins: no account registered for {}",
-                    venue
+                    "Cannot get maintenance (position) margins: no account registered for {venue}"
                 );
                 HashMap::new()
             },
@@ -347,10 +330,7 @@ impl Portfolio {
         let account = if let Some(account) = cache.account_for_venue(venue) {
             account
         } else {
-            log::error!(
-                "Cannot calculate net exposures: no account registered for {}",
-                venue
-            );
+            log::error!("Cannot calculate net exposures: no account registered for {venue}");
             return None; // Cannot calculate
         };
 
@@ -475,10 +455,7 @@ impl Portfolio {
         let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
             instrument
         } else {
-            log::error!(
-                "Cannot calculate net exposure: no instrument for {}",
-                instrument_id
-            );
+            log::error!("Cannot calculate net exposure: no instrument for {instrument_id}");
             return None;
         };
 
@@ -598,8 +575,7 @@ impl Portfolio {
                     instruments_with_orders.push((instrument.clone(), orders));
                 } else {
                     log::error!(
-                        "Cannot update initial (order) margin: no instrument found for {}",
-                        instrument_id
+                        "Cannot update initial (order) margin: no instrument found for {instrument_id}"
                     );
                     initialized = false;
                     break;
@@ -721,8 +697,7 @@ impl Portfolio {
                 instrument
             } else {
                 log::error!(
-                    "Cannot update maintenance (position) margin: no instrument found for {}",
-                    instrument_id
+                    "Cannot update maintenance (position) margin: no instrument found for {instrument_id}"
                 );
                 initialized = false;
                 break;
@@ -804,7 +779,7 @@ impl Portfolio {
         let mut net_position = Decimal::ZERO;
 
         for open_position in positions_open {
-            log::debug!("open_position: {}", open_position);
+            log::debug!("open_position: {open_position}");
             net_position += Decimal::from_f64(open_position.signed_qty).unwrap_or(Decimal::ZERO);
         }
 
@@ -814,7 +789,7 @@ impl Portfolio {
                 .borrow_mut()
                 .net_positions
                 .insert(*instrument_id, net_position);
-            log::info!("{} net_position={}", instrument_id, net_position);
+            log::info!("{instrument_id} net_position={net_position}");
         }
     }
 
@@ -833,10 +808,7 @@ impl Portfolio {
         let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
             instrument
         } else {
-            log::error!(
-                "Cannot calculate unrealized PnL: no instrument for {}",
-                instrument_id
-            );
+            log::error!("Cannot calculate unrealized PnL: no instrument for {instrument_id}");
             return None;
         };
 
@@ -869,10 +841,7 @@ impl Portfolio {
             let price = if let Some(price) = self.get_price(position) {
                 price
             } else {
-                log::debug!(
-                    "Cannot calculate unrealized PnL: no prices for {}",
-                    instrument_id
-                );
+                log::debug!("Cannot calculate unrealized PnL: no prices for {instrument_id}");
                 self.inner.borrow_mut().pending_calcs.insert(*instrument_id);
                 return None; // Cannot calculate
             };
@@ -920,10 +889,7 @@ impl Portfolio {
         let instrument = if let Some(instrument) = cache.instrument(instrument_id) {
             instrument
         } else {
-            log::error!(
-                "Cannot calculate realized PnL: no instrument for {}",
-                instrument_id
-            );
+            log::error!("Cannot calculate realized PnL: no instrument for {instrument_id}");
             return None;
         };
 
@@ -1095,10 +1061,7 @@ fn update_instrument_id(
         let instrument = if let Some(instrument) = borrowed_cache.instrument(instrument_id) {
             instrument.clone()
         } else {
-            log::error!(
-                "Cannot update tick: no instrument found for {}",
-                instrument_id
-            );
+            log::error!("Cannot update tick: no instrument found for {instrument_id}");
             return;
         };
 
@@ -1175,10 +1138,7 @@ fn update_order(
     let account = if let Some(account) = borrowed_cache.account(&account_id) {
         account
     } else {
-        log::error!(
-            "Cannot update order: no account registered for {}",
-            account_id
-        );
+        log::error!("Cannot update order: no account registered for {account_id}");
         return;
     };
 
@@ -1284,7 +1244,7 @@ fn update_order(
         inner.borrow_mut().pending_calcs.insert(instrument.id());
     }
 
-    log::debug!("Updated {}", event);
+    log::debug!("Updated {event}");
 }
 
 fn update_position(
@@ -1305,7 +1265,7 @@ fn update_position(
             .collect()
     };
 
-    log::debug!("postion fresh from cache -> {:?}", positions_open);
+    log::debug!("postion fresh from cache -> {positions_open:?}");
 
     let mut portfolio_clone = Portfolio {
         clock: clock.clone(),
@@ -1344,10 +1304,7 @@ fn update_position(
         let instrument = if let Some(instrument) = borrowed_cache.instrument(&instrument_id) {
             instrument
         } else {
-            log::error!(
-                "Cannot update position: no instrument found for {}",
-                instrument_id
-            );
+            log::error!("Cannot update position: no instrument found for {instrument_id}");
             return;
         };
 
@@ -1379,23 +1336,23 @@ pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
         account.apply(event.clone());
 
         if let Err(e) = borrowed_cache.update_account(account.clone()) {
-            log::error!("Failed to update account: {}", e);
+            log::error!("Failed to update account: {e}");
             return;
         }
     } else {
         let account = match AccountAny::from_events(vec![event.clone()]) {
             Ok(account) => account,
             Err(e) => {
-                log::error!("Failed to create account: {}", e);
+                log::error!("Failed to create account: {e}");
                 return;
             }
         };
 
         if let Err(e) = borrowed_cache.add_account(account) {
-            log::error!("Failed to add account: {}", e);
+            log::error!("Failed to add account: {e}");
             return;
         }
     }
 
-    log::info!("Updated {}", event);
+    log::info!("Updated {event}");
 }

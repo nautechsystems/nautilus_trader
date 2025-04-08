@@ -84,9 +84,9 @@ cdef class Position:
     cdef readonly uint64_t ts_last
     """UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_closed
-    """UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the position was closed (zero unless closed).\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `uint64_t`"""
+    """The total open duration in nanoseconds (zero unless closed).\n\n:returns: `uint64_t`"""
     cdef readonly double avg_px_open
     """The average open price.\n\n:returns: `double`"""
     cdef readonly double avg_px_close
@@ -97,7 +97,6 @@ cdef class Position:
     """The current realized PnL for the position (including commissions).\n\n:returns: `Money` or ``None``"""
 
     cpdef str info(self)
-
     cpdef dict to_dict(self)
 
     cdef list client_order_ids_c(self)
@@ -136,44 +135,3 @@ cdef class Position:
     cdef double _calculate_points_inverse(self, double avg_px_open, double avg_px_close)
     cdef double _calculate_return(self, double avg_px_open, double avg_px_close)
     cdef double _calculate_pnl(self, double avg_px_open, double avg_px_close, double quantity)
-
-    @staticmethod
-    cdef Position _init_(
-        Position self,
-        TraderId trader_id,
-        StrategyId strategy_id,
-        InstrumentId instrument_id,
-        PositionId position_id,
-        AccountId account_id,
-        ClientOrderId opening_order_id,
-        ClientOrderId closing_order_id,
-        OrderSide entry,
-        PositionSide side,
-        double signed_qty,
-        Quantity quantity,
-        Quantity peak_qty,
-        uint8_t price_precision,
-        uint8_t size_precision,
-        Quantity multiplier,
-        bint is_inverse,
-        Currency quote_currency,
-        Currency base_currency,
-        Currency settlement_currency,
-        uint64_t ts_init,
-        uint64_t ts_opened,
-        uint64_t ts_last,
-        uint64_t ts_closed,
-        uint64_t duration_ns,
-        double avg_px_open,
-        double avg_px_close,
-        double realized_return,
-        Money realized_pnl,
-        Quantity buy_qty,
-        Quantity sell_qty,
-        dict commissions_dict=*,
-        list events=*,
-        list trade_ids=*,
-    )
-
-    @staticmethod
-    cdef Position from_dict_c(dict values)

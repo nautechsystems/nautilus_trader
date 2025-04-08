@@ -224,7 +224,7 @@ cdef class CryptoFuture(Instrument):
 
     cpdef Currency get_base_currency(self):
         """
-        Return the instruments base currency.
+        Return the instruments base currency (underlying).
 
         Returns
         -------
@@ -232,6 +232,17 @@ cdef class CryptoFuture(Instrument):
 
         """
         return self.underlying
+
+    cpdef Currency get_settlement_currency(self):
+        """
+        Return the currency used to settle a trade of the instrument.
+
+        Returns
+        -------
+        Currency
+
+        """
+        return self.settlement_currency
 
     @property
     def activation_utc(self) -> pd.Timestamp:

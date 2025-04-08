@@ -132,8 +132,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-latest, windows-latest] # Change to ubuntu-latest when GitHub stabilizes
-        python-version: ["3.11", "3.12"]
+        os: [ubuntu-22.04, ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
     defaults:
       run:
         shell: bash
@@ -161,6 +161,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Set release output
         id: vars

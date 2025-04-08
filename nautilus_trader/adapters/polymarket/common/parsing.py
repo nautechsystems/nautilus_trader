@@ -139,7 +139,7 @@ def update_instrument(
     price_increment = Price.from_str(change.new_tick_size)
 
     return BinaryOption(
-        instrument_id=instrument.instrument_id,
+        instrument_id=instrument.id,
         raw_symbol=instrument.raw_symbol,
         outcome=instrument.outcome,
         description=instrument.description,
@@ -149,7 +149,7 @@ def update_instrument(
         price_precision=price_increment.precision,
         size_increment=instrument.size_increment,
         size_precision=instrument.size_precision,
-        activation_ns=0,  # TBD?
+        activation_ns=instrument.activation_ns,
         expiration_ns=instrument.expiration_ns,
         max_quantity=None,
         min_quantity=instrument.min_quantity,

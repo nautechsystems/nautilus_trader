@@ -456,6 +456,7 @@ class NautilusKernel:
             risk_engine=self._risk_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
+            environment=self._environment,
             has_controller=self._config.controller is not None,
             loop=self._loop,
         )
@@ -1167,10 +1168,7 @@ class NautilusKernel:
                     except asyncio.CancelledError:
                         pass  # This is expected for cancelled tasks
             except Exception as e:
-                self._log.error(
-                    f"Error during task cleanup: {e}",
-                    exc_info=True,
-                )
+                self._log.exception("Error during task cleanup", e)
 
         if self.loop.is_running():
             # If the loop is already running, schedule the cleanup and run asynchronously

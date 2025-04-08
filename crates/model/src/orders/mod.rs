@@ -15,8 +15,6 @@
 
 //! Order types for the trading domain model.
 
-#![allow(dead_code)]
-
 pub mod any;
 pub mod builder;
 pub mod default;
@@ -72,16 +70,10 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orderbook::OwnBookOrder,
-    // orders::{
-    //     LimitOrderAny, PassiveOrderAny, StopOrderAny, limit::LimitOrder,
-    //     limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
-    //     market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
-    //     stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
-    //     trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
-    // },
     types::{Currency, Money, Price, Quantity},
 };
 
+#[allow(dead_code)] // TODO: Will be used
 const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::StopMarket,
     OrderType::StopLimit,
@@ -89,6 +81,7 @@ const STOP_ORDER_TYPES: &[OrderType] = &[
     OrderType::LimitIfTouched,
 ];
 
+#[allow(dead_code)] // TODO: Will be used
 const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::Limit,
     OrderType::StopLimit,
@@ -96,6 +89,7 @@ const LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::MarketIfTouched,
 ];
 
+#[allow(dead_code)] // TODO: Will be used
 const LOCAL_ACTIVE_ORDER_STATUS: &[OrderStatus] = &[
     OrderStatus::Initialized,
     OrderStatus::Emulated,
@@ -245,10 +239,11 @@ pub trait Order: 'static + Send {
     fn avg_px(&self) -> Option<f64>;
     fn slippage(&self) -> Option<f64>;
     fn init_id(&self) -> UUID4;
-    fn ts_last(&self) -> UnixNanos;
-    fn ts_accepted(&self) -> Option<UnixNanos>;
-    fn ts_submitted(&self) -> Option<UnixNanos>;
     fn ts_init(&self) -> UnixNanos;
+    fn ts_submitted(&self) -> Option<UnixNanos>;
+    fn ts_accepted(&self) -> Option<UnixNanos>;
+    fn ts_closed(&self) -> Option<UnixNanos>;
+    fn ts_last(&self) -> UnixNanos;
 
     fn order_side_specified(&self) -> OrderSideSpecified {
         self.order_side().as_specified()
@@ -496,10 +491,11 @@ pub struct OrderCore {
     pub avg_px: Option<f64>,
     pub slippage: Option<f64>,
     pub init_id: UUID4,
-    pub ts_last: UnixNanos,
-    pub ts_accepted: Option<UnixNanos>,
-    pub ts_submitted: Option<UnixNanos>,
     pub ts_init: UnixNanos,
+    pub ts_submitted: Option<UnixNanos>,
+    pub ts_accepted: Option<UnixNanos>,
+    pub ts_closed: Option<UnixNanos>,
+    pub ts_last: UnixNanos,
 }
 
 impl OrderCore {
@@ -544,10 +540,11 @@ impl OrderCore {
             avg_px: None,
             slippage: None,
             init_id: init.event_id,
-            ts_last: init.ts_event,
-            ts_accepted: None,
-            ts_submitted: None,
             ts_init: init.ts_event,
+            ts_submitted: None,
+            ts_accepted: None,
+            ts_closed: None,
+            ts_last: init.ts_event,
         }
     }
 
@@ -583,8 +580,8 @@ impl OrderCore {
         Ok(())
     }
 
-    fn denied(&self, _event: &OrderDenied) {
-        // Do nothing else
+    fn denied(&mut self, event: &OrderDenied) {
+        self.ts_closed = Some(event.ts_event);
     }
 
     fn emulated(&self, _event: &OrderEmulated) {
@@ -605,8 +602,8 @@ impl OrderCore {
         self.ts_accepted = Some(event.ts_event);
     }
 
-    fn rejected(&self, _event: &OrderRejected) {
-        // Do nothing else
+    fn rejected(&mut self, event: &OrderRejected) {
+        self.ts_closed = Some(event.ts_event);
     }
 
     fn pending_update(&self, _event: &OrderPendingUpdate) {
@@ -631,9 +628,13 @@ impl OrderCore {
 
     fn triggered(&mut self, _event: &OrderTriggered) {}
 
-    fn canceled(&mut self, _event: &OrderCanceled) {}
+    fn canceled(&mut self, event: &OrderCanceled) {
+        self.ts_closed = Some(event.ts_event);
+    }
 
-    fn expired(&mut self, _event: &OrderExpired) {}
+    fn expired(&mut self, event: &OrderExpired) {
+        self.ts_closed = Some(event.ts_event);
+    }
 
     fn updated(&mut self, event: &OrderUpdated) {
         if let Some(venue_order_id) = &event.venue_order_id {
@@ -651,6 +652,7 @@ impl OrderCore {
             self.status = OrderStatus::PartiallyFilled;
         } else {
             self.status = OrderStatus::Filled;
+            self.ts_closed = Some(event.ts_event);
         }
 
         self.venue_order_id = Some(event.venue_order_id);
@@ -778,14 +780,15 @@ mod tests {
         orders::MarketOrder,
     };
 
-    fn test_initialize_market_order() {
-        let order = MarketOrder::default();
-        assert_eq!(order.events().len(), 1);
-        assert_eq!(
-            stringify!(order.events().get(0)),
-            stringify!(OrderInitialized)
-        );
-    }
+    // TODO: WIP
+    // fn test_initialize_market_order() {
+    //     let order = MarketOrder::default();
+    //     assert_eq!(order.events().len(), 1);
+    //     assert_eq!(
+    //         stringify!(order.events().get(0)),
+    //         stringify!(OrderInitialized)
+    //     );
+    // }
 
     #[rstest]
     #[case(OrderSide::Buy, OrderSide::Sell)]

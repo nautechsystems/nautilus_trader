@@ -1,5 +1,7 @@
 # Coinbase International
 
+**This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading**.
+
 :::warning
 The Coinbase International integration is currently in a beta testing phase.
 Exercise caution and report any issues on GitHub.
@@ -7,8 +9,6 @@ Exercise caution and report any issues on GitHub.
 
 [Coinbase International Exchange](https://www.coinbase.com/en/international-exchange) provides non-US institutional clients with access to cryptocurrency perpetual futures and spot markets.
 The exchange serves European and international traders by providing leveraged crypto derivatives, often restricted or unavailable in these regions.
-
-This guide will walk you through using Coinbase International with NautilusTrader for data ingest and/or live trading.
 
 Coinbase International brings a high standard of customer protection, a robust risk management framework and high-performance trading technology, including:
 
@@ -68,8 +68,8 @@ We recommend also referring to the Coinbase International documentation in conju
 
 ### Instruments
 
-On startup, the adapter automatically loads all available instruments from Coinbase International
-and subscribes to the `INSTRUMENTS` channel. This ensures that the cache and clients requiring
+On startup, the adapter automatically loads all available instruments from the Coinbase International REST API
+and subscribes to the `INSTRUMENTS` WebSocket channel for updates. This ensures that the cache and clients requiring
 up-to-date definitions for parsing always have the latest instrument data.
 
 Available instrument types include:
@@ -101,11 +101,38 @@ The WebSocket client handles automatic reconnection and re-subscribes to active 
 
 ## Execution
 
-**The adapter is built to trade one Coinbase International portfolio per execution client**.
+**The adapter is designed to trade one Coinbase International portfolio per execution client.**
 
-To specify the portfolio, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to the desired
-portfolio ID. Alternatively, if using multiple execution clients, define the `portfolio_id` in the
-execution configuration for each client.
+### Selecting a portfolio
+
+To identify your available portfolios and their IDs, use the REST client by running the following script:
+
+```bash
+python nautilus_trader/adapters/coinbase_intx/scripts/list_portfolios.py
+```
+
+This will output a list of portfolio details, similar to the example below:
+
+```bash
+[{'borrow_disabled': False,
+  'cross_collateral_enabled': False,
+  'is_default': False,
+  'is_lsp': False,
+  'maker_fee_rate': '-0.00008',
+  'name': 'hrp5587988499',
+  'portfolio_id': '3mnk59ap-1-22',  # Your portfolio ID
+  'portfolio_uuid': 'dd0958ad-0c9d-4445-a812-1870fe40d0e1',
+  'pre_launch_trading_enabled': False,
+  'taker_fee_rate': '0.00012',
+  'trading_lock': False,
+  'user_uuid': 'd4fbf7ea-9515-1068-8d60-4de91702c108'}]
+```
+
+### Configuring the portfolio
+
+To specify a portfolio for trading, set the `COINBASE_INTX_PORTFOLIO_ID` environment variable to
+the desired `portfolio_id`. If you're using multiple execution clients, you can alternatively define
+the `portfolio_id` in the execution configuration for each client.
 
 ### Order types
 

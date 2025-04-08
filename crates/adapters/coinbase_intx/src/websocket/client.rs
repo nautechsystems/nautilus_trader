@@ -31,7 +31,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::websocket::{MessageReader, WebSocketClient, WebSocketConfig};
+use nautilus_network::websocket::{Consumer, MessageReader, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{Error, Message};
@@ -141,10 +141,7 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Connects the client to the server and caches the given instruments.
-    pub async fn connect(
-        &mut self,
-        instruments: HashMap<Ustr, InstrumentAny>,
-    ) -> anyhow::Result<()> {
+    pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> anyhow::Result<()> {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
             let client = client.clone();
@@ -156,7 +153,7 @@ impl CoinbaseIntxWebSocketClient {
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
-            handler: None,
+            handler: Consumer::Python(None),
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
@@ -169,12 +166,17 @@ impl CoinbaseIntxWebSocketClient {
 
         self.inner = Some(Arc::new(client));
 
+        let mut instruments_map: HashMap<Ustr, InstrumentAny> = HashMap::new();
+        for inst in instruments {
+            instruments_map.insert(inst.raw_symbol().inner(), inst);
+        }
+
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
         self.rx = Some(Arc::new(rx));
         let signal = self.signal.clone();
 
         let stream_handle = get_runtime().spawn(async move {
-            CoinbaseIntxWsMessageHandler::new(instruments, reader, signal, tx)
+            CoinbaseIntxWsMessageHandler::new(instruments_map, reader, signal, tx)
                 .run()
                 .await;
         });

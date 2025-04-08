@@ -36,7 +36,7 @@ jobs:
         os:
           - ubuntu-latest
         python-version:
-          - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -104,6 +104,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -118,6 +119,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -184,6 +186,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -201,6 +204,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -240,6 +244,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Run tests
         run: |
@@ -257,6 +262,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
+          - "3.13"
     defaults:
       run:
         shell: bash
@@ -293,6 +299,7 @@ jobs:
         uses: ./.github/actions/common-wheel-build
         with:
           python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data

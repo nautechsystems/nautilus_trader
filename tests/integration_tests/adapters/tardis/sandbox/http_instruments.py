@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pandas as pd
+
 from nautilus_trader.adapters.tardis.factories import get_tardis_http_client
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.enums import LogLevel
@@ -32,19 +34,20 @@ async def run():
     # print(f"Received: {pyo3_instrument[0].id}")
 
     pyo3_instruments = await http_client.instruments(
-        "binance-delivery",
-        # base_currency=["BTC"],
+        "bitmex",
+        base_currency=["BTC"],
         quote_currency=["USD"],
         instrument_type=["perpetual"],
-        active=True,
+        # active=True,
         # start=pd.Timestamp("2021-01-01").value,
         # end=pd.Timestamp("2022-01-01").value,
-        # effective=pd.Timestamp("2022-01-01").value,
+        effective=pd.Timestamp("2020-08-01 08:00:00").value,
     )
 
-    for inst in pyo3_instruments:
-        print(inst.id)
-        print(CryptoPerpetual.from_pyo3(inst))
+    for pyo3_inst in pyo3_instruments:
+        inst = CryptoPerpetual.from_pyo3(pyo3_inst)  # Remove/change this if not filtering for perps
+        print(repr(inst))
+        print(pd.Timestamp(inst.ts_event))
 
     print(f"Received: {len(pyo3_instruments)} instruments")
 

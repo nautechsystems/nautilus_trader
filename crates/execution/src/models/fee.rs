@@ -190,7 +190,7 @@ mod tests {
                 &aud_usd,
             )
             .unwrap();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &accepted_order,
             &aud_usd,
             None,

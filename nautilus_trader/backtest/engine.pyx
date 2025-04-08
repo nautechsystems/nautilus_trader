@@ -477,10 +477,13 @@ cdef class BacktestEngine:
         """
         if modules is None:
             modules = []
+
         if fill_model is None:
             fill_model = FillModel()
+
         if fee_model is None:
             fee_model = MakerTakerFeeModel()
+
         Condition.not_none(venue, "venue")
         Condition.not_in(venue, self._venues, "venue", "_venues")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -669,6 +672,7 @@ cdef class BacktestEngine:
 
         if validate:
             first = data[0]
+
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
@@ -697,6 +701,7 @@ cdef class BacktestEngine:
                 Condition.not_none(client_id, "client_id")
                 # Check client has been registered
                 self._add_data_client_if_not_exists(client_id)
+
                 if isinstance(first, CustomData):
                     data_added_str = f"{type(first.data).__name__} "
 
@@ -708,7 +713,6 @@ cdef class BacktestEngine:
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
-
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
@@ -742,7 +746,6 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(data, "data")
-
         self._data = pickle.loads(data)
 
         self._log.info(
@@ -847,21 +850,25 @@ cdef class BacktestEngine:
         # Reset DataEngine
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
+
         self.kernel.data_engine.reset()
 
         # Reset ExecEngine
         if self.kernel.exec_engine.is_running:
             self.kernel.exec_engine.stop()
+
         self.kernel.exec_engine.reset()
 
         # Reset RiskEngine
         if self.kernel.risk_engine.is_running:
             self.kernel.risk_engine.stop()
+
         self.kernel.risk_engine.reset()
 
         # Reset Emulator
         if self.kernel.emulator.is_running:
             self.kernel.emulator.stop()
+
         self.kernel.emulator.reset()
 
         self.kernel.trader.reset()
@@ -974,6 +981,7 @@ cdef class BacktestEngine:
 
         """
         self._run(start, end, run_config_id)
+
         if not streaming:
             self.end()
 
@@ -988,12 +996,16 @@ cdef class BacktestEngine:
         """
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
+
         if self.kernel.data_engine.is_running:
             self.kernel.data_engine.stop()
+
         if self.kernel.risk_engine.is_running:
             self.kernel.risk_engine.stop()
+
         if self.kernel.exec_engine.is_running:
             self.kernel.exec_engine.stop()
+
         if self.kernel.emulator.is_running:
             self.kernel.emulator.stop()
 
@@ -1009,6 +1021,7 @@ cdef class BacktestEngine:
 
         # Change logger clock back to real-time for consistent time stamping
         set_logging_clock_realtime_mode()
+
         if LOGGING_PYO3:
             nautilus_pyo3.logging_clock_set_realtime_mode()
 
@@ -1065,6 +1078,7 @@ cdef class BacktestEngine:
                 has_data = instrument_id in self._has_data
                 missing_book_data = instrument_id not in self._has_book_data
                 book_type_has_depth = exchange.book_type > BookType.L1_MBP
+
                 if book_type_has_depth and has_data and missing_book_data:
                     raise InvalidConfiguration(
                         f"No order book data found for instrument '{instrument_id }' when `book_type` is '{book_type_to_str(exchange.book_type)}'. "
@@ -1073,6 +1087,7 @@ cdef class BacktestEngine:
 
         cdef uint64_t start_ns
         cdef uint64_t end_ns
+
         # Time range check and set
         if start is None:
             # Set `start` to start of data
@@ -1081,6 +1096,7 @@ cdef class BacktestEngine:
         else:
             start = pd.to_datetime(start, utc=True)
             start_ns = start.value
+
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
@@ -1088,11 +1104,13 @@ cdef class BacktestEngine:
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = end.value
+
         Condition.is_true(start_ns <= end_ns, "start was > end")
         Condition.not_empty(self._data, "data")
 
         # Set clocks
         cdef TestClock clock
+
         for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
@@ -1102,36 +1120,43 @@ cdef class BacktestEngine:
             self._run_id = UUID4()
             self._run_started = pd.Timestamp.utcnow()
             self._backtest_start = start
+
             for exchange in self._venues.values():
                 exchange.initialize_account()
-                ###################################################################################
                 open_orders = self._kernel.cache.orders_open(venue=exchange.id)
+
                 for order in open_orders:
                     if order.is_emulated:
                         # Order should be loaded in the emulator already
                         continue
+
                     matching_engine = exchange.get_matching_engine(order.instrument_id)
+
                     if matching_engine is None:
                         self._log.error(
                             f"No matching engine for {order.instrument_id} to process {order}",
                         )
                         continue
+
                     matching_engine.process_order(order, order.account_id)
-                ###################################################################################
 
             # Reset any previously set FORCE_STOP
             set_backtest_force_stop(False)
 
-            # Common kernel start-up sequence
-            self._kernel.start()
+            # Set start time of all components including logging
+            for clock in get_component_clocks(self._instance_id):
+                clock.set_time(start_ns)
 
-            # Change logger clock for the run
-            self._kernel.clock.set_time(start_ns)
             set_logging_clock_static_mode()
             set_logging_clock_static_time(start_ns)
+
             if LOGGING_PYO3:
                 nautilus_pyo3.logging_clock_set_static_mode()
                 nautilus_pyo3.logging_clock_set_static_time(start_ns)
+
+            # Common kernel start-up sequence
+            self._kernel.start()
+
             self._log_pre_run()
 
         self._log_run(start, end)
@@ -1156,13 +1181,17 @@ cdef class BacktestEngine:
                 if data.ts_init > end_ns:
                     # End of backtest
                     break
+
                 if data.ts_init > last_ns:
                     # Advance clocks to the next data time
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through exchange
-                if isinstance(data, OrderBookDelta):
+                if isinstance(data, Instrument):
+                    exchange = self._venues[data.id.venue]
+                    exchange.update_instrument(data)
+                elif isinstance(data, OrderBookDelta):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
@@ -1192,6 +1221,7 @@ cdef class BacktestEngine:
 
                 last_ns = data.ts_init
                 data = self._next()
+
                 if data is None or data.ts_init > last_ns:
                     # Finally process the time events
                     self._process_raw_time_event_handlers(
@@ -1230,13 +1260,14 @@ cdef class BacktestEngine:
     cdef Data _next(self):
         cdef uint64_t cursor = self._index
         self._index += 1
+
         if cursor < self._data_len:
             return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
-
         cdef TestClock clock
+
         for clock in clocks:
             time_event_accumulator_advance_clock(
                 &self._accumulator,
@@ -1256,6 +1287,7 @@ cdef class BacktestEngine:
 
         # Set all clocks to now
         set_logging_clock_static_time(ts_now)
+
         if LOGGING_PYO3:
             nautilus_pyo3.logging_clock_set_static_time(ts_now)
 
@@ -1291,11 +1323,13 @@ cdef class BacktestEngine:
 
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
+
             if should_skip_time_event(ts_event_init, ts_now, only_now, asof_now):
                 continue  # Do not process event
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
+
             if LOGGING_PYO3:
                 nautilus_pyo3.logging_clock_set_static_time(ts_event_init)
 
@@ -1312,6 +1346,7 @@ cdef class BacktestEngine:
             if ts_event_init != ts_last_init:
                 # Process exchange messages
                 ts_last_init = ts_event_init
+
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
 
@@ -1334,6 +1369,7 @@ cdef class BacktestEngine:
             self._log.info(f"{repr(account)}")
             self._log.info(f"{color}-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
+
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
@@ -1384,6 +1420,7 @@ cdef class BacktestEngine:
 
         # Get all positions for venue
         cdef list positions = []
+
         for position in self._kernel.cache.positions() + self._kernel.cache.position_snapshots():
             positions.append(position)
 
@@ -1403,25 +1440,34 @@ cdef class BacktestEngine:
             self._log.info(f"{repr(account)}")
             self._log.info(f"{color}-----------------------------------------------------------------")
             unrealized_pnls: dict[Currency, Money] | None = None
+
             if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 if account is None:
                     continue
+
                 self._log.info(f"Balances starting:")
+
                 for b in account.starting_balances().values():
                     self._log.info(b.to_formatted_str())
+
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
+
                 for b in account.balances_total().values():
                     self._log.info(b.to_formatted_str())
+
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
+
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_formatted_str())  # Display commission as negative
+
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs (included in totals):")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
+
                 if not unrealized_pnls:
                     self._log.info("None")
                 else:
@@ -1439,10 +1485,12 @@ cdef class BacktestEngine:
             # Collect all positions and currencies for venue
             venue_positions = []
             venue_currencies = set()
+
             for position in positions:
                 if position.instrument_id.venue == venue.id:
                     venue_positions.append(position)
                     venue_currencies.add(position.quote_currency)
+
                     if position.base_currency is not None:
                         venue_currencies.add(position.base_currency)
 
@@ -1454,20 +1502,26 @@ cdef class BacktestEngine:
                 self._log.info(f" PnL Statistics ({str(currency)})")
                 self._log.info(f"{color}-----------------------------------------------------------------")
                 unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None
+
                 for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency, unrealized_pnl):
                     self._log.info(stat)
+
                 self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
             self._log.info(f"{color}-----------------------------------------------------------------")
+
             for stat in self._kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
+
             self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
             self._log.info(f"{color}-----------------------------------------------------------------")
+
             for stat in self._kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
+
             self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
@@ -1482,6 +1536,7 @@ cdef class BacktestEngine:
 
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
         cdef ClientId client_id = ClientId(venue.value)
+
         if client_id not in self._kernel.data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,

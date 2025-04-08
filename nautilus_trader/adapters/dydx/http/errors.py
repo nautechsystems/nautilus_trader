@@ -19,6 +19,7 @@ Define a dYdX exception.
 from typing import Any
 
 from grpc.aio._call import AioRpcError
+from msgspec import DecodeError
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_RETRY_ERRORS_GRPC
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
@@ -62,7 +63,7 @@ def should_retry(error: BaseException) -> bool:
 
     if isinstance(
         error,
-        AioRpcError | DYDXError | HttpError | HttpTimeoutError | WebSocketClientError,
+        AioRpcError | DYDXError | HttpError | HttpTimeoutError | WebSocketClientError | DecodeError,
     ):
         return True
 

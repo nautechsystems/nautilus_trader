@@ -56,8 +56,8 @@ use crate::runtime::get_runtime;
 ///
 /// This function panics if `interval_ns` is zero.
 #[must_use]
-pub const fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
-    NonZeroU64::new(interval_ns).expect("`interval_ns` must be positive")
+pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
+    NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
 }
 
 #[repr(C)]
@@ -444,6 +444,7 @@ impl LiveTimer {
     ///
     /// Time events will begin triggering at the specified intervals.
     /// The generated events are handled by the provided callback function.
+    #[allow(unused_variables)] // callback is used
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;

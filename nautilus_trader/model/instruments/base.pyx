@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.binary_option cimport BinaryOption
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_option cimport CryptoOption
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
@@ -432,6 +433,24 @@ cdef class Instrument(Data):
         else:
             return self.quote_currency
 
+    cpdef Currency get_cost_currency(self):
+        """
+        Return the currency used for PnL calculations for the instrument.
+
+        - Standard linear instruments = quote_currency
+        - Inverse instruments = base_currency
+        - Quanto instruments TBD
+
+        Returns
+        -------
+        Currency
+
+        """
+        if self.is_inverse:
+            return self.base_currency
+        else:
+            return self.quote_currency
+
     cpdef Price make_price(self, value):
         """
         Return a new price from the given value using the instruments price
@@ -550,7 +569,6 @@ cdef class Instrument(Data):
             list prices = []
             Price price
             int i
-
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_bid_price(value=value, n=i)
@@ -602,7 +620,6 @@ cdef class Instrument(Data):
             list prices = []
             Price price
             int i
-
         for i in range(num_ticks):
             try:
                 price = self._tick_scheme.next_ask_price(value=value, n=i)
@@ -718,10 +735,12 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
             instruments.append(BettingInstrument.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.BinaryOption):
             instruments.append(BinaryOption.from_pyo3_c(pyo3_instrument))
-        elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoFuture):
-            instruments.append(CryptoFuture.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoPerpetual):
             instruments.append(CryptoPerpetual.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoFuture):
+            instruments.append(CryptoFuture.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoOption):
+            instruments.append(CryptoOption.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.CurrencyPair):
             instruments.append(CurrencyPair.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.Equity):

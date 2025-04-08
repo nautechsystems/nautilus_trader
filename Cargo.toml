@@ -26,17 +26,50 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.85.1"
-version = "0.44.0"
+version = "0.46.0"
 edition = "2024"
+rust-version = "1.86.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
+license = "LGPL-3.0"
+readme = "README.md"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
+categories = ["finance", "simulation", "asynchronous"]
+keywords = ["finance", "trading", "trading-platform", "algorithmic-trading", "quantitative-finance"]
 documentation = "https://nautilustrader.io/docs"
+repository = "https://github.com/nautechsystems/nautilus_trader"
+homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-ahash = { version = "0.8.11", features = ["serde"] }
+nautilus-analysis = { path = "crates/analysis", version = "0.46.0" }
+nautilus-backtest = { path = "crates/backtest", version = "0.46.0" }
+nautilus-cli = { path = "crates/cli", version = "0.46.0" }
+nautilus-common = { path = "crates/common", version = "0.46.0" }
+nautilus-core = { path = "crates/core", version = "0.46.0" }
+nautilus-cryptography = { path = "crates/cryptography", version = "0.46.0" }
+nautilus-data = { path = "crates/data", version = "0.46.0" }
+nautilus-execution = { path = "crates/execution", version = "0.46.0" }
+nautilus-indicators = { path = "crates/indicators", version = "0.46.0" }
+nautilus-infrastructure = { path = "crates/infrastructure", version = "0.46.0" }
+nautilus-live = { path = "crates/live", version = "0.46.0" }
+nautilus-model = { path = "crates/model", version = "0.46.0" }
+nautilus-network = { path = "crates/network", version = "0.46.0" }
+nautilus-persistence = { path = "crates/persistence", version = "0.46.0" }
+nautilus-portfolio = { path = "crates/portfolio", version = "0.46.0" }
+nautilus-pyo3 = { path = "crates/pyo3", version = "0.46.0" }
+nautilus-risk = { path = "crates/risk", version = "0.46.0" }
+nautilus-serialization = { path = "crates/serialization", version = "0.46.0" }
+nautilus-system = { path = "crates/system", version = "0.46.0" }
+nautilus-test-kit = { path = "crates/test_kit", version = "0.46.0" }
+nautilus-trading = { path = "crates/trading", version = "0.46.0" }
+
+# Adapters
+nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.46.0" }
+nautilus-databento = { path = "crates/adapters/databento", version = "0.46.0" }
+nautilus-tardis = { path = "crates/adapters/tardis", version = "0.46.0" }
+
+ahash = "0.8.11"
 anyhow = "1.0.97"
-arrow = "54.3.0"  # Keep major version in line with datafusion
+arrow = "54.3.1"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
@@ -50,13 +83,13 @@ futures = "0.3.31"
 futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
-indexmap = { version = "2.8.0", features = ["serde"] }
+indexmap = { version = "2.9.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
 log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 memchr = "2.7.4"
-parquet = "54.3.0"  # Keep major version in line with datafusion
-pyo3 = { version = "0.24.0", features = ["chrono", "indexmap", "rust_decimal", "smallvec"] }
+parquet = "54.3.1"  # Keep major version in line with datafusion
+pyo3 = { version = "0.24.1", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.0"
 reqwest = { version = "0.12.15", features = ["blocking"] }
@@ -75,13 +108,13 @@ toml = "0.8.20"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.44.0", features = ["full"] }
+tokio = { version = "1.44.1", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 
 # dev-dependencies
-axum = "0.8.1"
+axum = "0.8.3"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
@@ -133,5 +166,6 @@ codegen-units = 1
 [profile.release-debugging]
 inherits = "release"
 incremental = true
-debug = true
+debug = "full"
 strip = false
+lto = false
