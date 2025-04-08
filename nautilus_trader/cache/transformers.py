@@ -138,43 +138,41 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
 ################################################################################
 # Position
 ################################################################################
-def transform_position_to_pyo3(position: Position):
-    position_dict = position.to_dict()
+def transform_position_to_pyo3(
+    position: Position,
+    instrument: Instrument,
+) -> nautilus_pyo3.Position:
+    events = position.events
+    if len(events) == 0:
+        raise ValueError("Missing events in position")
 
-    # Handle nullable values for Rust compatibility
-    position_dict["ts_closed"] = position_dict["ts_closed"] or 0
-    position_dict["duration_ns"] = position_dict["duration_ns"] or 0
-    position_dict["avg_px_close"] = position_dict["avg_px_close"] or 0.0
+    initial_fill = events.pop(0)
+    initial_fill_pyo3 = nautilus_pyo3.OrderFilled.from_dict(initial_fill)
+    instrument_pyo3 = transform_instrument_to_pyo3(instrument)
+    position_pyo3 = nautilus_pyo3.Position(instrument_pyo3, initial_fill_pyo3)
 
-    # Set ID field required by Rust struct
-    position_dict["id"] = position_dict["position_id"]
+    for event in events:
+        event_pyo3 = nautilus_pyo3.OrderFilled.from_dict(event.to_dict())
+        position.apply(event_pyo3)
 
-    # Transform commissions from list to dictionary for Rust
-    commission_list = position_dict.get("commissions", [])
-    commission_dict: dict[str, str] = {}
-
-    for commission_str in commission_list:
-        parts = commission_str.split()
-        if len(parts) == 2:
-            amount, currency = parts
-            if currency in commission_dict:
-                existing_amount = float(commission_dict[currency].split()[0])
-                new_amount = float(amount) + existing_amount
-                commission_dict[currency] = f"{new_amount:.2f} {currency}"
-            else:
-                commission_dict[currency] = commission_str
-
-    position_dict["commissions"] = commission_dict
-
-    return nautilus_pyo3.Position.from_dict(position_dict)
+    return position_pyo3
 
 
-def transform_position_from_pyo3(position_pyo3) -> Position | None:
-    if position_pyo3 is None:
-        return None
+def transform_position_from_pyo3(position_pyo3, instrument_pyo3) -> Position:
+    events_pyo3 = position_pyo3.events
+    if len(events_pyo3) == 0:
+        raise ValueError("Missing events in position")
 
-    position_dict = position_pyo3.to_dict()
-    return Position.from_dict(position_dict)
+    initial_fill_pyo3 = events_pyo3.pop(0)
+    initial_fill = OrderFilled.from_dict(initial_fill_pyo3)
+    instrument = transform_instrument_from_pyo3(instrument_pyo3)
+    position = Position(instrument, initial_fill)
+
+    for event_pyo3 in events_pyo3:
+        event = OrderFilled.from_dict(event_pyo3.to_dict())
+        position.apply(event)
+
+    return position
 
 
 ################################################################################
