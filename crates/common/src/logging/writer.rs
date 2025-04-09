@@ -243,17 +243,27 @@ impl FileWriter {
         instance_id: &str,
         is_json_format: bool,
     ) -> PathBuf {
-        let basename = if let Some(file_name) = file_config.file_name.as_ref() {
-            if file_config.file_rotate.is_some() {
-                let current_date_utc = Utc::now().format("%Y-%m-%d_%H%M%S:%3f");
-                format!("{file_name}_{current_date_utc}")
-            } else {
-                file_name.clone()
+        let utc_now = Utc::now();
+
+        let basename = match file_config.file_name.as_ref() {
+            Some(file_name) => {
+                if file_config.file_rotate.is_some() {
+                    let utc_datetime = utc_now.format("%Y-%m-%d_%H%M%S:%3f");
+                    format!("{file_name}_{utc_datetime}")
+                } else {
+                    file_name.clone()
+                }
             }
-        } else {
-            // default base name
-            let current_date_utc = Utc::now().format("%Y-%m-%d_%H%M%S:%3f");
-            format!("{trader_id}_{current_date_utc}_{instance_id}")
+            None => {
+                // Default base name
+                let utc_component = if file_config.file_rotate.is_some() {
+                    utc_now.format("%Y-%m-%d_%H%M%S:%3f")
+                } else {
+                    utc_now.format("%Y-%m-%d")
+                };
+
+                format!("{trader_id}_{utc_component}_{instance_id}")
+            }
         };
 
         let suffix = if is_json_format { "json" } else { "log" };

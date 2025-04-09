@@ -208,6 +208,11 @@ class NautilusKernel:
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
+                        file_rotate=(
+                            (logging.log_file_max_size, logging.log_file_max_backup_count)
+                            if logging.log_file_max_size
+                            else None
+                        ),
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
@@ -237,6 +242,8 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        max_file_size=logging.log_file_max_size or 0,
+                        max_backup_count=logging.log_file_max_backup_count,
                     )
                     log_header(
                         trader_id=self._trader_id,

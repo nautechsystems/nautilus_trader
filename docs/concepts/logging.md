@@ -31,9 +31,12 @@ See the `LoggingConfig` [API Reference](../api_reference/config.md) for further 
 :::
 
 Logging can be configured in the following ways:
+
 - Minimum `LogLevel` for stdout/stderr
 - Minimum `LogLevel` for log files
-- Automatic log file naming and daily rotation, or custom log file name
+- Maximum size before rotating a log file
+- Maximum number of backup log files to maintain when rotating
+- Automatic log file naming with date or timestamp components, or custom log file name
 - Directory for writing log files
 - Plain text or JSON log file formatting
 - Filtering of individual components by log level
@@ -42,28 +45,71 @@ Logging can be configured in the following ways:
 - Print Rust config to stdout at initialization
 
 ### Standard output logging
+
 Log messages are written to the console via stdout/stderr writers. The minimum log level can be configured using the `log_level` parameter.
 
 ### File logging
 
-Log files are written to the current working directory with daily rotation (UTC) by default.
+Log files are written to the current working directory by default. The naming convention and rotation behavior are configurable and follow specific patterns based on your settings.
 
-The default naming convention is as follows:
-- Trader ID
-- ISO 8601 datetime
-- Instance ID
-- The log format suffix
+You can specify a custom log directory using `log_directory` and/or a custom file basename using `log_file_name`. Log files are always suffixed with `.log` (plain text) or `.json` (JSON).
 
-```
-{trader_id}_{%Y-%m-%d}_{instance_id}.{log | json}`
-```
+For detailed information about log file naming conventions and rotation behavior, see the [Log file rotation](#log-file-rotation) and [Log file naming convention](#log-file-naming-convention) sections below.
 
-e.g. `TESTER-001_2023-03-23_635a4539-4fe2-4cb1-9be3-3079ba8d879e.json`
+#### Log file rotation
 
-You can specify a custom log directory path using the `log_directory` parameter and/or a custom log file basename using the `log_file_name` parameter.
-The log files will always be suffixed with '.log' for plain text, or '.json' for JSON (no need to include a suffix in file names).
+The logging system is designed to manage log files efficiently through **daily log file rotation** as its default behavior.
+This means a new log file is created each day based on the system's date, keeping logs neatly organized by day.
+Unless additional rotation settings are applied, all logs for a given day are appended to a single file.
 
-If the log file already exists, it will be appended to.
+- **Daily rotation**:
+  - Enabled by default when using the automatic naming convention.
+  - A new log file is created each day based on UTC time.
+  - This behavior is disabled if a custom `log_file_name` is specified, meaning the same file will be used indefinitely unless size-based rotation is configured.
+
+- **Size-based rotation**:
+  - Enabled by configuring the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
+  - Before the log file reaches this size, a new file is started.
+  - This allows multiple files to be created within a single day if the size threshold is reached repeatedly.
+  - The `log_file_max_backup_count` parameter (default: 5) determines how many backup files are retained. Older backups are deleted once this limit is exceeded.
+
+To keep disk usage in check, the system includes backup file management:
+
+- **Backup file management**:
+  - The maximum number of backup files is controlled by `log_file_max_backup_count` (default: 5).
+  - When this limit is surpassed, the oldest backup files are automatically removed.
+
+#### Log file naming convention
+
+The default naming convention ensures log files are uniquely identifiable and timestamped.
+The format depends on whether file rotation is enabled:
+
+**With rotation enabled**:
+
+- **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S:%3f}_{instance_id}.{log|json}`
+- **Example**: `TESTER-001_2025-04-09_210721:521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
+- **Components**:
+  - `{trader_id}`: The trader identifier (e.g., `TESTER-001`).
+  - `{%Y-%m-%d_%H%M%S:%3f}`: Full ISO 8601-compliant datetime with millisecond resolution.
+  - `{instance_id}`: A unique instance identifier.
+  - `{log|json}`: File suffix based on format setting.
+
+**With rotation disabled**:
+
+  - **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
+  - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
+  - **Components**:
+    - `{trader_id}`: The trader identifier.
+    - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
+    - `{instance_id}`: A unique instance identifier.
+    - `{log|json}`: File suffix based on format setting.
+
+**Custom naming**:
+
+If `log_file_name` is set (e.g., `my_custom_log`):
+
+- With rotation disabled: The file will be named exactly as provided (e.g., `my_custom_log.log`).
+- With rotation enabled: The file will include the custom name and timestamp (e.g., `my_custom_log_2025-04-09_210721:521.log`).
 
 ### Component log filtering
 
