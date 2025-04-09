@@ -41,10 +41,12 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
+        sudo apt-get install -y python3-dev libpython3-dev
 
-    - name: Install mold
-      # https://github.com/rui314/setup-mold
-      uses: rui314/setup-mold@565a5a945b82f5759c6148485163f6ecd90da653 # v1
+    # Potential compatibility issues with ARM64
+    # - name: Install mold
+    #   # https://github.com/rui314/setup-mold
+    #   uses: rui314/setup-mold@565a5a945b82f5759c6148485163f6ecd90da653 # v1
 
     # > --------------------------------------------------
     # > Rust
