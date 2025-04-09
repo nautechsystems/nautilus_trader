@@ -3040,12 +3040,10 @@ dependencies = [
  "nautilus-model",
  "nautilus-system",
  "pyo3",
- "rand 0.9.0",
  "rstest",
  "rust_decimal",
  "tempfile",
  "ustr",
- "uuid",
 ]
 
 [[package]]
@@ -3082,7 +3080,7 @@ dependencies = [
  "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
@@ -3211,7 +3209,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-model",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
@@ -3314,7 +3312,6 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
- "rand 0.9.0",
  "rstest",
  "serde",
  "strum",
@@ -3339,7 +3336,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-databento",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "rstest",
  "rust_decimal",
@@ -3406,7 +3403,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "object_store",
  "parquet",
  "pretty_assertions",
@@ -3439,7 +3436,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "ustr",
- "uuid",
 ]
 
 [[package]]
@@ -3459,7 +3455,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-serialization",
  "nautilus-tardis",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "nautilus-trading",
  "pyo3",
 ]
@@ -3491,7 +3487,7 @@ dependencies = [
  "criterion",
  "nautilus-core",
  "nautilus-model",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "parquet",
  "pretty_assertions",
  "pyo3",
@@ -3534,7 +3530,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
@@ -3557,7 +3553,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-test-kit"
+name = "nautilus-testkit"
 version = "0.46.0"
 dependencies = [
  "anyhow",

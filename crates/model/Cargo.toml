@@ -57,7 +57,7 @@ tabled = "0.18.0"
 
 [dev-dependencies]
 nautilus-databento = { path = "../adapters/databento" }
-nautilus-test-kit = { path = "../test_kit" }
+nautilus-testkit = { path = "../testkit" }
 criterion = { workspace = true }
 float-cmp = { workspace = true }
 iai = { workspace = true }

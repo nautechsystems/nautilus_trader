@@ -28,7 +28,7 @@ use nautilus_persistence::{
     python::backend::session::NautilusDataType,
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
-use nautilus_test_kit::common::get_nautilus_test_data_file_path;
+use nautilus_testkit::common::get_nautilus_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
