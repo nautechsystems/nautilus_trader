@@ -24,7 +24,7 @@ from setuptools import Extension
 IS_LINUX = platform.system() == "Linux"
 IS_MACOS = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
-IS_ARM64 = platform.machine() == "arm64"
+IS_ARM64 = platform.machine() in ("arm64", "aarch64")
 
 
 # The Rust toolchain to use for builds
@@ -76,6 +76,10 @@ if IS_LINUX:
 if IS_MACOS and IS_ARM64:
     os.environ["CFLAGS"] = "-arch arm64"
     os.environ["LDFLAGS"] = "-arch arm64 -w"
+
+if IS_LINUX and IS_ARM64:
+    os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -fPIC"
+    os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -fPIC"
 
 if IS_WINDOWS:
     # Linker error 1181
