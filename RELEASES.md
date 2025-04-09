@@ -19,6 +19,7 @@ None
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1
+- Upgraded `redis` crate to v0.29.5
 - Upgraded `tokio` crate to v1.44.2
 
 ### Fixes
