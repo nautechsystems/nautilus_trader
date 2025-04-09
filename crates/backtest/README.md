@@ -29,4 +29,6 @@ For more information, visit https://nautilustrader.io.
 
 <img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 
-Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+<br>
+
+<span style="font-size: 0.8em; color: #999;">(C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.</span>
