@@ -19,12 +19,13 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{cell::RefCell, collections::HashMap, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
     messages::data::{
-        DataRequest, Payload, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeBookSnapshots, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
@@ -34,13 +35,8 @@ use nautilus_common::{
         UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
-use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClient;
-use nautilus_model::{
-    data::{Bar, BarType, QuoteTick, TradeTick},
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::InstrumentAny,
-};
+use nautilus_model::identifiers::{ClientId, Venue};
 
 pub struct BacktestDataClient {
     pub client_id: ClientId,
@@ -115,6 +111,14 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
+    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn subscribe_instrument_status(
         &mut self,
         _cmd: SubscribeInstrumentStatus,
@@ -123,14 +127,6 @@ impl DataClient for BacktestDataClient {
     }
 
     fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -170,6 +166,14 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
+    fn unsubscribe_mark_prices(&mut self, _cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, _cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn unsubscribe_instrument_status(
         &mut self,
         _cmd: UnsubscribeInstrumentStatus,
@@ -184,86 +188,33 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, _cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, _cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
-    fn request_data(&self, request: DataRequest) {
+    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instruments(
-        &self,
-        correlation_id: UUID4,
-        venue: Venue,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        params: &Option<HashMap<String, String>>,
-    ) -> Vec<InstrumentAny> {
+    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instrument(
-        &self,
-        correlation_id: UUID4,
-        instrument_id: InstrumentId,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        params: &Option<HashMap<String, String>>,
-    ) -> InstrumentAny {
+    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    // TODO: figure out where to call this and it's return type
-    fn request_order_book_snapshot(
-        &self,
-        correlation_id: UUID4,
-        instrument_id: InstrumentId,
-        depth: Option<NonZeroUsize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> Payload {
+    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_quote_ticks(
-        &self,
-        correlation_id: UUID4,
-        instrument_id: InstrumentId,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        limit: Option<NonZeroUsize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> Vec<QuoteTick> {
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_trade_ticks(
-        &self,
-        correlation_id: UUID4,
-        instrument_id: InstrumentId,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        limit: Option<NonZeroUsize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> Vec<TradeTick> {
+    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_bars(
-        &self,
-        correlation_id: UUID4,
-        bar_type: BarType,
-        start: Option<UnixNanos>,
-        end: Option<UnixNanos>,
-        limit: Option<NonZeroUsize>,
-        params: &Option<HashMap<String, String>>,
-    ) -> Vec<Bar> {
+    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         todo!()
     }
 }

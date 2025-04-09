@@ -52,10 +52,10 @@ use crate::{
     logging::{CMD, RECV, SENT},
     messages::{
         data::{
-            DataCommand, DataRequest, DataResponse, RequestBars, RequestInstrument,
-            RequestInstruments, RequestOrderBookSnapshot, RequestQuoteTicks, RequestTradeTicks,
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
-            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            DataCommand, DataResponse, RequestBars, RequestBookSnapshot, RequestData,
+            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
             SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
             SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
             UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
