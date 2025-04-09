@@ -42,6 +42,7 @@ from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 from libc.stdio cimport printf
 
