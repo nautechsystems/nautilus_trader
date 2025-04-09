@@ -36,7 +36,7 @@ python = [
 high-precision = [
   "nautilus-serialization/high-precision",
   "nautilus-model/high-precision",
-  "nautilus-test-kit/high-precision",
+  "nautilus-testkit/high-precision",
 ]
 
 [package.metadata.docs.rs]
@@ -71,7 +71,7 @@ object_store = "0.11.2"  # Keep in line with datafusion
 walkdir = "2.5.0"
 
 [dev-dependencies]
-nautilus-test-kit = { path = "../test_kit" }
+nautilus-testkit = { path = "../testkit" }
 criterion = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }

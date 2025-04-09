@@ -50,7 +50,6 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

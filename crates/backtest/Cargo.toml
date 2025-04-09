@@ -60,8 +60,6 @@ log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
 rust_decimal = { workspace = true }
-rand = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
