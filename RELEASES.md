@@ -30,7 +30,7 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 
 ### Documentation Updates
-None
+- Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik
 
 ### Deprecations
 None
