@@ -144,9 +144,11 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
         # Configuration
+        self._bars_timestamp_on_close = config.bars_timestamp_on_close
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
+        self._log.info(f"{config.bars_timestamp_on_close=}", LogColor.BLUE)
 
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
@@ -510,6 +512,7 @@ class BybitDataClient(LiveMarketDataClient):
             end=end_time_ms,
             limit=request.limit if request.limit else None,
             ts_init=self._clock.timestamp_ns(),
+            timestamp_on_close=self._bars_timestamp_on_close,
         )
         partial: Bar = bars.pop()
         self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
@@ -713,6 +716,7 @@ class BybitDataClient(LiveMarketDataClient):
                     price_precision=instrument.price_precision,
                     size_precision=instrument.size_precision,
                     ts_init=self._clock.timestamp_ns(),
+                    timestamp_on_close=self._bars_timestamp_on_close,
                 )
                 self._handle_data(bar)
         except Exception as e:

@@ -9,11 +9,12 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
 - Added instrument updating for exchange and matching engine
 - Added additional price and quantity precision validations for matching engine
+- Added `bars_timestamp_on_close` config option for `BybitDataClientConfig` (default `True` to match Nautilus conventions)
 - Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
 - Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
 
 ### Breaking Changes
-None
+- Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
