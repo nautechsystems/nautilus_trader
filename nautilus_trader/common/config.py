@@ -541,6 +541,10 @@ class LoggingConfig(NautilusConfig, frozen=True):
         This will override automatic naming, and no daily file rotation will occur.
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
+    log_file_max_size : PositiveInt, optional
+        The maximum size of log files in bytes before rotation occurs.
+    log_file_max_backup_count : NonNegativeInt, default 5
+        The maximum number of backup log files to keep when rotating.
     log_colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     log_component_levels : dict[str, LogLevel]
@@ -565,6 +569,8 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_directory: str | None = None
     log_file_name: str | None = None
     log_file_format: str | None = None
+    log_file_max_size: PositiveInt | None = None
+    log_file_max_backup_count: NonNegativeInt = 5
     log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False

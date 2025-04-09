@@ -95,6 +95,7 @@ def init_logging(
     directory: str | None = None,
     file_name: str | None = None,
     file_format: str | None = None,
+    file_rotate: tuple[int, int] | None = None,
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
