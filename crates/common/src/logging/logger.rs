@@ -532,14 +532,13 @@ impl Drop for LogGuard {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, time::Duration};
+    use std::{collections::HashMap, thread::sleep, time::Duration};
 
     use log::LevelFilter;
     use nautilus_core::UUID4;
     use nautilus_model::identifiers::TraderId;
     use rstest::*;
     use serde_json::Value;
-    use std::thread::sleep;
     use tempfile::tempdir;
     use ustr::Ustr;
 

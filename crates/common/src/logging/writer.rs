@@ -115,16 +115,16 @@ impl LogWriter for StderrWriter {
     }
 }
 
-/// File rotation config
+/// File rotation config.
 #[derive(Debug, Clone)]
 pub struct FileRotateConfig {
-    /// Maximum file size in bytes before rotating
+    /// Maximum file size in bytes before rotating.
     pub max_file_size: u64,
-    /// Maximum number of backup files to keep
+    /// Maximum number of backup files to keep.
     pub max_backup_count: u32,
-    /// Current file size tracking
+    /// Current file size tracking.
     cur_file_size: u64,
-    /// Queue of backup file paths (oldest first)
+    /// Queue of backup file paths (oldest first).
     backup_files: VecDeque<PathBuf>,
 }
 
@@ -309,7 +309,7 @@ impl FileWriter {
     }
 }
 
-/// Clean up old backup files if we exceed the max backup count
+/// Clean up old backup files if we exceed the max backup count.
 ///
 /// TODO: Minor consider using a more specific version to pop a single file
 /// since normal execution will not create more than 1 excess file
