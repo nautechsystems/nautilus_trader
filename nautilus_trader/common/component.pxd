@@ -19,6 +19,7 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
@@ -166,6 +167,8 @@ cpdef LogGuard init_logging(
     bint colors=*,
     bint bypass=*,
     bint print_config=*,
+    uint64_t max_file_size=*,
+    uint32_t max_backup_count=*,
 )
 
 # Global static to flag if pyo3 based logging is initialized
