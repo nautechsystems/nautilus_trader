@@ -93,6 +93,28 @@ cdef class OrderFactory:
             clock=clock,
         )
 
+    cpdef get_client_order_id_count(self):
+        """
+        Return the client order ID count for the factory.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._order_id_generator.count
+
+    cpdef get_order_list_id_count(self):
+        """
+        Return the order list ID count for the factory.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._order_list_id_generator.count
+
     cpdef void set_client_order_id_count(self, int count):
         """
         Set the internal order ID generator count to the given count.
