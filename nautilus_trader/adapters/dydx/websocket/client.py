@@ -209,7 +209,9 @@ class DYDXWebsocketClient:
             if ws_message.id is not None:
                 msg["id"] = ws_message.id
 
-            self._log.warning(f"Resubscribe to {ws_message.channel}")
+            self._log.warning(
+                f"{ws_message.message} Resubscribe to channel {ws_message.channel} id {ws_message.id}",
+            )
             self._loop.create_task(self._send(msg, delay_secs=1.0))
 
             # Do not handle this message with the client handler.
