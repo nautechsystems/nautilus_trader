@@ -63,7 +63,7 @@ cdef class AccountsManager:
         self._log = logger
         self._cache = cache
 
-    cdef AccountState update_balances(
+    cpdef AccountState update_balances(
         self,
         Account account,
         Instrument instrument,
@@ -136,7 +136,7 @@ cdef class AccountsManager:
             ts_event=fill.ts_event,
         )
 
-    cdef AccountState update_orders(
+    cpdef AccountState update_orders(
         self,
         Account account,
         Instrument instrument,
@@ -342,7 +342,7 @@ cdef class AccountsManager:
             ts_event=ts_event,
         )
 
-    cdef AccountState update_positions(
+    cpdef AccountState update_positions(
         self,
         MarginAccount account,
         Instrument instrument,

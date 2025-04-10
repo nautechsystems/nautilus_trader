@@ -33,9 +33,9 @@ cdef class AccountsManager:
     cdef Logger _log
     cdef CacheFacade _cache
 
-    cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
-    cdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, uint64_t ts_event)
-    cdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
+    cpdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
+    cpdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cpdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
     cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
     cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
     cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl)
