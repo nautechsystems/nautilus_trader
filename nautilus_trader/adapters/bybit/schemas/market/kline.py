@@ -46,7 +46,7 @@ class BybitKline(msgspec.Struct, array_like=True):
 
         if timestamp_on_close:
             interval_ms = bar_type.spec.timedelta / dt.timedelta(milliseconds=1)
-            ts_event += interval_ms
+            ts_event += millis_to_nanos(interval_ms)
 
         return Bar(
             bar_type=bar_type,
