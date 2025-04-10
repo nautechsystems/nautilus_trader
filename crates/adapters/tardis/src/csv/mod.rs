@@ -815,7 +815,7 @@ mod tests {
         identifiers::InstrumentId,
         types::Price,
     };
-    use nautilus_test_kit::common::{
+    use nautilus_testkit::common::{
         ensure_data_exists_tardis_binance_snapshot5, ensure_data_exists_tardis_binance_snapshot25,
         ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
         ensure_data_exists_tardis_huobi_quotes,

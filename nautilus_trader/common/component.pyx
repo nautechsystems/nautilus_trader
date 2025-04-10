@@ -42,6 +42,7 @@ from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 from libc.stdio cimport printf
 
@@ -1116,6 +1117,8 @@ cpdef LogGuard init_logging(
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
+    uint64_t max_file_size = 0,
+    uint32_t max_backup_count = 5,
 ):
     """
     Initialize the logging system.
@@ -1156,6 +1159,11 @@ cpdef LogGuard init_logging(
         If the output for the core logging system is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
+    max_file_size : uint64_t, default 0
+        The maximum size of log files in bytes before rotation occurs.
+        If set to 0, file rotation is disabled.
+    max_backup_count : uint32_t, default 5
+        The maximum number of backup log files to keep when rotating.
 
     Returns
     -------
@@ -1189,6 +1197,8 @@ cpdef LogGuard init_logging(
         colors,
         bypass,
         print_config,
+        max_file_size,
+        max_backup_count,
     )
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)

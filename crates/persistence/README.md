@@ -5,8 +5,6 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-persistence.svg)](https://crates.io/crates/nautilus-persistence)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
-<img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
-
 [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
 providing quantitative traders with the ability to backtest portfolios of automated trading strategies
 on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
@@ -29,4 +27,6 @@ NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
 For more information, visit https://nautilustrader.io.
 
-Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+<img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+
+<span style="font-size: 0.8em; color: #999;">(C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.</span>

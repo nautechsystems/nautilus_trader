@@ -560,7 +560,9 @@ struct LogGuard_API logging_init(TraderId_t trader_id,
                                  const char *component_levels_ptr,
                                  uint8_t is_colored,
                                  uint8_t is_bypassed,
-                                 uint8_t print_config);
+                                 uint8_t print_config,
+                                 uint64_t max_file_size,
+                                 uint32_t max_backup_count);
 
 /**
  * Creates a new log event.

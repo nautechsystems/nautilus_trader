@@ -1,7 +1,6 @@
 [package]
-name = "nautilus-test-kit"
+name = "nautilus-testkit"
 readme = "README.md"
-publish = false  # Do not publish to crates.io
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,7 +14,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [lib]
-name = "nautilus_test_kit"
+name = "nautilus_testkit"
 crate-type = ["rlib", "staticlib"]
 
 [features]

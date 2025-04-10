@@ -60,6 +60,8 @@ cdef class OrderFactory:
     cdef readonly bint use_uuid_client_order_ids
     """If UUID4's should be used for client order ID values.\n\n:returns: `bool`"""
 
+    cpdef get_client_order_id_count(self)
+    cpdef get_order_list_id_count(self)
     cpdef void set_client_order_id_count(self, int count)
     cpdef void set_order_list_id_count(self, int count)
     cpdef ClientOrderId generate_client_order_id(self)

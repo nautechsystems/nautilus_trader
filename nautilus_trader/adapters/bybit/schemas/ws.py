@@ -131,7 +131,13 @@ class BybitWsKline(msgspec.Struct):
         price_precision: int,
         size_precision: int,
         ts_init: int,
+        timestamp_on_close: bool,
     ) -> Bar:
+        if timestamp_on_close:
+            ts_event = millis_to_nanos(self.end + 1)
+        else:
+            ts_event = millis_to_nanos(self.start)
+
         return Bar(
             bar_type=bar_type,
             open=Price(float(self.open), price_precision),
@@ -139,7 +145,7 @@ class BybitWsKline(msgspec.Struct):
             low=Price(float(self.low), price_precision),
             close=Price(float(self.close), price_precision),
             volume=Quantity(float(self.volume), size_precision),
-            ts_event=millis_to_nanos(int(self.end) + 1),
+            ts_event=ts_event,
             ts_init=ts_init,
         )
 

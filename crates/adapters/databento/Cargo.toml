@@ -58,7 +58,7 @@ fallible-streaming-iterator = "0.1.9"
 time = "0.3.41"
 
 [dev-dependencies]
-nautilus-test-kit = { path = "../../test_kit" }
+nautilus-testkit = { path = "../../testkit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }

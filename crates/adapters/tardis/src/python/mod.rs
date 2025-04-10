@@ -21,7 +21,29 @@ pub mod enums;
 pub mod http;
 pub mod machine;
 
+use nautilus_core::python::to_pyvalue_err;
+use std::str::FromStr;
+
 use pyo3::prelude::*;
+use ustr::Ustr;
+
+use super::enums::{Exchange, InstrumentType};
+use crate::parse::normalize_symbol_str;
+
+#[pyfunction(name = "tardis_normalize_symbol_str")]
+#[pyo3(signature = (symbol, exchange, instrument_type, is_inverse=None))]
+pub fn py_tardis_normalize_symbol_str(
+    symbol: String,
+    exchange: String,
+    instrument_type: String,
+    is_inverse: Option<bool>,
+) -> PyResult<String> {
+    let symbol = Ustr::from(&symbol);
+    let exchange = Exchange::from_str(&exchange).map_err(to_pyvalue_err)?;
+    let instrument_type = InstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
+
+    Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
+}
 
 /// Loaded as nautilus_pyo3.tardis
 ///
@@ -55,6 +77,7 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_quotes, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(py_tardis_normalize_symbol_str, m)?)?;
 
     Ok(())
 }

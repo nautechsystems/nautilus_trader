@@ -95,6 +95,7 @@ def init_logging(
     directory: str | None = None,
     file_name: str | None = None,
     file_format: str | None = None,
+    file_rotate: tuple[int, int] | None = None,
     is_colored: bool | None = None,
     is_bypassed: bool | None = None,
     print_config: bool | None = None,
@@ -5012,7 +5013,8 @@ class DatabentoLiveClient:
 
 # Tardis
 
-def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
+def tardis_normalize_symbol_str(symbol: str, exchange: str, instrument_type: str, is_inverse: bool | None = None) -> str: ...
+def tardis_exchange_from_venue_str(value: str) -> list[str]: ...
 def bar_spec_to_tardis_trade_bar_string(bar_spec: BarSpecification) -> str: ...
 
 def load_tardis_deltas(filepath: str, price_precision: int | None = None, size_precision: int | None = None, instrument_id: InstrumentId | None = None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa

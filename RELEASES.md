@@ -9,24 +9,28 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
 - Added instrument updating for exchange and matching engine
 - Added additional price and quantity precision validations for matching engine
+- Added log file rotation with additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
+- Added `bars_timestamp_on_close` config option for `BybitDataClientConfig` (default `True` to match Nautilus conventions)
 - Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
 - Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
 
 ### Breaking Changes
-None
+- Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1
+- Upgraded `redis` crate to v0.29.5
 - Upgraded `tokio` crate to v1.44.2
 
 ### Fixes
 - Fixed setting component clocks to backtest start time
+- Fixed overflow error in trailing stop calculations
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 
 ### Documentation Updates
-None
+- Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik
 
 ### Deprecations
 None

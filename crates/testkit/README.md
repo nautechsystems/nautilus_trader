@@ -1,8 +1,8 @@
-# nautilus-serialization
+# nautilus-testkit
 
 [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)
-[![Documentation](https://img.shields.io/docsrs/nautilus-serialization)](https://docs.rs/nautilus-serialization/latest/nautilus-serialization/)
-[![crates.io version](https://img.shields.io/crates/v/nautilus-serialization.svg)](https://crates.io/crates/nautilus-serialization)
+[![Documentation](https://img.shields.io/docsrs/nautilus-testkit)](https://docs.rs/nautilus-testkit/latest/nautilus-testkit/)
+[![crates.io version](https://img.shields.io/crates/v/nautilus-testkit.svg)](https://crates.io/crates/nautilus-testkit)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
 [NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
@@ -14,7 +14,7 @@ highest level, with the aim of supporting mission-critical, trading system backt
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-serialization) for more detailed usage.
+See [the docs](https://docs.rs/nautilus-testkit) for more detailed usage.
 
 ## License
 

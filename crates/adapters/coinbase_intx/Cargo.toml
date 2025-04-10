@@ -74,7 +74,7 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-nautilus-test-kit = { path = "../../test_kit" }
+nautilus-testkit = { path = "../../testkit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }

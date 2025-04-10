@@ -55,6 +55,9 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         The interval (minutes) between reloading instruments from the venue.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
+    bars_timestamp_on_close : bool, default True
+        If the ts_event timestamp for bars should be on the open or close or the bar.
+        If True, then ts_event will be on the close of the bar.
 
     """
 
@@ -66,6 +69,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     recv_window_ms: PositiveInt = 5_000
+    bars_timestamp_on_close: bool = True
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):

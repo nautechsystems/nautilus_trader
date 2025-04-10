@@ -25,7 +25,7 @@ use nautilus_model::{
 
 #[derive(Clone, Debug)]
 pub enum DataCommand {
-    Request(DataRequest),
+    Request(RequestCommand),
     Subscribe(SubscribeCommand),
     Unsubscribe(UnsubscribeCommand),
 }
@@ -996,6 +996,43 @@ impl UnsubscribeInstrumentClose {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum RequestCommand {
+    Data(RequestData),
+    Instrument(RequestInstrument),
+    Instruments(RequestInstruments),
+    BookSnapshot(RequestBookSnapshot),
+    Quotes(RequestQuotes),
+    Trades(RequestTrades),
+    Bars(RequestBars),
+}
+
+impl RequestCommand {
+    pub fn client_id(&self) -> Option<&ClientId> {
+        match self {
+            Self::Data(cmd) => Some(&cmd.client_id),
+            Self::Instruments(cmd) => cmd.client_id.as_ref(),
+            Self::Instrument(cmd) => cmd.client_id.as_ref(),
+            Self::BookSnapshot(cmd) => cmd.client_id.as_ref(),
+            Self::Quotes(cmd) => cmd.client_id.as_ref(),
+            Self::Trades(cmd) => cmd.client_id.as_ref(),
+            Self::Bars(cmd) => cmd.client_id.as_ref(),
+        }
+    }
+
+    pub fn venue(&self) -> Option<&Venue> {
+        match self {
+            Self::Data(cmd) => Some(&cmd.venue),
+            Self::Instruments(cmd) => cmd.venue.as_ref(),
+            Self::Instrument(cmd) => cmd.venue.as_ref(),
+            Self::BookSnapshot(cmd) => cmd.venue.as_ref(),
+            Self::Quotes(cmd) => cmd.venue.as_ref(),
+            Self::Trades(cmd) => cmd.venue.as_ref(),
+            Self::Bars(cmd) => cmd.venue.as_ref(),
+        }
+    }
+}
+
 // Request data structures
 #[derive(Clone, Debug)]
 pub struct RequestInstrument {
@@ -1005,6 +1042,16 @@ pub struct RequestInstrument {
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
     pub request_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestData {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
 }
@@ -1071,7 +1118,7 @@ impl RequestInstruments {
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestOrderBookSnapshot {
+pub struct RequestBookSnapshot {
     pub instrument_id: InstrumentId,
     pub limit: usize,
     pub client_id: Option<ClientId>,
@@ -1081,7 +1128,7 @@ pub struct RequestOrderBookSnapshot {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl RequestOrderBookSnapshot {
+impl RequestBookSnapshot {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -1106,7 +1153,7 @@ impl RequestOrderBookSnapshot {
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestQuoteTicks {
+pub struct RequestQuotes {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
@@ -1118,7 +1165,7 @@ pub struct RequestQuoteTicks {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl RequestQuoteTicks {
+impl RequestQuotes {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -1147,7 +1194,7 @@ impl RequestQuoteTicks {
 }
 
 #[derive(Clone, Debug)]
-pub struct RequestTradeTicks {
+pub struct RequestTrades {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
@@ -1159,7 +1206,7 @@ pub struct RequestTradeTicks {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl RequestTradeTicks {
+impl RequestTrades {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
@@ -1226,16 +1273,6 @@ impl RequestBars {
             params,
         }
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct DataRequest {
-    pub correlation_id: UUID4,
-    pub client_id: ClientId,
-    pub venue: Venue,
-    pub data_type: DataType,
-    pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
 }
 
 pub type Payload = Arc<dyn Any + Send + Sync>;

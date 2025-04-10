@@ -11,13 +11,13 @@ jobs:
     env:
       BUILD_MODE: release
     steps:
-      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
         with:
           egress-policy: audit
 
       - name: Free disk space (Ubuntu)
-        # https://github.com/jlumbroso/free-disk-space/releases/tag/v1.3.1
+        # https://github.com/jlumbroso/free-disk-space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
@@ -29,21 +29,21 @@ jobs:
           swap-storage: true
 
       - name: Checkout repository
-        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
 
       - name: Set up QEMU
-        # https://github.com/docker/setup-qemu-action/releases/tag/v3.6.0
+        # https://github.com/docker/setup-qemu-action
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
       - name: Set up Docker Buildx
-        # https://github.com/docker/setup-buildx-action/releases/tag/v3.10.0
+        # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
       - name: Login to GHCR
-        # https://github.com/docker/login-action/releases/tag/v3.4.0
+        # https://github.com/docker/login-action
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
@@ -58,7 +58,7 @@ jobs:
       - name: Build nautilus_trader image (nightly)
         if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
         id: docker_build_trader_nightly
-        # https://github.com/docker/build-push-action/releases/tag/v6.15.0
+        # https://github.com/docker/build-push-action
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           file: ".docker/nautilus_trader.dockerfile"
@@ -72,7 +72,7 @@ jobs:
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_trader_latest
-        # https://github.com/docker/build-push-action/releases/tag/v6.15.0
+        # https://github.com/docker/build-push-action
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           file: ".docker/nautilus_trader.dockerfile"
@@ -86,7 +86,7 @@ jobs:
       - name: Build jupyterlab image (nightly)
         if: ${{ steps.branch-name.outputs.current_branch == 'nightly' }}
         id: docker_build_jupyterlab_nightly
-        # https://github.com/docker/build-push-action/releases/tag/v6.15.0
+        # https://github.com/docker/build-push-action
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           file: ".docker/jupyterlab.dockerfile"
@@ -102,7 +102,7 @@ jobs:
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_jupyterlab_latest
-        # https://github.com/docker/build-push-action/releases/tag/v6.15.0
+        # https://github.com/docker/build-push-action
         uses: docker/build-push-action@471d1dc4e07e5cdedd4c2171150001c434f0b7a4 # v6.15.0
         with:
           file: ".docker/jupyterlab.dockerfile"

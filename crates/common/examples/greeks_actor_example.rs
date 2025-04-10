@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Example showing how to use the GreeksCalculator with a DataActor.
+//! Example showing how to use the `GreeksCalculator` with a `DataActor`.
 
 use std::{
     cell::RefCell,
@@ -32,7 +32,7 @@ use nautilus_common::{
 };
 use nautilus_model::{data::greeks::GreeksData, enums::PositionSide, identifiers::InstrumentId};
 
-/// A custom actor that uses the GreeksCalculator.
+/// A custom actor that uses the `GreeksCalculator`.
 struct GreeksActor {
     core: DataActorCore,
     greeks_calculator: GreeksCalculator,
@@ -216,7 +216,7 @@ fn main() -> anyhow::Result<()> {
 
     // Example: Calculate greeks for an instrument
     let instrument_id = InstrumentId::from("SPY.AMEX");
-    match actor.calculate_instrument_greeks(instrument_id.clone()) {
+    match actor.calculate_instrument_greeks(instrument_id) {
         Ok(greeks) => println!("Calculated greeks for {instrument_id}: {greeks:?}"),
         Err(e) => println!("Error calculating greeks: {e}"),
     }

@@ -522,9 +522,9 @@ dependencies = [
 
 [[package]]
 name = "backon"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "970d91570c01a8a5959b36ad7dd1c30642df24b6b3068710066f6809f7033bb7"
+checksum = "fd0b50b1b78dbadd44ab18b3c794e496f3a139abb9fbc27d9c94c4eebbb96496"
 dependencies = [
  "fastrand",
 ]
@@ -2208,9 +2208,9 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7db2ff139bba50379da6aa0766b52fdcb62cb5b263009b09ed58ba604e14bbd1"
+checksum = "459196ed295495a68f7d7fe1d84f6c4b7ff0e21fe3017b2f283c6fac3ad803c9"
 dependencies = [
  "cfg-if",
  "crunchy",
@@ -2873,9 +2873,9 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe7db12097d22ec582439daf8618b8fdd1a7bef6270e9af3b1ebcd30893cf413"
+checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
 
 [[package]]
 name = "litemap"
@@ -2977,9 +2977,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
 dependencies = [
  "adler2",
 ]
@@ -3040,12 +3040,10 @@ dependencies = [
  "nautilus-model",
  "nautilus-system",
  "pyo3",
- "rand 0.9.0",
  "rstest",
  "rust_decimal",
  "tempfile",
  "ustr",
- "uuid",
 ]
 
 [[package]]
@@ -3082,7 +3080,7 @@ dependencies = [
  "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
@@ -3211,7 +3209,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-model",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
@@ -3314,7 +3312,6 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
- "rand 0.9.0",
  "rstest",
  "serde",
  "strum",
@@ -3339,7 +3336,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-databento",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "rstest",
  "rust_decimal",
@@ -3406,7 +3403,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "object_store",
  "parquet",
  "pretty_assertions",
@@ -3439,7 +3436,6 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "ustr",
- "uuid",
 ]
 
 [[package]]
@@ -3459,7 +3455,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-serialization",
  "nautilus-tardis",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "nautilus-trading",
  "pyo3",
 ]
@@ -3491,7 +3487,7 @@ dependencies = [
  "criterion",
  "nautilus-core",
  "nautilus-model",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "parquet",
  "pretty_assertions",
  "pyo3",
@@ -3534,7 +3530,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "nautilus-serialization",
- "nautilus-test-kit",
+ "nautilus-testkit",
  "pyo3",
  "pyo3-async-runtimes",
  "reqwest",
@@ -3557,7 +3553,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-test-kit"
+name = "nautilus-testkit"
 version = "0.46.0"
 dependencies = [
  "anyhow",
@@ -3754,6 +3750,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "objc2-core-foundation"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daeaf60f25471d26948a1c2f840e3f7d86f4109e3af4e8e4b5cd70c39690d925"
+dependencies = [
+ "bitflags 2.9.0",
 ]
 
 [[package]]
@@ -4496,9 +4501,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.29.2"
+version = "0.29.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b110459d6e323b7cda23980c46c77157601199c9da6241552b284cd565a7a133"
+checksum = "1bc42f3a12fd4408ce64d8efef67048a924e543bd35c6591c0447fda9054695f"
 dependencies = [
  "arc-swap",
  "backon",
@@ -4822,7 +4827,7 @@ dependencies = [
  "bitflags 2.9.0",
  "errno",
  "libc",
- "linux-raw-sys 0.9.3",
+ "linux-raw-sys 0.9.4",
  "windows-sys 0.59.0",
 ]
 
@@ -5556,15 +5561,14 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.33.1"
+version = "0.34.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fc858248ea01b66f19d8e8a6d55f41deaf91e9d495246fd01368d99935c6c01"
+checksum = "a4b93974b3d3aeaa036504b8eefd4c039dced109171c1ae973f1dc63b2c7e4b2"
 dependencies = [
- "core-foundation-sys",
  "libc",
  "memchr",
  "ntapi",
- "rayon",
+ "objc2-core-foundation",
  "windows",
 ]
 
@@ -6859,9 +6863,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
 dependencies = [
  "memchr",
 ]

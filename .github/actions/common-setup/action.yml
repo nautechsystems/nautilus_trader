@@ -17,7 +17,7 @@ runs:
     # > OS
     - name: Free disk space (Ubuntu)
       if: inputs.free-disk-space == 'true' && runner.os == 'Linux'
-      # https://github.com/jlumbroso/free-disk-space/releases/tag/v1.3.1
+      # https://github.com/jlumbroso/free-disk-space
       uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
       with:
         tool-cache: true
@@ -106,7 +106,7 @@ runs:
 
     - name: Cached sccache
       id: cached-sccache
-      # https://github.com/actions/cache/releases/tag/v4.2.3
+      # https://github.com/actions/cache
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.SCCACHE_DIR }}
@@ -117,13 +117,13 @@ runs:
           sccache-${{ runner.os }}-
 
     - name: Run sccache
-      # https://github.com/Mozilla-Actions/sccache-action/releases/tag/v0.0.8
+      # https://github.com/Mozilla-Actions/sccache-action
       uses: mozilla-actions/sccache-action@65101d47ea8028ed0c98a1cdea8dd9182e9b5133 # v0.0.8
 
     # > --------------------------------------------------
     # > Python
     - name: Set up Python environment
-      # https://github.com/actions/setup-python/releases/tag/v5.4.0
+      # https://github.com/actions/setup-python
       uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: ${{ inputs.python-version }}
@@ -135,7 +135,7 @@ runs:
 
     - name: Cache Python site-packages
       id: cached-site-packages
-      # https://github.com/actions/cache/releases/tag/v4.2.3
+      # https://github.com/actions/cache
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
@@ -155,7 +155,8 @@ runs:
         echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      # https://github.com/astral-sh/setup-uv
+      uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182  # 5.4.1
       with:
         version: ${{ env.UV_VERSION }}
 
@@ -166,7 +167,7 @@ runs:
 
     - name: Cached uv
       id: cached-uv
-      # https://github.com/actions/cache/releases/tag/v4.2.3
+      # https://github.com/actions/cache
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ${{ env.UV_CACHE_DIR }}
@@ -176,7 +177,7 @@ runs:
     # > pre-commit
     - name: Cached pre-commit
       id: cached-pre-commit
-      # https://github.com/actions/cache/releases/tag/v4.2.3
+      # https://github.com/actions/cache
       uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: ~/.cache/pre-commit
