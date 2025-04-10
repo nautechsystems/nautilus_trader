@@ -28,6 +28,7 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Fixed setting component clocks to backtest start time
 - Fixed overflow error in trailing stop calculations
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
+- Fixed `ts_event` for Bybit bars (#2502), thanks @davidsblom
 
 ### Documentation Updates
 - Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik
