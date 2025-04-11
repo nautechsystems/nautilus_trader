@@ -16,6 +16,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.common.component import MessageBus
@@ -40,6 +41,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import AccountState
@@ -1955,6 +1957,43 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.trigger_price == new_trigger_price
+
+    def test_submit_order_with_passed_gtd(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.clock.set_time(2_000)  # <-- Set clock to 2,000 nanos past epoch
+
+        order = strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00020"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=pd.Timestamp(1_000),  # <-- Expire time prior to time now
+        )
+        submit_order = SubmitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
 
 
 class TestRiskEngineWithBettingAccount:

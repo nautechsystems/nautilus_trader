@@ -33,6 +33,7 @@ from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport Throttler
 from nautilus_trader.common.messages cimport TradingStateChanged
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport AccountType
@@ -40,6 +41,7 @@ from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -109,7 +111,7 @@ cdef class RiskEngine(Component):
         Cache cache not None,
         Clock clock not None,
         config: RiskEngineConfig | None = None,
-    ):
+    ) -> None:
         if config is None:
             config = RiskEngineConfig()
         Condition.type(config, RiskEngineConfig, "config")
@@ -555,8 +557,17 @@ cdef class RiskEngine(Component):
         ########################################################################
         if not self._check_order_price(instrument, order):
             return False  # Denied
+
         if not self._check_order_quantity(instrument, order):
             return False  # Denied
+
+        if order.time_in_force == TimeInForce.GTD:
+            if order.expire_time_ns <= self._clock.timestamp_ns():
+                self._deny_order(
+                    order=order,
+                    reason=f"GTD {unix_nanos_to_dt(order.expire_time_ns)} already passed",
+                )
+                return False  # Denied
 
         return True  # Check passed
 

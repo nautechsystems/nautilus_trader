@@ -29,7 +29,7 @@ use nautilus_core::UUID4;
 use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
 use nautilus_model::{
     accounts::{Account, AccountAny},
-    enums::{InstrumentClass, OrderSide, OrderStatus, TradingState},
+    enums::{InstrumentClass, OrderSide, OrderStatus, TimeInForce, TradingState},
     events::{OrderDenied, OrderEventAny, OrderModifyRejected},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -508,6 +508,18 @@ impl RiskEngine {
         ////////////////////////////////////////////////////////////////////////////////
         // VALIDATION CHECKS
         ////////////////////////////////////////////////////////////////////////////////
+        if order.time_in_force() == TimeInForce::Gtd {
+            // SAFETY: GTD guarantees an expire time
+            let expire_time = order.expire_time().unwrap();
+            if expire_time <= self.clock.borrow().timestamp_ns() {
+                self.deny_order(
+                    order,
+                    &format!("GTD {} already past", expire_time.to_rfc3339()),
+                );
+                return false; // Denied
+            }
+        }
+
         if !self.check_order_price(instrument.clone(), order.clone())
             || !self.check_order_quantity(instrument, order)
         {
@@ -1049,7 +1061,7 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        clock::TestClock,
+        clock::{Clock, TestClock},
         msgbus::{
             self,
             handler::ShareableMessageHandler,
@@ -1069,7 +1081,7 @@ mod tests {
             stubs::{cash_account, margin_account},
         },
         data::{QuoteTick, stubs::quote_audusd},
-        enums::{AccountType, LiquiditySide, OrderSide, OrderType, TradingState},
+        enums::{AccountType, LiquiditySide, OrderSide, OrderType, TimeInForce, TradingState},
         events::{
             AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderEventType, OrderFilled,
             OrderSubmitted, account::stubs::cash_account_state_million_usd,
@@ -4363,4 +4375,83 @@ mod tests {
 
     #[rstest]
     fn test_partial_fill_and_full_fill_account_balance_correct() {}
+
+    #[rstest]
+    fn test_submit_order_with_gtd_expire_time_already_passed(
+        clock: TestClock,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_xbtusd_bitmex: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        process_order_event_handler: ShareableMessageHandler,
+        execute_order_event_handler: ShareableMessageHandler,
+        bitmex_cash_account_state_multi: AccountState,
+        mut simple_cache: Cache,
+    ) {
+        msgbus::register(
+            MessagingSwitchboard::exec_engine_process(),
+            process_order_event_handler.clone(),
+        );
+        msgbus::register(
+            MessagingSwitchboard::exec_engine_execute(),
+            execute_order_event_handler.clone(),
+        );
+
+        let quote = QuoteTick::new(
+            instrument_xbtusd_bitmex.id(),
+            Price::from("0.6109"),
+            Price::from("0.6110"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        simple_cache
+            .add_instrument(instrument_xbtusd_bitmex.clone())
+            .unwrap();
+
+        simple_cache
+            .add_account(AccountAny::Cash(cash_account(
+                bitmex_cash_account_state_multi,
+            )))
+            .unwrap();
+
+        simple_cache.add_quote(quote).unwrap();
+
+        let cache = Rc::new(RefCell::new(simple_cache));
+
+        let mut risk_engine = get_risk_engine(Some(cache.clone()), None, None, false);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_xbtusd_bitmex.id())
+            .side(OrderSide::Buy)
+            .price(Price::from("100_000.0"))
+            .quantity(Quantity::from_str("440").unwrap())
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(1_000)) // <-- Set expire time in the past
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            instrument_xbtusd_bitmex.id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            clock.timestamp_ns(),
+        )
+        .unwrap();
+
+        clock.set_time(UnixNanos::from(2_000)); // <-- Set time to 2,000 nanos past epoch
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        // TODO: Change command messages to not require owned orders
+    }
 }
