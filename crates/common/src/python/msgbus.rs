@@ -41,7 +41,7 @@ impl BusMessage {
 
 #[pymethods]
 impl MessageBus {
-    /// Sends a message to a an endpoint.
+    /// Sends a message to an endpoint.
     #[pyo3(name = "send")]
     pub fn py_send(&self, endpoint: &str, message: PyObject) {
         if let Some(handler) = self.get_endpoint(endpoint) {
