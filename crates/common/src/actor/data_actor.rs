@@ -28,7 +28,8 @@ use std::{
     sync::Arc,
 };
 
-use nautilus_core::{UUID4, UnixNanos};
+use chrono::{DateTime, Utc};
+use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -52,10 +53,10 @@ use crate::{
     logging::{CMD, RECV, SENT},
     messages::{
         data::{
-            DataCommand, DataResponse, RequestBars, RequestBookSnapshot, RequestData,
-            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            DataCommand, DataResponse, RequestBars, RequestBookSnapshot, RequestCommand,
+            RequestData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
+            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
             SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
             SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
             UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument,
@@ -75,6 +76,7 @@ use crate::{
         },
     },
     signal::Signal,
+    timer::TimeEvent,
 };
 
 /// Configuration for Actor components.
@@ -183,6 +185,7 @@ pub trait DataActor: Actor {
     //     // Default empty implementation
     // }
     //
+
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
@@ -245,6 +248,17 @@ pub trait DataActor: Actor {
     /// Actions to be performed when receiving historical data.
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         // TODO: Probably break this down into more granular methods
+        Ok(())
+    }
+
+    /// Actions to be performanced when receiving a time event.
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving an event.
+    fn on_event(&mut self, event: &dyn Any) -> anyhow::Result<()> {
+        // TODO: Implement `Event` enum
         Ok(())
     }
 }
@@ -1197,10 +1211,218 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
+    // -- REQUESTS --------------------------------------------------------------------------------
+
+    pub fn request_data(
+        &self,
+        data_type: DataType,
+        client_id: ClientId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Data(RequestData {
+            client_id,
+            data_type,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_instrument(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Instrument(RequestInstrument {
+            instrument_id,
+            start,
+            end,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_instruments(
+        &self,
+        venue: Option<Venue>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Instruments(RequestInstruments {
+            venue,
+            start,
+            end,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_book_snapshot(
+        &self,
+        instrument_id: InstrumentId,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let command = RequestCommand::BookSnapshot(RequestBookSnapshot {
+            instrument_id,
+            depth,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_quotes(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Quotes(RequestQuotes {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_trades(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Trades(RequestTrades {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
+    pub fn request_bars(
+        &self,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<HashMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        let now = self.clock.borrow().utc_now();
+
+        if let Err(e) = check_timestamps(now, start, end) {
+            log_error(&e);
+            return;
+        }
+
+        let command = RequestCommand::Bars(RequestBars {
+            bar_type,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id: UUID4::new(),
+            ts_init: self.generate_ts_init(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Request(command));
+    }
+
     // -- HANDLERS --------------------------------------------------------------------------------
 
     /// Handles a received custom/generic data point.
-    pub fn handle_data(&mut self, data: &dyn Any) {
+    pub(crate) fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
         if !self.is_running() {
@@ -1208,6 +1430,19 @@ impl DataActorCore {
         }
 
         if let Err(e) = self.on_data(data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received signal.
+    pub(crate) fn handle_signal(&mut self, signal: &Signal) {
+        log_received(&signal);
+
+        if !self.is_running() {
+            return;
+        }
+
+        if let Err(e) = self.on_signal(signal) {
             log_error(&e);
         }
     }
@@ -1238,7 +1473,7 @@ impl DataActorCore {
         }
     }
 
-    /// Handle a received order book reference.
+    /// Handles a received order book reference.
     pub(crate) fn handle_book(&mut self, book: &OrderBook) {
         log_received(&book);
 
@@ -1370,7 +1605,7 @@ impl DataActorCore {
         }
     }
 
-    /// Handles a received historical data.
+    /// Handles received historical data.
     pub(crate) fn handle_historical_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
@@ -1379,18 +1614,130 @@ impl DataActorCore {
         }
     }
 
-    /// Handles a received signal.
-    pub(crate) fn handle_signal(&mut self, signal: &Signal) {
-        log_received(&signal);
+    /// Handles a received event.
+    pub(crate) fn handle_time_event(&mut self, event: &TimeEvent) {
+        log_received(&event);
 
-        if !self.is_running() {
-            return;
-        }
-
-        if let Err(e) = self.on_signal(signal) {
+        if let Err(e) = self.on_time_event(event) {
             log_error(&e);
         }
     }
+
+    /// Handles a received event.
+    pub(crate) fn handle_event(&mut self, event: &dyn Any) {
+        log_received(&event);
+
+        if let Err(e) = self.on_event(event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a data response.
+    pub(crate) fn handle_data_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(data) = response.data.downcast_ref::<Vec<&dyn Any>>() {
+            for d in data {
+                self.handle_historical_data(d);
+            }
+        } else if let Some(data) = response.data.downcast_ref::<&dyn Any>() {
+            self.handle_historical_data(data);
+        }
+    }
+
+    /// Handles an instrument response.
+    pub(crate) fn handle_instrument_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(inst) = response.data.downcast_ref::<InstrumentAny>() {
+            self.handle_instrument(inst);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `InstrumentAny`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles an instruments response.
+    pub(crate) fn handle_instruments_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(insts) = response.data.downcast_ref::<Vec<InstrumentAny>>() {
+            self.handle_instruments(insts);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<InstrumentAny>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a quotes response.
+    pub(crate) fn handle_quotes_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(quotes) = response.data.downcast_ref::<Vec<QuoteTick>>() {
+            self.handle_quotes(quotes);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<QuoteTick>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a trades response.
+    pub(crate) fn handle_trades_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(trades) = response.data.downcast_ref::<Vec<TradeTick>>() {
+            self.handle_trades(trades);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<TradeTick>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a bars response.
+    pub(crate) fn handle_bars_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(bars) = response.data.downcast_ref::<Vec<Bar>>() {
+            self.handle_bars(bars);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<Bar>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+}
+
+fn check_timestamps(
+    now: DateTime<Utc>,
+    start: Option<DateTime<Utc>>,
+    end: Option<DateTime<Utc>>,
+) -> anyhow::Result<()> {
+    if let Some(start) = start {
+        check_predicate_true(start <= now, "start was > now")?
+    }
+    if let Some(end) = end {
+        check_predicate_true(end <= now, "end was > now")?
+    }
+
+    if let (Some(start), Some(end)) = (start, end) {
+        check_predicate_true(start < end, "start was >= end")?
+    }
+
+    Ok(())
 }
 
 fn log_error(e: &anyhow::Error) {
@@ -1418,7 +1765,7 @@ mod tests {
     };
 
     use nautilus_model::{
-        data::{QuoteTick, TradeTick},
+        data::{Bar, OrderBookDelta, QuoteTick, TradeTick},
         identifiers::ActorId,
         instruments::CurrencyPair,
         orderbook::OrderBook,
@@ -1439,8 +1786,12 @@ mod tests {
 
     struct TestDataActor {
         core: DataActorCore,
-        pub received_quotes: Vec<TradeTick>,
+        pub received_data: Vec<String>, // Use string for simplicity
+        pub received_books: Vec<OrderBook>,
+        pub received_deltas: Vec<OrderBookDelta>,
+        pub received_quotes: Vec<QuoteTick>,
         pub received_trades: Vec<TradeTick>,
+        pub received_bars: Vec<Bar>,
     }
 
     impl Deref for TestDataActor {
@@ -1472,17 +1823,20 @@ mod tests {
         }
     }
 
-    // Implement DataActor trait overriding handlers are required
+    // Implement DataActor trait overriding handlers as required
     impl DataActor for TestDataActor {
         fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+            self.received_data.push(format!("{data:?}"));
             Ok(())
         }
 
         fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
+            self.received_books.push(book.clone());
             Ok(())
         }
 
         fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+            self.received_quotes.push(*quote);
             Ok(())
         }
 
@@ -1501,8 +1855,12 @@ mod tests {
         ) -> Self {
             Self {
                 core: DataActorCore::new(config, cache, clock),
+                received_data: Vec::new(),
+                received_books: Vec::new(),
+                received_deltas: Vec::new(),
                 received_quotes: Vec::new(),
                 received_trades: Vec::new(),
+                received_bars: Vec::new(),
             }
         }
         pub fn custom_function(&mut self) {}
