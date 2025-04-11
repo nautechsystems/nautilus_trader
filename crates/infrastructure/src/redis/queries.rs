@@ -17,18 +17,21 @@ use std::{collections::HashMap, str::FromStr};
 
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, future::join_all};
+use futures::future::join_all;
 use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
+    enums::{CurrencyType, OrderType, TimeInForce, TriggerType},
+    events::{OrderEventAny, OrderFilled},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId},
     instruments::{InstrumentAny, SyntheticInstrument},
-    orders::OrderAny,
+    orders::{LimitOrder, MarketOrder, Order, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Price},
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::try_join;
 use ustr::Ustr;
@@ -69,39 +72,72 @@ impl DatabaseQueries {
         let mut value = serde_json::to_value(payload)?;
         convert_timestamps(&mut value);
         match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
-            SerializationEncoding::Json => serde_json::to_vec(&value)
-                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
+            SerializationEncoding::Json => serde_json::to_vec(&value).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to serialize json `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
+            SerializationEncoding::MsgPack => {
+                // TODO: Implement MsgPack or clearly document this limitation
+                anyhow::bail!("MsgPack serialization not implemented")
+            }
         }
     }
 
-    pub fn deserialize_payload<T: DeserializeOwned>(
+    pub fn deserialize_payload<T>(
         encoding: SerializationEncoding,
         payload: &[u8],
-    ) -> anyhow::Result<T> {
-        let mut value = match encoding {
-            SerializationEncoding::MsgPack => rmp_serde::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize msgpack `payload`: {e}"))?,
-            SerializationEncoding::Json => serde_json::from_slice(payload)
-                .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
-        };
-
-        convert_timestamp_strings(&mut value);
-
-        serde_json::from_value(value)
-            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+    ) -> anyhow::Result<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        match encoding {
+            SerializationEncoding::Json => serde_json::from_slice(payload).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to deserialize json `payload` for {}: {e}",
+                    std::any::type_name::<T>()
+                )
+            }),
+            SerializationEncoding::MsgPack => {
+                anyhow::bail!("MsgPack deserialization not implemented")
+            }
+        }
     }
 
     pub async fn scan_keys(
         con: &mut ConnectionManager,
         pattern: String,
     ) -> anyhow::Result<Vec<String>> {
-        Ok(con
-            .scan_match::<String, String>(pattern)
-            .await?
-            .collect()
-            .await)
+        tracing::debug!("Starting scan for pattern: {}", pattern);
+
+        let mut keys = Vec::new();
+        let mut cursor = 0;
+
+        loop {
+            let result: (i64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&pattern)
+                .arg("COUNT")
+                .arg(1000)
+                .query_async(con)
+                .await?;
+
+            cursor = result.0;
+            tracing::debug!(
+                "Scan batch found {} keys, next cursor: {cursor}",
+                result.1.len(),
+            );
+            keys.extend(result.1);
+
+            if cursor == 0 {
+                break;
+            }
+        }
+
+        tracing::debug!("Scan complete, found {} keys total", keys.len());
+        Ok(keys)
     }
 
     pub async fn read(
@@ -139,7 +175,7 @@ impl DatabaseQueries {
             Self::load_synthetics(con, trader_key, encoding),
             Self::load_accounts(con, trader_key, encoding),
             Self::load_orders(con, trader_key, encoding),
-            Self::load_positions(con, trader_key, encoding)
+            Self::load_positions(con, trader_key, encoding),
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
@@ -180,7 +216,7 @@ impl DatabaseQueries {
                     let currency_code = match key.as_str().rsplit(':').next() {
                         Some(code) => Ustr::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -188,11 +224,11 @@ impl DatabaseQueries {
                     match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
                         Ok(Some(currency)) => Some((currency_code, currency)),
                         Ok(None) => {
-                            log::error!("Currency not found: {currency_code}");
+                            tracing::error!("Currency not found: {currency_code}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load currency {currency_code}: {e}");
+                            tracing::error!("Failed to load currency {currency_code}: {e}");
                             None
                         }
                     }
@@ -200,7 +236,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values.
+        // Insert all Currency_code (key) and Currency (value) into the HashMap, filtering out None values
         currencies.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} currencies(s)", currencies.len());
 
@@ -229,12 +265,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to convert to InstrumentId for {key}: {e}");
+                                tracing::error!("Failed to convert to InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -247,11 +283,11 @@ impl DatabaseQueries {
                     match Self::load_instrument(&con, trader_key, &instrument_id, encoding).await {
                         Ok(Some(instrument)) => Some((instrument_id, instrument)),
                         Ok(None) => {
-                            log::error!("Instrument not found: {instrument_id}");
+                            tracing::error!("Instrument not found: {instrument_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load instrument {instrument_id}: {e}");
+                            tracing::error!("Failed to load instrument {instrument_id}: {e}");
                             None
                         }
                     }
@@ -259,7 +295,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
+        // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values
         instruments.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} instruments(s)", instruments.len());
 
@@ -288,12 +324,12 @@ impl DatabaseQueries {
                         .rsplit(':')
                         .next()
                         .ok_or_else(|| {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             "Invalid key format"
                         })
                         .and_then(|code| {
                             InstrumentId::from_str(code).map_err(|e| {
-                                log::error!("Failed to parse InstrumentId for {key}: {e}");
+                                tracing::error!("Failed to parse InstrumentId for {key}: {e}");
                                 "Invalid instrument ID"
                             })
                         });
@@ -306,11 +342,11 @@ impl DatabaseQueries {
                     match Self::load_synthetic(&con, trader_key, &instrument_id, encoding).await {
                         Ok(Some(synthetic)) => Some((instrument_id, synthetic)),
                         Ok(None) => {
-                            log::error!("Synthetic not found: {instrument_id}");
+                            tracing::error!("Synthetic not found: {instrument_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load synthetic {instrument_id}: {e}");
+                            tracing::error!("Failed to load synthetic {instrument_id}: {e}");
                             None
                         }
                     }
@@ -318,7 +354,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values.
+        // Insert all Instrument_id (key) and Synthetic (value) into the HashMap, filtering out None values
         synthetics.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} synthetics(s)", synthetics.len());
 
@@ -345,7 +381,7 @@ impl DatabaseQueries {
                     let account_id = match key.as_str().rsplit(':').next() {
                         Some(code) => AccountId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -353,11 +389,11 @@ impl DatabaseQueries {
                     match Self::load_account(&con, trader_key, &account_id, encoding).await {
                         Ok(Some(account)) => Some((account_id, account)),
                         Ok(None) => {
-                            log::error!("Account not found: {account_id}");
+                            tracing::error!("Account not found: {account_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load account {account_id}: {e}");
+                            tracing::error!("Failed to load account {account_id}: {e}");
                             None
                         }
                     }
@@ -365,7 +401,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values.
+        // Insert all Account_id (key) and Account (value) into the HashMap, filtering out None values
         accounts.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} accounts(s)", accounts.len());
 
@@ -392,7 +428,7 @@ impl DatabaseQueries {
                     let client_order_id = match key.as_str().rsplit(':').next() {
                         Some(code) => ClientOrderId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -400,11 +436,11 @@ impl DatabaseQueries {
                     match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
                         Ok(Some(order)) => Some((client_order_id, order)),
                         Ok(None) => {
-                            log::error!("Order not found: {client_order_id}");
+                            tracing::error!("Order not found: {client_order_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load order {client_order_id}: {e}");
+                            tracing::error!("Failed to load order {client_order_id}: {e}");
                             None
                         }
                     }
@@ -412,7 +448,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values.
+        // Insert all Client-Order-Id (key) and Order (value) into the HashMap, filtering out None values
         orders.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} order(s)", orders.len());
 
@@ -439,7 +475,7 @@ impl DatabaseQueries {
                     let position_id = match key.as_str().rsplit(':').next() {
                         Some(code) => PositionId::from(code),
                         None => {
-                            log::error!("Invalid key format: {key}");
+                            tracing::error!("Invalid key format: {key}");
                             return None;
                         }
                     };
@@ -447,11 +483,11 @@ impl DatabaseQueries {
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {
                         Ok(Some(position)) => Some((position_id, position)),
                         Ok(None) => {
-                            log::error!("Position not found: {position_id}");
+                            tracing::error!("Position not found: {position_id}");
                             None
                         }
                         Err(e) => {
-                            log::error!("Failed to load position {position_id}: {e}");
+                            tracing::error!("Failed to load position {position_id}: {e}");
                             None
                         }
                     }
@@ -459,7 +495,7 @@ impl DatabaseQueries {
             })
             .collect();
 
-        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values.
+        // Insert all Position_id (key) and Position (value) into the HashMap, filtering out None values
         positions.extend(join_all(futures).await.into_iter().flatten());
         tracing::debug!("Loaded {} position(s)", positions.len());
 
@@ -479,8 +515,8 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let currency = Self::deserialize_payload(encoding, &result[0])?;
-        Ok(currency)
+        let currency = Self::deserialize_payload::<CurrencyWrapper>(encoding, &result[0])?;
+        Ok(Some(currency.into()))
     }
 
     pub async fn load_instrument(
@@ -495,7 +531,8 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let instrument: InstrumentAny = Self::deserialize_payload(encoding, &result[0])?;
+        let instrument = Self::deserialize_payload::<InstrumentAny>(encoding, &result[0])?;
+
         Ok(Some(instrument))
     }
 
@@ -511,7 +548,8 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let synthetic: SyntheticInstrument = Self::deserialize_payload(encoding, &result[0])?;
+        let synthetic = Self::deserialize_payload::<SyntheticInstrument>(encoding, &result[0])?;
+
         Ok(Some(synthetic))
     }
 
@@ -527,7 +565,8 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let account: AccountAny = Self::deserialize_payload(encoding, &result[0])?;
+        let account = Self::deserialize_payload::<AccountAny>(encoding, &result[0])?;
+
         Ok(Some(account))
     }
 
@@ -543,7 +582,35 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let order: OrderAny = Self::deserialize_payload(encoding, &result[0])?;
+        let order_event = Self::deserialize_payload::<OrderEventAny>(encoding, &result[0])?;
+        let mut order = OrderAny::from_events(vec![order_event])?;
+
+        for event in result.iter().skip(1) {
+            let order_event = Self::deserialize_payload::<OrderEventAny>(encoding, event)?;
+
+            if order.events().contains(&&order_event) {
+                anyhow::bail!("Corrupt cache with duplicate event for order {order_event}");
+            }
+            if let OrderEventAny::Initialized(order_initialized) = &order_event {
+                match order_initialized.order_type {
+                    OrderType::Market => {
+                        order = transform_market_order(order, order_initialized.ts_init)?;
+                    }
+                    OrderType::Limit => {
+                        let price = order_initialized
+                            .price
+                            .ok_or_else(|| anyhow::anyhow!("Price not found"))?;
+                        order = transform_limit_order(order, order_initialized.ts_init, price)?;
+                    }
+                    _ => {
+                        anyhow::bail!("Cannot transform order to {}", order_initialized.order_type);
+                    }
+                }
+            } else {
+                order.apply(order_event)?;
+            }
+        }
+
         Ok(Some(order))
     }
 
@@ -559,8 +626,55 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let position: Position = Self::deserialize_payload(encoding, &result[0])?;
+        let initial_fill = Self::deserialize_payload::<OrderFilled>(encoding, &result[0])?;
+
+        let instrument = if let Some(instrument) =
+            Self::load_instrument(con, trader_key, &initial_fill.instrument_id, encoding).await?
+        {
+            instrument
+        } else {
+            tracing::error!("Instrument not found: {}", initial_fill.instrument_id);
+            return Ok(None);
+        };
+
+        let mut position = Position::new(&instrument, initial_fill);
+
+        for event in result.iter().skip(1) {
+            let order_filled: OrderFilled = Self::deserialize_payload(encoding, event)?;
+
+            if position.events.contains(&order_filled) {
+                anyhow::bail!("Corrupt cache with duplicate event for position {order_filled}");
+            }
+
+            position.apply(&order_filled);
+        }
+
         Ok(Some(position))
+    }
+
+    pub async fn load_strategy(
+        con: &ConnectionManager,
+        trader_key: &str,
+        strategy_id: &StrategyId,
+        encoding: SerializationEncoding,
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+        let result = Self::read(con, trader_key, &key).await?;
+        if result.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let strategy = Self::deserialize_payload::<HashMap<String, Bytes>>(encoding, &result[0])?;
+        Ok(strategy)
+    }
+
+    pub fn serialize_currency(
+        encoding: SerializationEncoding,
+        currency: &Currency,
+    ) -> anyhow::Result<Vec<u8>> {
+        let currency_wrapper = CurrencyWrapper::from(*currency);
+        let value = Self::serialize_payload(encoding, &currency_wrapper)?;
+        Ok(value)
     }
 
     fn get_collection_key(key: &str) -> anyhow::Result<&str> {
@@ -625,9 +739,7 @@ impl DatabaseQueries {
 }
 
 fn is_timestamp_field(key: &str) -> bool {
-    let expire_match = key == "expire_time_ns";
-    let ts_match = key.starts_with("ts_");
-    expire_match || ts_match
+    key == "expire_time_ns" || key.starts_with("ts_")
 }
 
 fn convert_timestamps(value: &mut Value) {
@@ -656,31 +768,143 @@ fn convert_timestamps(value: &mut Value) {
     }
 }
 
-fn convert_timestamp_strings(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::String(s) = v {
-                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-                            *v = Value::Number(
-                                (dt.with_timezone(&Utc)
-                                    .timestamp_nanos_opt()
-                                    .expect("Invalid DateTime")
-                                    as u64)
-                                    .into(),
-                            );
-                        }
-                    }
-                }
-                convert_timestamp_strings(v);
-            }
+fn transform_market_order(order: OrderAny, ts_init: UnixNanos) -> anyhow::Result<OrderAny> {
+    let time_in_force = if order.time_in_force() != TimeInForce::Gtd {
+        order.time_in_force()
+    } else {
+        TimeInForce::Gtc
+    };
+
+    let mut transformed = MarketOrder::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.order_side(),
+        order.quantity(),
+        time_in_force,
+        UUID4::new(),
+        ts_init,
+        order.is_reduce_only(),
+        order.is_quote_quantity(),
+        order.contingency_type(),
+        order.order_list_id(),
+        order.linked_order_ids().map(|ids| ids.to_vec()),
+        order.parent_order_id(),
+        order.exec_algorithm_id(),
+        order
+            .exec_algorithm_params()
+            .map(|index_map| index_map.to_owned()),
+        order.exec_spawn_id(),
+        order.tags().map(|tags| tags.to_vec()),
+    );
+
+    // Apply the original events in reverse order to maintain history
+    hydrate_order_events(&mut transformed.events, order.events());
+
+    Ok(OrderAny::from(transformed))
+}
+
+fn transform_limit_order(
+    order: OrderAny,
+    ts_init: UnixNanos,
+    price: Price,
+) -> anyhow::Result<OrderAny> {
+    let mut transformed = LimitOrder::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.order_side(),
+        order.quantity(),
+        price,
+        order.time_in_force(),
+        order.expire_time(),
+        order.is_post_only(),
+        order.is_reduce_only(),
+        order.is_quote_quantity(),
+        order.display_qty(),
+        Some(TriggerType::NoTrigger),
+        None,
+        order.contingency_type(),
+        order.order_list_id(),
+        order.linked_order_ids().map(|ids| ids.to_vec()),
+        order.parent_order_id(),
+        order.exec_algorithm_id(),
+        order
+            .exec_algorithm_params()
+            .map(|index_map| index_map.to_owned()),
+        order.exec_spawn_id(),
+        order.tags().map(|tags| tags.to_vec()),
+        UUID4::new(),
+        ts_init,
+    )?;
+
+    // transformed.liquidity_side = order.liquidity_side();
+
+    // TODO: fix
+    // let triggered_price = order.trigger_price();
+    // if let Some(price) = triggered_price {
+    //     transformed.set_trigger_price(price);
+    // }
+
+    // Apply the original events in reverse order to maintain history
+    hydrate_order_events(&mut transformed.events, order.events());
+
+    Ok(OrderAny::from(transformed))
+}
+
+/// Hydrates an order with events from the original order in the correct sequence.
+///
+/// This specialized function handles the `Vec<&OrderEventAny>` returned by `order.events()`,
+/// inserting them in reverse order to maintain the proper historical sequence.
+fn hydrate_order_events(
+    target_events: &mut Vec<OrderEventAny>,
+    original_events: Vec<&OrderEventAny>,
+) {
+    // Insert events in reverse order to maintain the correct historical sequence
+    for &event in original_events.iter().rev() {
+        target_events.insert(0, event.clone());
+    }
+}
+
+/// CurrencyWrapper provides a way to serialize/deserialize Currency objects without relying on the global
+/// CURRENCY_MAP registry. This is necessary when loading currencies from Redis, as they may not yet exist
+/// in the registry but we still need to deserialize their complete data.
+#[derive(Serialize, Deserialize)]
+struct CurrencyWrapper {
+    /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
+    code: Ustr,
+    /// The currency decimal precision.
+    precision: u8,
+    /// The ISO 4217 currency code.
+    iso4217: u16,
+    /// The full name of the currency.
+    name: Ustr,
+    /// The currency type, indicating its category (e.g. Fiat, Crypto).
+    currency_type: CurrencyType,
+}
+
+impl From<CurrencyWrapper> for Currency {
+    fn from(wrapper: CurrencyWrapper) -> Self {
+        Currency {
+            code: wrapper.code,
+            precision: wrapper.precision,
+            iso4217: wrapper.iso4217,
+            name: wrapper.name,
+            currency_type: wrapper.currency_type,
         }
-        Value::Array(arr) => {
-            for item in arr {
-                convert_timestamp_strings(item);
-            }
+    }
+}
+
+impl From<Currency> for CurrencyWrapper {
+    fn from(currency: Currency) -> Self {
+        CurrencyWrapper {
+            code: currency.code,
+            precision: currency.precision,
+            iso4217: currency.iso4217,
+            name: currency.name,
+            currency_type: currency.currency_type,
         }
-        _ => {}
     }
 }

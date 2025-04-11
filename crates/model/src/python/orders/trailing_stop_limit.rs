@@ -144,6 +144,12 @@ impl TrailingStopLimitOrder {
             .collect()
     }
 
+    #[getter]
+    #[pyo3(name = "price")]
+    fn py_price(&self) -> Price {
+        self.price
+    }
+
     #[pyo3(name = "signed_decimal_qty")]
     fn py_signed_decimal_qty(&self) -> Decimal {
         self.signed_decimal_qty()

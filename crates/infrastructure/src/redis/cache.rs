@@ -34,14 +34,15 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, DataType, QuoteTick, TradeTick},
+    enums::TriggerType,
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::Currency,
 };
@@ -212,7 +213,10 @@ impl RedisCacheDatabase {
     }
 
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
-        let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
+        let pattern = format!(
+            "{}{REDIS_DELIMITER}{pattern}{REDIS_DELIMITER}*",
+            self.trader_key
+        );
         log::debug!("Querying keys: {pattern}");
         DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
@@ -603,23 +607,23 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-#[allow(dead_code)] // Under development
-pub struct RedisCacheDatabaseAdapter {
-    pub encoding: SerializationEncoding,
-    database: RedisCacheDatabase,
-}
+// #[allow(dead_code)] // Under development
+// pub struct RedisCacheDatabaseAdapter {
+//     pub encoding: SerializationEncoding,
+//     database: RedisCacheDatabase,
+// }
 
 #[allow(dead_code)] // Under development
 #[allow(unused)] // Under development
 #[async_trait::async_trait]
-impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
+impl CacheDatabaseAdapter for RedisCacheDatabase {
     fn close(&mut self) -> anyhow::Result<()> {
-        self.database.close();
+        self.close();
         Ok(())
     }
 
     fn flush(&mut self) -> anyhow::Result<()> {
-        self.database.flushdb();
+        self.flushdb();
         Ok(())
     }
 
@@ -659,55 +663,41 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         })
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
-        // self.database.load()
-        Ok(HashMap::new()) // TODO
+    async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
+        let mut result = HashMap::new();
+        let keys = self.keys(GENERAL).await?;
+        for key in keys {
+            let key = key.split_once(REDIS_DELIMITER).unwrap().1;
+            let value = self.read(key).await?;
+            let key = key.split_once(REDIS_DELIMITER).unwrap().1;
+            result.insert(key.to_string(), value.first().unwrap().clone());
+        }
+
+        Ok(result)
     }
 
     async fn load_currencies(&self) -> anyhow::Result<HashMap<Ustr, Currency>> {
-        DatabaseQueries::load_currencies(
-            &self.database.con,
-            &self.database.trader_key,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_currencies(&self.con, &self.trader_key, self.encoding).await
     }
 
     async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        DatabaseQueries::load_instruments(
-            &self.database.con,
-            &self.database.trader_key,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_instruments(&self.con, &self.trader_key, self.encoding).await
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        DatabaseQueries::load_synthetics(
-            &self.database.con,
-            &self.database.trader_key,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_synthetics(&self.con, &self.trader_key, self.encoding).await
     }
 
     async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
-        DatabaseQueries::load_accounts(&self.database.con, &self.database.trader_key, self.encoding)
-            .await
+        DatabaseQueries::load_accounts(&self.con, &self.trader_key, self.encoding).await
     }
 
     async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        DatabaseQueries::load_orders(&self.database.con, &self.database.trader_key, self.encoding)
-            .await
+        DatabaseQueries::load_orders(&self.con, &self.trader_key, self.encoding).await
     }
 
     async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>> {
-        DatabaseQueries::load_positions(
-            &self.database.con,
-            &self.database.trader_key,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_positions(&self.con, &self.trader_key, self.encoding).await
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
@@ -719,72 +709,40 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
-        DatabaseQueries::load_currency(
-            &self.database.con,
-            &self.database.trader_key,
-            code,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_currency(&self.con, &self.trader_key, code, self.encoding).await
     }
 
     async fn load_instrument(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        DatabaseQueries::load_instrument(
-            &self.database.con,
-            &self.database.trader_key,
-            instrument_id,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_instrument(&self.con, &self.trader_key, instrument_id, self.encoding)
+            .await
     }
 
     async fn load_synthetic(
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
-        DatabaseQueries::load_synthetic(
-            &self.database.con,
-            &self.database.trader_key,
-            instrument_id,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_synthetic(&self.con, &self.trader_key, instrument_id, self.encoding)
+            .await
     }
 
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
-        DatabaseQueries::load_account(
-            &self.database.con,
-            &self.database.trader_key,
-            account_id,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_account(&self.con, &self.trader_key, account_id, self.encoding).await
     }
 
     async fn load_order(
         &self,
         client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        DatabaseQueries::load_order(
-            &self.database.con,
-            &self.database.trader_key,
-            client_order_id,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_order(&self.con, &self.trader_key, client_order_id, self.encoding)
+            .await
     }
 
     async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>> {
-        DatabaseQueries::load_position(
-            &self.database.con,
-            &self.database.trader_key,
-            position_id,
-            self.encoding,
-        )
-        .await
+        DatabaseQueries::load_position(&self.con, &self.trader_key, position_id, self.encoding)
+            .await
     }
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
@@ -795,44 +753,115 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
-        todo!()
+    async fn load_strategy(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
+        DatabaseQueries::load_strategy(&self.con, &self.trader_key, strategy_id, self.encoding)
+            .await
     }
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
-        todo!()
+    fn delete_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}");
+        self.delete(key, None)?;
+
+        tracing::debug!("Deleted strategy {strategy_id}");
+        Ok(())
     }
 
-    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
-        todo!()
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
+        let key = format!("{GENERAL}{REDIS_DELIMITER}{key}");
+        self.insert(key, Some(vec![value]))
     }
 
-    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
-        todo!()
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
+        let currency_code = currency.code.to_string();
+        let key = format!("{CURRENCIES}{REDIS_DELIMITER}{currency_code}");
+        let serialized_currency = DatabaseQueries::serialize_currency(self.encoding, currency)?;
+        self.insert(key, Some(vec![Bytes::from(serialized_currency)]))
     }
 
-    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        todo!()
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let instrument_id = instrument.id().to_string();
+        let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{instrument_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, instrument)?;
+        self.insert(key, Some(vec![Bytes::from(value)]))
     }
 
     fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        let account_id = account.id().to_string();
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, account)?;
+        self.insert(key, Some(vec![Bytes::from(value)]))
     }
 
-    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        todo!()
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id().to_string();
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, order.last_event())?;
+
+        self.insert(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Added {client_order_id}");
+
+        let client_order_id_bytes = Bytes::from(client_order_id.clone());
+        self.insert(
+            INDEX_ORDERS.to_string(),
+            Some(vec![client_order_id_bytes.clone()]),
+        )?;
+
+        if order.emulation_trigger() != Some(TriggerType::NoTrigger) {
+            self.insert(
+                INDEX_ORDERS_EMULATED.to_string(),
+                Some(vec![client_order_id_bytes]),
+            )?;
+        }
+
+        // if let Some(position_id) = position_id {
+        //     self.index_order_position(order.client_order_id(), position_id);
+        // }
+
+        if let Some(client_id) = client_id {
+            let client_order_id_bytes = Bytes::from(client_order_id.clone());
+            let client_id_bytes = Bytes::from(client_id.to_string());
+            self.insert(
+                INDEX_ORDERS.to_string(),
+                Some(vec![client_order_id_bytes, client_id_bytes]),
+            )?;
+            tracing::debug!("Indexed {client_order_id} -> {client_id}");
+        }
+
+        Ok(())
     }
 
     fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        let position_id = position.id.to_string();
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, &position.last_event())?;
+        self.insert(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Added {position_id}");
+
+        let position_id_bytes = Bytes::from(position_id.clone());
+        self.insert(
+            INDEX_POSITIONS.to_string(),
+            Some(vec![position_id_bytes.clone()]),
+        )?;
+        tracing::debug!("Indexed {position_id}");
+
+        self.insert(
+            INDEX_POSITIONS_OPEN.to_string(),
+            Some(vec![position_id_bytes]),
+        )?;
+        tracing::debug!("Indexed {position_id} -> OPEN");
+
+        Ok(())
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
@@ -917,20 +946,48 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
-        todo!()
+    fn update_strategy(
+        &mut self,
+        id: &str,
+        strategy: HashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, &strategy)?;
+        self.insert(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Updated {id}");
+        Ok(())
     }
 
-    fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        let account_id = account.id().to_string();
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, account)?;
+        self.update(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Updated {account_id}");
+        Ok(())
     }
 
-    fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
-        todo!()
+    fn update_order(&mut self, order_event: &OrderEventAny) -> anyhow::Result<()> {
+        let client_order_id = order_event.client_order_id().to_string();
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, order_event)?;
+
+        self.update(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Updated {client_order_id} with event: {:?}", order_event);
+
+        // todo: update index
+        Ok(())
     }
 
-    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        let position_id = position.id.to_string();
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let value = DatabaseQueries::serialize_payload(self.encoding, position)?;
+        self.update(key, Some(vec![Bytes::from(value)]))?;
+        tracing::debug!("Updated {position_id}");
+
+        // update index
+        Ok(())
     }
 
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {

@@ -80,8 +80,9 @@ fn test_flush_db_when_empty(mut cache: Cache) {
 }
 
 #[rstest]
-fn test_cache_general_when_no_database(mut cache: Cache) {
-    assert!(cache.cache_general().is_ok());
+#[tokio::test]
+async fn test_cache_general_when_no_database(mut cache: Cache) {
+    assert!(cache.cache_general().await.is_ok());
 }
 
 // -- EXECUTION -------------------------------------------------------------------------------
