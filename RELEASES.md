@@ -7,6 +7,7 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 ### Enhancements
 - Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)
 - Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
+- Added risk engine check for GTD order expire time, which will deny if expire time is already in the past
 - Added instrument updating for exchange and matching engine
 - Added additional price and quantity precision validations for matching engine
 - Added log file rotation with additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu

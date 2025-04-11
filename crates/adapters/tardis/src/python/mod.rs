@@ -21,9 +21,9 @@ pub mod enums;
 pub mod http;
 pub mod machine;
 
-use nautilus_core::python::to_pyvalue_err;
 use std::str::FromStr;
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
