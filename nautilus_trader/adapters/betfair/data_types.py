@@ -21,6 +21,7 @@ import pyarrow as pa
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.enums import BookAction
@@ -299,6 +300,11 @@ class BetfairStartingPrice(Data):
             "ts_init": obj.ts_init,
             "bsp": obj.bsp,
         }
+
+
+@customdataclass
+class BetfairSequenceCompleted(Data):
+    pass
 
 
 # Register serialization/parquet BetfairTicker
