@@ -2817,6 +2817,8 @@ void level_drop(struct BookLevel_API level);
 
 struct BookLevel_API level_clone(const struct BookLevel_API *level);
 
+enum OrderSide level_side(const struct BookLevel_API *level);
+
 struct Price_t level_price(const struct BookLevel_API *level);
 
 CVec level_orders(const struct BookLevel_API *level);
