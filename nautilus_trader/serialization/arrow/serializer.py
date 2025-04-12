@@ -62,7 +62,7 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.Bar,
     nautilus_pyo3.MarkPriceUpdate,
     nautilus_pyo3.IndexPriceUpdate,
-    # nautilus_pyo3.InstrumentClose,  // TODO: Not implemented yet
+    nautilus_pyo3.InstrumentClose,
 ]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
@@ -178,11 +178,11 @@ class ArrowSerializer:
                     batch_bytes = nautilus_pyo3.index_prices_to_arrow_record_batch_bytes(
                         pyo3_index_prices,
                     )
-                # elif data_cls == InstrumentClose:  // TODO: Not implemented yet
-                #     pyo3_instrument_closes = InstrumentClose.to_pyo3_list(data)
-                #     batch_bytes = nautilus_pyo3.instrument_closes_to_arrow_record_batch_bytes(
-                #         pyo3_instrument_closes,
-                #     )
+                elif data_cls == InstrumentClose:
+                    pyo3_instrument_closes = InstrumentClose.to_pyo3_list(data)
+                    batch_bytes = nautilus_pyo3.instrument_closes_to_arrow_record_batch_bytes(
+                        pyo3_instrument_closes,
+                    )
                 elif data_cls == OrderBookDepth10:
                     raise RuntimeError(
                         f"Unsupported Rust defined data type for catalog write, was `{data_cls}`. "
@@ -341,7 +341,7 @@ RUST_SERIALIZERS = {
     Bar,
     MarkPriceUpdate,
     IndexPriceUpdate,
-    # InstrumentClose,  // TODO: Not implemented yet
+    # InstrumentClose,  # TODO: Not implemented yet
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 
