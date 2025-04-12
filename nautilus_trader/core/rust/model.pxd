@@ -1856,6 +1856,8 @@ cdef extern from "../includes/model.h":
 
     BookLevel_API level_clone(const BookLevel_API *level);
 
+    OrderSide level_side(const BookLevel_API *level);
+
     Price_t level_price(const BookLevel_API *level);
 
     CVec level_orders(const BookLevel_API *level);

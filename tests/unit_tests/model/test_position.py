@@ -267,7 +267,7 @@ class TestPosition:
         [
             [
                 OrderSide.BUY,
-                OrderSide.SELL,  # <--- Different side
+                OrderSide.SELL,  # <-- Different side
                 Price.from_str("1.00001"),
                 Price.from_str("1.00001"),
                 Quantity.from_str("1"),
@@ -275,7 +275,7 @@ class TestPosition:
             ],
             [
                 OrderSide.BUY,
-                OrderSide.SELL,  # <--- Different side
+                OrderSide.SELL,  # <-- Different side
                 Price.from_str("1.00001"),
                 Price.from_str("1.00001"),
                 Quantity.from_str("1"),
@@ -283,7 +283,7 @@ class TestPosition:
             ],
             [
                 OrderSide.BUY,
-                OrderSide.SELL,  # <--- Different side
+                OrderSide.SELL,  # <-- Different side
                 Price.from_str("1.00001"),
                 Price.from_str("1.00001"),
                 Quantity.from_str("1"),
@@ -392,6 +392,7 @@ class TestPosition:
         assert position.quantity == Quantity.from_int(100_000)
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
+        assert position.closing_order_side() == OrderSide.SELL
         assert position.signed_decimal_qty() == Decimal("100000")
         assert position.signed_qty == 100_000.0
         assert position.entry == OrderSide.BUY
@@ -442,6 +443,7 @@ class TestPosition:
         assert position.quantity == Quantity.from_int(100_000)
         assert position.peak_qty == Quantity.from_int(100_000)
         assert position.size_precision == 0
+        assert position.closing_order_side() == OrderSide.BUY
         assert position.signed_decimal_qty() == Decimal("-100000")
         assert position.signed_qty == -100_000.0
         assert position.side == PositionSide.SHORT

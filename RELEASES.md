@@ -16,6 +16,8 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Added Arrow schema for `MarkPriceUpdate` in Rust
 - Added Arrow schema for `IndexPriceUpdate` in Rust
 - Added Arrow schema for `InstrumentClose` in Rust
+- Added `BookLevel.side` property
+- Added `Position.closing_order_side()` instance method
 - Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
 - Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
 

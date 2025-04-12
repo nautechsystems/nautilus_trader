@@ -291,6 +291,8 @@ class TestOrderBook:
         )
         bid_level = book.bids()[0]
         ask_level = book.asks()[0]
+        assert bid_level.side == OrderSide.BUY
+        assert ask_level.side == OrderSide.SELL
         assert len(bid_level.orders()) == 1
         assert len(ask_level.orders()) == 1
         assert bid_level.price == Price.from_str("10.0")

@@ -84,6 +84,11 @@ pub extern "C" fn level_clone(level: &BookLevel_API) -> BookLevel_API {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn level_side(level: &BookLevel_API) -> OrderSide {
+    level.price.side.as_order_side()
+}
+
+#[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn level_price(level: &BookLevel_API) -> Price {
     level.price.value
