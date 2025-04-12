@@ -20,8 +20,8 @@ use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    MessageBus, database::BusMessage, deregister, handler::ShareableMessageHandler, register,
-    subscribe, unsubscribe,
+    BusMessage, MessageBus, deregister, handler::ShareableMessageHandler, register, subscribe,
+    unsubscribe,
 };
 
 #[pymethods]
@@ -36,6 +36,14 @@ impl BusMessage {
     #[pyo3(name = "payload")]
     fn py_payload(&mut self) -> &[u8] {
         self.payload.as_ref()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{}('{}')", stringify!(BusMessage), self)
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
     }
 }
 

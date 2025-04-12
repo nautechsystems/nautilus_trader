@@ -320,6 +320,7 @@ class NautilusKernel:
         # Core components
         ########################################################################
         self._msgbus_serializer = None
+
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
@@ -327,6 +328,10 @@ class NautilusKernel:
                 timestamps_as_str=True,  # Hard-coded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
+
+        if self._msgbus_serializer is None:
+            self._msgbus_serializer = MsgSpecSerializer(encoding=msgspec.json)
+
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
             instance_id=self._instance_id,

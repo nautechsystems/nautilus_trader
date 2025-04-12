@@ -2128,6 +2128,7 @@ cdef class MessageBus:
         self._clock = clock
         self._log = Logger(name)
         self._database = database
+        self._listeners = []
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
@@ -2377,6 +2378,18 @@ cdef class MessageBus:
 
         self._log.debug(f"Added streaming type {cls}")
 
+    cpdef void add_listener(self, listener: nautilus_pyo3.MessageBusListener):
+        """
+        Adds the given listener to the message bus.
+
+        Parameters
+        ----------
+        listener : nautilus_pyo3.MessageBusListener
+            The listener to add.
+
+        """
+        self._listeners.append(listener)
+
     cpdef void send(self, str endpoint, msg: Any):
         """
         Send the given message to the given `endpoint` address.
@@ -2622,17 +2635,30 @@ cdef class MessageBus:
             sub.handler(msg)
 
         # Publish externally (if configured)
-        cdef bytes payload_bytes
-        if external_pub and self._database is not None and not self._database.is_closed() and self.serializer is not None:
-            if isinstance(msg, self._publishable_types):
+        cdef bytes payload_bytes = None
+        if isinstance(msg, self._publishable_types):
+            if external_pub and self._database is not None and not self._database.is_closed():
                 if isinstance(msg, bytes):
                     payload_bytes = msg
                 else:
                     payload_bytes = self.serializer.serialize(msg)
+
                 self._database.publish(
                     topic,
                     payload_bytes,
                 )
+
+            for listener in self._listeners:
+                if listener.is_closed():
+                    continue
+
+                if payload_bytes is None:
+                    if isinstance(msg, bytes):
+                        payload_bytes = msg
+                    else:
+                        payload_bytes = self.serializer.serialize(msg)
+
+                listener.publish(topic, payload_bytes)
 
         self.pub_count += 1
 
