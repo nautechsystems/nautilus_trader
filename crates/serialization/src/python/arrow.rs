@@ -129,6 +129,10 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let index_prices = pyobjects_to_index_prices(data)?;
             py_index_prices_to_arrow_record_batch_bytes(py, index_prices)
         }
+        stringify!(InstrumentClose) => {
+            let closes = pyobjects_to_index_prices(data)?;
+            py_index_prices_to_arrow_record_batch_bytes(py, closes)
+        }
         _ => Err(PyValueError::new_err(format!(
             "unsupported data type: {data_type}"
         ))),
