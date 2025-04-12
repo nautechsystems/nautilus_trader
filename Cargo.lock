@@ -3107,6 +3107,7 @@ version = "0.46.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
+ "async-stream",
  "async-trait",
  "bytes",
  "cbindgen",
@@ -3120,6 +3121,7 @@ dependencies = [
  "nautilus-model",
  "proptest",
  "pyo3",
+ "pyo3-async-runtimes",
  "regex",
  "rstest",
  "rust_decimal",

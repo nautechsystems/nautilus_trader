@@ -265,6 +265,7 @@ cdef class MessageBus:
     cdef Clock _clock
     cdef Logger _log
     cdef object _database
+    cdef list[object] _listeners
     cdef dict[Subscription, list[str]] _subscriptions
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints
@@ -300,6 +301,7 @@ cdef class MessageBus:
     cpdef void register(self, str endpoint, handler)
     cpdef void deregister(self, str endpoint, handler)
     cpdef void add_streaming_type(self, type cls)
+    cpdef void add_listener(self, listener)
     cpdef void send(self, str endpoint, msg)
     cpdef void request(self, str endpoint, Request request)
     cpdef void response(self, Response response)
