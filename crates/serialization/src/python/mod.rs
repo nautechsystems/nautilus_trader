@@ -36,23 +36,31 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        crate::python::arrow::py_order_book_deltas_to_arrow_record_batch_bytes,
+        crate::python::arrow::py_book_deltas_to_arrow_record_batch_bytes,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        crate::python::arrow::py_order_book_depth10_to_arrow_record_batch_bytes,
+        crate::python::arrow::py_book_depth10_to_arrow_record_batch_bytes,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        crate::python::arrow::py_quote_ticks_to_arrow_record_batch_bytes,
+        crate::python::arrow::py_quotes_to_arrow_record_batch_bytes,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
-        crate::python::arrow::py_trade_ticks_to_arrow_record_batch_bytes,
+        crate::python::arrow::py_trades_to_arrow_record_batch_bytes,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(
         crate::python::arrow::py_bars_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_mark_prices_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_index_prices_to_arrow_record_batch_bytes,
         m
     )?)?;
 

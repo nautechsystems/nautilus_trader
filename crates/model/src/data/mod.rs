@@ -77,6 +77,8 @@ pub enum Data {
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
+    MarkPrice(MarkPriceUpdate),
+    IndexPrice(IndexPriceUpdate),
 }
 
 macro_rules! impl_try_from_data {
@@ -110,6 +112,8 @@ impl_try_from_data!(Delta, OrderBookDelta);
 impl_try_from_data!(Deltas, OrderBookDeltas_API);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
+impl_try_from_data!(MarkPrice, MarkPriceUpdate);
+impl_try_from_data!(IndexPrice, IndexPriceUpdate);
 
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
@@ -127,6 +131,8 @@ impl Data {
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
+            Self::MarkPrice(mark_price) => mark_price.instrument_id,
+            Self::IndexPrice(index_price) => index_price.instrument_id,
         }
     }
 
@@ -149,6 +155,8 @@ impl GetTsInit for Data {
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
+            Self::MarkPrice(p) => p.ts_init,
+            Self::IndexPrice(p) => p.ts_init,
         }
     }
 }
@@ -191,6 +199,18 @@ impl From<TradeTick> for Data {
 impl From<Bar> for Data {
     fn from(value: Bar) -> Self {
         Self::Bar(value)
+    }
+}
+
+impl From<MarkPriceUpdate> for Data {
+    fn from(value: MarkPriceUpdate) -> Self {
+        Self::MarkPrice(value)
+    }
+}
+
+impl From<IndexPriceUpdate> for Data {
+    fn from(value: IndexPriceUpdate) -> Self {
+        Self::IndexPrice(value)
     }
 }
 

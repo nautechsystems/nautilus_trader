@@ -21,7 +21,8 @@ use itertools::Itertools;
 use log::info;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
-    Bar, Data, GetTsInit, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+    Bar, Data, GetTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+    QuoteTick, TradeTick,
 };
 use nautilus_serialization::{
     arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch},
@@ -50,38 +51,48 @@ impl ParquetDataCatalog {
     }
 
     pub fn write_data_enum(&self, data: Vec<Data>, write_mode: Option<ParquetWriteMode>) {
-        let mut delta: Vec<OrderBookDelta> = Vec::new();
-        let mut depth10: Vec<OrderBookDepth10> = Vec::new();
-        let mut quote: Vec<QuoteTick> = Vec::new();
-        let mut trade: Vec<TradeTick> = Vec::new();
-        let mut bar: Vec<Bar> = Vec::new();
+        let mut deltas: Vec<OrderBookDelta> = Vec::new();
+        let mut depth10s: Vec<OrderBookDepth10> = Vec::new();
+        let mut quotes: Vec<QuoteTick> = Vec::new();
+        let mut trades: Vec<TradeTick> = Vec::new();
+        let mut bars: Vec<Bar> = Vec::new();
+        let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
+        let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
 
         for d in data.iter().cloned() {
             match d {
+                Data::Deltas(_) => continue,
                 Data::Delta(d) => {
-                    delta.push(d);
+                    deltas.push(d);
                 }
                 Data::Depth10(d) => {
-                    depth10.push(*d);
+                    depth10s.push(*d);
                 }
                 Data::Quote(d) => {
-                    quote.push(d);
+                    quotes.push(d);
                 }
                 Data::Trade(d) => {
-                    trade.push(d);
+                    trades.push(d);
                 }
                 Data::Bar(d) => {
-                    bar.push(d);
+                    bars.push(d);
                 }
-                Data::Deltas(_) => continue,
+                Data::MarkPrice(p) => {
+                    mark_prices.push(p);
+                }
+                Data::IndexPrice(p) => {
+                    index_prices.push(p);
+                }
             }
         }
 
-        let _ = self.write_to_parquet(delta, None, None, None, write_mode);
-        let _ = self.write_to_parquet(depth10, None, None, None, write_mode);
-        let _ = self.write_to_parquet(quote, None, None, None, write_mode);
-        let _ = self.write_to_parquet(trade, None, None, None, write_mode);
-        let _ = self.write_to_parquet(bar, None, None, None, write_mode);
+        let _ = self.write_to_parquet(deltas, None, None, None, write_mode);
+        let _ = self.write_to_parquet(depth10s, None, None, None, write_mode);
+        let _ = self.write_to_parquet(quotes, None, None, None, write_mode);
+        let _ = self.write_to_parquet(trades, None, None, None, write_mode);
+        let _ = self.write_to_parquet(bars, None, None, None, write_mode);
+        let _ = self.write_to_parquet(mark_prices, None, None, None, write_mode);
+        let _ = self.write_to_parquet(index_prices, None, None, None, write_mode);
     }
 
     pub fn write_to_parquet<T>(
@@ -420,3 +431,5 @@ impl_catalog_path_prefix!(TradeTick, "trades");
 impl_catalog_path_prefix!(OrderBookDelta, "order_book_deltas");
 impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
 impl_catalog_path_prefix!(Bar, "bars");
+impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
+impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
