@@ -16,6 +16,7 @@
 //! Defines the Apache Arrow schema for Nautilus types.
 
 pub mod bar;
+pub mod close;
 pub mod delta;
 pub mod depth;
 pub mod index_price;
@@ -37,8 +38,8 @@ use arrow::{
 };
 use nautilus_model::{
     data::{
-        Data, IndexPriceUpdate, MarkPriceUpdate, bar::Bar, delta::OrderBookDelta,
-        depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
+        Data, IndexPriceUpdate, MarkPriceUpdate, bar::Bar, close::InstrumentClose,
+        delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
     },
     types::{price::PriceRaw, quantity::QuantityRaw},
 };
@@ -267,4 +268,18 @@ pub fn index_prices_to_arrow_record_batch_bytes(
     let first = data.first().unwrap();
     let metadata = first.metadata();
     IndexPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn instrument_closes_to_arrow_record_batch_bytes(
+    data: Vec<InstrumentClose>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = first.metadata();
+    InstrumentClose::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }

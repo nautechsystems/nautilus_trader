@@ -716,6 +716,41 @@ cdef extern from "../includes/model.h":
         # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
+    # Represents a mark price update.
+    cdef struct MarkPriceUpdate_t:
+        # The instrument ID for the mark price.
+        InstrumentId_t instrument_id;
+        # The mark price.
+        Price_t value;
+        # UNIX timestamp (nanoseconds) when the price event occurred.
+        uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        uint64_t ts_init;
+
+    # Represents an index price update.
+    cdef struct IndexPriceUpdate_t:
+        # The instrument ID for the index price.
+        InstrumentId_t instrument_id;
+        # The index price.
+        Price_t value;
+        # UNIX timestamp (nanoseconds) when the price event occurred.
+        uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        uint64_t ts_init;
+
+    # Represents an instrument close at a venue.
+    cdef struct InstrumentClose_t:
+        # The instrument ID.
+        InstrumentId_t instrument_id;
+        # The closing price for the instrument.
+        Price_t close_price;
+        # The type of closing price.
+        InstrumentCloseType close_type;
+        # UNIX timestamp (nanoseconds) when the close price event occurred.
+        uint64_t ts_event;
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        uint64_t ts_init;
+
     # A built-in Nautilus data type.
     #
     # Not recommended for storing large amounts of data, as the largest variant is significantly
@@ -727,6 +762,9 @@ cdef extern from "../includes/model.h":
         QUOTE,
         TRADE,
         BAR,
+        MARK_PRICE_UPDATE,
+        INDEX_PRICE_UPDATE,
+        INSTRUMENT_CLOSE,
 
     cdef struct Data_t:
         Data_t_Tag tag;
@@ -736,6 +774,9 @@ cdef extern from "../includes/model.h":
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
+        MarkPriceUpdate_t mark_price_update;
+        IndexPriceUpdate_t index_price_update;
+        InstrumentClose_t instrument_close;
 
     # Represents a valid trader ID.
     cdef struct TraderId_t:

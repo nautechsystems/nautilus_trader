@@ -20,7 +20,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{
         Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        TradeTick, close::InstrumentClose,
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
@@ -37,8 +37,8 @@ use pyo3::{
 use crate::arrow::{
     ArrowSchemaProvider, bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
     book_depth10_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
-    mark_prices_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
-    trades_to_arrow_record_batch_bytes,
+    instrument_closes_to_arrow_record_batch_bytes, mark_prices_to_arrow_record_batch_bytes,
+    quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batches` into Python `bytes`.
@@ -204,6 +204,17 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
     data: Vec<IndexPriceUpdate>,
 ) -> PyResult<Py<PyBytes>> {
     match index_prices_to_arrow_record_batch_bytes(data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+        Err(e) => Err(to_pyvalue_err(e)),
+    }
+}
+
+#[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
+pub fn py_instrument_closes_to_arrow_record_batch_bytes(
+    py: Python,
+    data: Vec<InstrumentClose>,
+) -> PyResult<Py<PyBytes>> {
+    match instrument_closes_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }

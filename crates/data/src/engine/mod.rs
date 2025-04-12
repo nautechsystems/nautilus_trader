@@ -76,6 +76,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
         TradeTick,
+        close::InstrumentClose,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
@@ -442,8 +443,9 @@ impl DataEngine {
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
-            Data::MarkPrice(mark_price) => self.handle_mark_price(mark_price),
-            Data::IndexPrice(index_price) => self.handle_index_price(index_price),
+            Data::MarkPriceUpdate(mark_price) => self.handle_mark_price(mark_price),
+            Data::IndexPriceUpdate(index_price) => self.handle_index_price(index_price),
+            Data::InstrumentClose(close) => self.handle_instrument_close(close),
         }
     }
 
@@ -550,12 +552,12 @@ impl DataEngine {
         };
 
         let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
-        msgbus::publish(&topic, &deltas as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
         let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
-        msgbus::publish(&topic, &depth as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &depth as &dyn Any);
     }
 
     fn handle_quote(&mut self, quote: QuoteTick) {
@@ -566,7 +568,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let topic = switchboard::get_quotes_topic(quote.instrument_id);
-        msgbus::publish(&topic, &quote as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &quote as &dyn Any);
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
@@ -577,7 +579,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let topic = switchboard::get_trades_topic(trade.instrument_id);
-        msgbus::publish(&topic, &trade as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &trade as &dyn Any);
     }
 
     fn handle_bar(&mut self, bar: Bar) {
@@ -607,7 +609,7 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_bars_topic(bar.bar_type);
-        msgbus::publish(&topic, &bar as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &bar as &dyn Any);
     }
 
     fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
@@ -616,7 +618,7 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
-        msgbus::publish(&topic, &mark_price as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &mark_price as &dyn Any);
     }
 
     fn handle_index_price(&mut self, index_price: IndexPriceUpdate) {
@@ -630,7 +632,12 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_index_price_topic(index_price.instrument_id);
-        msgbus::publish(&topic, &index_price as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &index_price as &dyn Any);
+    }
+
+    fn handle_instrument_close(&mut self, close: InstrumentClose) {
+        let topic = switchboard::get_instrument_close_topic(close.instrument_id);
+        msgbus::publish(&topic, &close as &dyn Any);
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------

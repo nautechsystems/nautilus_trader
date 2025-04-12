@@ -22,7 +22,7 @@ use log::info;
 use nautilus_core::UnixNanos;
 use nautilus_model::data::{
     Bar, Data, GetTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
-    QuoteTick, TradeTick,
+    QuoteTick, TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::{
     arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch},
@@ -58,6 +58,7 @@ impl ParquetDataCatalog {
         let mut bars: Vec<Bar> = Vec::new();
         let mut mark_prices: Vec<MarkPriceUpdate> = Vec::new();
         let mut index_prices: Vec<IndexPriceUpdate> = Vec::new();
+        let mut closes: Vec<InstrumentClose> = Vec::new();
 
         for d in data.iter().cloned() {
             match d {
@@ -77,11 +78,14 @@ impl ParquetDataCatalog {
                 Data::Bar(d) => {
                     bars.push(d);
                 }
-                Data::MarkPrice(p) => {
+                Data::MarkPriceUpdate(p) => {
                     mark_prices.push(p);
                 }
-                Data::IndexPrice(p) => {
+                Data::IndexPriceUpdate(p) => {
                     index_prices.push(p);
+                }
+                Data::InstrumentClose(c) => {
+                    closes.push(c);
                 }
             }
         }
@@ -93,6 +97,7 @@ impl ParquetDataCatalog {
         let _ = self.write_to_parquet(bars, None, None, None, write_mode);
         let _ = self.write_to_parquet(mark_prices, None, None, None, write_mode);
         let _ = self.write_to_parquet(index_prices, None, None, None, write_mode);
+        let _ = self.write_to_parquet(closes, None, None, None, write_mode);
     }
 
     pub fn write_to_parquet<T>(
@@ -433,3 +438,4 @@ impl_catalog_path_prefix!(OrderBookDepth10, "order_book_depths");
 impl_catalog_path_prefix!(Bar, "bars");
 impl_catalog_path_prefix!(IndexPriceUpdate, "index_prices");
 impl_catalog_path_prefix!(MarkPriceUpdate, "mark_prices");
+impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");

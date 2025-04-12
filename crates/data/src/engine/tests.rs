@@ -946,7 +946,7 @@ fn test_process_mark_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::MarkPrice(mark_price));
+    data_engine.process_data(Data::MarkPriceUpdate(mark_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<MarkPriceUpdate>(handler);
 
@@ -1005,7 +1005,7 @@ fn test_process_index_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process_data(Data::IndexPrice(index_price));
+    data_engine.process_data(Data::IndexPriceUpdate(index_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<IndexPriceUpdate>(handler);
 
