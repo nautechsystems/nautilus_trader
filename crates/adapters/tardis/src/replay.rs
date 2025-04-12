@@ -33,9 +33,9 @@ use nautilus_model::{
 };
 use nautilus_serialization::{
     arrow::{
-        bars_to_arrow_record_batch_bytes, order_book_deltas_to_arrow_record_batch_bytes,
-        order_book_depth10_to_arrow_record_batch_bytes, quote_ticks_to_arrow_record_batch_bytes,
-        trade_ticks_to_arrow_record_batch_bytes,
+        bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
+        book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
+        trades_to_arrow_record_batch_bytes,
     },
     parquet::write_batch_to_parquet,
 };
@@ -188,6 +188,8 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
             Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
             Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
+            Data::MarkPrice(_) => panic!("Not implemented"),
+            Data::IndexPrice(_) => panic!("Not implemented"),
         }
 
         msg_count += 1;
@@ -196,7 +198,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         }
     }
 
-    // Naively iterate through every remaining type and instrument sequentially
+    // Iterate through every remaining type and instrument sequentially
 
     for (instrument_id, deltas) in deltas_map {
         let cursor = deltas_cursors.get(&instrument_id).expect("Expected cursor");
@@ -352,7 +354,7 @@ fn batch_and_write_deltas(
     path: &Path,
 ) {
     let typename = stringify!(OrderBookDeltas);
-    match order_book_deltas_to_arrow_record_batch_bytes(deltas) {
+    match book_deltas_to_arrow_record_batch_bytes(deltas) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
@@ -367,7 +369,7 @@ fn batch_and_write_depths(
     path: &Path,
 ) {
     let typename = stringify!(OrderBookDepth10);
-    match order_book_depth10_to_arrow_record_batch_bytes(depths) {
+    match book_depth10_to_arrow_record_batch_bytes(depths) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
@@ -382,7 +384,7 @@ fn batch_and_write_quotes(
     path: &Path,
 ) {
     let typename = stringify!(QuoteTick);
-    match quote_ticks_to_arrow_record_batch_bytes(quotes) {
+    match quotes_to_arrow_record_batch_bytes(quotes) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
@@ -397,7 +399,7 @@ fn batch_and_write_trades(
     path: &Path,
 ) {
     let typename = stringify!(TradeTick);
-    match trade_ticks_to_arrow_record_batch_bytes(trades) {
+    match trades_to_arrow_record_batch_bytes(trades) {
         Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");

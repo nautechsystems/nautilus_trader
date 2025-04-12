@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
+use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
-use crate::{identifiers::InstrumentId, types::Price};
-
-// TODO: Development notes:
-// TODO: - We avoid adding these to the `Data` enum for now, as we won't be using FFI or pycapsule.
-// TODO: - Only defined in Rust with a view to minimizing Cython which will soon be removed.
+use crate::{
+    identifiers::InstrumentId,
+    types::{Price, fixed::FIXED_SIZE_BINARY},
+};
 
 /// Represents a mark price update.
 #[repr(C)]
@@ -59,6 +59,28 @@ impl MarkPriceUpdate {
             ts_event,
             ts_init,
         }
+    }
+
+    /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata
+    }
+
+    /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("value".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
     }
 }
 
@@ -114,6 +136,28 @@ impl IndexPriceUpdate {
             ts_event,
             ts_init,
         }
+    }
+
+    /// Returns the metadata for the type, for use with serialization formats.
+    #[must_use]
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+    ) -> HashMap<String, String> {
+        let mut metadata = HashMap::new();
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata
+    }
+
+    /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("value".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
     }
 }
 

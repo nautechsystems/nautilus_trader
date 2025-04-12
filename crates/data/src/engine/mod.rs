@@ -429,10 +429,6 @@ impl DataEngine {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
-        } else if let Some(mark_price) = data.downcast_ref::<MarkPriceUpdate>() {
-            self.handle_mark_price(*mark_price);
-        } else if let Some(index_price) = data.downcast_ref::<IndexPriceUpdate>() {
-            self.handle_index_price(*index_price);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -446,6 +442,8 @@ impl DataEngine {
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
+            Data::MarkPrice(mark_price) => self.handle_mark_price(mark_price),
+            Data::IndexPrice(index_price) => self.handle_index_price(index_price),
         }
     }
 

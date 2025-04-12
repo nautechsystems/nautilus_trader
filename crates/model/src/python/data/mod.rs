@@ -33,7 +33,8 @@ use nautilus_core::ffi::cvec::CVec;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
 
 use crate::data::{
-    Bar, Data, DataType, OrderBookDelta, QuoteTick, TradeTick, is_monotonically_increasing_by_init,
+    Bar, Data, DataType, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
+    is_monotonically_increasing_by_init,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -125,9 +126,7 @@ pub fn drop_cvec_pycapsule(_capsule: &Bound<'_, PyAny>) {
 }
 
 /// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
-pub fn pyobjects_to_order_book_deltas(
-    data: Vec<Bound<'_, PyAny>>,
-) -> PyResult<Vec<OrderBookDelta>> {
+pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<OrderBookDelta>> {
     let deltas: Vec<OrderBookDelta> = data
         .into_iter()
         .map(|obj| OrderBookDelta::from_pyobject(&obj))
@@ -142,33 +141,33 @@ pub fn pyobjects_to_order_book_deltas(
 }
 
 /// Transforms the given `data` Python objects into a vector of [`QuoteTick`] objects.
-pub fn pyobjects_to_quote_ticks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTick>> {
-    let ticks: Vec<QuoteTick> = data
+pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTick>> {
+    let quotes: Vec<QuoteTick> = data
         .into_iter()
         .map(|obj| QuoteTick::from_pyobject(&obj))
         .collect::<PyResult<Vec<QuoteTick>>>()?;
 
     // Validate monotonically increasing
-    if !is_monotonically_increasing_by_init(&ticks) {
+    if !is_monotonically_increasing_by_init(&quotes) {
         return Err(PyValueError::new_err(ERROR_MONOTONICITY));
     }
 
-    Ok(ticks)
+    Ok(quotes)
 }
 
 /// Transforms the given `data` Python objects into a vector of [`TradeTick`] objects.
-pub fn pyobjects_to_trade_ticks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTick>> {
-    let ticks: Vec<TradeTick> = data
+pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTick>> {
+    let trades: Vec<TradeTick> = data
         .into_iter()
         .map(|obj| TradeTick::from_pyobject(&obj))
         .collect::<PyResult<Vec<TradeTick>>>()?;
 
     // Validate monotonically increasing
-    if !is_monotonically_increasing_by_init(&ticks) {
+    if !is_monotonically_increasing_by_init(&trades) {
         return Err(PyValueError::new_err(ERROR_MONOTONICITY));
     }
 
-    Ok(ticks)
+    Ok(trades)
 }
 
 /// Transforms the given `data` Python objects into a vector of [`Bar`] objects.
@@ -184,4 +183,34 @@ pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
     }
 
     Ok(bars)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`MarkPriceUpdate`] objects.
+pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<MarkPriceUpdate>> {
+    let mark_prices: Vec<MarkPriceUpdate> = data
+        .into_iter()
+        .map(|obj| MarkPriceUpdate::from_pyobject(&obj))
+        .collect::<PyResult<Vec<MarkPriceUpdate>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&mark_prices) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(mark_prices)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`IndexPriceUpdate`] objects.
+pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<IndexPriceUpdate>> {
+    let index_prices: Vec<IndexPriceUpdate> = data
+        .into_iter()
+        .map(|obj| IndexPriceUpdate::from_pyobject(&obj))
+        .collect::<PyResult<Vec<IndexPriceUpdate>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&index_prices) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(index_prices)
 }
