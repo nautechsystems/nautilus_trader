@@ -34,10 +34,10 @@ pub mod stubs;
 use std::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
-    num::NonZeroU64,
     str::FromStr,
 };
 
+use close::InstrumentClose;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
@@ -59,10 +59,7 @@ pub use quote::QuoteTick;
 pub use status::InstrumentStatus;
 pub use trade::TradeTick;
 
-use crate::{
-    enums::BookType,
-    identifiers::{InstrumentId, Venue},
-};
+use crate::identifiers::{InstrumentId, Venue};
 
 /// A built-in Nautilus data type.
 ///
@@ -77,8 +74,9 @@ pub enum Data {
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
-    MarkPrice(MarkPriceUpdate),
-    IndexPrice(IndexPriceUpdate),
+    MarkPriceUpdate(MarkPriceUpdate), // TODO: Rename to MarkPrice once Cython gone
+    IndexPriceUpdate(IndexPriceUpdate), // TODO: Rename to IndexPrice once Cython gone
+    InstrumentClose(InstrumentClose),
 }
 
 macro_rules! impl_try_from_data {
@@ -112,8 +110,9 @@ impl_try_from_data!(Delta, OrderBookDelta);
 impl_try_from_data!(Deltas, OrderBookDeltas_API);
 impl_try_from_data!(Trade, TradeTick);
 impl_try_from_data!(Bar, Bar);
-impl_try_from_data!(MarkPrice, MarkPriceUpdate);
-impl_try_from_data!(IndexPrice, IndexPriceUpdate);
+impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
+impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
+impl_try_from_data!(InstrumentClose, InstrumentClose);
 
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
@@ -131,8 +130,9 @@ impl Data {
             Self::Quote(quote) => quote.instrument_id,
             Self::Trade(trade) => trade.instrument_id,
             Self::Bar(bar) => bar.bar_type.instrument_id(),
-            Self::MarkPrice(mark_price) => mark_price.instrument_id,
-            Self::IndexPrice(index_price) => index_price.instrument_id,
+            Self::MarkPriceUpdate(mark_price) => mark_price.instrument_id,
+            Self::IndexPriceUpdate(index_price) => index_price.instrument_id,
+            Self::InstrumentClose(close) => close.instrument_id,
         }
     }
 
@@ -155,8 +155,9 @@ impl GetTsInit for Data {
             Self::Quote(q) => q.ts_init,
             Self::Trade(t) => t.ts_init,
             Self::Bar(b) => b.ts_init,
-            Self::MarkPrice(p) => p.ts_init,
-            Self::IndexPrice(p) => p.ts_init,
+            Self::MarkPriceUpdate(p) => p.ts_init,
+            Self::IndexPriceUpdate(p) => p.ts_init,
+            Self::InstrumentClose(c) => c.ts_init,
         }
     }
 }
@@ -204,13 +205,19 @@ impl From<Bar> for Data {
 
 impl From<MarkPriceUpdate> for Data {
     fn from(value: MarkPriceUpdate) -> Self {
-        Self::MarkPrice(value)
+        Self::MarkPriceUpdate(value)
     }
 }
 
 impl From<IndexPriceUpdate> for Data {
     fn from(value: IndexPriceUpdate) -> Self {
-        Self::IndexPrice(value)
+        Self::IndexPriceUpdate(value)
+    }
+}
+
+impl From<InstrumentClose> for Data {
+    fn from(value: InstrumentClose) -> Self {
+        Self::InstrumentClose(value)
     }
 }
 
@@ -316,22 +323,6 @@ impl DataType {
         Some(Venue::from(venue_str.as_str()))
     }
 
-    /// Returns a [`BarType`] from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If there is no metadata.
-    /// - If the metadata does not contain a `bar_type`.
-    /// - If the `bar_type` value contained in the metadata is invalid.
-    pub fn bar_type(&self) -> BarType {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
-        let bar_type_str = metadata
-            .get("bar_type")
-            .expect("No 'bar_type' found in metadata");
-        BarType::from_str(bar_type_str).expect("Invalid `BarType` for 'bar_type'")
-    }
-
     /// Returns an [`Option<UnixNanos>`] start from the metadata.
     ///
     /// # Panics
@@ -373,71 +364,6 @@ impl DataType {
                 .parse::<usize>()
                 .expect("Invalid `usize` for 'limit'"),
         )
-    }
-
-    /// Returns a [`BookType`] from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If there is no metadata.
-    /// - If the `book_type` value contained in the metadata is invalid.
-    pub fn book_type(&self) -> BookType {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
-        let book_type_str = metadata
-            .get("book_type")
-            .expect("'book_type' not found in metadata");
-        BookType::from_str(book_type_str).expect("Invalid `BookType` for 'book_type'")
-    }
-
-    /// Returns an [`Option<usize>`] depth from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If there is no metadata.
-    /// - If the `depth` value contained in the metadata is invalid.
-    pub fn depth(&self) -> Option<usize> {
-        let metadata = self.metadata.as_ref()?;
-        let depth_str = metadata.get("depth")?;
-        Some(
-            depth_str
-                .parse::<usize>()
-                .expect("Invalid `usize` for 'depth'"),
-        )
-    }
-
-    /// Returns a [`NonZeroU64`] interval (milliseconds) from the metadata.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If there is no metadata.
-    /// - If the `interval_ms` value contained in the metadata is invalid.
-    pub fn interval_ms(&self) -> NonZeroU64 {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
-        let interval_ms_str = metadata
-            .get("interval_ms")
-            .expect("No 'interval_ms' in metadata");
-
-        interval_ms_str
-            .parse::<NonZeroU64>()
-            .expect("Invalid `NonZeroU64` for 'interval_ms'")
-    }
-
-    /// Returns a [`bool`] from the metadata indicating whether the book should be managed.
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If there is no metadata.
-    /// - If the `managed` value contained in the metadata is invalid.
-    pub fn managed(&self) -> bool {
-        let metadata = self.metadata.as_ref().expect("metadata was `None`");
-        let managed_str = metadata.get("managed").expect("No 'managed' in metadata");
-        managed_str
-            .parse::<bool>()
-            .expect("Invalid `bool` for 'managed'")
     }
 }
 
@@ -668,23 +594,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_bar_type_from_metadata() {
-        let bar_type_str = "MSFT.XNAS-1000-TICK-LAST-INTERNAL";
-        let metadata = Some(
-            [("bar_type".to_string(), bar_type_str.to_string())]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-        let data_type = DataType::new(stringify!(BarType), metadata);
-
-        assert_eq!(
-            data_type.bar_type(),
-            BarType::from_str(bar_type_str).unwrap()
-        );
-    }
-
-    #[rstest]
     fn test_parse_start_from_metadata() {
         let start_ns = 1600054595844758000;
         let metadata = Some(
@@ -724,36 +633,5 @@ mod tests {
         let data_type = DataType::new(stringify!(TradeTick), metadata);
 
         assert_eq!(data_type.limit().unwrap(), limit);
-    }
-
-    #[rstest]
-    fn test_parse_book_type_from_metadata() {
-        let book_type_str = "L3_MBO";
-        let metadata = Some(
-            [("book_type".to_string(), book_type_str.to_string())]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-        let data_type = DataType::new(stringify!(OrderBookDelta), metadata);
-
-        assert_eq!(
-            data_type.book_type(),
-            BookType::from_str(book_type_str).unwrap()
-        );
-    }
-
-    #[rstest]
-    fn test_parse_depth_from_metadata() {
-        let depth = 25;
-        let metadata = Some(
-            [("depth".to_string(), depth.to_string())]
-                .iter()
-                .cloned()
-                .collect(),
-        );
-        let data_type = DataType::new(stringify!(OrderBookDeltas), metadata);
-
-        assert_eq!(data_type.depth().unwrap(), depth);
     }
 }

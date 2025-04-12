@@ -1289,6 +1289,76 @@ typedef struct Bar_t {
 } Bar_t;
 
 /**
+ * Represents a mark price update.
+ */
+typedef struct MarkPriceUpdate_t {
+    /**
+     * The instrument ID for the mark price.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The mark price.
+     */
+    struct Price_t value;
+    /**
+     * UNIX timestamp (nanoseconds) when the price event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     */
+    uint64_t ts_init;
+} MarkPriceUpdate_t;
+
+/**
+ * Represents an index price update.
+ */
+typedef struct IndexPriceUpdate_t {
+    /**
+     * The instrument ID for the index price.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The index price.
+     */
+    struct Price_t value;
+    /**
+     * UNIX timestamp (nanoseconds) when the price event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     */
+    uint64_t ts_init;
+} IndexPriceUpdate_t;
+
+/**
+ * Represents an instrument close at a venue.
+ */
+typedef struct InstrumentClose_t {
+    /**
+     * The instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The closing price for the instrument.
+     */
+    struct Price_t close_price;
+    /**
+     * The type of closing price.
+     */
+    enum InstrumentCloseType close_type;
+    /**
+     * UNIX timestamp (nanoseconds) when the close price event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     */
+    uint64_t ts_init;
+} InstrumentClose_t;
+
+/**
  * A built-in Nautilus data type.
  *
  * Not recommended for storing large amounts of data, as the largest variant is significantly
@@ -1301,6 +1371,9 @@ typedef enum Data_t_Tag {
     QUOTE,
     TRADE,
     BAR,
+    MARK_PRICE_UPDATE,
+    INDEX_PRICE_UPDATE,
+    INSTRUMENT_CLOSE,
 } Data_t_Tag;
 
 typedef struct Data_t {
@@ -1323,6 +1396,15 @@ typedef struct Data_t {
         };
         struct {
             struct Bar_t bar;
+        };
+        struct {
+            struct MarkPriceUpdate_t mark_price_update;
+        };
+        struct {
+            struct IndexPriceUpdate_t index_price_update;
+        };
+        struct {
+            struct InstrumentClose_t instrument_close;
         };
     };
 } Data_t;

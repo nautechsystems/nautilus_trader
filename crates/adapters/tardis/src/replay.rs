@@ -188,8 +188,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
             Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
             Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
             Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
-            Data::MarkPrice(_) => panic!("Not implemented"),
-            Data::IndexPrice(_) => panic!("Not implemented"),
+            _ => panic!("Not implemented"),
         }
 
         msg_count += 1;

@@ -17,11 +17,16 @@
 
 use std::{collections::HashMap, fmt::Display, hash::Hash};
 
+use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
-use crate::{enums::InstrumentCloseType, identifiers::InstrumentId, types::Price};
+use crate::{
+    enums::InstrumentCloseType,
+    identifiers::InstrumentId,
+    types::{Price, fixed::FIXED_SIZE_BINARY},
+};
 
 /// Represents an instrument close at a venue.
 #[repr(C)]
@@ -64,9 +69,24 @@ impl InstrumentClose {
 
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
-    pub fn get_metadata(instrument_id: &InstrumentId) -> HashMap<String, String> {
+    pub fn get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+    ) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
         metadata.insert("instrument_id".to_string(), instrument_id.to_string());
+        metadata.insert("price_precision".to_string(), price_precision.to_string());
+        metadata
+    }
+
+    /// Returns the field map for the type, for use with Arrow schemas.
+    #[must_use]
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("close_price".to_string(), FIXED_SIZE_BINARY.to_string());
+        metadata.insert("close_type".to_string(), "UInt8".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
     }
 }

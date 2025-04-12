@@ -17,6 +17,7 @@
 
 pub mod bar;
 pub mod bet;
+pub mod close;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -34,7 +35,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
 
 use crate::data::{
     Bar, Data, DataType, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, QuoteTick, TradeTick,
-    is_monotonically_increasing_by_init,
+    close::InstrumentClose, is_monotonically_increasing_by_init,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -213,4 +214,21 @@ pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<In
     }
 
     Ok(index_prices)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`InstrumentClose`] objects.
+pub fn pyobjects_to_instrument_closes(
+    data: Vec<Bound<'_, PyAny>>,
+) -> PyResult<Vec<InstrumentClose>> {
+    let closes: Vec<InstrumentClose> = data
+        .into_iter()
+        .map(|obj| InstrumentClose::from_pyobject(&obj))
+        .collect::<PyResult<Vec<InstrumentClose>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&closes) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(closes)
 }
