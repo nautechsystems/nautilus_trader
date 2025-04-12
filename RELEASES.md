@@ -12,6 +12,7 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Added additional price and quantity precision validations for matching engine
 - Added log file rotation with additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
 - Added `bars_timestamp_on_close` config option for `BybitDataClientConfig` (default `True` to match Nautilus conventions)
+- Added `BetfairSequenceCompleted` custom data type for Betfair to mark the completion of a sequence of messages
 - Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
 - Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
 
