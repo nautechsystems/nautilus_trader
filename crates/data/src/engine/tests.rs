@@ -230,7 +230,7 @@ fn test_execute_subscribe_book_deltas(
     );
 }
 
-#[ignore] // TODO: Attempt to subtract with overflow
+#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,
