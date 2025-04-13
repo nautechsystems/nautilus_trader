@@ -1,6 +1,6 @@
 # NautilusTrader 1.216.0 Beta
 
-Released on TBD (UTC).
+Released on 13th April 2025 (UTC).
 
 This release adds support for Python 3.13 (*not* yet compatible with free-threading),
 and introduces support for Linux on ARM64 architecture.
