@@ -53,6 +53,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -65,7 +66,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let avg_loss = ReturnsAverageLoss {};
         let returns = create_returns(vec![]);
@@ -74,7 +75,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_positive() {
         let avg_loss = ReturnsAverageLoss {};
         let returns = create_returns(vec![10.0, 20.0, 30.0]);
@@ -83,7 +84,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_negative() {
         let avg_loss = ReturnsAverageLoss {};
         let returns = create_returns(vec![-10.0, -20.0, -30.0]);
@@ -93,7 +94,7 @@ mod tests {
         assert_eq!(result.unwrap(), -20.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_returns() {
         let avg_loss = ReturnsAverageLoss {};
         let returns = create_returns(vec![10.0, -20.0, 30.0, -40.0]);
@@ -103,7 +104,7 @@ mod tests {
         assert_eq!(result.unwrap(), -30.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_with_zero() {
         let avg_loss = ReturnsAverageLoss {};
         let returns = create_returns(vec![10.0, 0.0, -20.0, -30.0]);
@@ -113,7 +114,7 @@ mod tests {
         assert_eq!(result.unwrap(), -25.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let avg_loss = ReturnsAverageLoss {};
         assert_eq!(avg_loss.name(), "ReturnsAverageLoss");

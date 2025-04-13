@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(config.types_filter, None);
     }
 
-    #[test]
+    #[rstest]
     fn test_deserialize_message_bus_config() {
         let config_json = json!({
             "database": {

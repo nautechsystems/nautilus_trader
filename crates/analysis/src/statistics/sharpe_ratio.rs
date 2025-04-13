@@ -66,6 +66,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -82,7 +83,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let ratio = SharpeRatio::new(None);
         let returns = create_returns(vec![]);
@@ -91,7 +92,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_zero_std_dev() {
         let ratio = SharpeRatio::new(None);
         let returns = create_returns(vec![0.01; 10]);
@@ -100,7 +101,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_valid_sharpe_ratio() {
         let ratio = SharpeRatio::new(Some(252));
         let returns = create_returns(vec![0.01, -0.02, 0.015, -0.005, 0.025]);
@@ -109,7 +110,7 @@ mod tests {
         assert_eq!(result.unwrap(), 4.48998886412873);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let ratio = SharpeRatio::new(None);
         assert_eq!(ratio.name(), "SharpeRatio");

@@ -59,6 +59,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -75,7 +76,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let volatility = ReturnsVolatility::new(None);
         let returns = create_returns(vec![]);
@@ -84,19 +85,19 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_default_period() {
         let volatility = ReturnsVolatility::new(None);
         assert_eq!(volatility.period, 252);
     }
 
-    #[test]
+    #[rstest]
     fn test_custom_period() {
         let volatility = ReturnsVolatility::new(Some(365));
         assert_eq!(volatility.period, 365);
     }
 
-    #[test]
+    #[rstest]
     fn test_volatility_calculation() {
         let volatility = ReturnsVolatility::new(None);
 
@@ -109,7 +110,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.48526281538976396);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let volatility = ReturnsVolatility::new(None);
         assert_eq!(volatility.name(), "ReturnsVolatility");

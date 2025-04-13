@@ -533,7 +533,7 @@ mod tests {
         assert_eq!(hash1, hash2);
     }
 
-    #[test]
+    #[rstest]
     fn test_data_type_display() {
         let metadata = Some(
             [("key1".to_string(), "value1".to_string())]
@@ -546,7 +546,7 @@ mod tests {
         assert_eq!(format!("{}", data_type), "ExampleType.key1=value1");
     }
 
-    #[test]
+    #[rstest]
     fn test_data_type_debug() {
         let metadata = Some(
             [("key1".to_string(), "value1".to_string())]

@@ -51,6 +51,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -62,7 +63,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let ratio = RiskReturnRatio {};
         let returns = create_returns(vec![]);
@@ -71,7 +72,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_zero_std_dev() {
         let ratio = RiskReturnRatio {};
         let returns = create_returns(vec![0.05; 10]);
@@ -80,7 +81,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_valid_risk_return_ratio() {
         let ratio = RiskReturnRatio {};
         let returns = create_returns(vec![0.1, -0.05, 0.2, -0.1, 0.15]);
@@ -89,7 +90,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.46360044557175345);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let ratio = RiskReturnRatio {};
         assert_eq!(ratio.name(), "RiskReturnRatio");

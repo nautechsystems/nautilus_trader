@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(money3.raw, Money::new(a + b, Currency::USD()).raw);
     }
 
-    #[test]
+    #[rstest]
     fn test_add_assign() {
         let usd = Currency::USD();
         let mut money = Money::new(100.0, usd);
@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(result.currency, usd);
     }
 
-    #[test]
+    #[rstest]
     fn test_sub_assign() {
         let usd = Currency::USD();
         let mut money = Money::new(100.0, usd);

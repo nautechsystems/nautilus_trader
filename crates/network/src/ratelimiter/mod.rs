@@ -217,6 +217,7 @@ mod tests {
     use std::{num::NonZeroU32, time::Duration};
 
     use dashmap::DashMap;
+    use rstest::rstest;
 
     use super::{
         DashMapStateStore, RateLimiter,
@@ -239,7 +240,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_default_quota() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -255,7 +256,7 @@ mod tests {
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_custom_key_quota() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -275,7 +276,7 @@ mod tests {
         assert!(mock_limiter.check_key(&"default".to_string()).is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_multiple_keys() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -299,7 +300,7 @@ mod tests {
         assert!(mock_limiter.check_key(&"key2".to_string()).is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_quota_reset() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -317,7 +318,7 @@ mod tests {
         assert!(mock_limiter.check_key(&"reset".to_string()).is_ok());
     }
 
-    #[test]
+    #[rstest]
     fn test_different_quotas() {
         let mock_limiter = initialize_mock_rate_limiter();
 
