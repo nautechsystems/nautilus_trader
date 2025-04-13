@@ -53,7 +53,12 @@ trade_size = Decimal("0.010")
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
+    logging=LoggingConfig(
+        log_level="INFO",
+        # log_level_file="DEBUG",
+        # log_file_max_size=1_000_000_000,
+        use_pyo3=True,
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         open_check_interval_secs=5.0,

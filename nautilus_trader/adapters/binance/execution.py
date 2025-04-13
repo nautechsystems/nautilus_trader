@@ -634,26 +634,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _get_position_side_from_position_id(
         self,
         position_id: PositionId | None,
+        exec_spawn_id: ClientOrderId | None,
     ) -> BinanceFuturesPositionSide | None:
-        """
-        Parse the position side from the position ID.
+        # Position ID must end with either 'LONG', 'SHORT' or 'BOTH' for Binance Futures Hedge position mode
 
-        Parameters
-        ----------
-        position_id : PositionId | None
-            The position ID, can be `None`.
-            Position ID must end with either 'LONG' or 'SHORT' for Binance Futures Hedge position mode.
-
-        Returns
-        -------
-        BinanceFuturesPositionSide | None
-
-        """
         position_side = None
         if self._binance_account_type.is_spot_or_margin:  # Spot or Margin mode
             return position_side
         elif not self._is_dual_side_position:  # One-way position mode
             return BinanceFuturesPositionSide.BOTH
+
+        if position_id is None and exec_spawn_id is not None:
+            primary_order = self._cache.order(exec_spawn_id)
+            if primary_order is not None:
+                position_id = primary_order.position_id
 
         # For Binance Futures Hedge mode, the position side must be specified in the position_id
         PyCondition.not_none(position_id, "position_id")
@@ -670,7 +664,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return position_side
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        position_side = self._get_position_side_from_position_id(command.position_id)
+        position_side = self._get_position_side_from_position_id(
+            position_id=command.position_id,
+            exec_spawn_id=command.order.exec_spawn_id,
+        )
         await self._submit_order_inner(command.order, position_side)
 
     async def _submit_order_inner(
@@ -790,7 +787,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        position_side = self._get_position_side_from_position_id(command.position_id)
+        position_side = self._get_position_side_from_position_id(
+            position_id=command.position_id,
+            exec_spawn_id=None,
+        )
+
         for order in command.order_list.orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,

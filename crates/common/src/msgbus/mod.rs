@@ -17,6 +17,7 @@
 
 pub mod database;
 pub mod handler;
+pub mod listener;
 pub mod stubs;
 pub mod switchboard;
 
@@ -24,22 +25,48 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::HashMap,
-    fmt::Debug,
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     rc::Rc,
     sync::OnceLock,
 };
 
+use bytes::Bytes;
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
 use nautilus_model::{data::Data, identifiers::TraderId};
+use serde::{Deserialize, Serialize};
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
 use crate::messages::data::DataResponse;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
+
+/// Represents a bus message including a topic and payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+pub struct BusMessage {
+    /// The topic to publish on.
+    pub topic: String,
+    /// The serialized payload for the message.
+    pub payload: Bytes,
+}
+
+impl Display for BusMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {}",
+            self.topic,
+            String::from_utf8_lossy(&self.payload)
+        )
+    }
+}
 
 pub struct MessageBusWrapper(Rc<RefCell<MessageBus>>);
 

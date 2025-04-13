@@ -74,6 +74,7 @@ mod tests {
         },
         types::{Currency, Quantity},
     };
+    use rstest::rstest;
 
     use super::*;
 
@@ -115,14 +116,14 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_positions() {
         let long_ratio = LongRatio::new(None);
         let result = long_ratio.calculate_from_positions(&[]);
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_long_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
@@ -136,7 +137,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1.00);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_short_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
@@ -150,7 +151,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.00);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_positions() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![
@@ -165,7 +166,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.50);
     }
 
-    #[test]
+    #[rstest]
     fn test_custom_precision() {
         let long_ratio = LongRatio::new(Some(3));
         let positions = vec![
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.667);
     }
 
-    #[test]
+    #[rstest]
     fn test_single_position_long() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![create_test_position(OrderSide::Buy)];
@@ -189,7 +190,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1.00);
     }
 
-    #[test]
+    #[rstest]
     fn test_single_position_short() {
         let long_ratio = LongRatio::new(None);
         let positions = vec![create_test_position(OrderSide::Sell)];
@@ -199,7 +200,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.00);
     }
 
-    #[test]
+    #[rstest]
     fn test_zero_precision() {
         let long_ratio = LongRatio::new(Some(0));
         let positions = vec![
@@ -213,7 +214,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1.00);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let long_ratio = LongRatio::new(None);
         assert_eq!(long_ratio.name(), "LongRatio");

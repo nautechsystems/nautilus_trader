@@ -135,6 +135,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
+    allow_past: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -148,7 +149,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     };
 
     clock
-        .set_time_alert_ns(name, alert_time_ns, callback)
+        .set_time_alert_ns(name, alert_time_ns, callback, Some(allow_past != 0))
         .expect(FAILED);
 }
 
@@ -164,6 +165,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
     start_time_ns: UnixNanos,
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
+    allow_past: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -181,7 +183,14 @@ pub unsafe extern "C" fn test_clock_set_timer(
     };
 
     clock
-        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback)
+        .set_timer_ns(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            Some(allow_past != 0),
+        )
         .expect(FAILED);
 }
 
@@ -345,6 +354,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     name_ptr: *const c_char,
     alert_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
+    allow_past: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -358,7 +368,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     };
 
     clock
-        .set_time_alert_ns(name, alert_time_ns, callback)
+        .set_time_alert_ns(name, alert_time_ns, callback, Some(allow_past != 0))
         .expect(FAILED);
 }
 
@@ -380,6 +390,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
     start_time_ns: UnixNanos,
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
+    allow_past: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -398,7 +409,14 @@ pub unsafe extern "C" fn live_clock_set_timer(
     };
 
     clock
-        .set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback)
+        .set_timer_ns(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            Some(allow_past != 0),
+        )
         .expect(FAILED);
 }
 

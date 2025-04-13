@@ -47,7 +47,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The mode for file rotation.
     max_file_size : int, default 1GB
         The maximum file size in bytes before rotation (for SIZE mode).
-    rotation_interval : pd.Timedelta, default 1 day
+    rotation_interval : pd.Timedelta, optional
         The time interval for file rotation (for INTERVAL mode and SCHEDULED_DATES mode).
     rotation_time : time, default 00:00
         The time of day for file rotation (for SCHEDULED_DATES mode).
@@ -64,7 +64,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
     include_types: list[type] | None = None
     rotation_mode: RotationMode = RotationMode.NO_ROTATION
     max_file_size: int = 1024 * 1024 * 1024  # 1GB
-    rotation_interval: pd.Timedelta = pd.Timedelta(days=1)
+    rotation_interval: pd.Timedelta | None = None
     rotation_time: time = time(0, 0, 0, 0)
     rotation_timezone: str = "UTC"
 

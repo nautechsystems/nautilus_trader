@@ -22,6 +22,8 @@ import pytest
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -32,7 +34,7 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
+def test_pyo3_quotes_to_record_batch_reader() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
@@ -43,7 +45,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     quotes = wrangler.from_pandas(df)
 
     # Act
-    batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(quotes)
+    batch_bytes = nautilus_pyo3.quotes_to_arrow_record_batch_bytes(quotes)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
@@ -52,7 +54,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     reader.close()
 
 
-def test_legacy_trade_ticks_to_record_batch_reader() -> None:
+def test_legacy_trades_to_record_batch_reader() -> None:
     # Arrange
     instrument = TestInstrumentProvider.ethusdt_binance()
     wrangler = TradeTickDataWrangler(instrument=instrument)
@@ -153,6 +155,22 @@ def test_get_schema_map_with_unsupported_type() -> None:
                 "low": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "close": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "volume": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+        [
+            MarkPriceUpdate,
+            {
+                "value": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+        [
+            IndexPriceUpdate,
+            {
+                "value": f"FixedSizeBinary({FIXED_PRECISION_BYTES})",
                 "ts_event": "UInt64",
                 "ts_init": "UInt64",
             },

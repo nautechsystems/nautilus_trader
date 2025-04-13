@@ -1497,7 +1497,7 @@ mod tests {
         assert_eq!(trade.ts_init, 0);
     }
 
-    #[ignore] // TODO: Requires updated test data
+    #[ignore = "Requires updated test data"]
     #[rstest]
     fn test_decode_ohlcv_msg() {
         let path = test_data_path().join("test_data.ohlcv-1s.dbn.zst");

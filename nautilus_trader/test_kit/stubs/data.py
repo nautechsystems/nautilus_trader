@@ -28,8 +28,10 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -246,6 +248,30 @@ class TestDataStubs:
         )
 
     @staticmethod
+    def mark_price(
+        instrument_id: InstrumentId | None = None,
+        value: Price | None = None,
+    ) -> MarkPriceUpdate:
+        return MarkPriceUpdate(
+            instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            value=value or Price.from_str("100_000"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def index_price(
+        instrument_id: InstrumentId | None = None,
+        value: Price | None = None,
+    ) -> IndexPriceUpdate:
+        return IndexPriceUpdate(
+            instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            value=value or Price.from_str("100_000"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def instrument_close(
         instrument_id: InstrumentId | None = None,
         price: Price | None = None,
@@ -258,6 +284,18 @@ class TestDataStubs:
             close_type or InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event,
             ts_event,
+        )
+
+    @staticmethod
+    def instrument_status(
+        instrument_id: InstrumentId | None = None,
+        action: MarketStatusAction | None = None,
+    ) -> InstrumentStatus:
+        return InstrumentStatus(
+            instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            action=action or MarketStatusAction.PAUSE,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -499,18 +537,6 @@ class TestDataStubs:
             asks_counter += 1
 
         return book
-
-    @staticmethod
-    def instrument_status(
-        instrument_id: InstrumentId | None = None,
-        action: MarketStatusAction | None = None,
-    ) -> InstrumentStatus:
-        return InstrumentStatus(
-            instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            action=action or MarketStatusAction.PAUSE,
-            ts_event=0,
-            ts_init=0,
-        )
 
     @staticmethod
     def l1_feed():

@@ -208,6 +208,11 @@ class NautilusKernel:
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
+                        file_rotate=(
+                            (logging.log_file_max_size, logging.log_file_max_backup_count)
+                            if logging.log_file_max_size
+                            else None
+                        ),
                         is_colored=logging.log_colors,
                         is_bypassed=logging.bypass_logging,
                         print_config=logging.print_config,
@@ -237,6 +242,8 @@ class NautilusKernel:
                         colors=logging.log_colors,
                         bypass=logging.bypass_logging,
                         print_config=logging.print_config,
+                        max_file_size=logging.log_file_max_size or 0,
+                        max_backup_count=logging.log_file_max_backup_count,
                     )
                     log_header(
                         trader_id=self._trader_id,
@@ -313,6 +320,7 @@ class NautilusKernel:
         # Core components
         ########################################################################
         self._msgbus_serializer = None
+
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
@@ -320,6 +328,10 @@ class NautilusKernel:
                 timestamps_as_str=True,  # Hard-coded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
+
+        if self._msgbus_serializer is None:
+            self._msgbus_serializer = MsgSpecSerializer(encoding=msgspec.json)
+
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
             instance_id=self._instance_id,
@@ -456,6 +468,7 @@ class NautilusKernel:
             risk_engine=self._risk_engine,
             exec_engine=self._exec_engine,
             clock=self._clock,
+            environment=self._environment,
             has_controller=self._config.controller is not None,
             loop=self._loop,
         )

@@ -26,20 +26,25 @@ fn main() {
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=../Cargo.toml");
 
-    let nautilus_version = "1.215.0"; // Hardcode to avoid including pyproject.toml in package
+    let nautilus_version = "1.216.0"; // Hardcode to avoid including pyproject.toml in package
 
     // Verify the hardcoded version matches the version from the top-level pyproject.toml
     if let Some(pyproject_version) = try_read_pyproject_version() {
-        if !pyproject_version.starts_with(nautilus_version) {
-            panic!(
-                "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
-            );
-        }
+        assert!(
+            pyproject_version.starts_with(nautilus_version),
+            "Version mismatch: pyproject.toml={pyproject_version}, hardcoded={nautilus_version}",
+        );
     }
 
     // Set compile-time environment variables
     println!("cargo:rustc-env=NAUTILUS_VERSION={nautilus_version}");
     println!("cargo:rustc-env=NAUTILUS_USER_AGENT=NautilusTrader/{nautilus_version}");
+
+    // Skip file generation if we're in the docs.rs environment
+    if std::env::var("DOCS_RS").is_ok() {
+        println!("cargo:warning=Running in docs.rs environment, skipping file generation");
+        return;
+    }
 
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {

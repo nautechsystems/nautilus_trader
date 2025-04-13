@@ -140,15 +140,17 @@ impl Add<Duration> for Nanos {
 mod test {
     use std::time::Duration;
 
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn nanos_impls() {
         let n = Nanos::new(20);
         assert_eq!("Nanos(20ns)", format!("{n:?}"));
     }
 
-    #[test]
+    #[rstest]
     fn nanos_arith_coverage() {
         let n = Nanos::new(20);
         let n_half = Nanos::new(10);

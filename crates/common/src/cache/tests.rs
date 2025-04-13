@@ -174,7 +174,7 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
 }
 
-#[ignore] // TODO: Revisit on next pass
+#[ignore = "Revisit on next pass"]
 #[rstest]
 fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
     let mut order = OrderTestBuilder::new(OrderType::Market)
@@ -267,7 +267,7 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
     );
 }
 
-#[ignore] // TODO: Revisit on next pass
+#[ignore = "Revisit on next pass"]
 #[rstest]
 fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);

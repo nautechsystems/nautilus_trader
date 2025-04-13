@@ -328,10 +328,11 @@ impl FixMessage {
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_fix_message_to_bytes_simple() {
         let timestamp = Utc.with_ymd_and_hms(2025, 3, 22, 12, 34, 56).unwrap();
         let mut msg = FixMessage::new(fix_message_type::LOGON, 1, "SENDER", "TARGET", &timestamp);
@@ -347,7 +348,7 @@ mod tests {
         assert_eq!(message, expected);
     }
 
-    #[test]
+    #[rstest]
     fn test_fix_message_to_bytes_complete_logon() {
         let timestamp = Utc.with_ymd_and_hms(2025, 3, 22, 12, 34, 56).unwrap();
         let msg = FixMessage::create_logon(

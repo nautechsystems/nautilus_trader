@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.model cimport level_drop
 from nautilus_trader.core.rust.model cimport level_exposure
 from nautilus_trader.core.rust.model cimport level_orders
 from nautilus_trader.core.rust.model cimport level_price
+from nautilus_trader.core.rust.model cimport level_side
 from nautilus_trader.core.rust.model cimport level_size
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
@@ -660,8 +661,10 @@ cdef class OrderBook(Data):
             fill_price = Price.from_mem_c(raw_fill[0])
             fill_size = Quantity.from_mem_c(raw_fill[1])
             fills.append((fill_price, fill_size))
-            assert fill_price.precision == price_prec
-            assert fill_size.precision == size_prec
+            if fill_price.precision != price_prec:
+                raise RuntimeError(f"{fill_price.precision=} did not match instrument {price_prec=}")
+            if fill_size.precision != size_prec:
+                raise RuntimeError(f"{fill_size.precision=} did not match instrument {size_prec=}")
 
         vec_fills_drop(raw_fills_vec)
 
@@ -774,6 +777,19 @@ cdef class BookLevel:
 
     def __repr__(self) -> str:
         return f"BookLevel(price={self.price}, orders={self.orders()})"
+
+    @property
+    def side(self) -> OrderSide:
+        """
+        Return the side for the level.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return <OrderSide>level_side(&self._mem)
+
 
     @property
     def price(self) -> Price:

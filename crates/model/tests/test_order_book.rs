@@ -18,7 +18,7 @@ use std::path::Path;
 use nautilus_core::paths::get_workspace_root_path;
 use nautilus_databento::loader::DatabentoDataLoader;
 use nautilus_model::{enums::BookType, identifiers::InstrumentId, orderbook::OrderBook};
-use nautilus_test_kit::{
+use nautilus_testkit::{
     common::{get_test_data_file_path, get_test_data_large_checksums_filepath},
     files::ensure_file_exists_or_download_http,
 };

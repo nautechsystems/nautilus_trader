@@ -74,6 +74,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -90,7 +91,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let ratio = SortinoRatio::new(None);
         let returns = create_returns(vec![]);
@@ -99,7 +100,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_zero_downside_deviation() {
         let ratio = SortinoRatio::new(None);
         let returns = create_returns(vec![0.02, 0.03, 0.01]);
@@ -108,7 +109,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_valid_sortino_ratio() {
         let ratio = SortinoRatio::new(Some(252));
         let returns = create_returns(vec![-0.01, 0.02, -0.015, 0.005, -0.02]);
@@ -117,7 +118,7 @@ mod tests {
         assert_eq!(result.unwrap(), -5.273224492824493);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let ratio = SortinoRatio::new(None);
         assert_eq!(ratio.name(), "SortinoRatio");

@@ -90,6 +90,13 @@ class TestOrderMatchingEngine:
         # Assert
         assert True
 
+    def test_update_instrument(self) -> None:
+        # Arrange, Act
+        self.matching_engine.update_instrument(_ETHUSDT_PERP_BINANCE)
+
+        # Assert
+        assert self.matching_engine.instrument.id == _ETHUSDT_PERP_BINANCE.id
+
     def test_process_instrument_status(self) -> None:
         self.matching_engine.process_status(MarketStatusAction.CLOSE)
         self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)

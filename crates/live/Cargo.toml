@@ -65,7 +65,6 @@ futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }

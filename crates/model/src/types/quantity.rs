@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(result, "44.12");
     }
 
-    #[test]
+    #[rstest]
     fn test_to_formatted_string() {
         let qty = Quantity::new(1234.5678, 4);
         let formatted = qty.to_formatted_string();

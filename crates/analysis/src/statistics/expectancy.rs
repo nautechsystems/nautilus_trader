@@ -56,9 +56,11 @@ impl PortfolioStatistic for Expectancy {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnl_list() {
         let expectancy = Expectancy {};
         let result = expectancy.calculate_from_realized_pnls(&[]);
@@ -66,7 +68,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_winners() {
         let expectancy = Expectancy {};
         let pnls = vec![10.0, 20.0, 30.0];
@@ -78,7 +80,7 @@ mod tests {
         assert_eq!(result.unwrap(), 20.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_losers() {
         let expectancy = Expectancy {};
         let pnls = vec![-10.0, -20.0, -30.0];
@@ -90,7 +92,7 @@ mod tests {
         assert_eq!(result.unwrap(), -20.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_pnls() {
         let expectancy = Expectancy {};
         let pnls = vec![10.0, -5.0, 15.0, -10.0];
@@ -106,7 +108,7 @@ mod tests {
         assert_eq!(result.unwrap(), 2.5);
     }
 
-    #[test]
+    #[rstest]
     fn test_single_trade() {
         let expectancy = Expectancy {};
         let pnls = vec![10.0];
@@ -118,7 +120,7 @@ mod tests {
         assert_eq!(result.unwrap(), 10.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let expectancy = Expectancy {};
         assert_eq!(expectancy.name(), "Expectancy");

@@ -24,7 +24,7 @@ from setuptools import Extension
 IS_LINUX = platform.system() == "Linux"
 IS_MACOS = platform.system() == "Darwin"
 IS_WINDOWS = platform.system() == "Windows"
-IS_ARM64 = platform.machine() == "arm64"
+IS_ARM64 = platform.machine() in ("arm64", "aarch64")
 
 
 # The Rust toolchain to use for builds
@@ -76,6 +76,18 @@ if IS_LINUX:
 if IS_MACOS and IS_ARM64:
     os.environ["CFLAGS"] = "-arch arm64"
     os.environ["LDFLAGS"] = "-arch arm64 -w"
+
+if IS_LINUX and IS_ARM64:
+    os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -fPIC"
+    os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -fPIC"
+
+    python_lib_dir = os.environ.get("PYTHON_LIB_DIR")
+    python_version = ".".join(platform.python_version_tuple()[:2])  # e.g. "3.12"
+
+    if python_lib_dir:
+        print(f"Setting RUSTFLAGS to link with Python {python_version} in {python_lib_dir}")
+        rustflags = f"{os.environ.get('RUSTFLAGS', '')} -C link-arg=-L{python_lib_dir} -C link-arg=-lpython{python_version}"
+        os.environ["RUSTFLAGS"] = rustflags
 
 if IS_WINDOWS:
     # Linker error 1181
@@ -168,7 +180,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.0a1":
+if cython_compiler_version == "3.1.0b1":
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False
@@ -389,6 +401,12 @@ def build() -> None:
         _strip_unneeded_symbols()
 
 
+def print_env_var_if_exists(key: str) -> None:
+    value = os.environ.get(key)
+    if value is not None:
+        print(f"{key}={value}")
+
+
 if __name__ == "__main__":
     print("\033[36m")
     print("=====================================================================")
@@ -410,16 +428,13 @@ if __name__ == "__main__":
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
-    print(f"CC={os.environ['CC']}") if "CC" in os.environ else None
-    print(f"CXX={os.environ['CXX']}") if "CXX" in os.environ else None
-    print(f"LDSHARED={os.environ['LDSHARED']}") if "LDSHARED" in os.environ else None
-    print(f"CFLAGS={os.environ['CFLAGS']}") if "CFLAGS" in os.environ else None
-    print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
-    (
-        print(f"LD_LIBRARY_PATH={os.environ['LD_LIBRARY_PATH']}")
-        if "LD_LIBRARY_PATH" in os.environ
-        else None
-    )
+    print_env_var_if_exists("CC")
+    print_env_var_if_exists("CXX")
+    print_env_var_if_exists("LDSHARED")
+    print_env_var_if_exists("CFLAGS")
+    print_env_var_if_exists("LDFLAGS")
+    print_env_var_if_exists("LD_LIBRARY_PATH")
+    print_env_var_if_exists("RUSTFLAGS")
 
     print("\nStarting build...")
     ts_start = dt.datetime.now(dt.UTC)

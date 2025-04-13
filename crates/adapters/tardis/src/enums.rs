@@ -19,6 +19,8 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use ustr::Ustr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 /// The instrument type for the symbol.
 pub enum InstrumentType {

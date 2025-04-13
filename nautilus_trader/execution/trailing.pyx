@@ -13,10 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
@@ -44,9 +41,6 @@ cdef class TrailingStopCalculator:
         if order.order_type not in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             raise TypeError(f"invalid `OrderType` for calculation, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
-        cdef int64_t trailing_offset_raw = int(order.trailing_offset * int(FIXED_SCALAR))
-        cdef int64_t limit_offset_raw = 0
-
         cdef Price trigger_price = order.trigger_price
         cdef Price price = None
         cdef Price new_trigger_price = None
@@ -54,7 +48,6 @@ cdef class TrailingStopCalculator:
 
         if order.order_type == OrderType.TRAILING_STOP_LIMIT:
             price = order.price
-            limit_offset_raw = int(order.limit_offset * int(FIXED_SCALAR))
 
         cdef:
             Price temp_trigger_price

@@ -230,7 +230,7 @@ fn test_execute_subscribe_book_deltas(
     );
 }
 
-#[ignore] // TODO: Attempt to subtract with overflow
+#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,
@@ -946,7 +946,7 @@ fn test_process_mark_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process(&mark_price as &dyn Any);
+    data_engine.process_data(Data::MarkPriceUpdate(mark_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<MarkPriceUpdate>(handler);
 
@@ -1005,7 +1005,7 @@ fn test_process_index_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process(&index_price as &dyn Any);
+    data_engine.process_data(Data::IndexPriceUpdate(index_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<IndexPriceUpdate>(handler);
 

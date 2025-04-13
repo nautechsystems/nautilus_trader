@@ -12,7 +12,7 @@ jobs:
     outputs:
       develop_status: ${{ steps.check-workflow.outputs.status }}
     steps:
-      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
         with:
           egress-policy: audit
@@ -95,13 +95,13 @@ jobs:
     if: needs.check-develop-status.outputs.develop_status == 'success'
     runs-on: ubuntu-latest
     steps:
-      # https://github.com/step-security/harden-runner/releases/tag/v2.11.0
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
         with:
           egress-policy: audit
 
       - name: Checkout repository
-        # https://github.com/actions/checkout/releases/tag/v4.2.2
+        # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           token: ${{ secrets.NIGHTLY_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
 
       - name: Nightly merge
         id: merge
-        # https://github.com/robotology/gh-action-nightly-merge/releases/tag/v1.5.2
+        # https://github.com/robotology/gh-action-nightly-merge
         uses: robotology/gh-action-nightly-merge@81570ba03dd370f582bd3f52d47672d29191829f # v1.5.2
         with:
           stable_branch: 'develop'  # Branch to merge from

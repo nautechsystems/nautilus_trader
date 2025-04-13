@@ -139,9 +139,8 @@ mod tests {
 
     /// After deallocating the vector the block of memory may not
     /// contain the same values.
-    /// NOTE: This test maybe flaky depending on the platform
     #[rstest]
-    #[ignore] // TODO: Flaky one some platforms
+    #[ignore = "Flaky on some platforms"]
     fn drop_test() {
         let test_data = vec![1, 2, 3];
         let cvec: CVec = {
