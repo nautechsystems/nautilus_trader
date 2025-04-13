@@ -236,7 +236,6 @@ class TestBinanceCommonParsing:
     )
     def test_parse_position_id_to_binance_futures_position_side(self, position_id, expected):
         # Arrange, Act
-        print(position_id)
         result = self._futures_enum_parser.parse_position_id_to_binance_futures_position_side(
             position_id,
         )

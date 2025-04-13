@@ -38,6 +38,7 @@ and introduces support for Linux on ARM64 architecture.
 - Fixed overflow error in trailing stop calculations
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
 - Fixed `ts_event` for Bybit bars (#2502), thanks @davidsblom
+- Fixed position ID handling for Binance Futures in hedging mode with execution algorithm order (#2504), thanks for reporting @Oxygen923
 
 ### Documentation Updates
 - Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik
