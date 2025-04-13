@@ -26,6 +26,7 @@ and introduces support for Linux on ARM64 architecture.
 - Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
+- Added handling and warning for Betfair zero sized fills
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1

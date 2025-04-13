@@ -959,6 +959,10 @@ class BetfairExecutionClient(LiveExecutionClient):
             trade_id = order_to_trade_id(unmatched_order)
             if trade_id not in self._published_executions[client_order_id]:
                 fill_qty = self._determine_fill_qty(unmatched_order, order)
+                if fill_qty == 0:
+                    self._log.warning(f"Fill size determined as zero for {unmatched_order}")
+                    return
+
                 fill_price = self._determine_fill_price(unmatched_order, order)
                 ts_event = self._get_matched_timestamp(unmatched_order)
 
