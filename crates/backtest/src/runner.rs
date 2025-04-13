@@ -156,10 +156,11 @@ mod tests {
         clock::{LiveClock, TestClock},
         timer::{TimeEvent, TimeEventCallback},
     };
+    use rstest::rstest;
 
     use super::{get_clock, set_clock};
 
-    #[test]
+    #[rstest]
     fn test_global_test_clock() {
         let test_clock = Rc::new(RefCell::new(TestClock::new()));
         set_clock(test_clock.clone());

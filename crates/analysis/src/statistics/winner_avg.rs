@@ -52,9 +52,11 @@ impl PortfolioStatistic for AvgWinner {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnls() {
         let avg_winner = AvgWinner {};
         let result = avg_winner.calculate_from_realized_pnls(&[]);
@@ -62,7 +64,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_no_winning_trades() {
         let avg_winner = AvgWinner {};
         let realized_pnls = vec![-100.0, -50.0, -200.0];
@@ -71,7 +73,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_winning_trades() {
         let avg_winner = AvgWinner {};
         let realized_pnls = vec![100.0, 50.0, 200.0];
@@ -80,7 +82,7 @@ mod tests {
         assert_eq!(result.unwrap(), 116.66666666666667);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_trades() {
         let avg_winner = AvgWinner {};
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
@@ -89,7 +91,7 @@ mod tests {
         assert_eq!(result.unwrap(), 150.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let avg_winner = AvgWinner {};
         assert_eq!(avg_winner.name(), "AvgWinner");

@@ -435,7 +435,7 @@ fn test_datafusion_parquet_round_trip() {
     }
 }
 
-#[test]
+#[rstest]
 fn test_catalog_export_functionality() {
     // Create a temporary directory for test files
     let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");

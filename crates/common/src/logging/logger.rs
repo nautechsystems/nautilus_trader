@@ -777,7 +777,7 @@ mod tests {
     }
 
     #[ignore = "Flaky test: Passing locally on some systems, failing in CI"]
-    #[test]
+    #[rstest]
     fn test_file_rotation_and_backup_limits() {
         // Create a temporary directory for log files
         let temp_dir = tempdir().expect("Failed to create temporary directory");

@@ -45,9 +45,11 @@ impl PortfolioStatistic for MaxWinner {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnls() {
         let max_winner = MaxWinner {};
         let result = max_winner.calculate_from_realized_pnls(&[]);
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_no_winning_trades() {
         let max_winner = MaxWinner {};
         let realized_pnls = vec![-100.0, -50.0, -200.0];
@@ -63,7 +65,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_winning_trades() {
         let max_winner = MaxWinner {};
         let realized_pnls = vec![100.0, 50.0, 200.0];
@@ -72,7 +74,7 @@ mod tests {
         assert_eq!(result.unwrap(), 200.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_trades() {
         let max_winner = MaxWinner {};
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
@@ -81,7 +83,7 @@ mod tests {
         assert_eq!(result.unwrap(), 200.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let max_winner = MaxWinner {};
         assert_eq!(max_winner.name(), "MaxWinner");

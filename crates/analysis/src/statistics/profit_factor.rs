@@ -58,6 +58,7 @@ mod profit_factor_tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -70,7 +71,7 @@ mod profit_factor_tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![]);
@@ -79,7 +80,7 @@ mod profit_factor_tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_positive() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![10.0, 20.0, 30.0]);
@@ -88,7 +89,7 @@ mod profit_factor_tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_negative() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![-10.0, -20.0, -30.0]);
@@ -97,7 +98,7 @@ mod profit_factor_tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_returns() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![10.0, -20.0, 30.0, -40.0]);
@@ -107,7 +108,7 @@ mod profit_factor_tests {
         assert_eq!(result.unwrap(), 0.6666666666666666);
     }
 
-    #[test]
+    #[rstest]
     fn test_with_zero() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![10.0, 0.0, -20.0, -30.0]);
@@ -117,7 +118,7 @@ mod profit_factor_tests {
         assert_eq!(result.unwrap(), 0.2);
     }
 
-    #[test]
+    #[rstest]
     fn test_equal_positive_negative() {
         let profit_factor = ProfitFactor {};
         let returns = create_returns(vec![20.0, -20.0]);
@@ -126,7 +127,7 @@ mod profit_factor_tests {
         assert_eq!(result.unwrap(), 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let profit_factor = ProfitFactor {};
         assert_eq!(profit_factor.name(), "ProfitFactor");

@@ -865,7 +865,7 @@ mod tests {
         assert_eq!(*events[1].ts_event, *start_time + 2000);
     }
 
-    #[test]
+    #[rstest]
     fn test_default_and_custom_callbacks() {
         let mut clock = TestClock::new();
         let default_called = Rc::new(RefCell::new(false));
