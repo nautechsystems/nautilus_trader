@@ -22,13 +22,13 @@ jobs:
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           free-disk-space: "true"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-  build-linux-standard-precision:
+  build-linux-x86-standard-precision:
     strategy:
       fail-fast: false
       matrix:
@@ -109,7 +109,7 @@ jobs:
         run: |
           uv run --no-sync pytest --ignore=tests/performance_tests
 
-  build-linux:
+  build-linux-x86:
     strategy:
       fail-fast: false
       matrix:
@@ -124,6 +124,95 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs:
+      - pre-commit
+    env:
+      BUILD_MODE: release
+      RUST_BACKTRACE: 1
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: nautilus
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: ${{ matrix.python-version }}
+          free-disk-space: "true"
+
+      - name: Install Nautilus CLI and run init postgres
+        run: |
+          make install-cli
+          nautilus database init --schema ${{ github.workspace }}/schema/sql
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USERNAME: postgres
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DATABASE: nautilus
+
+      - name: Cached test data
+        uses: ./.github/actions/common-test-data
+
+      - name: Run Rust tests
+        run: make cargo-test
+
+      - name: Build and install wheel
+        uses: ./.github/actions/common-wheel-build
+        with:
+          python-version: ${{ matrix.python-version }}
+          github_ref: ${{ github.ref }}
+
+      - name: Run tests
+        run: |
+          uv run --no-sync pytest --ignore=tests/performance_tests
+
+      - name: Upload wheel artifact
+        uses: ./.github/actions/upload-artifact-wheel
+
+  build-linux-arm:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04-arm
+        python-version:
+          - "3.11"
+          - "3.12"
+          - "3.13"
+    defaults:
+      run:
+        shell: bash
+    name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Pause job on develop branch for now (takes ~1-1.5 hrs)
+    if: >
+      !( (github.event_name == 'push' && github.ref_name == 'develop')
+      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
     env:
@@ -209,7 +298,7 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause macOS jobs on develop branch for now (they take ~1-1.5 hrs)
+    # Pause job on develop branch for now (takes ~1-1.5 hrs)
     if: >
       !( (github.event_name == 'push' && github.ref_name == 'develop')
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
@@ -267,7 +356,7 @@ jobs:
         shell: bash
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Pause windows jobs on develop branch for now (they take ~1 hr)
+    # Pause job on develop branch for now (takes ~1 hr)
     if: >
       !( (github.event_name == 'push' && github.ref_name == 'develop')
       || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
@@ -314,7 +403,8 @@ jobs:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
     needs:
-      - build-linux
+      - build-linux-x86
+      # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
       # - build-macos # Reinstate this when/if macos runs on every build
       # - build-windows # Reinstate this when/if windows runs on every build
     if: >
@@ -342,7 +432,8 @@ jobs:
   publish-wheels-nightly:
     runs-on: ubuntu-latest
     needs:
-      - build-linux
+      - build-linux-x86
+      - build-linux-arm
       - build-macos
       - build-windows
     if: >
@@ -369,7 +460,8 @@ jobs:
 
   tag-release:
     needs:
-      - build-linux
+      - build-linux-x86
+      - build-linux-arm
       - build-macos
       - build-windows
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -392,7 +484,7 @@ jobs:
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           free-disk-space: "true"
 
       - name: Ensure script is executable
@@ -442,7 +534,7 @@ jobs:
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
-          python-version: "3.12"
+          python-version: "3.13"
           free-disk-space: "true"
 
       - name: Build sdist
@@ -513,7 +605,7 @@ jobs:
         # https://github.com/actions/setup-python
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # 5.4.0
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Get uv version from uv-version
         shell: bash

@@ -5,6 +5,7 @@ NautilusTrader is officially supported for Python 3.11, 3.12, and 3.13 for the f
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
 | Linux (Ubuntu)         | 22.04 and later       | x86_64            |
+| Linux (Ubuntu)         | 22.04 and later       | ARM64             |
 | macOS                  | 14.7 and later        | ARM64             |
 | Windows Server         | 2022 and later        | x86_64            |
 
@@ -51,8 +52,18 @@ To install the latest stable release:
 
 ### Development wheels
 
-Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS,
+Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
+
+**Note**: Wheels from the `develop` branch are only built for the Linux x86_64 platform to save time
+and compute resources, while `nightly` wheels support additional platforms as shown below.
+
+| Platform           | Nightly | Develop |
+| :----------------- | :------ | :------ |
+| `Linux (x86_64)`   | ✓       | ✓       |
+| `Linux (ARM64)`    | ✓       | -       |
+| `macOS (ARM64)`    | ✓       | -       |
+| `Windows (x86_64)` | ✓       | -       |
 
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
