@@ -2,7 +2,8 @@
 
 Released on TBD (UTC).
 
-This release adds support for Python 3.13 (*not* yet compatible with free-threading).
+This release adds support for Python 3.13 (*not* yet compatible with free-threading),
+and introduces support for Linux on ARM64 architecture.
 
 ### Enhancements
 - Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)

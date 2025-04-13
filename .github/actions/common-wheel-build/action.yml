@@ -28,8 +28,39 @@ runs:
       shell: bash
       run: uv lock --no-upgrade
 
-    - name: Build Python wheel (Linux & Windows)
-      if: runner.os != 'macOS'
+    - name: Build Python wheel (Linux x86_64)
+      if: runner.os == 'Linux' && runner.arch != 'ARM64' && runner.arch != 'aarch64'
+      shell: bash
+      run: |
+        uv build --wheel
+        ls -lh dist/
+
+    - name: Build Python wheel (Linux ARM64)
+      if: runner.os == 'Linux' && (runner.arch == 'ARM64' || runner.arch == 'aarch64')
+      shell: bash
+      run: |
+        echo "Building for Linux ARM64"
+        PYTHON_LIB_DIR=$(python3 -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')
+        PYTHON_VERSION=$(python3 -c 'import platform; print(".".join(platform.python_version_tuple()[:2]))')
+
+        export CARGO_BUILD_JOBS=1
+        export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:$PYTHON_LIB_DIR:$LD_LIBRARY_PATH"
+        export LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:$PYTHON_LIB_DIR:$LIBRARY_PATH"
+        export PYO3_PYTHON=$(which python${{ inputs.python-version }})
+        export RUSTFLAGS="-C link-arg=-L${PYTHON_LIB_DIR} -C link-arg=-lpython${PYTHON_VERSION}"
+
+        echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
+        echo "LIBRARY_PATH: $LIBRARY_PATH"
+        echo "PYO3_PYTHON: $PYO3_PYTHON"
+        echo "PYTHON_LIB_DIR: $PYTHON_LIB_DIR"
+        echo "PYTHON_VERSION: $PYTHON_VERSION"
+        echo "RUSTFLAGS: $RUSTFLAGS"
+
+        uv build --wheel
+        ls -lh dist/
+
+    - name: Build Python wheel (Windows)
+      if: runner.os == 'Windows'
       shell: bash
       run: |
         uv build --wheel
