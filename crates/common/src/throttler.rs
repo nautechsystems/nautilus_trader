@@ -785,8 +785,8 @@ mod tests {
         assert_eq!(throttler.qsize(), 0);
     }
 
-    #[test]
     #[ignore = "Used for manually testing failing cases"]
+    #[test]
     fn test_case() {
         let inputs = [
             ThrottlerInput::SendMessage(42),

@@ -3587,7 +3587,7 @@ mod tests {
         }
     }
 
-    #[ignore] // TODO: Revisit after high-precision merged
+    #[ignore = "Revisit after high-precision merged"]
     #[rstest]
     fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders(
         strategy_id_ema_cross: StrategyId,
@@ -3715,7 +3715,7 @@ mod tests {
         assert_eq!(saved_execute_messages.len(), 1);
     }
 
-    #[ignore] // TODO: Revisit after high-precision merged
+    #[ignore = "Revisit after high-precision merged"]
     #[rstest]
     fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders(
         strategy_id_ema_cross: StrategyId,

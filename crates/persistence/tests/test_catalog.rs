@@ -186,7 +186,7 @@ fn test_quote_tick_python_control_flow() {
     });
 }
 
-#[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
+#[ignore = "Investigate why this is suddenly failing the monotonically increasing assert?"]
 #[rstest]
 fn test_order_book_delta_query() {
     let expected_length = 1077;
@@ -338,7 +338,7 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[ignore] // TODO: Remove file after asserts
+#[ignore = "Remove file after asserts"]
 #[rstest]
 fn test_catalog_serialization_json_round_trip() {
     // Setup
