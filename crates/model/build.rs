@@ -20,6 +20,12 @@ use std::env;
 #[allow(unused_assignments)]
 #[allow(unused_mut)]
 fn main() {
+    // Skip file generation if we're in the docs.rs environment
+    if std::env::var("DOCS_RS").is_ok() {
+        println!("cargo:warning=Running in docs.rs environment, skipping file generation");
+        return;
+    }
+
     // Ensure the build script runs on changes
     println!("cargo:rerun-if-env-changed=HIGH_PRECISION");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_HIGH_PRECISION");

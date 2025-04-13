@@ -40,6 +40,12 @@ fn main() {
     println!("cargo:rustc-env=NAUTILUS_VERSION={nautilus_version}");
     println!("cargo:rustc-env=NAUTILUS_USER_AGENT=NautilusTrader/{nautilus_version}");
 
+    // Skip file generation if we're in the docs.rs environment
+    if std::env::var("DOCS_RS").is_ok() {
+        println!("cargo:warning=Running in docs.rs environment, skipping file generation");
+        return;
+    }
+
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
         use std::{
