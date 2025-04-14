@@ -219,7 +219,6 @@ class ParquetDataCatalog(BaseDataCatalog):
     def write_data(
         self,
         data: list[Data | Event] | list[NautilusRustDataType],
-        basename_template: str = "part-{i}",
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
@@ -234,11 +233,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data : list[Data | Event]
             The data or event objects to be written to the catalog.
-        basename_template : str, default 'part-{i}'
-            A template string used to generate basenames of written data files.
-            The token '{i}' will be replaced with an automatically incremented
-            integer as files are partitioned.
-            If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
         mode : CatalogWriteMode, default 'OVERWRITE'
             The mode to use when writing data and when not using using the "partitioning" option.
             Can be one of the following:
@@ -251,10 +245,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         Warnings
         --------
-        Any existing data which already exists under a filename will be overwritten.
-        If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
-        be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
-        generates unique filenames for different data sets.
+        By default, any existing data which already exists under a filename will be overwritten.
 
         Notes
         -----
@@ -297,7 +288,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                 data=chunk,
                 data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
-                basename_template=basename_template,
                 mode=mode,
                 **kwargs,
             )
@@ -307,7 +297,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         data: list[Data],
         data_cls: type[Data],
         instrument_id: str | None = None,
-        basename_template: str = "part-{i}",
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
@@ -323,7 +312,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                 table=table,
                 path=path,
                 fs=self.fs,
-                basename_template=basename_template,
                 mode=mode,
             )
         else:
@@ -331,7 +319,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             pds.write_dataset(
                 data=table,
                 base_dir=path,
-                basename_template=f"{basename_template}.parquet",
                 format="parquet",
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
@@ -376,10 +363,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table,
         path: str,
         fs: fsspec.AbstractFileSystem,
-        basename_template: str,
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     ) -> None:
         fs.mkdirs(path, exist_ok=True)
+        basename_template = "part-{i}"
         name = basename_template.format(i=0)
         parquet_file = f"{path}/{name}.parquet"
         empty_file = parquet_file

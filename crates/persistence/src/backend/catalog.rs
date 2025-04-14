@@ -162,13 +162,13 @@ impl ParquetDataCatalog {
         let path = self.make_directory_path(type_name, instrument_id);
         std::fs::create_dir_all(&path)?;
         let used_write_mode = write_mode.unwrap_or(ParquetWriteMode::Overwrite);
-        let mut file_path = path.join("data-0.parquet");
+        let mut file_path = path.join("part-0.parquet");
         let mut empty_path = file_path.clone();
         let mut i = 0;
 
         while empty_path.exists() {
             i += 1;
-            let name = format!("data-{i}.parquet");
+            let name = format!("part-{i}.parquet");
             empty_path = path.join(name);
         }
 
