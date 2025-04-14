@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.216.0"
+version = "1.217.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [
     {name = "Nautech Systems", email = "info@nautechsystems.io"},
@@ -12,6 +12,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering",
