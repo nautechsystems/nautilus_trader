@@ -851,6 +851,13 @@ impl Cache {
     ///
     /// All `OrderFilled` events for the order will also be purged from any associated position.
     pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
+        // Purge events from associated position if exists
+        if let Some(position_id) = self.index.order_position.get(&client_order_id) {
+            if let Some(position) = self.positions.get_mut(position_id) {
+                position.purge_events_for_order(client_order_id);
+            }
+        }
+
         if let Some(order) = self.orders.remove(&client_order_id) {
             // Remove order from venue index
             if let Some(venue_orders) = self
@@ -905,13 +912,6 @@ impl Cache {
         self.index.orders_emulated.remove(&client_order_id);
         self.index.orders_inflight.remove(&client_order_id);
         self.index.orders_pending_cancel.remove(&client_order_id);
-
-        // Purge events from associated position if exists
-        if let Some(position_id) = self.index.order_position.get(&client_order_id) {
-            if let Some(position) = self.positions.get_mut(position_id) {
-                position.purge_events_for_order(client_order_id);
-            }
-        }
     }
 
     /// Purges the position with the given position ID from the cache (if found).
