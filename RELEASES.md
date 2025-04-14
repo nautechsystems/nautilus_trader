@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Removed catalog `basename_template` argument (#2510), thanks @faysou
 
 ### Internal Improvements
 - Upgraded `sqlx` crate to v0.8.4
