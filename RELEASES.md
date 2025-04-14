@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
+- Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
 
 ### Documentation Updates
 None
