@@ -9,7 +9,7 @@ None
 None
 
 ### Internal Improvements
-None
+- Upgraded `sqlx` crate to v0.8.4
 
 ### Fixes
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
