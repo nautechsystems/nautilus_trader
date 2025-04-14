@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 
 ### Documentation Updates
 None
