@@ -497,187 +497,186 @@ jobs:
       - name: Publish wheels
         uses: ./.github/actions/publish-wheels
 
-  # TODO: Uncomment once release repaired
-  # tag-release:
-  #   needs:
-  #     - build-linux-x86
-  #     - build-linux-arm
-  #     - build-macos
-  #     - build-windows
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-  #   runs-on: ubuntu-latest
-  #   outputs:
-  #     upload_url: ${{ steps.create-release.outputs.upload_url }}
-  #     tag_name: ${{ env.TAG_NAME }}
-  #   steps:
-  #     # Security hardening
-  #     - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481
-  #       with:
-  #         egress-policy: audit
-  #
-  #     - name: Checkout repository
-  #       # https://github.com/actions/checkout
-  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-  #       with:
-  #         fetch-depth: 2
-  #
-  #     - name: Common setup
-  #       uses: ./.github/actions/common-setup
-  #       with:
-  #         python-version: "3.13"
-  #         free-disk-space: "true"
-  #
-  #     - name: Ensure script is executable
-  #       run: chmod +x scripts/package-version.sh
-  #
-  #     - name: Create git tag
-  #       # https://github.com/salsify/action-detect-and-tag-new-version
-  #       uses: salsify/action-detect-and-tag-new-version@b1778166f13188a9d478e2d1198f993011ba9864 # v2.0.3
-  #       with:
-  #         version-command: ./scripts/package-version.sh
-  #
-  #     - name: Set output
-  #       id: vars
-  #       run: |
-  #         echo "TAG_NAME=v$(./scripts/package-version.sh)" >> $GITHUB_ENV
-  #         echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> $GITHUB_ENV
-  #         sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
-  #
-  #     - name: Create GitHub release
-  #       id: create-release
-  #       uses: actions/create-release@v1
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       with:
-  #         tag_name: ${{ env.TAG_NAME }}
-  #         release_name: ${{ env.RELEASE_NAME }}
-  #         draft: false
-  #         prerelease: false
-  #         body_path: RELEASE.md
-  #
-  # publish-sdist:
-  #   needs: [tag-release]
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
-  #   steps:
-  #     # https://github.com/step-security/harden-runner
-  #     - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
-  #       with:
-  #         egress-policy: audit
-  #
-  #     - name: Checkout repository
-  #       # https://github.com/actions/checkout
-  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-  #
-  #     - name: Common setup
-  #       uses: ./.github/actions/common-setup
-  #       with:
-  #         python-version: "3.13"
-  #         free-disk-space: "true"
-  #
-  #     - name: Build sdist
-  #       run: |
-  #         uv build --sdist
-  #
-  #     - name: Set release output
-  #       id: vars
-  #       run: |
-  #         if [ ! -d "./dist" ]; then
-  #           echo "Error: dist directory not found"
-  #           exit 1
-  #         fi
-  #
-  #         ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f | xargs ls -t 2>/dev/null | head -n 1)
-  #
-  #         if [ -z "$ASSET_PATH" ]; then
-  #           echo "Error: No .tar.gz files found in dist directory"
-  #           exit 1
-  #         fi
-  #
-  #         echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
-  #         echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
-  #
-  #     - name: Upload release asset
-  #       id: upload-release-asset
-  #       # https://github.com/actions/upload-release-asset
-  #       uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       with:
-  #         upload_url: ${{ needs.tag-release.outputs.upload_url }}
-  #         asset_path: ${{ env.ASSET_PATH }}
-  #         asset_name: ${{ env.ASSET_NAME }}
-  #         asset_content_type: application/gzip
-  #
-  #     - name: Publish to PyPI
-  #       env:
-  #         UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-  #         UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-  #       run: uv publish
-  #
-  # publish-release:
-  #   needs: [tag-release]
-  #   if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     # https://github.com/step-security/harden-runner
-  #     - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
-  #       with:
-  #         egress-policy: audit
-  #
-  #     - name: Checkout repository
-  #       # https://github.com/actions/checkout
-  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-  #
-  #     - name: Download built wheels
-  #       # https://github.com/actions/download-artifact
-  #       uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-  #       with:
-  #         path: dist/
-  #         pattern: "*.whl"
-  #
-  #     - name: List wheels to be published
-  #       run: ls -la dist/
-  #
-  #     - name: Set up Python
-  #       # https://github.com/actions/setup-python
-  #       uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # 5.4.0
-  #       with:
-  #         python-version: "3.13"
-  #
-  #     - name: Get uv version from uv-version
-  #       shell: bash
-  #       run: |
-  #         echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
-  #
-  #     - name: Install uv
-  #       # https://github.com/astral-sh/setup-uv
-  #       uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # 5.4.1
-  #       with:
-  #         version: ${{ env.UV_VERSION }}
-  #
-  #     - name: Upload wheels to GitHub release
-  #       run: |
-  #         find dist -type f -name "*.whl" | while read wheel; do
-  #           echo "Uploading $wheel to release"
-  #           asset_name=$(basename "$wheel")
-  #           curl \
-  #             -X POST \
-  #             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-  #             -H "Content-Type: application/octet-stream" \
-  #             --data-binary @"$wheel" \
-  #             "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
-  #         done
-  #
-  #     - name: Publish to PyPI
-  #       env:
-  #         UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-  #         UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-  #       run: uv publish
-  #
-  #     - name: Fetch and delete artifacts for current run
-  #       shell: bash
-  #       run: |
-  #         bash ./scripts/ci/publish-wheels-delete-artifacts.sh
+  tag-release:
+    needs:
+      - build-linux-x86
+      - build-linux-arm
+      - build-macos
+      - build-windows
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create-release.outputs.upload_url }}
+      tag_name: ${{ env.TAG_NAME }}
+    steps:
+      # Security hardening
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Ensure script is executable
+        run: chmod +x scripts/package-version.sh
+
+      - name: Create git tag
+        # https://github.com/salsify/action-detect-and-tag-new-version
+        uses: salsify/action-detect-and-tag-new-version@b1778166f13188a9d478e2d1198f993011ba9864 # v2.0.3
+        with:
+          version-command: ./scripts/package-version.sh
+
+      - name: Set output
+        id: vars
+        run: |
+          echo "TAG_NAME=v$(./scripts/package-version.sh)" >> $GITHUB_ENV
+          echo "RELEASE_NAME=NautilusTrader $(./scripts/package-version.sh) Beta" >> $GITHUB_ENV
+          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
+
+      - name: Create GitHub release
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          release_name: ${{ env.RELEASE_NAME }}
+          draft: false
+          prerelease: false
+          body_path: RELEASE.md
+
+  publish-sdist:
+    needs: [tag-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    env:
+      COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+
+      - name: Build sdist
+        run: |
+          uv build --sdist
+
+      - name: Set release output
+        id: vars
+        run: |
+          if [ ! -d "./dist" ]; then
+            echo "Error: dist directory not found"
+            exit 1
+          fi
+
+          ASSET_PATH=$(find ./dist -name "*.tar.gz" -type f | xargs ls -t 2>/dev/null | head -n 1)
+
+          if [ -z "$ASSET_PATH" ]; then
+            echo "Error: No .tar.gz files found in dist directory"
+            exit 1
+          fi
+
+          echo "ASSET_PATH=$ASSET_PATH" >> $GITHUB_ENV
+          echo "ASSET_NAME=$(basename "$ASSET_PATH")" >> $GITHUB_ENV
+
+      - name: Upload release asset
+        id: upload-release-asset
+        # https://github.com/actions/upload-release-asset
+        uses: actions/upload-release-asset@ef2adfe8cb8ebfa540930c452c576b3819990faa # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.tag-release.outputs.upload_url }}
+          asset_path: ${{ env.ASSET_PATH }}
+          asset_name: ${{ env.ASSET_NAME }}
+          asset_content_type: application/gzip
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
+
+  publish-release:
+    needs: [tag-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download built wheels
+        # https://github.com/actions/download-artifact
+        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          path: dist/
+          pattern: "*.whl"
+
+      - name: List wheels to be published
+        run: ls -la dist/
+
+      - name: Set up Python
+        # https://github.com/actions/setup-python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # 5.4.0
+        with:
+          python-version: "3.13"
+
+      - name: Get uv version from uv-version
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+
+      - name: Install uv
+        # https://github.com/astral-sh/setup-uv
+        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # 5.4.1
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Upload wheels to GitHub release
+        run: |
+          find dist -type f -name "*.whl" | while read wheel; do
+            echo "Uploading $wheel to release"
+            asset_name=$(basename "$wheel")
+            curl \
+              -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$wheel" \
+              "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
+          done
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
+
+      - name: Fetch and delete artifacts for current run
+        shell: bash
+        run: |
+          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
