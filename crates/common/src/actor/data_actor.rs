@@ -43,9 +43,7 @@ use nautilus_model::{
 use ustr::Ustr;
 use uuid::Uuid;
 
-use super::{
-    Actor, executor::ActorExecutor, indicators::Indicators, registry::get_actor_unchecked,
-};
+use super::{Actor, indicators::Indicators, registry::get_actor_unchecked};
 use crate::{
     cache::Cache,
     clock::Clock,
@@ -180,12 +178,6 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    // Actions to be performed when receiving an event.
-    // pub fn on_event(&mut self, event: &i Event) {  // TODO: TBD
-    //     // Default empty implementation
-    // }
-    //
-
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
@@ -275,8 +267,7 @@ pub struct DataActorCore {
     pub cache: Rc<RefCell<Cache>>,
     state: ComponentState,
     trader_id: Option<TraderId>,
-    executor: Option<Arc<dyn ActorExecutor>>, // TODO: TBD
-    warning_events: HashSet<String>,          // TODO: TBD
+    warning_events: HashSet<String>, // TODO: TBD
     pending_requests: HashMap<UUID4, Option<RequestCallback>>,
     signal_classes: HashMap<String, String>,
     #[cfg(feature = "indicators")]
@@ -301,7 +292,6 @@ impl DataActorCore {
             cache,
             state: ComponentState::default(),
             trader_id: None, // None until registered
-            executor: None,
             warning_events: HashSet::new(),
             pending_requests: HashMap::new(),
             signal_classes: HashMap::new(),
@@ -345,12 +335,6 @@ impl DataActorCore {
     }
 
     // -- REGISTRATION ----------------------------------------------------------------------------
-
-    /// Register an executor for the actor.
-    pub fn register_executor(&mut self, executor: Arc<dyn ActorExecutor>) {
-        self.executor = Some(executor);
-        // TODO: Log registration
-    }
 
     /// Register an event type for warning log levels.
     pub fn register_warning_event(&mut self, event_type: &str) {
@@ -598,7 +582,7 @@ impl DataActorCore {
 
     /// Subscribe to streaming [`OrderBookDeltas`] data for the given instrument ID.
     ///
-    /// Once subscribed, any matching order book deltas published on the message bus is forwarded
+    /// Once subscribed, any matching order book deltas published on the message bus are forwarded
     /// to the `on_book_deltas` handler.
     pub fn subscribe_book_deltas(
         &self,
