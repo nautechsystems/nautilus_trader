@@ -645,9 +645,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return BinanceFuturesPositionSide.BOTH
 
         if position_id is None and exec_spawn_id is not None:
-            primary_order = self._cache.order(exec_spawn_id)
-            if primary_order is not None:
-                position_id = primary_order.position_id
+            position_id = self._cache.position_id(exec_spawn_id)
 
         # For Binance Futures Hedge mode, the position side must be specified in the position_id
         PyCondition.not_none(position_id, "position_id")
