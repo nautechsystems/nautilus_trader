@@ -43,6 +43,7 @@ use crate::{
 /// dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
 /// having to manually access the underlying instance.
 #[repr(C)]
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub struct SyntheticInstrument_API(Box<SyntheticInstrument>);
 

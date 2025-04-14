@@ -372,6 +372,7 @@ pub fn stub_instrument_close() -> InstrumentClose {
     )
 }
 
+#[derive(Debug)]
 pub struct OrderBookDeltaTestBuilder {
     instrument_id: InstrumentId,
     action: Option<BookAction>,

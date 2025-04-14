@@ -40,6 +40,7 @@ use crate::{
 /// dereferenced to `OrderBook`, providing access to `OrderBook`'s methods without
 /// having to manually access the underlying `OrderBook` instance.
 #[repr(C)]
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub struct OrderBook_API(Box<OrderBook>);
 

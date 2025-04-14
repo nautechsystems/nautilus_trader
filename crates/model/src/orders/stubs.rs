@@ -30,6 +30,7 @@ use crate::{
 };
 
 // Test Event Stubs
+#[derive(Debug)]
 pub struct TestOrderEventStubs;
 
 impl TestOrderEventStubs {
@@ -120,6 +121,7 @@ impl TestOrderEventStubs {
     }
 }
 
+#[derive(Debug)]
 pub struct TestOrderStubs;
 
 impl TestOrderStubs {
@@ -157,6 +159,7 @@ impl TestOrderStubs {
     }
 }
 
+#[derive(Debug)]
 pub struct TestOrdersGenerator {
     order_type: OrderType,
     venue_instruments: HashMap<Venue, u32>,

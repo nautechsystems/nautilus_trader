@@ -33,7 +33,7 @@ use crate::{
 /// dereferenced to `Level`, providing access to `Level`'s methods without
 /// having to manually acce wss the underlying `Level` instance.
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(non_camel_case_types)]
 pub struct BookLevel_API(Box<BookLevel>);
 
