@@ -279,6 +279,10 @@ impl AccountsManager {
                 continue;
             }
 
+            if order.is_reduce_only() {
+                continue; // Does not contribute to locked balance
+            }
+
             let price = if order.price().is_some() {
                 order.price()
             } else {
@@ -355,6 +359,10 @@ impl AccountsManager {
 
             if !order.is_open() || (order.price().is_none() && order.trigger_price().is_none()) {
                 continue;
+            }
+
+            if order.is_reduce_only() {
+                continue; // Does not contribute to locked balance
             }
 
             let price = if order.price().is_some() {
