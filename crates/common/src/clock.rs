@@ -111,6 +111,7 @@ pub trait Clock {
 /// A static test clock.
 ///
 /// Stores the current timestamp internally which can be advanced.
+#[derive(Debug)]
 pub struct TestClock {
     time: AtomicTime,
     // use btree map to ensure stable ordering when scanning for timers
@@ -437,6 +438,7 @@ impl Clock for TestClock {
 /// A real-time clock which uses system time.
 ///
 /// Timestamps are guaranteed to be unique and monotonically increasing.
+#[derive(Debug)]
 pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
@@ -737,6 +739,7 @@ impl Clock for LiveClock {
 }
 
 // Helper struct to stream events from the heap
+#[derive(Debug)]
 pub struct TimeEventStream {
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
 }

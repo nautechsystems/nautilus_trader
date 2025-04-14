@@ -18,7 +18,7 @@
 //! This module provides a trait and implementations for handling messages
 //! in a type-safe manner, enabling both typed and untyped message processing.
 
-use std::{any::Any, marker::PhantomData, rc::Rc};
+use std::{any::Any, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use ustr::Ustr;
 use uuid::Uuid;
@@ -32,6 +32,7 @@ pub trait MessageHandler: Any {
     fn as_any(&self) -> &dyn Any;
 }
 
+#[derive(Debug)]
 pub struct TypedMessageHandler<T: 'static + ?Sized, F: Fn(&T) + 'static> {
     id: Ustr,
     callback: F,
@@ -116,9 +117,18 @@ fn generate_unique_handler_id() -> Ustr {
     Ustr::from(&Uuid::new_v4().to_string())
 }
 
-#[derive(Clone)]
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl Debug for ShareableMessageHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShareableMessageHandler))
+            .field("id", &self.0.id())
+            .field("type", &std::any::type_name::<Self>().to_string())
+            .finish()
+    }
+}
 
 impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
     fn from(value: Rc<dyn MessageHandler>) -> Self {

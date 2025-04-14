@@ -35,11 +35,13 @@ pub type GlobalDataQueue = Rc<RefCell<dyn DataQueue>>;
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
 }
 
+#[derive(Debug)]
 pub struct SyncDataQueue(VecDeque<DataEvent>);
 
 impl DataQueue for SyncDataQueue {
@@ -113,6 +115,7 @@ pub type DataResponseQueue = Rc<RefCell<SyncDataQueue>>;
 
 // Represents different event types for the runner.
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum RunnerEvent {
     Data(DataEvent),
     Timer(TimeEvent),

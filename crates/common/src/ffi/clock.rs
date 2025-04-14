@@ -45,6 +45,7 @@ use crate::{
 /// having to manually access the underlying `TestClock` instance.
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub struct TestClock_API(Box<TestClock>);
 
 impl Deref for TestClock_API {
@@ -263,6 +264,7 @@ pub extern "C" fn test_clock_cancel_timers(clock: &mut TestClock_API) {
 /// both mutable and immutable access.
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub struct LiveClock_API(Box<LiveClock>);
 
 impl Deref for LiveClock_API {

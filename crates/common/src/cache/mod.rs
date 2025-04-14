@@ -62,6 +62,7 @@ use ustr::Ustr;
 use crate::xrate::get_exchange_rate;
 
 /// A common in-memory `Cache` for market and execution related data.
+#[allow(missing_debug_implementations)]
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,

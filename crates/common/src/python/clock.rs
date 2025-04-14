@@ -35,6 +35,7 @@ use crate::{
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "TestClock"
 )]
+#[derive(Debug)]
 pub struct TestClock_Py(Box<TestClock>);
 
 #[pymethods]
@@ -127,6 +128,7 @@ impl TestClock_Py {
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "LiveClock"
 )]
+#[derive(Debug)]
 pub struct LiveClock_Py(Box<LiveClock>);
 
 #[pymethods]

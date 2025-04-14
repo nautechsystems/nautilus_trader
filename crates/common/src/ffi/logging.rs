@@ -47,6 +47,7 @@ use crate::{
 /// having to manually access the underlying `LogGuard` instance.
 #[repr(C)]
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub struct LogGuard_API(Box<LogGuard>);
 
 impl Deref for LogGuard_API {

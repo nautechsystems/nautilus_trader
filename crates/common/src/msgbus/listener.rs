@@ -22,6 +22,7 @@ use super::BusMessage;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
+#[derive(Debug)]
 pub struct MessageBusListener {
     tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
     rx: Option<tokio::sync::mpsc::UnboundedReceiver<BusMessage>>,

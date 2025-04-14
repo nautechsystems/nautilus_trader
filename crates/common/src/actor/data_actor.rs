@@ -22,6 +22,7 @@ use std::{
     any::{Any, TypeId},
     cell::{RefCell, UnsafeCell},
     collections::{HashMap, HashSet},
+    fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -272,6 +273,17 @@ pub struct DataActorCore {
     signal_classes: HashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
+}
+
+impl Debug for DataActorCore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(DataActorCore))
+            .field("actor_id", &self.actor_id)
+            .field("config", &self.config)
+            .field("state", &self.state)
+            .field("trader_id", &self.trader_id)
+            .finish()
+    }
 }
 
 impl DataActor for DataActorCore {}
