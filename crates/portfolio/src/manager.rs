@@ -362,7 +362,7 @@ impl AccountsManager {
             }
 
             if order.is_reduce_only() {
-                continue; // Does not contribute to locked balance
+                continue; // Does not contribute to margin
             }
 
             let price = if order.price().is_some() {
