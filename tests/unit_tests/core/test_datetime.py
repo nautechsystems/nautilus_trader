@@ -24,6 +24,7 @@ from nautilus_trader.core.datetime import as_utc_index
 from nautilus_trader.core.datetime import as_utc_timestamp
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import format_iso8601
+from nautilus_trader.core.datetime import format_optional_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
@@ -329,6 +330,20 @@ class TestDatetimeFunctions:
         assert result3 == "1970-01-01T00:00:00.001000000Z"
         assert result4 == "1970-01-01T00:00:01.000000000Z"
         assert result5 == "1970-01-01T01:01:02.003000000Z"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [None, "None"],
+            [pd.to_datetime(0), "1970-01-01T00:00:00.000000000Z"],
+        ],
+    )
+    def test_format_optional_iso8601(self, value: pd.Timestamp | None, expected: str):
+        # Arrange, Act
+        result = format_optional_iso8601(value)
+
+        # Assert
+        assert result == expected
 
     def test_datetime_and_pd_timestamp_equality(self):
         # Arrange
