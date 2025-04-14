@@ -153,6 +153,7 @@ pub struct Logger {
 }
 
 /// Represents a type of log event.
+#[derive(Clone, Debug)]
 pub enum LogEvent {
     /// A log line event.
     Log(LogLine),
@@ -187,6 +188,7 @@ impl Display for LogLine {
 /// of it, such as plain string, colored string, and JSON. It also caches the
 /// results for repeated calls, optimizing performance when the same message
 /// needs to be logged multiple times in different formats.
+#[derive(Clone, Debug)]
 pub struct LogLineWrapper {
     /// The underlying log line that contains the log data.
     line: LogLine,

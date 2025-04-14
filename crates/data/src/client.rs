@@ -224,7 +224,7 @@ impl DerefMut for DataClientAdapter {
 
 impl Debug for DataClientAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DataClientAdapter")
+        f.debug_struct(stringify!(DataClientAdapter))
             .field("client_id", &self.client_id)
             .field("venue", &self.venue)
             .field("handles_book_deltas", &self.handles_book_deltas)

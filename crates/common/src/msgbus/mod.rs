@@ -68,6 +68,7 @@ impl Display for BusMessage {
     }
 }
 
+#[allow(missing_debug_implementations)]
 pub struct MessageBusWrapper(Rc<RefCell<MessageBus>>);
 
 unsafe impl Send for MessageBusWrapper {}
@@ -308,6 +309,7 @@ impl Hash for Subscription {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
+#[derive(Debug)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
