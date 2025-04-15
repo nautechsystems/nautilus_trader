@@ -459,6 +459,10 @@ impl OrderBook {
     }
 
     /// Updates L1 book state from a quote tick. Only valid for L1_MBP book type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the book type is not `L1_MBP` (operation is invalid).
     pub fn update_quote_tick(&mut self, quote: &QuoteTick) -> Result<(), InvalidBookOperation> {
         if self.book_type != BookType::L1_MBP {
             return Err(InvalidBookOperation::Update(self.book_type));
@@ -485,6 +489,10 @@ impl OrderBook {
     }
 
     /// Updates L1 book state from a trade tick. Only valid for L1_MBP book type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the book type is not `L1_MBP` (operation is invalid).
     pub fn update_trade_tick(&mut self, trade: &TradeTick) -> Result<(), InvalidBookOperation> {
         if self.book_type != BookType::L1_MBP {
             return Err(InvalidBookOperation::Update(self.book_type));

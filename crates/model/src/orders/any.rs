@@ -41,6 +41,13 @@ pub enum OrderAny {
 }
 
 impl OrderAny {
+    /// Creates a new [`OrderAny`] instance from the given `events`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `events` is empty.
+    /// - The first event is not `OrderInitialized`.
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create OrderAny");
