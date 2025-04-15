@@ -815,7 +815,7 @@ mod tests {
         let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
 
         // We should have multiple files due to rotation
@@ -832,7 +832,7 @@ mod tests {
         let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
 
         // We should have multiple files due to rotation
@@ -852,7 +852,7 @@ mod tests {
         let files: Vec<_> = std::fs::read_dir(&dir_path)
             .expect("Failed to read directory")
             .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "log"))
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
 
         // We should have at most max_backups + 1 files (current file + backups)

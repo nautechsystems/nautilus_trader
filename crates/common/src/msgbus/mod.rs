@@ -632,7 +632,7 @@ pub(crate) mod tests {
         let handler = get_stub_shareable_handler(None);
 
         register(endpoint, handler);
-        deregister(&endpoint);
+        deregister(endpoint);
 
         assert!(msgbus.borrow().endpoints().is_empty());
     }
