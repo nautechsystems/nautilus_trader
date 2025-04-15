@@ -108,8 +108,6 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
     max_retries : PositiveInt, optional
         The maximum number of times a submit or cancel order request will be retried.
-    max_retries : PositiveInt, optional
-        The maximum number of retries.
     retry_delay_initial_ms : PositiveInt, optional
         The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
