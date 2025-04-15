@@ -121,6 +121,11 @@ pub fn get_avg_px_qty_for_exposure(
     }
 }
 
+/// Checks the integrity of the given order `book`.
+///
+/// # Errors
+///
+/// Returns an error if a book integrity check fails.
 pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> {
     match book.book_type {
         BookType::L1_MBP => {

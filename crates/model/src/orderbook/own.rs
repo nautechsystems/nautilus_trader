@@ -277,6 +277,10 @@ impl OwnOrderBook {
     }
 
     /// Updates an existing own order in the book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         self.increment(&order);
         match order.side {
@@ -286,6 +290,10 @@ impl OwnOrderBook {
     }
 
     /// Deletes an own order from the book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         self.increment(&order);
         match order.side {
@@ -600,6 +608,10 @@ impl OwnBookLadder {
     }
 
     /// Updates an existing order in the ladder, moving it to a new price level if needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn update(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         let price = self.cache.get(&order.client_order_id).copied();
         if let Some(price) = price {
@@ -624,11 +636,19 @@ impl OwnBookLadder {
     }
 
     /// Deletes an order from the ladder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn delete(&mut self, order: OwnBookOrder) -> anyhow::Result<()> {
         self.remove(&order.client_order_id)
     }
 
     /// Removes an order by its ID from the ladder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn remove(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
         if let Some(price) = self.cache.remove(client_order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
@@ -786,6 +806,10 @@ impl OwnBookLevel {
     }
 
     /// Deletes an order from this price level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is not found.
     pub fn delete(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
         if self.orders.shift_remove(client_order_id).is_none() {
             // TODO: Use a generic anyhow result for now pending specific error types
