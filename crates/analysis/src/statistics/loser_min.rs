@@ -45,9 +45,11 @@ impl PortfolioStatistic for MinLoser {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnls() {
         let min_loser = MinLoser {};
         let result = min_loser.calculate_from_realized_pnls(&[]);
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_positive() {
         let min_loser = MinLoser {};
         let pnls = vec![10.0, 20.0, 30.0];
@@ -63,7 +65,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_negative() {
         let min_loser = MinLoser {};
         let pnls = vec![-10.0, -20.0, -30.0];
@@ -72,7 +74,7 @@ mod tests {
         assert_eq!(result.unwrap(), -10.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_pnls() {
         let min_loser = MinLoser {};
         let pnls = vec![10.0, -20.0, 30.0, -40.0];
@@ -81,7 +83,7 @@ mod tests {
         assert_eq!(result.unwrap(), -20.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_with_zero() {
         let min_loser = MinLoser {};
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
@@ -90,7 +92,7 @@ mod tests {
         assert_eq!(result.unwrap(), -20.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_single_negative() {
         let min_loser = MinLoser {};
         let pnls = vec![-10.0];
@@ -99,7 +101,7 @@ mod tests {
         assert_eq!(result.unwrap(), -10.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let min_loser = MinLoser {};
         assert_eq!(min_loser.name(), "MinLoser");

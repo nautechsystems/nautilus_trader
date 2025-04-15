@@ -1045,9 +1045,8 @@ fn update_instrument_id(
     let mut result_maint = None;
 
     let account = {
-        let borrowed_cache = cache.borrow();
-        let account = if let Some(account) = borrowed_cache.account_for_venue(&instrument_id.venue)
-        {
+        let cache_ref = cache.borrow();
+        let account = if let Some(account) = cache_ref.account_for_venue(&instrument_id.venue) {
             account
         } else {
             log::error!(
@@ -1057,8 +1056,8 @@ fn update_instrument_id(
             return;
         };
 
-        let mut borrowed_cache = cache.borrow_mut();
-        let instrument = if let Some(instrument) = borrowed_cache.instrument(instrument_id) {
+        let mut cache_ref = cache.borrow_mut();
+        let instrument = if let Some(instrument) = cache_ref.instrument(instrument_id) {
             instrument.clone()
         } else {
             log::error!("Cannot update tick: no instrument found for {instrument_id}");
@@ -1066,13 +1065,13 @@ fn update_instrument_id(
         };
 
         // Clone the orders and positions to own the data
-        let orders_open: Vec<OrderAny> = borrowed_cache
+        let orders_open: Vec<OrderAny> = cache_ref
             .orders_open(None, Some(instrument_id), None, None)
             .iter()
             .map(|o| (*o).clone())
             .collect();
 
-        let positions_open: Vec<Position> = borrowed_cache
+        let positions_open: Vec<Position> = cache_ref
             .positions_open(None, Some(instrument_id), None, None)
             .iter()
             .map(|p| (*p).clone())
@@ -1095,7 +1094,7 @@ fn update_instrument_id(
         }
 
         if let Some((ref updated_account, _)) = result_init {
-            borrowed_cache.add_account(updated_account.clone()).unwrap(); // Temp Fix to update the mutated account
+            cache_ref.add_account(updated_account.clone()).unwrap(); // Temp Fix to update the mutated account
         }
         account.clone()
     };
@@ -1127,7 +1126,7 @@ fn update_order(
     inner: Rc<RefCell<PortfolioState>>,
     event: &OrderEventAny,
 ) {
-    let borrowed_cache = cache.borrow();
+    let cache_ref = cache.borrow();
     let account_id = match event.account_id() {
         Some(account_id) => account_id,
         None => {
@@ -1135,7 +1134,7 @@ fn update_order(
         }
     };
 
-    let account = if let Some(account) = borrowed_cache.account(&account_id) {
+    let account = if let Some(account) = cache_ref.account(&account_id) {
         account
     } else {
         log::error!("Cannot update order: no account registered for {account_id}");
@@ -1166,8 +1165,8 @@ fn update_order(
         }
     }
 
-    let borrowed_cache = cache.borrow();
-    let order = if let Some(order) = borrowed_cache.order(&event.client_order_id()) {
+    let cache_ref = cache.borrow();
+    let order = if let Some(order) = cache_ref.order(&event.client_order_id()) {
         order
     } else {
         log::error!(
@@ -1181,8 +1180,7 @@ fn update_order(
         return; // No change to account state
     }
 
-    let instrument = if let Some(instrument_id) = borrowed_cache.instrument(&event.instrument_id())
-    {
+    let instrument = if let Some(instrument_id) = cache_ref.instrument(&event.instrument_id()) {
         instrument_id
     } else {
         log::error!(
@@ -1222,7 +1220,7 @@ fn update_order(
         }
     }
 
-    let orders_open = borrowed_cache.orders_open(None, Some(&event.instrument_id()), None, None);
+    let orders_open = cache_ref.orders_open(None, Some(&event.instrument_id()), None, None);
 
     let account_state = inner.borrow_mut().accounts.update_orders(
         account,
@@ -1231,8 +1229,8 @@ fn update_order(
         clock.borrow().timestamp_ns(),
     );
 
-    let mut borrowed_cache = cache.borrow_mut();
-    borrowed_cache.update_account(account.clone()).unwrap();
+    let mut cache_ref = cache.borrow_mut();
+    cache_ref.update_account(account.clone()).unwrap();
 
     if let Some(account_state) = account_state {
         msgbus::publish(
@@ -1256,9 +1254,9 @@ fn update_position(
     let instrument_id = event.instrument_id();
 
     let positions_open: Vec<Position> = {
-        let borrowed_cache = cache.borrow();
+        let cache_ref = cache.borrow();
 
-        borrowed_cache
+        cache_ref
             .positions_open(None, Some(&instrument_id), None, None)
             .iter()
             .map(|o| (*o).clone())
@@ -1292,16 +1290,16 @@ fn update_position(
         .realized_pnls
         .insert(event.instrument_id(), calculated_realized_pnl);
 
-    let borrowed_cache = cache.borrow();
-    let account = borrowed_cache.account(&event.account_id());
+    let cache_ref = cache.borrow();
+    let account = cache_ref.account(&event.account_id());
 
     if let Some(AccountAny::Margin(margin_account)) = account {
         if !margin_account.calculate_account_state {
             return; // Nothing to calculate
         }
 
-        let borrowed_cache = cache.borrow();
-        let instrument = if let Some(instrument) = borrowed_cache.instrument(&instrument_id) {
+        let cache_ref = cache.borrow();
+        let instrument = if let Some(instrument) = cache_ref.instrument(&instrument_id) {
             instrument
         } else {
             log::error!("Cannot update position: no instrument found for {instrument_id}");
@@ -1314,9 +1312,9 @@ fn update_position(
             positions_open.iter().collect(),
             clock.borrow().timestamp_ns(),
         );
-        let mut borrowed_cache = cache.borrow_mut();
+        let mut cache_ref = cache.borrow_mut();
         if let Some((margin_account, _)) = result {
-            borrowed_cache
+            cache_ref
                 .add_account(AccountAny::Margin(margin_account)) // Temp Fix to update the mutated account
                 .unwrap();
         }
@@ -1329,13 +1327,13 @@ fn update_position(
 }
 
 pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
-    let mut borrowed_cache = cache.borrow_mut();
+    let mut cache_ref = cache.borrow_mut();
 
-    if let Some(existing) = borrowed_cache.account(&event.account_id) {
+    if let Some(existing) = cache_ref.account(&event.account_id) {
         let mut account = existing.clone();
         account.apply(event.clone());
 
-        if let Err(e) = borrowed_cache.update_account(account.clone()) {
+        if let Err(e) = cache_ref.update_account(account.clone()) {
             log::error!("Failed to update account: {e}");
             return;
         }
@@ -1348,7 +1346,7 @@ pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
             }
         };
 
-        if let Err(e) = borrowed_cache.add_account(account) {
+        if let Err(e) = cache_ref.add_account(account) {
             log::error!("Failed to add account: {e}");
             return;
         }

@@ -28,9 +28,11 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
+//! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]
 // #![deny(clippy::missing_errors_doc)]
 

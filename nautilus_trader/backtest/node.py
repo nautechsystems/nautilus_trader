@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 from decimal import Decimal
 
 import pandas as pd
@@ -29,6 +30,7 @@ from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -227,8 +229,16 @@ class BacktestNode:
                     _guard = init_logging()
 
                 log = Logger(type(self).__name__)
-                log.error(f"Error running backtest: {e}")
-                log.info(f"Config: {config}")
+                log.exception("Error running backtest", e)
+                if config.engine is not None:
+                    log.info("Engine config:", LogColor.MAGENTA)
+                    log.info(json.dumps(json.loads(config.engine.json()), indent=2))
+                log.info("Venue configs:", LogColor.MAGENTA)
+                for venue_config in config.venues:
+                    log.info(json.dumps(json.loads(venue_config.json()), indent=2))
+                log.info("Data configs:", LogColor.MAGENTA)
+                for data_config in config.data:
+                    log.info(json.dumps(json.loads(data_config.json()), indent=2))
 
                 if raise_exception:
                     raise e

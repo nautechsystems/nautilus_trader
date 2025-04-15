@@ -66,6 +66,7 @@ from nautilus_trader.common.component cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_optional_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
@@ -1096,6 +1097,7 @@ cdef class BacktestEngine:
         else:
             start = pd.to_datetime(start, utc=True)
             start_ns = start.value
+
         if end is None:
             # Set `end` to end of data
             end_ns = self._data[-1].ts_init
@@ -1122,7 +1124,6 @@ cdef class BacktestEngine:
 
             for exchange in self._venues.values():
                 exchange.initialize_account()
-                ###################################################################################
                 open_orders = self._kernel.cache.orders_open(venue=exchange.id)
 
                 for order in open_orders:
@@ -1139,22 +1140,23 @@ cdef class BacktestEngine:
                         continue
 
                     matching_engine.process_order(order, order.account_id)
-                ###################################################################################
 
             # Reset any previously set FORCE_STOP
             set_backtest_force_stop(False)
 
-            # Common kernel start-up sequence
-            self._kernel.start()
+            # Set start time of all components including logging
+            for clock in get_component_clocks(self._instance_id):
+                clock.set_time(start_ns)
 
-            # Change logger clock for the run
-            self._kernel.clock.set_time(start_ns)
             set_logging_clock_static_mode()
             set_logging_clock_static_time(start_ns)
 
             if LOGGING_PYO3:
                 nautilus_pyo3.logging_clock_set_static_mode()
                 nautilus_pyo3.logging_clock_set_static_time(start_ns)
+
+            # Common kernel start-up sequence
+            self._kernel.start()
 
             self._log_pre_run()
 
@@ -1187,7 +1189,10 @@ cdef class BacktestEngine:
                     raw_handlers_count = raw_handlers.len
 
                 # Process data through exchange
-                if isinstance(data, OrderBookDelta):
+                if isinstance(data, Instrument):
+                    exchange = self._venues[data.id.venue]
+                    exchange.update_instrument(data)
+                elif isinstance(data, OrderBookDelta):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
@@ -1380,10 +1385,10 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Batch start:    {format_iso8601(start)}")
-        self._log.info(f"Batch end:      {format_iso8601(end)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Batch start:    {format_optional_iso8601(start)}")
+        self._log.info(f"Batch end:      {format_optional_iso8601(end)}")
         self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -1404,11 +1409,11 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Run finished:   {format_iso8601(self._run_finished)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Run finished:   {format_optional_iso8601(self._run_finished)}")
         self._log.info(f"Elapsed time:   {elapsed_time}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_optional_iso8601(self._backtest_end)}")
         self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:_}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")

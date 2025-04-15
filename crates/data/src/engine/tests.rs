@@ -26,7 +26,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepths10,
+        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
         SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
         SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
         UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
@@ -230,7 +230,7 @@ fn test_execute_subscribe_book_deltas(
     );
 }
 
-#[ignore] // TODO: Attempt to subtract with overflow
+#[ignore = "Attempt to subtract with overflow"]
 #[rstest]
 fn test_execute_subscribe_book_snapshots(
     audusd_sim: CurrencyPair,
@@ -719,7 +719,7 @@ fn test_process_book_delta(
 
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = switchboard::get_deltas_topic(delta.instrument_id);
+    let topic = switchboard::get_book_deltas_topic(delta.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -764,7 +764,7 @@ fn test_process_book_deltas(
     // TODO: Using FFI API wrapper temporarily until Cython gone
     let deltas = OrderBookDeltas_API::new(stub_deltas());
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
-    let topic = switchboard::get_deltas_topic(deltas.instrument_id);
+    let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -786,7 +786,7 @@ fn test_process_book_depth10(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeBookDepths10::new(
+    let cmd = SubscribeBookDepth10::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -797,7 +797,7 @@ fn test_process_book_depth10(
         true,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepths10(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
@@ -809,7 +809,7 @@ fn test_process_book_depth10(
 
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
-    let topic = switchboard::get_depth_topic(depth.instrument_id);
+    let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
@@ -946,7 +946,7 @@ fn test_process_mark_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process(&mark_price as &dyn Any);
+    data_engine.process_data(Data::MarkPriceUpdate(mark_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<MarkPriceUpdate>(handler);
 
@@ -1005,7 +1005,7 @@ fn test_process_index_price(
     msgbus::subscribe(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process(&index_price as &dyn Any);
+    data_engine.process_data(Data::IndexPriceUpdate(index_price));
     let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<IndexPriceUpdate>(handler);
 

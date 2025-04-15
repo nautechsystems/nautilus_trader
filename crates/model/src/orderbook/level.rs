@@ -23,6 +23,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     data::order::{BookOrder, OrderId},
+    enums::OrderSideSpecified,
     orderbook::{BookIntegrityError, BookPrice},
     types::{fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
@@ -59,6 +60,10 @@ impl BookLevel {
         };
         level.add(order);
         level
+    }
+
+    pub fn side(&self) -> OrderSideSpecified {
+        self.price.side
     }
 
     /// Returns the number of orders at this price level.
@@ -205,6 +210,7 @@ mod tests {
     fn test_empty_level() {
         let level = BookLevel::new(BookPrice::new(Price::from("1.00"), OrderSideSpecified::Buy));
         assert!(level.first().is_none());
+        assert_eq!(level.side(), OrderSideSpecified::Buy);
     }
 
     #[rstest]

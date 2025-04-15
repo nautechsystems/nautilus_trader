@@ -30,12 +30,12 @@ cpdef inline OrderBook create_betfair_order_book(InstrumentId instrument_id):
     )
 
 
-
 cpdef Price betfair_float_to_price(double value):
     try:
         return BETFAIR_FLOAT_TO_PRICE[value]
     except KeyError:
         return Price(value, BETFAIR_PRICE_PRECISION)
+
 
 cpdef Quantity betfair_float_to_quantity(double value):
     return Quantity(value, BETFAIR_QUANTITY_PRECISION)

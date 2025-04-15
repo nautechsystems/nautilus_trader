@@ -233,8 +233,9 @@ impl Quota {
 //     use nonzero_ext::nonzero;
 
 //     use super::*;
+//     use rstest::rstest;
 
-//     #[test]
+//     #[rstest]
 //     fn time_multiples() {
 //         let hourly = Quota::per_hour(nonzero!(1u32));
 //         let minutely = Quota::per_minute(nonzero!(1u32));
@@ -250,7 +251,7 @@ impl Quota {
 //         );
 //     }
 
-//     #[test]
+//     #[rstest]
 //     fn period_error_cases() {
 //         assert!(Quota::with_period(Duration::from_secs(0)).is_none());
 

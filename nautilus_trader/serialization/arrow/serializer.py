@@ -28,6 +28,9 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -57,6 +60,9 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.QuoteTick,
     nautilus_pyo3.TradeTick,
     nautilus_pyo3.Bar,
+    nautilus_pyo3.MarkPriceUpdate,
+    nautilus_pyo3.IndexPriceUpdate,
+    nautilus_pyo3.InstrumentClose,
 ]
 
 _ARROW_ENCODERS: dict[type, Callable] = {}
@@ -130,38 +136,53 @@ class ArrowSerializer:
 
         match data_cls:
             case nautilus_pyo3.OrderBookDelta:
-                batch_bytes = nautilus_pyo3.order_book_deltas_to_arrow_record_batch_bytes(
+                batch_bytes = nautilus_pyo3.book_deltas_to_arrow_record_batch_bytes(
                     data,
                 )
             case nautilus_pyo3.OrderBookDepth10:
-                batch_bytes = nautilus_pyo3.order_book_depth10_to_arrow_record_batch_bytes(
+                batch_bytes = nautilus_pyo3.book_depth10_to_arrow_record_batch_bytes(
                     data,
                 )
             case nautilus_pyo3.QuoteTick:
-                batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.quotes_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.TradeTick:
-                batch_bytes = nautilus_pyo3.trade_ticks_to_arrow_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.trades_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.Bar:
                 batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(data)
             case _:
                 if data_cls == OrderBookDelta or data_cls == OrderBookDeltas:
                     pyo3_deltas = OrderBookDelta.to_pyo3_list(data)
-                    batch_bytes = nautilus_pyo3.order_book_deltas_to_arrow_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.book_deltas_to_arrow_record_batch_bytes(
                         pyo3_deltas,
                     )
                 elif data_cls == QuoteTick:
                     pyo3_quotes = QuoteTick.to_pyo3_list(data)
-                    batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.quotes_to_arrow_record_batch_bytes(
                         pyo3_quotes,
                     )
                 elif data_cls == TradeTick:
                     pyo3_trades = TradeTick.to_pyo3_list(data)
-                    batch_bytes = nautilus_pyo3.trade_ticks_to_arrow_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.trades_to_arrow_record_batch_bytes(
                         pyo3_trades,
                     )
                 elif data_cls == Bar:
                     pyo3_bars = Bar.to_pyo3_list(data)
                     batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(pyo3_bars)
+                elif data_cls == MarkPriceUpdate:
+                    pyo3_mark_prices = MarkPriceUpdate.to_pyo3_list(data)
+                    batch_bytes = nautilus_pyo3.mark_prices_to_arrow_record_batch_bytes(
+                        pyo3_mark_prices,
+                    )
+                elif data_cls == IndexPriceUpdate:
+                    pyo3_index_prices = IndexPriceUpdate.to_pyo3_list(data)
+                    batch_bytes = nautilus_pyo3.index_prices_to_arrow_record_batch_bytes(
+                        pyo3_index_prices,
+                    )
+                elif data_cls == InstrumentClose:
+                    pyo3_instrument_closes = InstrumentClose.to_pyo3_list(data)
+                    batch_bytes = nautilus_pyo3.instrument_closes_to_arrow_record_batch_bytes(
+                        pyo3_instrument_closes,
+                    )
                 elif data_cls == OrderBookDepth10:
                     raise RuntimeError(
                         f"Unsupported Rust defined data type for catalog write, was `{data_cls}`. "
@@ -273,7 +294,14 @@ class ArrowSerializer:
             QuoteTick: QuoteTickDataWranglerV2,
             TradeTick: TradeTickDataWranglerV2,
             Bar: BarDataWranglerV2,
+            MarkPriceUpdate: None,
+            IndexPriceUpdate: None,
+            InstrumentClose: None,
         }[data_cls]
+
+        if Wrangler is None:
+            raise NotImplementedError
+
         wrangler = Wrangler.from_schema(table.schema)
         ticks = wrangler.from_arrow(table)
         return ticks
@@ -305,12 +333,15 @@ def dicts_to_record_batch(data: list[dict], schema: pa.Schema) -> pa.RecordBatch
 
 
 RUST_SERIALIZERS = {
-    QuoteTick,
-    TradeTick,
-    Bar,
     OrderBookDelta,
     OrderBookDeltas,
     OrderBookDepth10,
+    QuoteTick,
+    TradeTick,
+    Bar,
+    MarkPriceUpdate,
+    IndexPriceUpdate,
+    # InstrumentClose,  # TODO: Not implemented yet
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 

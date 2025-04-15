@@ -183,7 +183,7 @@ def test_tardis_load_quotes(
 
     # Assert
     assert len(trades) == 10_000
-    assert trades[0].instrument_id == InstrumentId.from_str("BTC-USD.HUOBI")
+    assert trades[0].instrument_id == InstrumentId.from_str("BTC-USD.HUOBI_DELIVERY")
     assert trades[0].bid_price == Price.from_str("8629.2")
     assert trades[0].ask_price == Price.from_str("8629.3")
     assert trades[0].bid_size == Quantity.from_str("806")

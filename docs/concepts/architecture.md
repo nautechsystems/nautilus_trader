@@ -48,7 +48,7 @@ The NautilusTrader codebase is actually both a framework for composing trading
 systems, and a set of default system implementations which can operate in various
 [environment contexts](/concepts/architecture.md#environment-contexts).
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/assets/architecture-overview.png?raw=true "architecture")
 
 ### Environment contexts
 

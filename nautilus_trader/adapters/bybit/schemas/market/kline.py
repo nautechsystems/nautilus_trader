@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
+
 import msgspec
 
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -38,7 +40,14 @@ class BybitKline(msgspec.Struct, array_like=True):
         self,
         bar_type: BarType,
         ts_init: int,
+        timestamp_on_close: bool,
     ) -> Bar:
+        ts_event = millis_to_nanos(int(self.startTime))
+
+        if timestamp_on_close:
+            interval_ms = bar_type.spec.timedelta / dt.timedelta(milliseconds=1)
+            ts_event += millis_to_nanos(interval_ms)
+
         return Bar(
             bar_type=bar_type,
             open=Price.from_str(self.openPrice),
@@ -46,7 +55,7 @@ class BybitKline(msgspec.Struct, array_like=True):
             low=Price.from_str(self.lowPrice),
             close=Price.from_str(self.closePrice),
             volume=Quantity.from_str(self.volume),
-            ts_event=millis_to_nanos(int(self.startTime)),
+            ts_event=ts_event,
             ts_init=ts_init,
         )
 

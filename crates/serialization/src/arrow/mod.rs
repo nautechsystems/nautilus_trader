@@ -16,8 +16,11 @@
 //! Defines the Apache Arrow schema for Nautilus types.
 
 pub mod bar;
+pub mod close;
 pub mod delta;
 pub mod depth;
+pub mod index_price;
+pub mod mark_price;
 pub mod quote;
 pub mod trade;
 
@@ -35,8 +38,8 @@ use arrow::{
 };
 use nautilus_model::{
     data::{
-        Data, bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        trade::TradeTick,
+        Data, IndexPriceUpdate, MarkPriceUpdate, bar::Bar, close::InstrumentClose,
+        delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
     },
     types::{price::PriceRaw, quantity::QuantityRaw},
 };
@@ -50,10 +53,10 @@ const KEY_SIZE_PRECISION: &str = "size_precision";
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
-    #[error("Arrow error: {0}")]
-    ArrowError(#[from] arrow::error::ArrowError),
     #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
+    #[error("Arrow error: {0}")]
+    ArrowError(#[from] arrow::error::ArrowError),
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
 }
@@ -173,7 +176,7 @@ pub fn extract_column<'a, T: Array + 'static>(
     Ok(downcasted_values)
 }
 
-pub fn order_book_deltas_to_arrow_record_batch_bytes(
+pub fn book_deltas_to_arrow_record_batch_bytes(
     data: Vec<OrderBookDelta>,
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
@@ -185,7 +188,7 @@ pub fn order_book_deltas_to_arrow_record_batch_bytes(
     OrderBookDelta::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
-pub fn order_book_depth10_to_arrow_record_batch_bytes(
+pub fn book_depth10_to_arrow_record_batch_bytes(
     data: Vec<OrderBookDepth10>,
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
@@ -199,7 +202,7 @@ pub fn order_book_depth10_to_arrow_record_batch_bytes(
     OrderBookDepth10::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
-pub fn quote_ticks_to_arrow_record_batch_bytes(
+pub fn quotes_to_arrow_record_batch_bytes(
     data: Vec<QuoteTick>,
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
@@ -213,7 +216,7 @@ pub fn quote_ticks_to_arrow_record_batch_bytes(
     QuoteTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
 
-pub fn trade_ticks_to_arrow_record_batch_bytes(
+pub fn trades_to_arrow_record_batch_bytes(
     data: Vec<TradeTick>,
 ) -> Result<RecordBatch, EncodingError> {
     if data.is_empty() {
@@ -237,4 +240,46 @@ pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, E
     let first = data.first().unwrap();
     let metadata = first.metadata();
     Bar::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn mark_prices_to_arrow_record_batch_bytes(
+    data: Vec<MarkPriceUpdate>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = first.metadata();
+    MarkPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn index_prices_to_arrow_record_batch_bytes(
+    data: Vec<IndexPriceUpdate>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = first.metadata();
+    IndexPriceUpdate::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn instrument_closes_to_arrow_record_batch_bytes(
+    data: Vec<InstrumentClose>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = first.metadata();
+    InstrumentClose::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }

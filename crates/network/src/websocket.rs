@@ -67,6 +67,7 @@ pub enum Consumer {
 }
 
 impl Consumer {
+    #[must_use]
     pub fn rust_consumer() -> (Self, Receiver<Message>) {
         let (tx, rx) = mpsc::channel(100);
         (Self::Rust(tx), rx)

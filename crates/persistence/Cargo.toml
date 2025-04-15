@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-persistence"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_persistence"
@@ -18,7 +25,10 @@ extension-module = [
   "nautilus-model/extension-module",
   "nautilus-serialization/extension-module",
 ]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
+ffi = [
+  "nautilus-core/ffi",
+  "nautilus-model/ffi",
+]
 python = [
   "pyo3",
   "nautilus-core/ffi",
@@ -29,14 +39,19 @@ python = [
 high-precision = [
   "nautilus-serialization/high-precision",
   "nautilus-model/high-precision",
-  "nautilus-test-kit/high-precision",
+  "nautilus-testkit/high-precision",
 ]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-core = { path = "../core", features = ["ffi"] }
-nautilus-common = { path = "../common" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-serialization = { path = "../serialization" , features = ["python"]}
+nautilus-core = { workspace = true, features = ["ffi"] }
+nautilus-common = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-serialization = { workspace = true, features = ["python"]}
+
 futures = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
@@ -59,7 +74,7 @@ object_store = "0.11.2"  # Keep in line with datafusion
 walkdir = "2.5.0"
 
 [dev-dependencies]
-nautilus-test-kit = { path = "../test_kit" }
+nautilus-testkit = { path = "../testkit" }
 criterion = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }

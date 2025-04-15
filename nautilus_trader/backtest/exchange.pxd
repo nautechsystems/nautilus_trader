@@ -135,6 +135,7 @@ cdef class SimulatedExchange:
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void adjust_account(self, Money adjustment)
+    cpdef void update_instrument(self, Instrument instrument)
     cdef tuple generate_inflight_command(self, TradingCommand command)
     cpdef void send(self, TradingCommand command)
     cpdef void process_order_book_delta(self, OrderBookDelta delta)

@@ -43,11 +43,6 @@ pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow
 
 /// Repeatedly evaluates a condition with a delay until it becomes true or a timeout occurs.
 ///
-/// * `condition`: A closure that represents the condition to be met. This closure should return `true`
-///                when the condition is met and `false` otherwise.
-/// * `timeout`: The maximum amount of time to wait for the condition to be met. If this duration is
-///              exceeded, the function will panic.
-///
 /// # Panics
 ///
 /// This function will panic if the timeout duration is exceeded without the condition being met.

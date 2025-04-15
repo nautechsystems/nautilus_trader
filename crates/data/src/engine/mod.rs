@@ -56,9 +56,9 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{
-        DataCommand, DataRequest, DataResponse, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepths10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepths10, UnsubscribeBookSnapshots,
+        DataCommand, DataResponse, RequestCommand, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand,
     },
     msgbus::{
@@ -76,6 +76,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
         TradeTick,
+        close::InstrumentClose,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, BarAggregation, BookType, PriceType, RecordFlag},
@@ -216,17 +217,7 @@ impl DataEngine {
         subs
     }
 
-    fn get_client(&self, client_id: &ClientId, venue: &Venue) -> Option<&DataClientAdapter> {
-        match self.clients.get(client_id) {
-            Some(client) => Some(client),
-            None => self
-                .routing_map
-                .get(venue)
-                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
-        }
-    }
-
-    fn get_client_mut(
+    fn get_client(
         &mut self,
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
@@ -284,16 +275,6 @@ impl DataEngine {
     }
 
     #[must_use]
-    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
-    }
-
-    #[must_use]
-    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
-    }
-
-    #[must_use]
     pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_mark_prices)
     }
@@ -301,6 +282,16 @@ impl DataEngine {
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
     pub fn on_start(self) {
@@ -362,10 +353,7 @@ impl DataEngine {
         let result = match cmd {
             DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
             DataCommand::Unsubscribe(cmd) => self.execute_unsubscribe(cmd),
-            DataCommand::Request(cmd) => {
-                self.execute_request(cmd);
-                Ok(())
-            }
+            DataCommand::Request(cmd) => self.execute_request(cmd),
         };
 
         if let Err(e) = result {
@@ -376,13 +364,13 @@ impl DataEngine {
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
-            SubscribeCommand::BookDepths10(cmd) => self.subscribe_book_depths(cmd)?,
+            SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
             SubscribeCommand::BookSnapshots(cmd) => self.subscribe_book_snapshots(cmd)?,
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd)?,
             _ => {} // Do nothing else
         }
 
-        if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe_command(cmd.clone());
         } else {
             log::error!(
@@ -398,13 +386,13 @@ impl DataEngine {
     pub fn execute_unsubscribe(&mut self, cmd: UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
-            UnsubscribeCommand::BookDepths10(cmd) => self.unsubscribe_book_depths(cmd)?,
+            UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
             UnsubscribeCommand::BookSnapshots(cmd) => self.unsubscribe_book_snapshots(cmd)?,
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd)?,
             _ => {} // Do nothing else
         }
 
-        if let Some(client) = self.get_client_mut(cmd.client_id(), cmd.venue()) {
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe_command(cmd.clone());
         } else {
             log::error!(
@@ -417,14 +405,23 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Sends a [`DataRequest`] to an endpoint that must be a data client implementation.
-    pub fn execute_request(&self, req: DataRequest) {
-        if let Some(client) = self.get_client(&req.client_id, &req.venue) {
-            client.through_request(req);
+    /// Sends a [`RequestCommand`] to an endpoint that must be a data client implementation.
+    pub fn execute_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        if let Some(client) = self.get_client(req.client_id(), req.venue()) {
+            match req {
+                RequestCommand::Data(req) => client.request_data(req),
+                RequestCommand::Instrument(req) => client.request_instrument(req),
+                RequestCommand::Instruments(req) => client.request_instruments(req),
+                RequestCommand::BookSnapshot(req) => client.request_book_snapshot(req),
+                RequestCommand::Quotes(req) => client.request_quotes(req),
+                RequestCommand::Trades(req) => client.request_trades(req),
+                RequestCommand::Bars(req) => client.request_bars(req),
+            }
         } else {
-            log::error!(
-                "Cannot handle request: no client found for {}",
-                req.client_id
+            anyhow::bail!(
+                "Cannot handle request: no client found for {:?} {:?}",
+                req.client_id(),
+                req.venue()
             );
         }
     }
@@ -433,10 +430,6 @@ impl DataEngine {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
-        } else if let Some(mark_price) = data.downcast_ref::<MarkPriceUpdate>() {
-            self.handle_mark_price(*mark_price);
-        } else if let Some(index_price) = data.downcast_ref::<IndexPriceUpdate>() {
-            self.handle_index_price(*index_price);
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");
         }
@@ -450,9 +443,13 @@ impl DataEngine {
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
+            Data::MarkPriceUpdate(mark_price) => self.handle_mark_price(mark_price),
+            Data::IndexPriceUpdate(index_price) => self.handle_index_price(index_price),
+            Data::InstrumentClose(close) => self.handle_instrument_close(close),
         }
     }
 
+    // TODO: Upgrade to response message handling
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
@@ -521,7 +518,7 @@ impl DataEngine {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
 
-        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
+        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
         msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
@@ -554,13 +551,13 @@ impl DataEngine {
             deltas
         };
 
-        let topic = switchboard::get_deltas_topic(deltas.instrument_id);
-        msgbus::publish(&topic, &deltas as &dyn Any); // TODO: Optimize
+        let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
+        msgbus::publish(&topic, &deltas as &dyn Any);
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
-        let topic = switchboard::get_depth_topic(depth.instrument_id);
-        msgbus::publish(&topic, &depth as &dyn Any); // TODO: Optimize
+        let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
+        msgbus::publish(&topic, &depth as &dyn Any);
     }
 
     fn handle_quote(&mut self, quote: QuoteTick) {
@@ -571,7 +568,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let topic = switchboard::get_quotes_topic(quote.instrument_id);
-        msgbus::publish(&topic, &quote as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &quote as &dyn Any);
     }
 
     fn handle_trade(&mut self, trade: TradeTick) {
@@ -582,7 +579,7 @@ impl DataEngine {
         // TODO: Handle synthetics
 
         let topic = switchboard::get_trades_topic(trade.instrument_id);
-        msgbus::publish(&topic, &trade as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &trade as &dyn Any);
     }
 
     fn handle_bar(&mut self, bar: Bar) {
@@ -612,7 +609,7 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_bars_topic(bar.bar_type);
-        msgbus::publish(&topic, &bar as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &bar as &dyn Any);
     }
 
     fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
@@ -621,7 +618,7 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
-        msgbus::publish(&topic, &mark_price as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &mark_price as &dyn Any);
     }
 
     fn handle_index_price(&mut self, index_price: IndexPriceUpdate) {
@@ -635,7 +632,12 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_index_price_topic(index_price.instrument_id);
-        msgbus::publish(&topic, &index_price as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &index_price as &dyn Any);
+    }
+
+    fn handle_instrument_close(&mut self, close: InstrumentClose) {
+        let topic = switchboard::get_instrument_close_topic(close.instrument_id);
+        msgbus::publish(&topic, &close as &dyn Any);
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
@@ -656,7 +658,7 @@ impl DataEngine {
         Ok(())
     }
 
-    fn subscribe_book_depths(&mut self, cmd: &SubscribeBookDepths10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         if cmd.instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
@@ -718,6 +720,7 @@ impl DataEngine {
                         start_time_ns.into(),
                         None,
                         Some(callback),
+                        None,
                     )
                     .expect(FAILED);
             }
@@ -754,8 +757,8 @@ impl DataEngine {
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -765,15 +768,15 @@ impl DataEngine {
         Ok(())
     }
 
-    fn unsubscribe_book_depths(&mut self, cmd: &UnsubscribeBookDepths10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
             return Ok(());
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -790,8 +793,8 @@ impl DataEngine {
         }
 
         let topics = vec![
-            switchboard::get_deltas_topic(cmd.instrument_id),
-            switchboard::get_depth_topic(cmd.instrument_id),
+            switchboard::get_book_deltas_topic(cmd.instrument_id),
+            switchboard::get_book_depth10_topic(cmd.instrument_id),
             switchboard::get_book_snapshots_topic(cmd.instrument_id),
         ];
 
@@ -902,12 +905,12 @@ impl DataEngine {
 
         let handler = ShareableMessageHandler(updater);
 
-        let topic = switchboard::get_deltas_topic(*instrument_id);
+        let topic = switchboard::get_book_deltas_topic(*instrument_id);
         if !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
-        let topic = switchboard::get_depth_topic(*instrument_id);
+        let topic = switchboard::get_book_depth10_topic(*instrument_id);
         if !only_deltas && !msgbus::is_subscribed(topic, handler.clone()) {
             msgbus::subscribe(topic, handler, Some(self.msgbus_priority));
         }

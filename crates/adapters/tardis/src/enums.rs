@@ -19,6 +19,8 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use ustr::Ustr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 /// The instrument type for the symbol.
 pub enum InstrumentType {
@@ -167,8 +169,8 @@ impl Exchange {
                 Self::HuobiDm,
                 Self::HuobiDmLinearSwap,
                 Self::HuobiDmOptions,
-                Self::HuobiDmSwap,
             ],
+            "HUOBI_DELIVERY" => vec![Self::HuobiDmSwap],
             "KRAKEN" => vec![Self::Kraken],
             "KUCOIN" => vec![Self::Kucoin],
             "MANGO" => vec![Self::Mango],
@@ -228,7 +230,7 @@ impl Exchange {
             Self::HuobiDm => "HUOBI",
             Self::HuobiDmLinearSwap => "HUOBI",
             Self::HuobiDmOptions => "HUOBI",
-            Self::HuobiDmSwap => "HUOBI",
+            Self::HuobiDmSwap => "HUOBI_DELIVERY",
             Self::Kraken => "KRAKEN",
             Self::Kucoin => "KUCOIN",
             Self::Mango => "MANGO",

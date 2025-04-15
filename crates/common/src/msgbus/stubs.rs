@@ -30,6 +30,7 @@ use uuid::Uuid;
 use crate::msgbus::{ShareableMessageHandler, handler::MessageHandler};
 
 // Stub message handler which logs the data it receives
+#[allow(missing_debug_implementations)]
 pub struct StubMessageHandler {
     id: Ustr,
     callback: Arc<dyn Fn(Message) + Send>,
@@ -65,6 +66,7 @@ pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
 }
 
 // Stub message handler which checks if handle was called
+#[derive(Debug)]
 pub struct CallCheckMessageHandler {
     id: Ustr,
     called: Arc<AtomicBool>,

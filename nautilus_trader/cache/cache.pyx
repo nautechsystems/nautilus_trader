@@ -829,6 +829,11 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
+        cdef Position position = self.position_for_order(client_order_id)
+
+        if position is not None:
+            position.purge_events_for_order(client_order_id)
+
         cdef Order order = self._orders.pop(client_order_id, None)
 
         if order is None:
@@ -854,11 +859,6 @@ cdef class Cache(CacheFacade):
         self._index_orders_emulated.discard(client_order_id)
         self._index_orders_inflight.discard(client_order_id)
         self._index_orders_pending_cancel.discard(client_order_id)
-
-        cdef Position position = self.position_for_order(client_order_id)
-
-        if position is not None:
-            position.purge_events_for_order(client_order_id)
 
     cpdef void purge_position(self, PositionId position_id):
         """

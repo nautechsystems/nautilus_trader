@@ -6,6 +6,9 @@
 *.lib
 *.xml
 
+# Git
+*.diff
+
 # Logs and patches
 *.log
 *.patch

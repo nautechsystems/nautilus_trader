@@ -20,13 +20,13 @@ use rstest::fixture;
 
 use super::{
     Bar, BarSpecification, BarType, DEPTH10_LEN, InstrumentStatus, OrderBookDelta, OrderBookDeltas,
-    OrderBookDepth10, QuoteTick, TradeTick,
+    OrderBookDepth10, QuoteTick, TradeTick, close::InstrumentClose,
 };
 use crate::{
     data::order::BookOrder,
     enums::{
-        AggregationSource, AggressorSide, BarAggregation, BookAction, MarketStatusAction,
-        OrderSide, PriceType,
+        AggregationSource, AggressorSide, BarAggregation, BookAction, InstrumentCloseType,
+        MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
     types::{Price, Quantity},
@@ -360,6 +360,19 @@ pub fn stub_instrument_status() -> InstrumentStatus {
     )
 }
 
+#[fixture]
+pub fn stub_instrument_close() -> InstrumentClose {
+    let instrument_id = InstrumentId::from("MSFT.XNAS");
+    InstrumentClose::new(
+        instrument_id,
+        Price::from("100.50"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    )
+}
+
+#[derive(Debug)]
 pub struct OrderBookDeltaTestBuilder {
     instrument_id: InstrumentId,
     action: Option<BookAction>,

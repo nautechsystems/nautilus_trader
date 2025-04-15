@@ -580,6 +580,17 @@ pub enum InstrumentCloseType {
     ContractExpired = 2,
 }
 
+/// Convert the given `value` to an [`InstrumentCloseType`].
+impl FromU8 for InstrumentCloseType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::EndOfSession),
+            2 => Some(Self::ContractExpired),
+            _ => None,
+        }
+    }
+}
+
 /// The liqudity side for a trade.
 #[repr(C)]
 #[derive(

@@ -225,6 +225,7 @@ class BybitMarketHttpAPI:
         bar_type: BarType,
         interval: BybitKlineInterval,
         ts_init: int,
+        timestamp_on_close: bool,
         limit: int | None = None,
         start: int | None = None,
         end: int | None = None,
@@ -254,7 +255,7 @@ class BybitMarketHttpAPI:
 
             klines.sort(key=lambda k: int(k.startTime))
             new_bars = [
-                kline.parse_to_bar(bar_type, ts_init)
+                kline.parse_to_bar(bar_type, ts_init, timestamp_on_close)
                 for kline in klines
                 if int(kline.startTime) not in seen_timestamps
             ]

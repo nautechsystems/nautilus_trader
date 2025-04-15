@@ -1,4 +1,4 @@
-# <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-trader-logo.png" width="500">
+# <img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader-logo.png" width="500">
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 [![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
@@ -14,11 +14,12 @@
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
-| Platform           | Rust    | Python      |
-| :----------------- | :------ | :---------- |
-| `Linux (x86_64)`   | 1.85.1+ | 3.11, 3.12  |
-| `macOS (arm64)`    | 1.85.1+ | 3.11, 3.12  |
-| `Windows (x86_64)` | 1.85.1+ | 3.11, 3.12  |
+| Platform           | Rust    | Python     |
+| :----------------- | :------ | :--------- |
+| `Linux (x86_64)`   | 1.86.0+ | 3.11-3.13  |
+| `Linux (ARM64)`    | 1.86.0+ | 3.11-3.13  |
+| `macOS (ARM64)`    | 1.86.0+ | 3.11-3.13  |
+| `Windows (x86_64)` | 1.86.0+ | 3.11-3.13  |
 
 - **Docs**: https://nautilustrader.io/docs/
 - **Website**: https://nautilustrader.io
@@ -42,7 +43,7 @@ The platform is also universal, and asset-class-agnostic —  with any REST API 
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
-![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-trader.png "nautilus-trader")
+![nautilus-trader](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-trader.png "nautilus-trader")
 
 ## Features
 
@@ -57,7 +58,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/nautilus-art.png "nautilus")
+![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
 > _nautilus - from ancient Greek 'sailor' and naus 'ship'._
 >
@@ -212,8 +213,18 @@ To install the latest stable release:
 
 #### Development wheels
 
-Development wheels are published from both the `develop` and `nightly` branches for Linux and macOS,
+Development wheels are published from both the `nightly` and `develop` branches,
 allowing users to test features and fixes ahead of stable releases.
+
+**Note**: Wheels from the `develop` branch are only built for the Linux x86_64 platform to save time
+and compute resources, while `nightly` wheels support additional platforms as shown below.
+
+| Platform           | Nightly | Develop |
+| :----------------- | :------ | :------ |
+| `Linux (x86_64)`   | ✓       | ✓       |
+| `Linux (ARM64)`    | ✓       | -       |
+| `macOS (ARM64)`    | ✓       | -       |
+| `Windows (x86_64)` | ✓       | -       |
 
 This process also helps preserve compute resources and ensures easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
@@ -346,7 +357,7 @@ latency-sensitive applications, we recommend using Cython. Below are some exampl
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
 - [indicator](/nautilus_trader/indicators/) examples written in Cython.
-- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
+- [strategy](/nautilus_trader/examples/strategies/) examples written in Python.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
@@ -437,18 +448,15 @@ developer looking to contribute or just want to learn more about the platform, a
 ## License
 
 The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
-Contributions to the project are welcome and require the completion of a standard Contributor License Agreement (CLA).
+Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
 
 ---
 
-NautilusTrader is developed and maintained by Nautech Systems, a technology
+NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
-Although the project utilizes the Rust programming language and benefits from its ecosystem,
-Nautech Systems is not affiliated with the Rust Foundation, and this project is not an official
-work of the Rust Foundation.
 For more information, visit https://nautilustrader.io.
 
-Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 
-![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ns-logo.png "nautechsystems")
-<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/docs/_images/ferris.png" width="128">
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/ns-logo.png "nautechsystems")
+<img src="https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/ferris.png" width="128">

@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-portfolio"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_portfolio"
@@ -27,18 +34,22 @@ python = [
   "nautilus-model/python",
 ]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-analysis = { path = "../analysis" }
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-analysis = { workspace = true }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

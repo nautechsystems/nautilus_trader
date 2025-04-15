@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-data"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_data"
@@ -32,10 +39,15 @@ python = [
 clock_v2 = ["nautilus-common/clock_v2"]
 high-precision = ["nautilus-model/high-precision"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }

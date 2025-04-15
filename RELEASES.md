@@ -1,50 +1,130 @@
-# NautilusTrader 1.215.0 Beta
+# NautilusTrader 1.217.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
+None
+
+### Breaking Changes
+- Removed catalog `basename_template` argument (#2510), thanks @faysou
+
+### Internal Improvements
+- Upgraded `sqlx` crate to v0.8.4
+
+### Fixes
+- Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
+- Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
+- Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.216.0 Beta
+
+Released on 13th April 2025 (UTC).
+
+This release adds support for Python 3.13 (*not* yet compatible with free-threading),
+and introduces support for Linux on ARM64 architecture.
+
+### Enhancements
+- Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)
+- Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
+- Added risk engine check for GTD order expire time, which will deny if expire time is already in the past
+- Added instrument updating for exchange and matching engine
+- Added additional price and quantity precision validations for matching engine
+- Added log file rotation with additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
+- Added `bars_timestamp_on_close` config option for `BybitDataClientConfig` (default `True` to match Nautilus conventions)
+- Added `BetfairSequenceCompleted` custom data type for Betfair to mark the completion of a sequence of messages
+- Added Arrow schema for `MarkPriceUpdate` in Rust
+- Added Arrow schema for `IndexPriceUpdate` in Rust
+- Added Arrow schema for `InstrumentClose` in Rust
+- Added `BookLevel.side` property
+- Added `Position.closing_order_side()` instance method
+- Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
+- Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
+
+### Breaking Changes
+- Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
+
+### Internal Improvements
+- Added handling and warning for Betfair zero sized fills
+- Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
+- Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
+- Upgraded Cython to v3.1.0b1
+- Upgraded `redis` crate to v0.29.5
+- Upgraded `tokio` crate to v1.44.2
+
+### Fixes
+- Fixed setting component clocks to backtest start time
+- Fixed overflow error in trailing stop calculations
+- Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
+- Fixed `ts_event` for Bybit bars (#2502), thanks @davidsblom
+- Fixed position ID handling for Binance Futures in hedging mode with execution algorithm order (#2504), thanks for reporting @Oxygen923
+
+### Documentation Updates
+- Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.215.0 Beta
+
+Released on 5th April 2025 (UTC).
+
+### Enhancements
 - Added `Cache.purge_closed_order(...)`
 - Added `Cache.purge_closed_orders(...)`
 - Added `Cache.purge_closed_position(...)`
 - Added `Cache.purge_closed_positions(...)`
 - Added `Cache.purge_account_events(...)`
 - Added `Account.purge_account_events(...)`
-- Added `purge_closed_orders_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_closed_orders_buffer_ms` config option for `LiveExecEngineConfig`
-- Added `purge_closed_positions_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_closed_positions_buffer_ms` config option for `LiveExecEngineConfig`
-- Added `purge_account_events_interval_secs` config option for `LiveExecEngineConfig`
-- Added `purge_account_events_lookback_ms` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_orders_buffer_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_closed_positions_buffer_mins` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_interval_mins` config option for `LiveExecEngineConfig`
+- Added `purge_account_events_lookback_mins` config option for `LiveExecEngineConfig`
 - Added `Order.ts_closed` property
+- Added `instrument_ids` and `bar_types` for `BacktestDataConfig` to improve catalog query efficiency (#2478), thanks @faysou
 - Added `venue_dataset_map` config option for `DatabentoDataConfig` to override the default dataset used for a venue (#2483, #2485), thanks @faysou
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
-- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s
+- Added `Position.purge_events_for_order(...)` for purging `OrderFilled` events and `TradeId`s associated with a client order ID
 - Added `Consumer` for `WebSocketClient` (#2488), thanks @twitu
-- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increment and fee changes
+- Improved instrument parsing for Tardis with consistent `effective` timestamp filtering, settlement currency, increments and fees changes
 - Improved error logging for Betfair `update_account_state` task by logging the full stack trace on error
 - Improved logging for Redis cache database operations
 - Standardized unexpected exception logging to include full stack trace
 - Refined type handling for backtest configs
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 - Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
+- Refined time initialization of components in backtest (#2490), thanks @faysou
+- Upgraded Rust MSRV to 1.86.0
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes
-- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size
+- Fixed MBO feed handling for Databento where an initial snapshot was decoding a trade tick with zero size (#2476), thanks for reporting @JackWCollins
 - Fixed position state snapshots for closed positions where these snapshots were being incorrectly filtered
 - Fixed handling of `PolymarketTickSizeChanged` message
+- Fixed parsing spot instruments for Tardis where `size_increment` was zero, now inferred from base currency
+- Fixed default log colors for Rust (#2489), thanks @filipmacek
 - Fixed sccache key for uv in CI (#2482), thanks @davidsblom
 
 ### Documentation Updates
-- Clarify partial fills in backtesting concept guide (#2481), thanks @stefansimik
+- Clarified partial fills in backtesting concept guide (#2481), thanks @stefansimik
 
 ### Deprecations
-None
+- Deprecated strategies written in Cython and removed `ema_cross_cython` strategy example
 
 ---
 
@@ -2194,13 +2274,14 @@ Released on 12th December 2022 (UTC).
 
 Released on 10th December 2022 (UTC).
 
+This release adds support for Python 3.11.
+
 ### Breaking Changes
 - Renamed `OrderFactory.bracket_market` to `OrderFactory.bracket_market_entry`
 - Renamed `OrderFactory.bracket_limit` to `OrderFactory.bracket_limit_entry`
 - Renamed `OrderFactory` bracket order `price` and `trigger_price` parameters
 
 ### Enhancements
-- Added support for Python 3.11
 - Consolidated config objects to `msgspec` providing better performance and correctness
 - Added `OrderFactory.bracket_stop_limit_entry_stop_limit_tp(...)`
 - Numerous improvements to the Interactive Brokers adapter, thanks @limx0 and @rsmb7z

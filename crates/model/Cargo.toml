@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-model"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_model"
@@ -21,8 +28,13 @@ python = ["pyo3", "nautilus-core/python"]
 stubs = ["rstest"]
 high-precision = []
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-core = { path = "../core" }
+nautilus-core = { workspace = true }
+
 anyhow = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
@@ -45,7 +57,7 @@ tabled = "0.18.0"
 
 [dev-dependencies]
 nautilus-databento = { path = "../adapters/databento" }
-nautilus-test-kit = { path = "../test_kit" }
+nautilus-testkit = { path = "../testkit" }
 criterion = { workspace = true }
 float-cmp = { workspace = true }
 iai = { workspace = true }

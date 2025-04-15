@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-live"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_live"
@@ -39,21 +46,25 @@ python = [
 ]
 clock_v2 = ["nautilus-common/clock_v2"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-common = { path = "../common" }
-nautilus-core = { path = "../core" }
-nautilus-data = { path = "../data" }
-nautilus-execution = { path = "../execution" }
-nautilus-model = { path = "../model", features = ["stubs"] }
-nautilus-portfolio = { path = "../portfolio" }
-nautilus-risk = { path = "../risk" }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-data = { workspace = true }
+nautilus-execution = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-portfolio = { workspace = true }
+nautilus-risk = { workspace = true }
+
 anyhow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }

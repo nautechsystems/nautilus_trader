@@ -22,8 +22,10 @@ from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import IndexPriceUpdate
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -81,6 +83,18 @@ NAUTILUS_ARROW_SCHEMA = {
     Bar: pa.schema(
         [pa.field(k, infer_dtype(v), False) for k, v in nautilus_pyo3.Bar.get_fields().items()],
     ),
+    MarkPriceUpdate: pa.schema(
+        [
+            pa.field(k, infer_dtype(v), False)
+            for k, v in nautilus_pyo3.MarkPriceUpdate.get_fields().items()
+        ],
+    ),
+    IndexPriceUpdate: pa.schema(
+        [
+            pa.field(k, infer_dtype(v), False)
+            for k, v in nautilus_pyo3.IndexPriceUpdate.get_fields().items()
+        ],
+    ),
     InstrumentClose: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
@@ -91,6 +105,12 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={"type": "InstrumentClose"},
     ),
+    # InstrumentClose: pa.schema(  # TODO: Not implemented yet
+    #     [
+    #         pa.field(k, infer_dtype(v), False)
+    #         for k, v in nautilus_pyo3.InstrumentClose.get_fields().items()
+    #     ],
+    # ),
     InstrumentStatus: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),

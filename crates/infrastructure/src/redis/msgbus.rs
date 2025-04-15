@@ -26,8 +26,8 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        CLOSE_TOPIC,
-        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        BusMessage, CLOSE_TOPIC,
+        database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     },
     runtime::get_runtime,
 };
@@ -144,7 +144,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     }
 
     /// Returns whether the message bus database adapter publishing channel is closed.
-    #[must_use]
     fn is_closed(&self) -> bool {
         self.pub_tx.is_closed()
     }

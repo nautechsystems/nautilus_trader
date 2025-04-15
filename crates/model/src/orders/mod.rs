@@ -127,6 +127,11 @@ pub fn str_indexmap_to_ustr(h: IndexMap<String, String>) -> IndexMap<Ustr, Ustr>
 }
 
 impl OrderStatus {
+    /// Transitions the order state machine based on the given `event`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the state transition is invalid from the current status.
     #[rustfmt::skip]
     pub fn transition(&mut self, event: &OrderEventAny) -> Result<Self, OrderError> {
         let new_state = match (self, event) {
@@ -249,6 +254,11 @@ pub trait Order: 'static + Send {
     }
     fn commissions(&self) -> &IndexMap<Currency, Money>;
 
+    /// Applies the `event` to the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event is invalid for the current order status.
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
     fn update(&mut self, event: &OrderUpdated);
 
@@ -547,6 +557,11 @@ impl OrderCore {
         }
     }
 
+    /// Applies the `event` to the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event is invalid for the current order status.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         assert_eq!(self.client_order_id, event.client_order_id());
         assert_eq!(self.strategy_id, event.strategy_id());

@@ -894,7 +894,7 @@ def test_klines_subscribed_data(instrument_id: InstrumentId) -> None:
         low=Price.from_str("3248.1"),
         close=Price.from_str("3248.1"),
         volume=Quantity.from_str("2.015"),
-        ts_event=1722016620000000000,
+        ts_event=1722016680000000000,
         ts_init=0,
     )
 
@@ -972,7 +972,7 @@ def test_klines_channel_data(instrument_id: InstrumentId) -> None:
         low=Price.from_str("3246.5"),
         close=Price.from_str("3247.6"),
         volume=Quantity.from_str("6.364"),
-        ts_event=1722016440000000000,
+        ts_event=1722016500000000000,
         ts_init=0,
     )
 

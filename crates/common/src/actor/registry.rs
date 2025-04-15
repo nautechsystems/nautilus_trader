@@ -24,6 +24,7 @@ use ustr::Ustr;
 
 use super::Actor;
 
+#[allow(missing_debug_implementations)]
 pub struct ActorRegistry {
     actors: RefCell<HashMap<Ustr, Rc<UnsafeCell<dyn Actor>>>>,
 }

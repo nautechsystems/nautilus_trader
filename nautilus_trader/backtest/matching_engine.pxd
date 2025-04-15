@@ -131,6 +131,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void reset(self)
     cpdef void set_fill_model(self, FillModel fill_model)
+    cpdef void update_instrument(self, Instrument instrument)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

@@ -1,10 +1,17 @@
 [package]
 name = "nautilus-cryptography"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
+license.workspace = true
 description.workspace = true
+categories.workspace = true
+keywords.workspace = true
 documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "nautilus_cryptography"
@@ -21,8 +28,13 @@ python = [
   "nautilus-core/python",
 ]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
-nautilus-core = { path = "../core" }
+nautilus-core = { workspace = true }
+
 anyhow = { workspace = true }
 base64 = { workspace = true }
 hex = { workspace = true }
@@ -30,8 +42,8 @@ pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 ring = { workspace = true }
 tracing = { workspace = true }
-rustls = { version = "0.23.25", features = ["ring"] }
-rustls-platform-verifier = "0.5.0"
+rustls = { version = "0.23.26", features = ["ring"] }
+rustls-platform-verifier = "0.5.1"
 pem = "3.0.5"
 
 [dev-dependencies]

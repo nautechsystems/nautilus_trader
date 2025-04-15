@@ -4,6 +4,7 @@
   "exchange": "bitmex",
   "baseCurrency": "BTC",
   "quoteCurrency": "USD",
+  "settlementCurrency": "BTC",
   "type": "perpetual",
   "active": true,
   "availableSince": "2019-03-30T00:00:00.000Z",

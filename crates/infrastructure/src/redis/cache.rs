@@ -272,7 +272,7 @@ async fn process_commands(
         } else {
             match rx.recv().await {
                 Some(cmd) => {
-                    tracing::trace!("Received command {cmd:?}");
+                    tracing::debug!("Received {cmd:?}");
                     if let DatabaseOperation::Close = cmd.op_type {
                         break;
                     }
@@ -626,13 +626,24 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         tracing::debug!("Loading all data");
 
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
+        let (
+            currencies,
+            instruments,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+            greeks,
+            yield_curves,
+        ) = try_join!(
             self.load_currencies(),
             self.load_instruments(),
             self.load_synthetics(),
             self.load_accounts(),
             self.load_orders(),
-            self.load_positions()
+            self.load_positions(),
+            self.load_greeks(),
+            self.load_yield_curves()
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
@@ -643,6 +654,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             accounts,
             orders,
             positions,
+            greeks,
+            yield_curves,
         })
     }
 

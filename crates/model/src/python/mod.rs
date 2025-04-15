@@ -69,6 +69,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
+    m.add_class::<crate::data::close::InstrumentClose>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::data::greeks::py_black_scholes_greeks,
         m

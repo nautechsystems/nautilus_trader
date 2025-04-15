@@ -18,10 +18,9 @@
 //! This module provides a trait and implementations for handling messages
 //! in a type-safe manner, enabling both typed and untyped message processing.
 
-use std::{any::Any, marker::PhantomData, rc::Rc};
+use std::{any::Any, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use ustr::Ustr;
-use uuid::Uuid;
 
 pub trait MessageHandler: Any {
     /// Returns the unique identifier for this handler.
@@ -32,6 +31,7 @@ pub trait MessageHandler: Any {
     fn as_any(&self) -> &dyn Any;
 }
 
+#[derive(Debug)]
 pub struct TypedMessageHandler<T: 'static + ?Sized, F: Fn(&T) + 'static> {
     id: Ustr,
     callback: F,
@@ -43,7 +43,8 @@ impl<T: 'static, F: Fn(&T) + 'static> TypedMessageHandler<T, F> {
     pub fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(generate_unique_handler_id);
+            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
+
         Self {
             id: id_ustr,
             callback,
@@ -78,7 +79,7 @@ impl<F: Fn(&dyn Any) + 'static> TypedMessageHandler<dyn Any, F> {
     pub fn new_any<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(generate_unique_handler_id);
+            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
 
         Self {
             id: id_ustr,
@@ -112,13 +113,25 @@ impl<F: Fn(&dyn Any) + 'static> MessageHandler for TypedMessageHandler<dyn Any, 
     }
 }
 
-fn generate_unique_handler_id() -> Ustr {
-    Ustr::from(&Uuid::new_v4().to_string())
+fn generate_deterministic_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(
+    callback: &F,
+) -> Ustr {
+    let callback_ptr = std::ptr::from_ref(callback);
+    Ustr::from(&format!("<{callback_ptr:?}>"))
 }
 
-#[derive(Clone)]
 #[repr(transparent)]
+#[derive(Clone)]
 pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl Debug for ShareableMessageHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ShareableMessageHandler))
+            .field("id", &self.0.id())
+            .field("type", &std::any::type_name::<Self>().to_string())
+            .finish()
+    }
+}
 
 impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
     fn from(value: Rc<dyn MessageHandler>) -> Self {

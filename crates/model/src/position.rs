@@ -113,7 +113,7 @@ impl Position {
             is_inverse: instrument.is_inverse(),
             base_currency: instrument.base_currency(),
             quote_currency: instrument.quote_currency(),
-            settlement_currency: instrument.settlement_currency(),
+            settlement_currency: instrument.cost_currency(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,
@@ -126,6 +126,23 @@ impl Position {
         };
         item.apply(&fill);
         item
+    }
+
+    /// Purges all order fill events for the given client order ID.
+    pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+        // Create new vectors without the events from the specified order
+        let mut filtered_events = Vec::new();
+        let mut filtered_trade_ids = Vec::new();
+
+        for event in &self.events {
+            if event.client_order_id != client_order_id {
+                filtered_events.push(*event);
+                filtered_trade_ids.push(event.trade_id);
+            }
+        }
+
+        self.events = filtered_events;
+        self.trade_ids = filtered_trade_ids;
     }
 
     pub fn apply(&mut self, fill: &OrderFilled) {
@@ -205,7 +222,7 @@ impl Position {
         self.ts_last = fill.ts_event;
     }
 
-    pub fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
+    fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
         // Handle case where commission could be None or not settlement currency
         let mut realized_pnl = if let Some(commission) = fill.commission {
             if commission.currency == self.settlement_currency {
@@ -244,7 +261,7 @@ impl Position {
         self.buy_qty += last_qty_object;
     }
 
-    pub fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
+    fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
         // Handle case where commission could be None or not settlement currency
         let mut realized_pnl = if let Some(commission) = fill.commission {
             if commission.currency == self.settlement_currency {
@@ -283,19 +300,19 @@ impl Position {
     }
 
     #[must_use]
-    pub fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
         let start_cost = avg_pg * qty;
         let event_cost = last_px * last_qty;
         (start_cost + event_cost) / (qty + last_qty)
     }
 
     #[must_use]
-    pub fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
     }
 
     #[must_use]
-    pub fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
         if self.avg_px_close.is_none() {
             return last_px;
         }
@@ -309,15 +326,6 @@ impl Position {
             self.avg_px_close.unwrap(),
             last_px,
             last_qty,
-        )
-    }
-
-    #[must_use]
-    pub fn total_pnl(&self, last: Price) -> Money {
-        let realized_pnl = self.realized_pnl.map_or(0.0, |pnl| pnl.as_f64());
-        Money::new(
-            realized_pnl + self.unrealized_pnl(last).as_f64(),
-            self.settlement_currency,
         )
     }
 
@@ -340,9 +348,34 @@ impl Position {
     }
 
     #[must_use]
+    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
+    }
+
+    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
+        let quantity = quantity.min(self.signed_qty.abs());
+        if self.is_inverse {
+            quantity
+                * self.multiplier.as_f64()
+                * self.calculate_points_inverse(avg_px_open, avg_px_close)
+        } else {
+            quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
+        }
+    }
+
+    #[must_use]
     pub fn calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
         let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64());
         Money::new(pnl_raw, self.settlement_currency)
+    }
+
+    #[must_use]
+    pub fn total_pnl(&self, last: Price) -> Money {
+        let realized_pnl = self.realized_pnl.map_or(0.0, |pnl| pnl.as_f64());
+        Money::new(
+            realized_pnl + self.unrealized_pnl(last).as_f64(),
+            self.settlement_currency,
+        )
     }
 
     #[must_use]
@@ -358,19 +391,11 @@ impl Position {
         }
     }
 
-    #[must_use]
-    pub fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
-    }
-
-    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
-        let quantity = quantity.min(self.signed_qty.abs());
-        if self.is_inverse {
-            quantity
-                * self.multiplier.as_f64()
-                * self.calculate_points_inverse(avg_px_open, avg_px_close)
-        } else {
-            quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
+    pub fn closing_order_side(&self) -> OrderSide {
+        match self.side {
+            PositionSide::Long => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Buy,
+            _ => OrderSide::NoOrderSide,
         }
     }
 
@@ -531,7 +556,9 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::OrderFilled,
-        identifiers::{AccountId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4},
+        identifiers::{
+            AccountId, ClientOrderId, PositionId, StrategyId, TradeId, VenueOrderId, stubs::uuid4,
+        },
         instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*},
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
@@ -565,7 +592,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -577,7 +604,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -601,7 +628,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -617,6 +644,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
+        assert_eq!(position.closing_order_side(), OrderSide::Sell);
         assert!(!position.is_opposite_side(OrderSide::Buy));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -655,7 +683,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -671,6 +699,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
+        assert_eq!(position.closing_order_side(), OrderSide::Buy);
         assert!(!position.is_opposite_side(OrderSide::Sell));
         assert_eq!(position, position); // Equality operator test
         assert!(position.closing_order_id.is_none());
@@ -710,7 +739,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -754,7 +783,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -766,7 +795,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -811,7 +840,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(150_000))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -887,7 +916,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             None,
@@ -901,7 +930,7 @@ mod tests {
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
         // create closing from order from different venue but same strategy
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -913,7 +942,7 @@ mod tests {
             None,
             None,
         );
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -966,7 +995,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -979,7 +1008,7 @@ mod tests {
             None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into());
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -998,6 +1027,7 @@ mod tests {
             position.quantity,
             Quantity::zero(audusd_sim.price_precision())
         );
+        assert_eq!(position.closing_order_side(), OrderSide::NoOrderSide);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
         assert_eq!(position.avg_px_open, 1.0);
@@ -1037,7 +1067,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(200_000))
             .build();
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &audusd_sim,
             Some(TradeId::new("1")),
@@ -1049,7 +1079,7 @@ mod tests {
             None,
             None,
         );
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &audusd_sim,
             Some(TradeId::new("2")),
@@ -1061,7 +1091,7 @@ mod tests {
             None,
             None,
         );
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &audusd_sim,
             Some(TradeId::new("3")),
@@ -1117,7 +1147,7 @@ mod tests {
             .quantity(quantity1)
             .build();
         let commission1 = calculate_commission(&ethusdt, order1.quantity(), price1, None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &ethusdt,
             Some(TradeId::new("1")),
@@ -1138,7 +1168,7 @@ mod tests {
             .build();
         let price2 = Price::from("99.0");
         let commission2 = calculate_commission(&ethusdt, order2.quantity(), price2, None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &ethusdt,
             Some(TradeId::new("2")),
@@ -1162,7 +1192,7 @@ mod tests {
             .build();
         let price3 = Price::from("101.0");
         let commission3 = calculate_commission(&ethusdt, order3.quantity(), price3, None);
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &ethusdt,
             Some(TradeId::new("3")),
@@ -1186,7 +1216,7 @@ mod tests {
             .quantity(quantity4)
             .build();
         let commission4 = calculate_commission(&ethusdt, order4.quantity(), price4, None);
-        let fill4 = TestOrderEventStubs::order_filled(
+        let fill4 = TestOrderEventStubs::filled(
             &order4,
             &ethusdt,
             Some(TradeId::new("4")),
@@ -1210,7 +1240,7 @@ mod tests {
             .quantity(quantity5)
             .build();
         let commission5 = calculate_commission(&ethusdt, order5.quantity(), price5, None);
-        let fill5 = TestOrderEventStubs::order_filled(
+        let fill5 = TestOrderEventStubs::filled(
             &order5,
             &ethusdt,
             Some(TradeId::new("5")),
@@ -1243,7 +1273,7 @@ mod tests {
             .quantity(quantity1)
             .build();
         let commission1 = calculate_commission(&audusd_sim, quantity1, price1, None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             Some(TradeId::new("5")),
@@ -1346,7 +1376,7 @@ mod tests {
             .build();
         let commission1 =
             calculate_commission(&btcusdt, order1.quantity(), Price::from("10000.0"), None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &btcusdt,
             Some(TradeId::from("1")),
@@ -1366,7 +1396,7 @@ mod tests {
             .build();
         let commission2 =
             calculate_commission(&btcusdt, order2.quantity(), Price::from("9999.0"), None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &btcusdt,
             Some(TradeId::from("2")),
@@ -1392,7 +1422,7 @@ mod tests {
             .build();
         let commission3 =
             calculate_commission(&btcusdt, order3.quantity(), Price::from("10001.0"), None);
-        let fill3 = TestOrderEventStubs::order_filled(
+        let fill3 = TestOrderEventStubs::filled(
             &order3,
             &btcusdt,
             Some(TradeId::from("3")),
@@ -1418,7 +1448,7 @@ mod tests {
             .build();
         let commission4 =
             calculate_commission(&btcusdt, order4.quantity(), Price::from("10003.0"), None);
-        let fill4 = TestOrderEventStubs::order_filled(
+        let fill4 = TestOrderEventStubs::filled(
             &order4,
             &btcusdt,
             Some(TradeId::from("4")),
@@ -1444,7 +1474,7 @@ mod tests {
             .build();
         let commission5 =
             calculate_commission(&btcusdt, order5.quantity(), Price::from("10005.0"), None);
-        let fill5 = TestOrderEventStubs::order_filled(
+        let fill5 = TestOrderEventStubs::filled(
             &order5,
             &btcusdt,
             Some(TradeId::from("5")),
@@ -1479,7 +1509,7 @@ mod tests {
             .side(OrderSide::Buy)
             .quantity(Quantity::from(12))
             .build();
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1506,7 +1536,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1543,7 +1573,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1580,7 +1610,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1617,7 +1647,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10500.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             None,
@@ -1658,7 +1688,7 @@ mod tests {
             Price::from("10000.0"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             None,
@@ -1698,7 +1728,7 @@ mod tests {
             Price::from("375.95"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &ethusdt_bitmex,
             None,
@@ -1737,7 +1767,7 @@ mod tests {
             .build();
         let commission1 =
             calculate_commission(&btcusdt, order1.quantity(), Price::from("10500.0"), None);
-        let fill1 = TestOrderEventStubs::order_filled(
+        let fill1 = TestOrderEventStubs::filled(
             &order1,
             &btcusdt,
             Some(TradeId::new("1")),
@@ -1751,7 +1781,7 @@ mod tests {
         );
         let commission2 =
             calculate_commission(&btcusdt, order2.quantity(), Price::from("10500.0"), None);
-        let fill2 = TestOrderEventStubs::order_filled(
+        let fill2 = TestOrderEventStubs::filled(
             &order2,
             &btcusdt,
             Some(TradeId::new("2")),
@@ -1787,7 +1817,7 @@ mod tests {
             .build();
         let commission =
             calculate_commission(&btcusdt, order.quantity(), Price::from("10505.60"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &btcusdt,
             Some(TradeId::new("1")),
@@ -1826,7 +1856,7 @@ mod tests {
             Price::from("10500.0"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             Some(TradeId::new("1")),
@@ -1860,7 +1890,7 @@ mod tests {
             Price::from("15500.00"),
             None,
         );
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &xbtusd_bitmex,
             Some(TradeId::new("1")),
@@ -1898,7 +1928,7 @@ mod tests {
 
         let commission =
             calculate_commission(&audusd_sim, order.quantity(), Price::from("1.0"), None);
-        let fill = TestOrderEventStubs::order_filled(
+        let fill = TestOrderEventStubs::filled(
             &order,
             &audusd_sim,
             None,
@@ -1933,5 +1963,63 @@ mod tests {
 
         let position = Position::new(&audusd_sim, fill);
         assert_eq!(position.realized_pnl, Some(Money::from("0 USD")));
+    }
+
+    #[rstest]
+    fn test_cache_purge_order_events() {
+        let audusd_sim = audusd_sim();
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-1"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-2"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let position_id = PositionId::new("P-123456");
+
+        let fill1 = TestOrderEventStubs::filled(
+            &order1,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            Some(position_id),
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill1.into());
+
+        let fill2 = TestOrderEventStubs::filled(
+            &order2,
+            &audusd_sim,
+            Some(TradeId::new("2")),
+            Some(position_id),
+            Some(Price::from("1.00002")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        position.apply(&fill2.into());
+        position.purge_events_for_order(order1.client_order_id());
+
+        assert_eq!(position.events.len(), 1);
+        assert_eq!(position.trade_ids.len(), 1);
+        assert_eq!(position.events[0].client_order_id, order2.client_order_id());
+        assert_eq!(position.trade_ids[0], TradeId::new("2"));
     }
 }

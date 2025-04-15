@@ -42,6 +42,7 @@ from cpython.object cimport PyCallable_Check
 from cpython.object cimport PyObject
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
 from libc.stdio cimport printf
 
@@ -298,6 +299,7 @@ cdef class Clock:
         datetime alert_time,
         callback: Callable[[TimeEvent], None] = None,
         bint override = False,
+        bint allow_past = True,
     ):
         """
         Set a time alert for the given time.
@@ -314,8 +316,12 @@ cdef class Clock:
             The time for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
-        override: bool
+        override: bool, default False
             If override is set to True an alert with a given name can be overwritten if it exists already.
+        allow_past : bool, default True
+            If True, allows an `alert_time` in the past and adjusts it to the current time
+            for immediate firing. If False, panics when the `alert_time` is in the
+            past, requiring it to be in the future.
 
         Raises
         ------
@@ -341,6 +347,7 @@ cdef class Clock:
             name=name,
             alert_time_ns=dt_to_unix_nanos(alert_time),
             callback=callback,
+            allow_past=allow_past,
         )
 
     cpdef void set_time_alert_ns(
@@ -348,6 +355,7 @@ cdef class Clock:
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] = None,
+        bint allow_past = True,
     ):
         """
         Set a time alert for the given time.
@@ -364,6 +372,10 @@ cdef class Clock:
             The UNIX timestamp (nanoseconds) for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows an `alert_time_ns` in the past and adjusts it to the current time
+            for immediate firing. If False, panics when the `alert_time_ns` is in the
+            past, requiring it to be in the future.
 
         Raises
         ------
@@ -391,6 +403,7 @@ cdef class Clock:
         datetime start_time = None,
         datetime stop_time = None,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         """
         Set a timer to run.
@@ -412,6 +425,9 @@ cdef class Clock:
             The stop time for the timer (if None then repeats indefinitely).
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows a `start_time` in the past for immediate start.
+            If False, panics when the `start_time` is in the past.
 
         Raises
         ------
@@ -437,6 +453,7 @@ cdef class Clock:
             start_time_ns=maybe_dt_to_unix_nanos(start_time) or 0,
             stop_time_ns=maybe_dt_to_unix_nanos(stop_time) or 0,
             callback=callback,
+            allow_past=allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -446,6 +463,7 @@ cdef class Clock:
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         """
         Set a timer to run.
@@ -467,6 +485,9 @@ cdef class Clock:
             The stop UNIX timestamp (nanoseconds) for the timer.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        allow_past : bool, default True
+            If True, allows a `start_time` in the past for immediate start.
+            If False, panics when the `start_time` is in the past.
 
         Raises
         ------
@@ -620,6 +641,7 @@ cdef class TestClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -629,6 +651,7 @@ cdef class TestClock(Clock):
             pystr_to_cstr(name),
             alert_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -638,6 +661,7 @@ cdef class TestClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -658,6 +682,7 @@ cdef class TestClock(Clock):
             start_time_ns,
             stop_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef uint64_t next_time_ns(self, str name):
@@ -796,6 +821,7 @@ cdef class LiveClock(Clock):
         str name,
         uint64_t alert_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -808,6 +834,7 @@ cdef class LiveClock(Clock):
             pystr_to_cstr(name),
             alert_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef void set_timer_ns(
@@ -817,6 +844,7 @@ cdef class LiveClock(Clock):
         uint64_t start_time_ns,
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None] | None = None,
+        bint allow_past = True,
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
@@ -832,6 +860,7 @@ cdef class LiveClock(Clock):
             start_time_ns,
             stop_time_ns,
             <PyObject *>callback,
+            allow_past,
         )
 
     cpdef uint64_t next_time_ns(self, str name):
@@ -1088,6 +1117,8 @@ cpdef LogGuard init_logging(
     bint colors = True,
     bint bypass = False,
     bint print_config = False,
+    uint64_t max_file_size = 0,
+    uint32_t max_backup_count = 5,
 ):
     """
     Initialize the logging system.
@@ -1128,6 +1159,11 @@ cpdef LogGuard init_logging(
         If the output for the core logging system is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
+    max_file_size : uint64_t, default 0
+        The maximum size of log files in bytes before rotation occurs.
+        If set to 0, file rotation is disabled.
+    max_backup_count : uint32_t, default 5
+        The maximum number of backup log files to keep when rotating.
 
     Returns
     -------
@@ -1161,6 +1197,8 @@ cpdef LogGuard init_logging(
         colors,
         bypass,
         print_config,
+        max_file_size,
+        max_backup_count,
     )
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
@@ -2090,6 +2128,7 @@ cdef class MessageBus:
         self._clock = clock
         self._log = Logger(name)
         self._database = database
+        self._listeners = []
 
         # Validate configuration
         if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
@@ -2339,6 +2378,18 @@ cdef class MessageBus:
 
         self._log.debug(f"Added streaming type {cls}")
 
+    cpdef void add_listener(self, listener: nautilus_pyo3.MessageBusListener):
+        """
+        Adds the given listener to the message bus.
+
+        Parameters
+        ----------
+        listener : nautilus_pyo3.MessageBusListener
+            The listener to add.
+
+        """
+        self._listeners.append(listener)
+
     cpdef void send(self, str endpoint, msg: Any):
         """
         Send the given message to the given `endpoint` address.
@@ -2584,17 +2635,30 @@ cdef class MessageBus:
             sub.handler(msg)
 
         # Publish externally (if configured)
-        cdef bytes payload_bytes
-        if external_pub and self._database is not None and not self._database.is_closed() and self.serializer is not None:
-            if isinstance(msg, self._publishable_types):
+        cdef bytes payload_bytes = None
+        if isinstance(msg, self._publishable_types):
+            if external_pub and self._database is not None and not self._database.is_closed():
                 if isinstance(msg, bytes):
                     payload_bytes = msg
                 else:
                     payload_bytes = self.serializer.serialize(msg)
+
                 self._database.publish(
                     topic,
                     payload_bytes,
                 )
+
+            for listener in self._listeners:
+                if listener.is_closed():
+                    continue
+
+                if payload_bytes is None:
+                    if isinstance(msg, bytes):
+                        payload_bytes = msg
+                    else:
+                        payload_bytes = self.serializer.serialize(msg)
+
+                listener.publish(topic, payload_bytes)
 
         self.pub_count += 1
 

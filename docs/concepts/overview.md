@@ -31,7 +31,7 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 - **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
-![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
+![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/assets/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
 > *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.

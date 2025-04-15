@@ -94,7 +94,7 @@ class StreamingFeatherWriter:
         include_types: list[type] | None = None,
         rotation_mode: RotationMode = RotationMode.NO_ROTATION,
         max_file_size: int = 1024 * 1024 * 1024,  # 1GB
-        rotation_interval: pd.Timedelta = pd.Timedelta(days=1),
+        rotation_interval: pd.Timedelta | None = None,
         rotation_time: dt.time = dt.time(0, 0, 0, 0),
         rotation_timezone: str = "UTC",
     ) -> None:
@@ -131,7 +131,7 @@ class StreamingFeatherWriter:
         }
         self.rotation_mode = rotation_mode
         self.max_file_size = max_file_size
-        self.rotation_interval = rotation_interval
+        self.rotation_interval = rotation_interval or pd.Timedelta(days=1)
         self.rotation_time = rotation_time
         self.rotation_timezone = pytz.timezone(rotation_timezone)
         self._file_sizes: dict[str | tuple[str, str], int] = {}
