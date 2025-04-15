@@ -116,9 +116,8 @@ impl<F: Fn(&dyn Any) + 'static> MessageHandler for TypedMessageHandler<dyn Any, 
 fn generate_deterministic_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(
     callback: &F,
 ) -> Ustr {
-    let type_name = std::any::type_name::<F>();
     let callback_ptr = std::ptr::from_ref(callback);
-    Ustr::from(&format!("<{type_name} at {callback_ptr:?}>"))
+    Ustr::from(&format!("<{callback_ptr:?}>"))
 }
 
 #[repr(transparent)]

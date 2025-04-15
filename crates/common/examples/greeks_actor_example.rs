@@ -28,6 +28,7 @@ use nautilus_common::{
     },
     cache::Cache,
     clock::LiveClock,
+    enums::ComponentState,
     greeks::GreeksCalculator,
 };
 use nautilus_model::{data::greeks::GreeksData, enums::PositionSide, identifiers::InstrumentId};
@@ -180,6 +181,10 @@ impl DerefMut for GreeksActor {
 }
 
 impl DataActor for GreeksActor {
+    fn state(&self) -> ComponentState {
+        self.core.state()
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");

@@ -36,6 +36,7 @@ use crate::{
     actor::registry::{get_actor_unchecked, register_actor},
     cache::Cache,
     clock::{Clock, TestClock},
+    enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
     msgbus::{
         self,
@@ -85,6 +86,10 @@ impl Actor for TestDataActor {
 
 // Implement DataActor trait overriding handlers as required
 impl DataActor for TestDataActor {
+    fn state(&self) -> ComponentState {
+        self.core.state()
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting actor"); // Custom log
         Ok(())
@@ -167,7 +172,6 @@ fn register_data_actor(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) -> Ustr {
-    let _guard = test_logging();
     let config = DataActorConfig::default();
     let mut actor = TestDataActor::new(config, cache, clock);
     let actor_id = actor.actor_id;
@@ -179,7 +183,6 @@ fn register_data_actor(
     actor_id.inner()
 }
 
-#[ignore] // TODO: WIP
 #[rstest]
 fn test_subscribe_and_receive_quotes(
     clock: Rc<RefCell<TestClock>>,
@@ -187,12 +190,11 @@ fn test_subscribe_and_receive_quotes(
     trader_id: TraderId,
     audusd_sim: CurrencyPair,
 ) {
-    let _guard = test_logging();
     let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_quotes(audusd_sim.id, None, None);
+    actor.subscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
@@ -202,7 +204,6 @@ fn test_subscribe_and_receive_quotes(
     assert_eq!(actor.received_quotes.len(), 2);
 }
 
-#[ignore] // TODO: WIP
 #[rstest]
 fn test_unsubscribe_quotes(
     clock: Rc<RefCell<TestClock>>,
@@ -215,22 +216,23 @@ fn test_unsubscribe_quotes(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_quotes(audusd_sim.id, None, None);
+    actor.subscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
     msgbus::publish(&topic, &quote);
     msgbus::publish(&topic, &quote);
 
-    actor.unsubscribe_quotes(audusd_sim.id, None, None);
+    actor.unsubscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
 
+    // Publish more quotes
     msgbus::publish(&topic, &quote);
     msgbus::publish(&topic, &quote);
 
+    // Actor should not receive new quotes
     assert_eq!(actor.received_quotes.len(), 2);
 }
 
-#[ignore] // TODO: WIP
 #[rstest]
 fn test_subscribe_and_receive_trades(
     clock: Rc<RefCell<TestClock>>,
@@ -243,7 +245,7 @@ fn test_subscribe_and_receive_trades(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_trades(audusd_sim.id, None, None);
+    actor.subscribe_trades::<TestDataActor>(audusd_sim.id, None, None);
 
     let topic = get_trades_topic(audusd_sim.id);
     let trade = TradeTick::default();
