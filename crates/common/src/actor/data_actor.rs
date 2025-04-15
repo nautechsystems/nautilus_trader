@@ -295,7 +295,9 @@ impl DataActorCore {
         cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
     ) -> Self {
-        let actor_id = config.actor_id.unwrap_or(ActorId::new("DataActor")); // TODO: Determine default ID
+        let actor_id = config
+            .actor_id
+            .unwrap_or_else(|| Self::default_actor_id(&config));
 
         Self {
             actor_id,
@@ -310,6 +312,22 @@ impl DataActorCore {
             #[cfg(feature = "indicators")]
             indicators: Indicators::default(),
         }
+    }
+
+    fn default_actor_id(config: &DataActorConfig) -> ActorId {
+        let memory_address = std::ptr::from_ref(config) as *const _ as usize;
+        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
+    }
+
+    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+        self.state = self.state.transition(&trigger)?;
+        log::info!("{}", self.state);
+        Ok(())
+    }
+
+    // TODO: TBD initialization flow
+    pub fn initialize(&mut self) -> anyhow::Result<()> {
+        self.transition_state(ComponentTrigger::Initialize)
     }
 
     /// Returns the trader ID this actor is registered to.
@@ -359,6 +377,19 @@ impl DataActorCore {
         // TODO: Log deregistration
     }
 
+    /// Sets the trader ID for the actor.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if a trader ID has already been set.
+    pub(crate) fn set_trader_id(&mut self, trader_id: TraderId) {
+        if let Some(existing_trader_id) = self.trader_id {
+            panic!("trader_id {existing_trader_id} already set");
+        }
+
+        self.trader_id = Some(trader_id)
+    }
+
     fn check_registered(&self) {
         assert!(
             self.trader_id.is_some(),
@@ -380,99 +411,92 @@ impl DataActorCore {
     }
 
     pub fn start(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Start)?; // -> Starting
+        self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
         if let Err(e) = self.on_start() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::StartCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::StartCompleted)?;
 
         Ok(())
     }
 
     pub fn stop(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Stop)?; // -> Stopping
+        self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
         if let Err(e) = self.on_stop() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::StopCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::StopCompleted)?;
 
         Ok(())
     }
 
     pub fn resume(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Resume)?; // -> Resuming
+        self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
         if let Err(e) = self.on_stop() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::ResumeCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::ResumeCompleted)?;
 
         Ok(())
     }
 
     pub fn reset(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Reset)?; // -> Resetting
+        self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
         if let Err(e) = self.on_reset() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::ResetCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::ResetCompleted)?;
 
         Ok(())
     }
 
     pub fn dispose(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Dispose)?; // -> Disposing
+        self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
         if let Err(e) = self.on_dispose() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::DisposeCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::DisposeCompleted)?;
 
         Ok(())
     }
 
     pub fn degrade(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Degrade)?; // -> Degrading
+        self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
         if let Err(e) = self.on_degrade() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::DegradeCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::DegradeCompleted)?;
 
         Ok(())
     }
 
     pub fn fault(&mut self) -> anyhow::Result<()> {
-        self.state.transition(&ComponentTrigger::Fault)?; // -> Faulting
+        self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
         if let Err(e) = self.on_fault() {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.state.transition(&ComponentTrigger::FaultCompleted)?;
-        log::info!("{}", self.state);
+        self.transition_state(ComponentTrigger::FaultCompleted)?;
 
         Ok(())
     }
@@ -504,6 +528,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_custom_topic(&data_type);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
@@ -511,7 +536,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_custom_topic(&data_type);
         msgbus::subscribe(topic, handler, None);
 
         if client_id.is_none() {
@@ -540,6 +564,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_instruments_topic(venue);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
@@ -547,7 +572,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_instruments_topic(venue);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
@@ -570,6 +594,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_instrument_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
@@ -577,7 +602,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_instrument_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
@@ -607,6 +631,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_book_deltas_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |deltas: &OrderBookDeltas| {
@@ -614,7 +639,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_book_deltas_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
@@ -659,6 +683,7 @@ impl DataActorCore {
             return;
         }
 
+        let topic = get_book_snapshots_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |book: &OrderBook| {
@@ -666,7 +691,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_book_snapshots_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
@@ -693,6 +717,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_quotes_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |quote: &QuoteTick| {
@@ -700,7 +725,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_trades_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
@@ -724,6 +748,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_trades_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |trade: &TradeTick| {
@@ -731,7 +756,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_trades_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
@@ -759,13 +783,13 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_bars_topic(bar_type);
         let actor_id = self.actor_id.inner();
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
                 get_actor_unchecked::<DataActorCore>(&actor_id).handle_bar(bar);
             })));
 
-        let topic = get_bars_topic(bar_type);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::Bars(SubscribeBars {
@@ -793,6 +817,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_mark_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |mark_price: &MarkPriceUpdate| {
@@ -800,7 +825,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_mark_price_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
@@ -827,6 +851,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_index_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |index_price: &IndexPriceUpdate| {
@@ -834,7 +859,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_index_price_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
@@ -861,6 +885,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_instrument_status_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |status: &InstrumentStatus| {
@@ -868,7 +893,6 @@ impl DataActorCore {
             },
         )));
 
-        let topic = get_instrument_status_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
@@ -895,6 +919,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
+        let topic = get_instrument_close_topic(instrument_id);
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |close: &InstrumentClose| {
@@ -902,8 +927,6 @@ impl DataActorCore {
             },
         )));
 
-        // Topic may need to be adjusted to match Python implementation
-        let topic = get_instrument_close_topic(instrument_id);
         msgbus::subscribe(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
@@ -928,7 +951,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
-        // msgbus::unsubscribe(&topic, self.handle_data);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+            move |data: &dyn Any| {
+                get_actor_unchecked::<DataActorCore>(&actor_id).handle(data);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         if client_id.is_none() {
             return;
@@ -1040,7 +1070,7 @@ impl DataActorCore {
     }
 
     /// Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
-    pub fn unsubscribe_quote_ticks(
+    pub fn unsubscribe_quotes(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1064,7 +1094,7 @@ impl DataActorCore {
     }
 
     /// Unsubscribe from streaming `TradeTick` data for the given instrument ID.
-    pub fn unsubscribe_trade_ticks(
+    pub fn unsubscribe_trades(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1422,6 +1452,7 @@ impl DataActorCore {
         log_received(&data);
 
         if !self.is_running() {
+            log_not_running(&data);
             return;
         }
 
@@ -1435,6 +1466,7 @@ impl DataActorCore {
         log_received(&signal);
 
         if !self.is_running() {
+            log_not_running(&signal);
             return;
         }
 
@@ -1448,6 +1480,7 @@ impl DataActorCore {
         log_received(&instrument);
 
         if !self.is_running() {
+            log_not_running(&instrument);
             return;
         }
 
@@ -1461,6 +1494,7 @@ impl DataActorCore {
         log_received(&deltas);
 
         if !self.is_running() {
+            log_not_running(&deltas);
             return;
         }
 
@@ -1474,6 +1508,7 @@ impl DataActorCore {
         log_received(&book);
 
         if !self.is_running() {
+            log_not_running(&book);
             return;
         }
 
@@ -1487,6 +1522,7 @@ impl DataActorCore {
         log_received(&quote);
 
         if !self.is_running() {
+            log_not_running(&quote);
             return;
         }
 
@@ -1500,6 +1536,7 @@ impl DataActorCore {
         log_received(&trade);
 
         if !self.is_running() {
+            log_not_running(&trade);
             return;
         }
 
@@ -1513,6 +1550,7 @@ impl DataActorCore {
         log_received(&bar);
 
         if !self.is_running() {
+            log_not_running(&bar);
             return;
         }
 
@@ -1526,6 +1564,7 @@ impl DataActorCore {
         log_received(&mark_price);
 
         if !self.is_running() {
+            log_not_running(&mark_price);
             return;
         }
 
@@ -1539,6 +1578,7 @@ impl DataActorCore {
         log_received(&index_price);
 
         if !self.is_running() {
+            log_not_running(&index_price);
             return;
         }
 
@@ -1552,6 +1592,7 @@ impl DataActorCore {
         log_received(&status);
 
         if !self.is_running() {
+            log_not_running(&status);
             return;
         }
 
@@ -1565,6 +1606,7 @@ impl DataActorCore {
         log_received(&close);
 
         if !self.is_running() {
+            log_not_running(&close);
             return;
         }
 
@@ -1740,181 +1782,17 @@ fn log_error(e: &anyhow::Error) {
     log::error!("{e}");
 }
 
+fn log_not_running<T>(msg: &T)
+where
+    T: std::fmt::Debug,
+{
+    // TODO: Potentially temporary for development? drop level at some stage
+    log::warn!("Received message when not running - skipping {msg:?}");
+}
+
 fn log_received<T>(msg: &T)
 where
     T: std::fmt::Debug,
 {
     log::debug!("{RECV} {msg:?}");
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-// Tests
-///////////////////////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod tests {
-    use std::{
-        any::Any,
-        cell::{RefCell, UnsafeCell},
-        ops::{Deref, DerefMut},
-        rc::Rc,
-        sync::Arc,
-    };
-
-    use nautilus_model::{
-        data::{Bar, OrderBookDelta, QuoteTick, TradeTick},
-        identifiers::ActorId,
-        instruments::CurrencyPair,
-        orderbook::OrderBook,
-    };
-    use rstest::{fixture, rstest};
-    use ustr::Ustr;
-
-    use super::{Actor, DataActor, DataActorConfig, DataActorCore};
-    use crate::{
-        actor::registry::{get_actor_unchecked, register_actor},
-        cache::Cache,
-        clock::{Clock, TestClock},
-        msgbus::{
-            self,
-            switchboard::{MessagingSwitchboard, get_quotes_topic, get_trades_topic},
-        },
-    };
-
-    struct TestDataActor {
-        core: DataActorCore,
-        pub received_data: Vec<String>, // Use string for simplicity
-        pub received_books: Vec<OrderBook>,
-        pub received_deltas: Vec<OrderBookDelta>,
-        pub received_quotes: Vec<QuoteTick>,
-        pub received_trades: Vec<TradeTick>,
-        pub received_bars: Vec<Bar>,
-    }
-
-    impl Deref for TestDataActor {
-        type Target = DataActorCore;
-
-        fn deref(&self) -> &Self::Target {
-            &self.core
-        }
-    }
-
-    impl DerefMut for TestDataActor {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core
-        }
-    }
-
-    impl Actor for TestDataActor {
-        fn id(&self) -> Ustr {
-            self.core.actor_id.inner()
-        }
-
-        fn handle(&mut self, msg: &dyn Any) {
-            // Let the core handle message routing
-            self.core.handle(msg);
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-    }
-
-    // Implement DataActor trait overriding handlers as required
-    impl DataActor for TestDataActor {
-        fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
-            self.received_data.push(format!("{data:?}"));
-            Ok(())
-        }
-
-        fn on_book(&mut self, book: &OrderBook) -> anyhow::Result<()> {
-            self.received_books.push(book.clone());
-            Ok(())
-        }
-
-        fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-            self.received_quotes.push(*quote);
-            Ok(())
-        }
-
-        fn on_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-            self.received_trades.push(*trade);
-            Ok(())
-        }
-    }
-
-    // Custom functionality as required
-    impl TestDataActor {
-        pub fn new(
-            config: DataActorConfig,
-            cache: Rc<RefCell<Cache>>,
-            clock: Rc<RefCell<dyn Clock>>,
-        ) -> Self {
-            Self {
-                core: DataActorCore::new(config, cache, clock),
-                received_data: Vec::new(),
-                received_books: Vec::new(),
-                received_deltas: Vec::new(),
-                received_quotes: Vec::new(),
-                received_trades: Vec::new(),
-                received_bars: Vec::new(),
-            }
-        }
-        pub fn custom_function(&mut self) {}
-    }
-
-    #[fixture]
-    pub fn clock() -> Rc<RefCell<TestClock>> {
-        Rc::new(RefCell::new(TestClock::new()))
-    }
-
-    #[fixture]
-    pub fn cache() -> Rc<RefCell<Cache>> {
-        Rc::new(RefCell::new(Cache::new(None, None)))
-    }
-
-    fn register_data_actor(clock: Rc<RefCell<TestClock>>, cache: Rc<RefCell<Cache>>) {
-        let config = DataActorConfig::default();
-        let actor = TestDataActor::new(config, cache, clock);
-        let actor_rc = Rc::new(UnsafeCell::new(actor));
-        register_actor(actor_rc);
-    }
-
-    fn test_subscribe_and_receive_quotes(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        switchboard: Arc<MessagingSwitchboard>,
-        audusd_sim: CurrencyPair,
-    ) {
-        register_data_actor(clock.clone(), cache.clone());
-
-        let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
-        let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-        actor.subscribe_quotes(audusd_sim.id, None, None);
-
-        let topic = get_quotes_topic(audusd_sim.id);
-        let trade = QuoteTick::default();
-        msgbus::publish(&topic, &trade);
-        msgbus::publish(&topic, &trade);
-
-        assert_eq!(actor.received_quotes.len(), 2);
-    }
-
-    fn test_subscribe_and_receive_trades(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        audusd_sim: CurrencyPair,
-    ) {
-        register_data_actor(clock.clone(), cache.clone());
-
-        let actor_id = ActorId::new("DataActor").inner(); // TODO: Determine default ID
-        let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-        actor.subscribe_trades(audusd_sim.id, None, None);
-
-        let topic = get_trades_topic(audusd_sim.id);
-        let trade = TradeTick::default();
-        msgbus::publish(&topic, &trade);
-        msgbus::publish(&topic, &trade);
-
-        assert_eq!(actor.received_trades.len(), 2);
-    }
 }
