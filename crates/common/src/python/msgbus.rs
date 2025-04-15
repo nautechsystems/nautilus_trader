@@ -129,7 +129,6 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     #[staticmethod]
     pub fn py_deregister(endpoint: &str) {
-        // Removes entry if it exists for endpoint
-        deregister(&Ustr::from(endpoint));
+        deregister(endpoint);
     }
 }
