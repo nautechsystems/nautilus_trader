@@ -154,6 +154,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg_attr(miri, ignore)]
     #[rstest]
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
