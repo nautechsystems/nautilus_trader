@@ -29,6 +29,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 use nautilus_model::{
@@ -607,11 +608,12 @@ pub struct DataActorCore {
     pub cache: Rc<RefCell<Cache>>,
     state: ComponentState,
     trader_id: Option<TraderId>,
-    warning_events: HashSet<String>, // TODO: TBD
-    pending_requests: HashMap<UUID4, Option<RequestCallback>>,
-    signal_classes: HashMap<String, String>,
+    warning_events: AHashSet<String>, // TODO: TBD
+    pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
+    signal_classes: AHashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
+    topic_handlers: AHashMap<Ustr, ShareableMessageHandler>,
 }
 
 impl Debug for DataActorCore {
@@ -649,11 +651,12 @@ impl DataActorCore {
             cache,
             state: ComponentState::default(),
             trader_id: None, // None until registered
-            warning_events: HashSet::new(),
-            pending_requests: HashMap::new(),
-            signal_classes: HashMap::new(),
+            warning_events: AHashSet::new(),
+            pending_requests: AHashMap::new(),
+            signal_classes: AHashMap::new(),
             #[cfg(feature = "indicators")]
             indicators: Indicators::default(),
+            topic_handlers: AHashMap::new(),
         }
     }
 
@@ -838,9 +841,30 @@ impl DataActorCore {
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
+    fn get_or_create_handler<F>(
+        &mut self,
+        topic: Ustr,
+        create_handler: F,
+    ) -> ShareableMessageHandler
+    where
+        F: FnOnce() -> ShareableMessageHandler,
+    {
+        if let Some(existing_handler) = self.topic_handlers.get(&topic) {
+            existing_handler.clone()
+        } else {
+            let new_handler = create_handler();
+            self.topic_handlers.insert(topic, new_handler.clone());
+            new_handler
+        }
+    }
+
+    fn get_handler_for_topic(&self, topic: Ustr) -> Option<ShareableMessageHandler> {
+        self.topic_handlers.get(&topic).cloned()
+    }
+
     /// Subscribe to streaming `data_type` data.
     pub fn subscribe_data<A: DataActor>(
-        &self,
+        &mut self,
         data_type: DataType,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -849,11 +873,18 @@ impl DataActorCore {
 
         let topic = get_custom_topic(&data_type);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
-            move |data: &dyn Any| {
-                get_actor_unchecked::<A>(&actor_id).handle(data);
-            },
-        )));
+        let handler = if let Some(existing_handler) = self.topic_handlers.get(&topic) {
+            existing_handler.clone()
+        } else {
+            let new_handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+                move |data: &dyn Any| {
+                    get_actor_unchecked::<A>(&actor_id).handle_data(data);
+                },
+            )));
+
+            self.topic_handlers.insert(topic, new_handler.clone());
+            new_handler
+        };
 
         msgbus::subscribe(topic, handler, None);
 
@@ -876,7 +907,7 @@ impl DataActorCore {
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
     pub fn subscribe_instruments<A: DataActor>(
-        &self,
+        &mut self,
         venue: Venue,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -885,11 +916,13 @@ impl DataActorCore {
 
         let topic = get_instruments_topic(venue);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |instrument: &InstrumentAny| {
+                    get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -906,7 +939,7 @@ impl DataActorCore {
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
     pub fn subscribe_instrument<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -915,11 +948,13 @@ impl DataActorCore {
 
         let topic = get_instrument_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |instrument: &InstrumentAny| {
+                    get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -940,7 +975,7 @@ impl DataActorCore {
     /// Once subscribed, any matching order book deltas published on the message bus are forwarded
     /// to the `on_book_deltas` handler.
     pub fn subscribe_book_deltas<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
@@ -952,11 +987,13 @@ impl DataActorCore {
 
         let topic = get_book_deltas_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |deltas: &OrderBookDeltas| {
-                get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |deltas: &OrderBookDeltas| {
+                    get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -984,7 +1021,7 @@ impl DataActorCore {
     ///
     /// Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
     pub fn subscribe_book_snapshots<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
@@ -1004,11 +1041,13 @@ impl DataActorCore {
 
         let topic = get_book_snapshots_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |book: &OrderBook| {
-                get_actor_unchecked::<A>(&actor_id).handle_book(book);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |book: &OrderBook| {
+                    get_actor_unchecked::<A>(&actor_id).handle_book(book);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1029,7 +1068,7 @@ impl DataActorCore {
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
     pub fn subscribe_quotes<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1038,11 +1077,13 @@ impl DataActorCore {
 
         let topic = get_quotes_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |quote: &QuoteTick| {
-                get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |quote: &QuoteTick| {
+                    get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1060,7 +1101,7 @@ impl DataActorCore {
 
     /// Subscribe to streaming [`TradeTick`] data for the `instrument_id`.
     pub fn subscribe_trades<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1069,11 +1110,13 @@ impl DataActorCore {
 
         let topic = get_trades_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |trade: &TradeTick| {
-                get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |trade: &TradeTick| {
+                    get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1094,7 +1137,7 @@ impl DataActorCore {
     /// Once subscribed, any matching bar data published on the message bus is forwarded
     /// to the `on_bar` handler.
     pub fn subscribe_bars<A: DataActor>(
-        &self,
+        &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
         await_partial: bool,
@@ -1104,10 +1147,11 @@ impl DataActorCore {
 
         let topic = get_bars_topic(bar_type);
         let actor_id = self.actor_id.inner();
-        let handler =
+        let handler = self.get_or_create_handler(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
                 get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
-            })));
+            })))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1129,7 +1173,7 @@ impl DataActorCore {
     /// Once subscribed, any matching mark price updates published on the message bus are forwarded
     /// to the `on_mark_price` handler.
     pub fn subscribe_mark_prices<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1138,11 +1182,13 @@ impl DataActorCore {
 
         let topic = get_mark_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |mark_price: &MarkPriceUpdate| {
-                get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |mark_price: &MarkPriceUpdate| {
+                    get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1163,7 +1209,7 @@ impl DataActorCore {
     /// Once subscribed, any matching index price updates published on the message bus are forwarded
     /// to the `on_index_price` handler.
     pub fn subscribe_index_prices<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1172,11 +1218,13 @@ impl DataActorCore {
 
         let topic = get_index_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |index_price: &IndexPriceUpdate| {
-                get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |index_price: &IndexPriceUpdate| {
+                    get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1197,7 +1245,7 @@ impl DataActorCore {
     /// Once subscribed, any matching bar data published on the message bus is forwarded
     /// to the `on_bar` handler.
     pub fn subscribe_instrument_status<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1206,11 +1254,13 @@ impl DataActorCore {
 
         let topic = get_instrument_status_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |status: &InstrumentStatus| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |status: &InstrumentStatus| {
+                    get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1231,7 +1281,7 @@ impl DataActorCore {
     /// Once subscribed, any matching instrument close data published on the message bus is forwarded
     /// to the `on_instrument_close` handler.
     pub fn subscribe_instrument_close<A: DataActor>(
-        &self,
+        &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1240,11 +1290,13 @@ impl DataActorCore {
 
         let topic = get_instrument_close_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |close: &InstrumentClose| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
-            },
-        )));
+        let handler = self.get_or_create_handler(topic, || {
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+                move |close: &InstrumentClose| {
+                    get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
+                },
+            )))
+        });
 
         msgbus::subscribe(topic, handler, None);
 
@@ -1270,14 +1322,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
-            move |data: &dyn Any| {
-                get_actor_unchecked::<A>(&actor_id).handle(data);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         if client_id.is_none() {
             return;
@@ -1305,14 +1352,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instruments_topic(venue);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
             client_id,
@@ -1335,14 +1377,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
             instrument_id,
@@ -1366,14 +1403,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_deltas_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |deltas: &OrderBookDeltas| {
-                get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
             instrument_id,
@@ -1397,14 +1429,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_snapshots_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |book: &OrderBook| {
-                get_actor_unchecked::<A>(&actor_id).handle_book(book);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
             instrument_id,
@@ -1428,14 +1455,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_quotes_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |quote: &QuoteTick| {
-                get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
             instrument_id,
@@ -1459,14 +1481,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_trades_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |trade: &TradeTick| {
-                get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
             instrument_id,
@@ -1482,7 +1499,7 @@ impl DataActorCore {
 
     /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
     pub fn unsubscribe_bars<A: DataActor>(
-        &self,
+        &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
@@ -1490,13 +1507,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_bars_topic(bar_type);
-        let actor_id = self.actor_id.inner();
-        let handler =
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
-                get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
-            })));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
             bar_type,
@@ -1520,14 +1533,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_mark_price_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |mark_price: &MarkPriceUpdate| {
-                get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
             instrument_id,
@@ -1551,14 +1559,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_index_price_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |index_price: &IndexPriceUpdate| {
-                get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
             instrument_id,
@@ -1582,14 +1585,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_status_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |status: &InstrumentStatus| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
             instrument_id,
@@ -1613,14 +1611,9 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_close_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |close: &InstrumentClose| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
-            },
-        )));
-
-        msgbus::unsubscribe(topic, handler);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe(topic, handler.clone());
+        };
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
             instrument_id,
