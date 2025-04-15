@@ -21,7 +21,6 @@
 use std::{any::Any, fmt::Debug, marker::PhantomData, rc::Rc};
 
 use ustr::Ustr;
-use uuid::Uuid;
 
 pub trait MessageHandler: Any {
     /// Returns the unique identifier for this handler.
@@ -44,7 +43,8 @@ impl<T: 'static, F: Fn(&T) + 'static> TypedMessageHandler<T, F> {
     pub fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(generate_unique_handler_id);
+            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
+
         Self {
             id: id_ustr,
             callback,
@@ -79,7 +79,7 @@ impl<F: Fn(&dyn Any) + 'static> TypedMessageHandler<dyn Any, F> {
     pub fn new_any<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(generate_unique_handler_id);
+            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
 
         Self {
             id: id_ustr,
@@ -113,8 +113,12 @@ impl<F: Fn(&dyn Any) + 'static> MessageHandler for TypedMessageHandler<dyn Any, 
     }
 }
 
-fn generate_unique_handler_id() -> Ustr {
-    Ustr::from(&Uuid::new_v4().to_string())
+fn generate_deterministic_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(
+    callback: &F,
+) -> Ustr {
+    let type_name = std::any::type_name::<F>();
+    let callback_ptr = std::ptr::from_ref(callback);
+    Ustr::from(&format!("<{type_name} at {callback_ptr:?}>"))
 }
 
 #[repr(transparent)]

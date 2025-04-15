@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A common in-memory `MessageBus` for loosely coupled message passing patterns.
+//! A common in-memory `MessageBus` supporting multiple messaging patterns:
+//!
+//! - Point-to-Point
+//! - Pub/Sub
+//! - Request/Response
 
 pub mod database;
 pub mod handler;
@@ -76,12 +80,14 @@ unsafe impl Sync for MessageBusWrapper {}
 
 static MESSAGE_BUS: OnceLock<MessageBusWrapper> = OnceLock::new();
 
+/// Sets the global message bus.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     if MESSAGE_BUS.set(MessageBusWrapper(msgbus)).is_err() {
         panic!("Failed to set MessageBus");
     }
 }
 
+/// Gets the global message bus.
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     if MESSAGE_BUS.get().is_none() {
         // Initialize default message bus
@@ -94,6 +100,7 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     }
 }
 
+/// Sends the `message` to the `endpoint`.
 pub fn send(endpoint: &Ustr, message: &dyn Any) {
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
@@ -101,7 +108,7 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
     }
 }
 
-/// Publish a message to a topic.
+/// Publishes the `message` to the `topic`.
 pub fn publish(topic: &Ustr, message: &dyn Any) {
     log::trace!(
         "Publishing topic '{topic}' {message:?} at {}",
@@ -117,11 +124,12 @@ pub fn publish(topic: &Ustr, message: &dyn Any) {
     }
 }
 
-/// Registers the given `handler` for the `endpoint` address.
+/// Registers the `handler` for the `endpoint` address.
 pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
+    let endpoint = Ustr::from(endpoint.as_ref());
+
     log::debug!(
-        "Registering endpoint '{}' with handler ID {} at {}",
-        endpoint.as_ref(),
+        "Registering endpoint '{endpoint}' with handler ID {} at {}",
         handler.0.id(),
         get_message_bus().borrow().memory_address(),
     );
@@ -130,34 +138,38 @@ pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
     get_message_bus()
         .borrow_mut()
         .endpoints
-        .insert(Ustr::from(endpoint.as_ref()), handler);
+        .insert(endpoint, handler);
 }
 
-/// Deregisters the given `handler` for the `endpoint` address.
-pub fn deregister(endpoint: &Ustr) {
+/// Deregisters the handler for the `endpoint` address.
+pub fn deregister<T: AsRef<str>>(endpoint: T) {
+    let endpoint = Ustr::from(endpoint.as_ref());
+
     log::debug!(
         "Deregistering endpoint '{endpoint}' at {}",
         get_message_bus().borrow().memory_address()
     );
+
     // Removes entry if it exists for endpoint
     get_message_bus()
         .borrow_mut()
         .endpoints
-        .shift_remove(endpoint);
+        .shift_remove(&endpoint);
 }
 
-/// Subscribes the given `handler` to the `topic`.
+/// Subscribes the given `handler` to the `topic` with an optional `priority`.
 pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, priority: Option<u8>) {
+    let topic = Ustr::from(topic.as_ref());
+
     log::debug!(
-        "Subscribing for topic '{}' at {}",
-        topic.as_ref(),
+        "Subscribing for topic '{topic}' at {}",
         get_message_bus().borrow().memory_address(),
     );
 
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
 
-    let sub = Subscription::new(topic.as_ref(), handler, priority);
+    let sub = Subscription::new(topic, handler, priority);
     if msgbus_ref_mut.subscriptions.contains_key(&sub) {
         log::error!("{sub:?} already exists");
         return;
@@ -179,11 +191,12 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
     msgbus_ref_mut.subscriptions.insert(sub, matches);
 }
 
-/// Unsubscribes the given `handler` from the `topic`.
+/// Unsubscribes the `handler` from the `topic`.
 pub fn unsubscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) {
+    let topic = Ustr::from(topic.as_ref());
+
     log::debug!(
-        "Unsubscribing for topic '{}' at {}",
-        topic.as_ref(),
+        "Unsubscribing for topic '{topic}' at {}",
         get_message_bus().borrow().memory_address(),
     );
     let sub = Subscription::new(topic, handler, None);
