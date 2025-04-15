@@ -34,8 +34,6 @@ pub struct DataClient {
     stopped: bool,
     /// Receiver for control messages
     control_rx: UnboundedReceiver<ControlMessage>,
-    /// Waker to wake the stream when a control message is received
-    waker: Option<Waker>,
     /// Sleep duration between emitting values
     sleep_duration: Duration,
     /// Increasing or decreasing stream
@@ -58,7 +56,6 @@ impl DataClient {
                 value: initial_value,
                 stopped: false,
                 control_rx: rx,
-                waker: None,
                 sleep_duration,
                 increasing,
             },
@@ -71,23 +68,24 @@ impl Stream for DataClient {
     type Item = (usize, i32);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Store the waker for later use
-        self.waker = Some(cx.waker().clone());
-
-        // Check for control messages
-        match self.control_rx.try_recv() {
-            Ok(ControlMessage::Stop) => {
-                println!("Stopping stream {}", self.id);
-                self.stopped = true;
-            }
-            Ok(ControlMessage::Skip(n)) => {
-                if self.increasing {
-                    self.value += n;
-                } else {
-                    self.value -= n;
+        // Check for control messages - use poll_recv instead of try_recv
+        // try_recv returns immediately with an error if no message is available
+        // poll_recv will properly register with the channel to be notified when messages arrive
+        while let Poll::Ready(Some(msg)) = Pin::new(&mut self.control_rx).poll_recv(cx) {
+            match msg {
+                ControlMessage::Stop => {
+                    println!("Stopping stream {}", self.id);
+                    self.stopped = true;
+                }
+                ControlMessage::Skip(n) => {
+                    println!("Skipping {} values for stream {}", n, self.id);
+                    if self.increasing {
+                        self.value += n;
+                    } else {
+                        self.value -= n;
+                    }
                 }
             }
-            Err(_) => {}
         }
 
         // If stopped, return None to end the stream
@@ -107,14 +105,12 @@ impl Stream for DataClient {
 
         // Sleep before next value
         let sleep_duration = self.sleep_duration;
-        let waker = self.waker.clone();
+        let waker = cx.waker().clone();
 
         // Spawn a task to sleep and then wake the stream
         task::spawn(async move {
             tokio::time::sleep(sleep_duration).await;
-            if let Some(waker) = waker {
-                waker.wake();
-            }
+            waker.wake()
         });
 
         Poll::Ready(Some((self.id, current_value)))
@@ -157,6 +153,7 @@ impl Iterator for StreamRunner {
     }
 }
 
+#[derive(Debug)]
 /// A data engine that manages control channels for streams
 struct DataEngine {
     channel_map: HashMap<usize, UnboundedSender<ControlMessage>>,
@@ -175,6 +172,10 @@ impl DataEngine {
 
     pub fn send_control_message(&self, id: usize, message: ControlMessage) {
         if let Some(tx) = self.channel_map.get(&id) {
+            println!(
+                "Sending control message for stream {} to data engine: {:?}",
+                id, message
+            );
             if let Err(e) = tx.send(message) {
                 println!("Error sending control message: {:?}", e);
             }
@@ -198,7 +199,10 @@ fn data_engine_handler(msg: &(usize, ControlMessage)) {
     let (id, msg) = msg;
     let actor_id = Ustr::from("data_engine");
     let data_engine = get_actor_unchecked::<DataEngine>(&actor_id);
-    println!("Sending control message to data engine: {:?}", msg);
+    println!(
+        "Sending control message for stream {} to data engine: {:?}",
+        id, msg
+    );
     data_engine.send_control_message(*id, msg.clone());
 }
 
@@ -210,7 +214,7 @@ fn demo_handler(msg: &(usize, i32)) {
         println!("Positive stream crossed 5, skipping 5 values on positive stream");
         crate::msgbus::send(
             &"data_engine_control_message".into(),
-            &(0, ControlMessage::Skip(5)),
+            &(*idx, ControlMessage::Skip(5)),
         );
     }
 
@@ -218,7 +222,7 @@ fn demo_handler(msg: &(usize, i32)) {
         println!("Negative stream crossed -5, skipping 5 values on negative stream");
         crate::msgbus::send(
             &"data_engine_control_message".into(),
-            &(1, ControlMessage::Skip(5)),
+            &(*idx, ControlMessage::Skip(5)),
         );
     }
 
@@ -237,7 +241,7 @@ mod tests {
     use crate::actor::registry::register_actor;
     use crate::msgbus::{
         self, MessageBus,
-        handler::{ShareableMessageHandler, TypedMessageHandler, MessageHandler},
+        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         set_message_bus,
     };
     use std::cell::{RefCell, UnsafeCell};
@@ -272,9 +276,14 @@ mod tests {
         let (decreasing_stream, decreasing_tx) =
             runtime.block_on(async { DataClient::new(1, 0, Duration::from_millis(800), false) });
 
-        let mut data_engine = DataEngine::new();
+        let actor_id = Ustr::from("data_engine");
+        let data_engine = get_actor_unchecked::<DataEngine>(&actor_id);
         data_engine.add_stream(0, increasing_tx);
         data_engine.add_stream(1, decreasing_tx);
+
+        assert!(data_engine.channel_map.len() == 2);
+        assert!(data_engine.channel_map.get(&0).is_some());
+        assert!(data_engine.channel_map.get(&1).is_some());
 
         // Create the runner
         let mut runner = StreamRunner::new(runtime);
