@@ -114,6 +114,33 @@ impl Actor for DataActorCore {
 }
 
 pub trait DataActor: Actor {
+    /// Returns the state of the actor.
+    fn state(&self) -> ComponentState;
+
+    fn is_ready(&self) -> bool {
+        self.state() == ComponentState::Ready
+    }
+
+    fn is_running(&self) -> bool {
+        self.state() == ComponentState::Running
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.state() == ComponentState::Stopped
+    }
+
+    fn is_disposed(&self) -> bool {
+        self.state() == ComponentState::Disposed
+    }
+
+    fn is_degraded(&self) -> bool {
+        self.state() == ComponentState::Degraded
+    }
+
+    fn is_faulting(&self) -> bool {
+        self.state() == ComponentState::Faulted
+    }
+
     /// Actions to be performed when the actor state is saved.
     fn on_save(&self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
         Ok(HashMap::new())
@@ -179,6 +206,7 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
+    /// Actions to be performed when receiving custom data.
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
@@ -254,6 +282,317 @@ pub trait DataActor: Actor {
         // TODO: Implement `Event` enum
         Ok(())
     }
+
+    /// Handles a received custom/generic data point.
+    fn handle_data(&mut self, data: &dyn Any) {
+        log_received(&data);
+
+        if !self.is_running() {
+            log_not_running(&data);
+            return;
+        }
+
+        if let Err(e) = self.on_data(data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received signal.
+    fn handle_signal(&mut self, signal: &Signal) {
+        log_received(&signal);
+
+        if !self.is_running() {
+            log_not_running(&signal);
+            return;
+        }
+
+        if let Err(e) = self.on_signal(signal) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received instrument.
+    fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+        log_received(&instrument);
+
+        if !self.is_running() {
+            log_not_running(&instrument);
+            return;
+        }
+
+        if let Err(e) = self.on_instrument(instrument) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles received order book deltas.
+    fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        log_received(&deltas);
+
+        if !self.is_running() {
+            log_not_running(&deltas);
+            return;
+        }
+
+        if let Err(e) = self.on_book_deltas(deltas) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received order book reference.
+    fn handle_book(&mut self, book: &OrderBook) {
+        log_received(&book);
+
+        if !self.is_running() {
+            log_not_running(&book);
+            return;
+        }
+
+        if let Err(e) = self.on_book(book) {
+            log_error(&e);
+        };
+    }
+
+    /// Handles a received quote.
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        log_received(&quote);
+
+        if !self.is_running() {
+            log_not_running(&quote);
+            return;
+        }
+
+        if let Err(e) = self.on_quote(quote) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received trade.
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        log_received(&trade);
+
+        if !self.is_running() {
+            log_not_running(&trade);
+            return;
+        }
+
+        if let Err(e) = self.on_trade(trade) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a receiving bar.
+    fn handle_bar(&mut self, bar: &Bar) {
+        log_received(&bar);
+
+        if !self.is_running() {
+            log_not_running(&bar);
+            return;
+        }
+
+        if let Err(e) = self.on_bar(bar) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received mark price update.
+    fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
+        log_received(&mark_price);
+
+        if !self.is_running() {
+            log_not_running(&mark_price);
+            return;
+        }
+
+        if let Err(e) = self.on_mark_price(mark_price) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received index price update.
+    fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
+        log_received(&index_price);
+
+        if !self.is_running() {
+            log_not_running(&index_price);
+            return;
+        }
+
+        if let Err(e) = self.on_index_price(index_price) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received instrument status.
+    fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
+        log_received(&status);
+
+        if !self.is_running() {
+            log_not_running(&status);
+            return;
+        }
+
+        if let Err(e) = self.on_instrument_status(status) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received instrument close.
+    fn handle_instrument_close(&mut self, close: &InstrumentClose) {
+        log_received(&close);
+
+        if !self.is_running() {
+            log_not_running(&close);
+            return;
+        }
+
+        if let Err(e) = self.on_instrument_close(close) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles received instruments.
+    fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
+        for instrument in instruments {
+            self.handle_instrument(instrument);
+        }
+    }
+
+    /// Handles received quotes.
+    fn handle_quotes(&mut self, quotes: &Vec<QuoteTick>) {
+        for quote in quotes {
+            self.handle_quote(quote);
+        }
+    }
+
+    /// Handles received trades.
+    fn handle_trades(&mut self, trades: &Vec<TradeTick>) {
+        for trade in trades {
+            self.handle_trade(trade);
+        }
+    }
+
+    /// Handles received bars.
+    fn handle_bars(&mut self, bars: &Vec<Bar>) {
+        for bar in bars {
+            self.handle_bar(bar);
+        }
+    }
+
+    /// Handles received historical data.
+    fn handle_historical_data(&mut self, data: &dyn Any) {
+        log_received(&data);
+
+        if let Err(e) = self.on_historical_data(data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received time event.
+    fn handle_time_event(&mut self, event: &TimeEvent) {
+        log_received(&event);
+
+        if let Err(e) = self.on_time_event(event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received event.
+    fn handle_event(&mut self, event: &dyn Any) {
+        log_received(&event);
+
+        if let Err(e) = self.on_event(event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a data response.
+    fn handle_data_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(data) = response.data.downcast_ref::<Vec<&dyn Any>>() {
+            for d in data {
+                self.handle_historical_data(d);
+            }
+        } else if let Some(data) = response.data.downcast_ref::<&dyn Any>() {
+            self.handle_historical_data(data);
+        }
+    }
+
+    /// Handles an instrument response.
+    fn handle_instrument_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(inst) = response.data.downcast_ref::<InstrumentAny>() {
+            self.handle_instrument(inst);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `InstrumentAny`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles an instruments response.
+    fn handle_instruments_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(insts) = response.data.downcast_ref::<Vec<InstrumentAny>>() {
+            self.handle_instruments(insts);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<InstrumentAny>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a quotes response.
+    fn handle_quotes_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(quotes) = response.data.downcast_ref::<Vec<QuoteTick>>() {
+            self.handle_quotes(quotes);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<QuoteTick>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a trades response.
+    fn handle_trades_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(trades) = response.data.downcast_ref::<Vec<TradeTick>>() {
+            self.handle_trades(trades);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<TradeTick>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
+
+    /// Handles a bars response.
+    fn handle_bars_response(&mut self, response: &DataResponse) {
+        log_received(&response);
+
+        if let Some(bars) = response.data.downcast_ref::<Vec<Bar>>() {
+            self.handle_bars(bars);
+        } else {
+            // TODO: Extract common error
+            log::error!(
+                "Failed to downcast response payload: expected `Vec<Bar>`, was type_id={:?}",
+                response.data.type_id()
+            );
+        }
+    }
 }
 
 /// Core functionality for all actors.
@@ -286,7 +625,11 @@ impl Debug for DataActorCore {
     }
 }
 
-impl DataActor for DataActorCore {}
+impl DataActor for DataActorCore {
+    fn state(&self) -> ComponentState {
+        self.state
+    }
+}
 
 impl DataActorCore {
     /// Creates a new [`Actor`] instance.
@@ -338,30 +681,6 @@ impl DataActorCore {
     // TODO: Extract this common state logic and handling out to some component module
     pub fn state(&self) -> ComponentState {
         self.state
-    }
-
-    pub fn is_ready(&self) -> bool {
-        self.state == ComponentState::Ready
-    }
-
-    pub fn is_running(&self) -> bool {
-        self.state == ComponentState::Running
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        self.state == ComponentState::Stopped
-    }
-
-    pub fn is_disposed(&self) -> bool {
-        self.state == ComponentState::Disposed
-    }
-
-    pub fn is_degraded(&self) -> bool {
-        self.state == ComponentState::Degraded
-    }
-
-    pub fn is_faulting(&self) -> bool {
-        self.state == ComponentState::Faulted
     }
 
     // -- REGISTRATION ----------------------------------------------------------------------------
@@ -519,8 +838,8 @@ impl DataActorCore {
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
-    /// Subscribe to streaming data of the given data type.
-    pub fn subscribe_data(
+    /// Subscribe to streaming `data_type` data.
+    pub fn subscribe_data<A: DataActor>(
         &self,
         data_type: DataType,
         client_id: Option<ClientId>,
@@ -532,7 +851,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle(data);
+                get_actor_unchecked::<A>(&actor_id).handle(data);
             },
         )));
 
@@ -555,8 +874,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`Instrument`] data for the given venue.
-    pub fn subscribe_instruments(
+    /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
+    pub fn subscribe_instruments<A: DataActor>(
         &self,
         venue: Venue,
         client_id: Option<ClientId>,
@@ -568,7 +887,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument(instrument);
+                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
             },
         )));
 
@@ -585,8 +904,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentAny`] data for the given instrument ID.
-    pub fn subscribe_instrument(
+    /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
+    pub fn subscribe_instrument<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -598,7 +917,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument(instrument);
+                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
             },
         )));
 
@@ -616,11 +935,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`OrderBookDeltas`] data for the given instrument ID.
+    /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
     ///
     /// Once subscribed, any matching order book deltas published on the message bus are forwarded
     /// to the `on_book_deltas` handler.
-    pub fn subscribe_book_deltas(
+    pub fn subscribe_book_deltas<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -635,7 +954,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |deltas: &OrderBookDeltas| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_book_deltas(deltas);
+                get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
             },
         )));
 
@@ -656,7 +975,7 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the given instrument ID.
+    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
     ///
     /// Once subscribed, any matching order book snapshots published on the message bus are forwarded
     /// to the `on_book` handler.
@@ -664,7 +983,7 @@ impl DataActorCore {
     /// # Warnings
     ///
     /// Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
-    pub fn subscribe_book_snapshots(
+    pub fn subscribe_book_snapshots<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         book_type: BookType,
@@ -687,7 +1006,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |book: &OrderBook| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_book(book);
+                get_actor_unchecked::<A>(&actor_id).handle_book(book);
             },
         )));
 
@@ -708,8 +1027,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`QuoteTick`] data for the given instrument ID.
-    pub fn subscribe_quotes(
+    /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
+    pub fn subscribe_quotes<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -721,7 +1040,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |quote: &QuoteTick| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_quote(quote);
+                get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
             },
         )));
 
@@ -739,8 +1058,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`TradeTick`] data for the given instrument ID.
-    pub fn subscribe_trades(
+    /// Subscribe to streaming [`TradeTick`] data for the `instrument_id`.
+    pub fn subscribe_trades<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -752,7 +1071,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |trade: &TradeTick| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_trade(trade);
+                get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
             },
         )));
 
@@ -770,11 +1089,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`Bar`] data for the given bar type.
+    /// Subscribe to streaming [`Bar`] data for the `bar_type`.
     ///
     /// Once subscribed, any matching bar data published on the message bus is forwarded
     /// to the `on_bar` handler.
-    pub fn subscribe_bars(
+    pub fn subscribe_bars<A: DataActor>(
         &self,
         bar_type: BarType,
         client_id: Option<ClientId>,
@@ -787,7 +1106,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_bar(bar);
+                get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
             })));
 
         msgbus::subscribe(topic, handler, None);
@@ -805,11 +1124,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`MarkPriceUpdate`] data for the given instrument ID.
+    /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
     ///
     /// Once subscribed, any matching mark price updates published on the message bus are forwarded
     /// to the `on_mark_price` handler.
-    pub fn subscribe_mark_prices(
+    pub fn subscribe_mark_prices<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -821,7 +1140,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |mark_price: &MarkPriceUpdate| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_mark_price(mark_price);
+                get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
             },
         )));
 
@@ -839,11 +1158,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`IndexPriceUpdate`] data for the given instrument ID.
+    /// Subscribe to streaming [`IndexPriceUpdate`] data for the `instrument_id`.
     ///
     /// Once subscribed, any matching index price updates published on the message bus are forwarded
     /// to the `on_index_price` handler.
-    pub fn subscribe_index_prices(
+    pub fn subscribe_index_prices<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -855,7 +1174,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |index_price: &IndexPriceUpdate| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_index_price(index_price);
+                get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
             },
         )));
 
@@ -873,11 +1192,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentStatus`] data for the given instrument ID.
+    /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
     ///
     /// Once subscribed, any matching bar data published on the message bus is forwarded
     /// to the `on_bar` handler.
-    pub fn subscribe_instrument_status(
+    pub fn subscribe_instrument_status<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -889,7 +1208,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |status: &InstrumentStatus| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_status(status);
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
             },
         )));
 
@@ -907,11 +1226,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentClose`] data for the given instrument ID.
+    /// Subscribe to streaming [`InstrumentClose`] data for the `instrument_id`.
     ///
     /// Once subscribed, any matching instrument close data published on the message bus is forwarded
     /// to the `on_instrument_close` handler.
-    pub fn subscribe_instrument_close(
+    pub fn subscribe_instrument_close<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -923,7 +1242,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |close: &InstrumentClose| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle_instrument_close(close);
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
             },
         )));
 
@@ -941,8 +1260,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Unsubscribe from data of the given data type.
-    pub fn unsubscribe_data(
+    /// Unsubscribe from streaming `data_type` data.
+    pub fn unsubscribe_data<A: DataActor>(
         &self,
         data_type: DataType,
         client_id: Option<ClientId>,
@@ -954,7 +1273,7 @@ impl DataActorCore {
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
             move |data: &dyn Any| {
-                get_actor_unchecked::<DataActorCore>(&actor_id).handle(data);
+                get_actor_unchecked::<A>(&actor_id).handle(data);
             },
         )));
 
@@ -976,8 +1295,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from update `Instrument` data for the given venue.
-    pub fn unsubscribe_instruments(
+    /// Unsubscribe from streaming [`Instrument`] data for the `venue`.
+    pub fn unsubscribe_instruments<A: DataActor>(
         &self,
         venue: Venue,
         client_id: Option<ClientId>,
@@ -986,7 +1305,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instruments_topic(venue);
-        // msgbus::unsubscribe(&topic, self.handle_instruments);  // TODO!
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |instrument: &InstrumentAny| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
             client_id,
@@ -999,7 +1325,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    pub fn unsubscribe_instrument(
+    /// Unsubscribe from streaming [`Instrument`] definitions for the `instrument_id`.
+    pub fn unsubscribe_instrument<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1008,7 +1335,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_instrument);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |instrument: &InstrumentAny| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
             instrument_id,
@@ -1022,7 +1356,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    pub fn unsubscribe_book_deltas(
+    /// Unsubscribe from streaming [`OrderBookDeltas`] for the `instrument_id`.
+    pub fn unsubscribe_book_deltas<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1031,7 +1366,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_deltas_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_book_deltas);
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |deltas: &OrderBookDeltas| {
+                get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
             instrument_id,
@@ -1045,8 +1387,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from order book snapshots for the given instrument ID.
-    pub fn unsubscribe_book_snapshots(
+    /// Unsubscribe from [`OrderBook`] snapshots for the `instrument_id`.
+    pub fn unsubscribe_book_snapshots<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1055,7 +1397,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_book_snapshots_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_book);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |book: &OrderBook| {
+                get_actor_unchecked::<A>(&actor_id).handle_book(book);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
             instrument_id,
@@ -1069,8 +1418,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
-    pub fn unsubscribe_quotes(
+    /// Unsubscribe from streaming [`QuoteTick`] data for the `instrument_id`.
+    pub fn unsubscribe_quotes<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1079,7 +1428,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_quotes_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_quote);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |quote: &QuoteTick| {
+                get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
             instrument_id,
@@ -1093,8 +1449,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming `TradeTick` data for the given instrument ID.
-    pub fn unsubscribe_trades(
+    /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
+    pub fn unsubscribe_trades<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1103,7 +1459,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_trades_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_trade);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |trade: &TradeTick| {
+                get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
             instrument_id,
@@ -1117,8 +1480,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming `Bar` data for the given bar type.
-    pub fn unsubscribe_bars(
+    /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
+    pub fn unsubscribe_bars<A: DataActor>(
         &self,
         bar_type: BarType,
         client_id: Option<ClientId>,
@@ -1127,7 +1490,13 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_bars_topic(bar_type);
-        // msgbus::unsubscribe(&topic, self.handle_bar);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
+            })));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
             bar_type,
@@ -1141,8 +1510,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming `MarkPriceUpdate` data for the given instrument ID.
-    pub fn unsubscribe_mark_prices(
+    /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
+    pub fn unsubscribe_mark_prices<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1151,7 +1520,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_mark_price_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_mark_price);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |mark_price: &MarkPriceUpdate| {
+                get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
             instrument_id,
@@ -1165,8 +1541,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming `IndexPriceUpdate` data for the given instrument ID.
-    pub fn unsubscribe_index_prices(
+    /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
+    pub fn unsubscribe_index_prices<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1175,7 +1551,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_index_price_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_index_price);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |index_price: &IndexPriceUpdate| {
+                get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
             instrument_id,
@@ -1189,8 +1572,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from instrument status updates for the given instrument ID.
-    pub fn unsubscribe_instrument_status(
+    /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
+    pub fn unsubscribe_instrument_status<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1199,7 +1582,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_status_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_instrument_status);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |status: &InstrumentStatus| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
             instrument_id,
@@ -1213,8 +1603,8 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from instrument close updates for the given instrument ID.
-    pub fn unsubscribe_instrument_close(
+    /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
+    pub fn unsubscribe_instrument_close<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1223,7 +1613,14 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_instrument_close_topic(instrument_id);
-        // msgbus::unsubscribe(&topic, self.handle_instrument_close);  // TODO
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |close: &InstrumentClose| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
+            },
+        )));
+
+        msgbus::unsubscribe(topic, handler);
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
             instrument_id,
@@ -1443,319 +1840,6 @@ impl DataActorCore {
         });
 
         self.send_data_cmd(DataCommand::Request(command));
-    }
-
-    // -- HANDLERS --------------------------------------------------------------------------------
-
-    /// Handles a received custom/generic data point.
-    pub(crate) fn handle_data(&mut self, data: &dyn Any) {
-        log_received(&data);
-
-        if !self.is_running() {
-            log_not_running(&data);
-            return;
-        }
-
-        if let Err(e) = self.on_data(data) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received signal.
-    pub(crate) fn handle_signal(&mut self, signal: &Signal) {
-        log_received(&signal);
-
-        if !self.is_running() {
-            log_not_running(&signal);
-            return;
-        }
-
-        if let Err(e) = self.on_signal(signal) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received instrument.
-    pub(crate) fn handle_instrument(&mut self, instrument: &InstrumentAny) {
-        log_received(&instrument);
-
-        if !self.is_running() {
-            log_not_running(&instrument);
-            return;
-        }
-
-        if let Err(e) = self.on_instrument(instrument) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles received order book deltas.
-    pub(crate) fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        log_received(&deltas);
-
-        if !self.is_running() {
-            log_not_running(&deltas);
-            return;
-        }
-
-        if let Err(e) = self.on_book_deltas(deltas) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received order book reference.
-    pub(crate) fn handle_book(&mut self, book: &OrderBook) {
-        log_received(&book);
-
-        if !self.is_running() {
-            log_not_running(&book);
-            return;
-        }
-
-        if let Err(e) = self.on_book(book) {
-            log_error(&e);
-        };
-    }
-
-    /// Handles a received quote.
-    pub(crate) fn handle_quote(&mut self, quote: &QuoteTick) {
-        log_received(&quote);
-
-        if !self.is_running() {
-            log_not_running(&quote);
-            return;
-        }
-
-        if let Err(e) = self.on_quote(quote) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received trade.
-    pub(crate) fn handle_trade(&mut self, trade: &TradeTick) {
-        log_received(&trade);
-
-        if !self.is_running() {
-            log_not_running(&trade);
-            return;
-        }
-
-        if let Err(e) = self.on_trade(trade) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a receiving bar.
-    pub(crate) fn handle_bar(&mut self, bar: &Bar) {
-        log_received(&bar);
-
-        if !self.is_running() {
-            log_not_running(&bar);
-            return;
-        }
-
-        if let Err(e) = self.on_bar(bar) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received mark price update.
-    pub(crate) fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
-        log_received(&mark_price);
-
-        if !self.is_running() {
-            log_not_running(&mark_price);
-            return;
-        }
-
-        if let Err(e) = self.on_mark_price(mark_price) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received index price update.
-    pub(crate) fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
-        log_received(&index_price);
-
-        if !self.is_running() {
-            log_not_running(&index_price);
-            return;
-        }
-
-        if let Err(e) = self.on_index_price(index_price) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received instrument status.
-    pub(crate) fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
-        log_received(&status);
-
-        if !self.is_running() {
-            log_not_running(&status);
-            return;
-        }
-
-        if let Err(e) = self.on_instrument_status(status) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received instrument close.
-    pub(crate) fn handle_instrument_close(&mut self, close: &InstrumentClose) {
-        log_received(&close);
-
-        if !self.is_running() {
-            log_not_running(&close);
-            return;
-        }
-
-        if let Err(e) = self.on_instrument_close(close) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles multiple received instruments.
-    pub(crate) fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        for instrument in instruments {
-            self.handle_instrument(instrument);
-        }
-    }
-
-    /// Handles multiple received quote ticks.
-    pub(crate) fn handle_quotes(&mut self, quotes: &Vec<QuoteTick>) {
-        for quote in quotes {
-            self.handle_quote(quote);
-        }
-    }
-
-    /// Handles multiple received trade ticks.
-    pub(crate) fn handle_trades(&mut self, trades: &Vec<TradeTick>) {
-        for trade in trades {
-            self.handle_trade(trade);
-        }
-    }
-
-    /// Handles multiple received bars.
-    pub(crate) fn handle_bars(&mut self, bars: &Vec<Bar>) {
-        for bar in bars {
-            self.handle_bar(bar);
-        }
-    }
-
-    /// Handles received historical data.
-    pub(crate) fn handle_historical_data(&mut self, data: &dyn Any) {
-        log_received(&data);
-
-        if let Err(e) = self.on_historical_data(data) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received event.
-    pub(crate) fn handle_time_event(&mut self, event: &TimeEvent) {
-        log_received(&event);
-
-        if let Err(e) = self.on_time_event(event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received event.
-    pub(crate) fn handle_event(&mut self, event: &dyn Any) {
-        log_received(&event);
-
-        if let Err(e) = self.on_event(event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a data response.
-    pub(crate) fn handle_data_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(data) = response.data.downcast_ref::<Vec<&dyn Any>>() {
-            for d in data {
-                self.handle_historical_data(d);
-            }
-        } else if let Some(data) = response.data.downcast_ref::<&dyn Any>() {
-            self.handle_historical_data(data);
-        }
-    }
-
-    /// Handles an instrument response.
-    pub(crate) fn handle_instrument_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(inst) = response.data.downcast_ref::<InstrumentAny>() {
-            self.handle_instrument(inst);
-        } else {
-            // TODO: Extract common error
-            log::error!(
-                "Failed to downcast response payload: expected `InstrumentAny`, was type_id={:?}",
-                response.data.type_id()
-            );
-        }
-    }
-
-    /// Handles an instruments response.
-    pub(crate) fn handle_instruments_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(insts) = response.data.downcast_ref::<Vec<InstrumentAny>>() {
-            self.handle_instruments(insts);
-        } else {
-            // TODO: Extract common error
-            log::error!(
-                "Failed to downcast response payload: expected `Vec<InstrumentAny>`, was type_id={:?}",
-                response.data.type_id()
-            );
-        }
-    }
-
-    /// Handles a quotes response.
-    pub(crate) fn handle_quotes_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(quotes) = response.data.downcast_ref::<Vec<QuoteTick>>() {
-            self.handle_quotes(quotes);
-        } else {
-            // TODO: Extract common error
-            log::error!(
-                "Failed to downcast response payload: expected `Vec<QuoteTick>`, was type_id={:?}",
-                response.data.type_id()
-            );
-        }
-    }
-
-    /// Handles a trades response.
-    pub(crate) fn handle_trades_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(trades) = response.data.downcast_ref::<Vec<TradeTick>>() {
-            self.handle_trades(trades);
-        } else {
-            // TODO: Extract common error
-            log::error!(
-                "Failed to downcast response payload: expected `Vec<TradeTick>`, was type_id={:?}",
-                response.data.type_id()
-            );
-        }
-    }
-
-    /// Handles a bars response.
-    pub(crate) fn handle_bars_response(&mut self, response: &DataResponse) {
-        log_received(&response);
-
-        if let Some(bars) = response.data.downcast_ref::<Vec<Bar>>() {
-            self.handle_bars(bars);
-        } else {
-            // TODO: Extract common error
-            log::error!(
-                "Failed to downcast response payload: expected `Vec<Bar>`, was type_id={:?}",
-                response.data.type_id()
-            );
-        }
     }
 }
 

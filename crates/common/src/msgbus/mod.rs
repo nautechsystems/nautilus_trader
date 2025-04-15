@@ -110,10 +110,7 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
 
 /// Publishes the `message` to the `topic`.
 pub fn publish(topic: &Ustr, message: &dyn Any) {
-    log::trace!(
-        "Publishing topic '{topic}' {message:?} at {}",
-        get_message_bus().borrow().memory_address()
-    );
+    log::trace!("Publishing topic '{topic}' {message:?}");
     let matching_subs = get_message_bus().borrow().matching_subscriptions(topic);
 
     log::trace!("Matched {} subscriptions", matching_subs.len());
@@ -129,9 +126,8 @@ pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
     let endpoint = Ustr::from(endpoint.as_ref());
 
     log::debug!(
-        "Registering endpoint '{endpoint}' with handler ID {} at {}",
+        "Registering endpoint '{endpoint}' with handler ID {}",
         handler.0.id(),
-        get_message_bus().borrow().memory_address(),
     );
 
     // Updates value if key already exists
@@ -145,10 +141,7 @@ pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
 pub fn deregister<T: AsRef<str>>(endpoint: T) {
     let endpoint = Ustr::from(endpoint.as_ref());
 
-    log::debug!(
-        "Deregistering endpoint '{endpoint}' at {}",
-        get_message_bus().borrow().memory_address()
-    );
+    log::debug!("Deregistering endpoint '{endpoint}'");
 
     // Removes entry if it exists for endpoint
     get_message_bus()
@@ -161,17 +154,14 @@ pub fn deregister<T: AsRef<str>>(endpoint: T) {
 pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, priority: Option<u8>) {
     let topic = Ustr::from(topic.as_ref());
 
-    log::debug!(
-        "Subscribing for topic '{topic}' at {}",
-        get_message_bus().borrow().memory_address(),
-    );
+    log::debug!("Subscribing {handler:?} for topic '{topic}'");
 
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
 
     let sub = Subscription::new(topic, handler, priority);
     if msgbus_ref_mut.subscriptions.contains_key(&sub) {
-        log::error!("{sub:?} already exists");
+        log::warn!("{sub:?} already exists");
         return;
     }
 
@@ -183,6 +173,7 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
             subs.sort();
             // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
             matches.push(*pattern);
+            log::debug!("Added subscription for '{topic}'");
         }
     }
 
@@ -195,15 +186,19 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
 pub fn unsubscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) {
     let topic = Ustr::from(topic.as_ref());
 
-    log::debug!(
-        "Unsubscribing for topic '{topic}' at {}",
-        get_message_bus().borrow().memory_address(),
-    );
+    log::debug!("Unsubscribing {handler:?} from topic '{topic}'");
+
     let sub = Subscription::new(topic, handler, None);
-    get_message_bus()
+    let removed = get_message_bus()
         .borrow_mut()
         .subscriptions
         .shift_remove(&sub);
+
+    if removed.is_some() {
+        log::debug!("Handler for topic '{topic}' was removed");
+    } else {
+        log::debug!("No matching handler for topic '{topic}' was found");
+    }
 }
 
 pub fn is_subscribed<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) -> bool {
@@ -228,7 +223,7 @@ pub fn subscriptions_count<T: AsRef<str>>(topic: T) -> usize {
 /// priority is assigned then the handler may receive messages before core
 /// system components have been able to process necessary calculations and
 /// produce potential side effects for logically sound behavior.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.
     pub handler: ShareableMessageHandler,
@@ -250,24 +245,12 @@ impl Subscription {
         handler: ShareableMessageHandler,
         priority: Option<u8>,
     ) -> Self {
-        let handler_id = handler.0.id();
-
         Self {
-            handler_id,
+            handler_id: handler.0.id(),
             topic: Ustr::from(topic.as_ref()),
             handler,
             priority: priority.unwrap_or(0),
         }
-    }
-}
-
-impl Debug for Subscription {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Subscription {{ topic: {}, handler: {}, priority: {} }}",
-            self.topic, self.handler_id, self.priority
-        )
     }
 }
 
