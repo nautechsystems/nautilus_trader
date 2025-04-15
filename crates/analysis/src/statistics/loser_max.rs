@@ -45,9 +45,11 @@ impl PortfolioStatistic for MaxLoser {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnls() {
         let max_loser = MaxLoser {};
         let result = max_loser.calculate_from_realized_pnls(&[]);
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_positive() {
         let max_loser = MaxLoser {};
         let pnls = vec![10.0, 20.0, 30.0];
@@ -63,7 +65,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_negative() {
         let max_loser = MaxLoser {};
         let pnls = vec![-10.0, -20.0, -30.0];
@@ -72,7 +74,7 @@ mod tests {
         assert_eq!(result.unwrap(), -30.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_pnls() {
         let max_loser = MaxLoser {};
         let pnls = vec![10.0, -20.0, 30.0, -40.0];
@@ -81,7 +83,7 @@ mod tests {
         assert_eq!(result.unwrap(), -40.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_with_zero() {
         let max_loser = MaxLoser {};
         let pnls = vec![10.0, 0.0, -20.0, -30.0];
@@ -90,7 +92,7 @@ mod tests {
         assert_eq!(result.unwrap(), -30.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_single_value() {
         let max_loser = MaxLoser {};
         let pnls = vec![-10.0];
@@ -99,7 +101,7 @@ mod tests {
         assert_eq!(result.unwrap(), -10.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let max_loser = MaxLoser {};
         assert_eq!(max_loser.name(), "MaxLoser");

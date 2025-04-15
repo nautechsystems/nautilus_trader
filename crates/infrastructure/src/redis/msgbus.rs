@@ -26,8 +26,8 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        CLOSE_TOPIC,
-        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        BusMessage, CLOSE_TOPIC,
+        database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     },
     runtime::get_runtime,
 };

@@ -404,6 +404,7 @@ mod tests {
         instruments::InstrumentAny,
         types::{AccountBalance, Money, Price, Quantity},
     };
+    use rstest::rstest;
 
     use super::*;
 
@@ -581,7 +582,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_register_and_deregister_statistics() {
         let mut analyzer = PortfolioAnalyzer::new();
         let stat = Arc::new(MockStatistic::new("test_stat"));
@@ -603,7 +604,7 @@ mod tests {
         assert!(analyzer.statistics.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_calculate_total_pnl() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -634,7 +635,7 @@ mod tests {
         assert_eq!(result, 600.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_calculate_total_pnl_percentage() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -667,7 +668,7 @@ mod tests {
         assert_eq!(result, 100.0); // (2000 - 1000) / 1000 * 100
     }
 
-    #[test]
+    #[rstest]
     fn test_add_positions_and_returns() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -691,7 +692,7 @@ mod tests {
         assert_eq!(*returns.values().next().unwrap(), 0.30000000000000004);
     }
 
-    #[test]
+    #[rstest]
     fn test_performance_stats_calculation() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -734,7 +735,7 @@ mod tests {
         assert!(general_stats.contains_key("test_stat"));
     }
 
-    #[test]
+    #[rstest]
     fn test_formatted_output() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
@@ -775,7 +776,7 @@ mod tests {
         assert!(general_formatted.iter().all(|s| s.contains(':')));
     }
 
-    #[test]
+    #[rstest]
     fn test_reset() {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();

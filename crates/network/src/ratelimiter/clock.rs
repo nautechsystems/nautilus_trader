@@ -171,9 +171,11 @@ impl Clock for MonotonicClock {
 mod test {
     use std::{sync::Arc, thread, time::Duration};
 
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn fake_clock_parallel_advances() {
         let clock = Arc::new(FakeRelativeClock::default());
         let threads = std::iter::repeat_n((), 10)
@@ -193,7 +195,7 @@ mod test {
         }
     }
 
-    #[test]
+    #[rstest]
     fn duration_addition_coverage() {
         let d = Duration::from_secs(1);
         let one_ns = Nanos::from(1);

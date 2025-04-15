@@ -175,7 +175,7 @@ fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
     assert_eq!(cache.venue_order_id(&order.client_order_id()), None);
 }
 
-#[ignore] // TODO: Revisit on next pass
+#[ignore = "Revisit on next pass"]
 #[rstest]
 fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
     let mut order = OrderTestBuilder::new(OrderType::Market)
@@ -268,7 +268,7 @@ fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
     );
 }
 
-#[ignore] // TODO: Revisit on next pass
+#[ignore = "Revisit on next pass"]
 #[rstest]
 fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
@@ -833,7 +833,7 @@ fn test_purge_order() {
     let audusd_sim = audusd_sim();
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
 
-    // Add an order to cache
+    // Create an order and fill to generate a position
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(audusd_sim.id())
         .side(OrderSide::Buy)
@@ -842,7 +842,25 @@ fn test_purge_order() {
         .build();
 
     let client_order_id = order.client_order_id();
+
+    let filled = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim,
+        None,
+        Some(PositionId::new("P-123456")),
+        Some(Price::from("1.00001")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
     cache.add_order(order, None, None, false).unwrap();
+
+    let position = Position::new(&audusd_sim, filled.into());
+    let position_id = position.id;
+    cache.add_position(position, OmsType::Netting).unwrap();
 
     // Verify the order exists
     assert!(cache.order_exists(&client_order_id));
@@ -854,6 +872,8 @@ fn test_purge_order() {
     // Verify the order is gone
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.orders_total_count(None, None, None, None), 0);
+    // Verify associated order events were purged from the position
+    assert_eq!(cache.position(&position_id).unwrap().event_count(), 0);
 }
 
 #[rstest]

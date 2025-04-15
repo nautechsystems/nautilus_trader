@@ -44,6 +44,7 @@ from nautilus_trader.adapters.dydx.endpoints.market.instruments_info import DYDX
 from nautilus_trader.adapters.dydx.schemas.account.address import DYDXSubaccount
 from nautilus_trader.adapters.dydx.schemas.account.orders import DYDXOrderResponse
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.data import Bar
@@ -103,6 +104,11 @@ class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
         low_price = Price(Decimal(self.low), price_precision)
         close_price = Price(Decimal(self.close), price_precision)
         volume = Quantity(Decimal(self.baseTokenVolume), size_precision)
+
+        ts_event = dt_to_unix_nanos(self.startedAt)
+        interval_ms = bar_type.spec.timedelta / datetime.timedelta(milliseconds=1)
+        ts_event += millis_to_nanos(interval_ms)
+
         return Bar(
             bar_type=bar_type,
             open=open_price,
@@ -110,7 +116,7 @@ class DYDXCandle(msgspec.Struct, forbid_unknown_fields=True):
             low=low_price,
             close=close_price,
             volume=volume,
-            ts_event=dt_to_unix_nanos(self.startedAt),
+            ts_event=ts_event,
             ts_init=ts_init,
         )
 

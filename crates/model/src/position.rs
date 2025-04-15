@@ -128,6 +128,23 @@ impl Position {
         item
     }
 
+    /// Purges all order fill events for the given client order ID.
+    pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
+        // Create new vectors without the events from the specified order
+        let mut filtered_events = Vec::new();
+        let mut filtered_trade_ids = Vec::new();
+
+        for event in &self.events {
+            if event.client_order_id != client_order_id {
+                filtered_events.push(*event);
+                filtered_trade_ids.push(event.trade_id);
+            }
+        }
+
+        self.events = filtered_events;
+        self.trade_ids = filtered_trade_ids;
+    }
+
     pub fn apply(&mut self, fill: &OrderFilled) {
         assert!(
             !self.trade_ids.contains(&fill.trade_id),
@@ -205,7 +222,7 @@ impl Position {
         self.ts_last = fill.ts_event;
     }
 
-    pub fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
+    fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
         // Handle case where commission could be None or not settlement currency
         let mut realized_pnl = if let Some(commission) = fill.commission {
             if commission.currency == self.settlement_currency {
@@ -244,7 +261,7 @@ impl Position {
         self.buy_qty += last_qty_object;
     }
 
-    pub fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
+    fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
         // Handle case where commission could be None or not settlement currency
         let mut realized_pnl = if let Some(commission) = fill.commission {
             if commission.currency == self.settlement_currency {
@@ -282,37 +299,20 @@ impl Position {
         self.sell_qty += last_qty_object;
     }
 
-    /// Purges all order fill events for the given client order ID.
-    pub fn purge_events_for_order(&mut self, client_order_id: ClientOrderId) {
-        // Create new vectors without the events from the specified order
-        let mut filtered_events = Vec::new();
-        let mut filtered_trade_ids = Vec::new();
-
-        for event in &self.events {
-            if event.client_order_id != client_order_id {
-                filtered_events.push(*event);
-                filtered_trade_ids.push(event.trade_id);
-            }
-        }
-
-        self.events = filtered_events;
-        self.trade_ids = filtered_trade_ids;
-    }
-
     #[must_use]
-    pub fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
         let start_cost = avg_pg * qty;
         let event_cost = last_px * last_qty;
         (start_cost + event_cost) / (qty + last_qty)
     }
 
     #[must_use]
-    pub fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px_open_px(&self, last_px: f64, last_qty: f64) -> f64 {
         self.calculate_avg_px(self.quantity.as_f64(), self.avg_px_open, last_px, last_qty)
     }
 
     #[must_use]
-    pub fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
+    fn calculate_avg_px_close_px(&self, last_px: f64, last_qty: f64) -> f64 {
         if self.avg_px_close.is_none() {
             return last_px;
         }
@@ -326,15 +326,6 @@ impl Position {
             self.avg_px_close.unwrap(),
             last_px,
             last_qty,
-        )
-    }
-
-    #[must_use]
-    pub fn total_pnl(&self, last: Price) -> Money {
-        let realized_pnl = self.realized_pnl.map_or(0.0, |pnl| pnl.as_f64());
-        Money::new(
-            realized_pnl + self.unrealized_pnl(last).as_f64(),
-            self.settlement_currency,
         )
     }
 
@@ -357,9 +348,34 @@ impl Position {
     }
 
     #[must_use]
+    fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
+    }
+
+    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
+        let quantity = quantity.min(self.signed_qty.abs());
+        if self.is_inverse {
+            quantity
+                * self.multiplier.as_f64()
+                * self.calculate_points_inverse(avg_px_open, avg_px_close)
+        } else {
+            quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
+        }
+    }
+
+    #[must_use]
     pub fn calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
         let pnl_raw = self.calculate_pnl_raw(avg_px_open, avg_px_close, quantity.as_f64());
         Money::new(pnl_raw, self.settlement_currency)
+    }
+
+    #[must_use]
+    pub fn total_pnl(&self, last: Price) -> Money {
+        let realized_pnl = self.realized_pnl.map_or(0.0, |pnl| pnl.as_f64());
+        Money::new(
+            realized_pnl + self.unrealized_pnl(last).as_f64(),
+            self.settlement_currency,
+        )
     }
 
     #[must_use]
@@ -375,19 +391,11 @@ impl Position {
         }
     }
 
-    #[must_use]
-    pub fn calculate_return(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
-        self.calculate_points(avg_px_open, avg_px_close) / avg_px_open
-    }
-
-    fn calculate_pnl_raw(&self, avg_px_open: f64, avg_px_close: f64, quantity: f64) -> f64 {
-        let quantity = quantity.min(self.signed_qty.abs());
-        if self.is_inverse {
-            quantity
-                * self.multiplier.as_f64()
-                * self.calculate_points_inverse(avg_px_open, avg_px_close)
-        } else {
-            quantity * self.multiplier.as_f64() * self.calculate_points(avg_px_open, avg_px_close)
+    pub fn closing_order_side(&self) -> OrderSide {
+        match self.side {
+            PositionSide::Long => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Buy,
+            _ => OrderSide::NoOrderSide,
         }
     }
 
@@ -636,6 +644,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
+        assert_eq!(position.closing_order_side(), OrderSide::Sell);
         assert!(!position.is_opposite_side(OrderSide::Buy));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -690,6 +699,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
+        assert_eq!(position.closing_order_side(), OrderSide::Buy);
         assert!(!position.is_opposite_side(OrderSide::Sell));
         assert_eq!(position, position); // Equality operator test
         assert!(position.closing_order_id.is_none());
@@ -1017,6 +1027,7 @@ mod tests {
             position.quantity,
             Quantity::zero(audusd_sim.price_precision())
         );
+        assert_eq!(position.closing_order_side(), OrderSide::NoOrderSide);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
         assert_eq!(position.avg_px_open, 1.0);

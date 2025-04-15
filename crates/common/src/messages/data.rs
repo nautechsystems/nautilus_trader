@@ -1022,13 +1022,17 @@ impl RequestCommand {
 
     pub fn venue(&self) -> Option<&Venue> {
         match self {
-            Self::Data(cmd) => Some(&cmd.venue),
+            Self::Data(_) => None,
             Self::Instruments(cmd) => cmd.venue.as_ref(),
-            Self::Instrument(cmd) => cmd.venue.as_ref(),
-            Self::BookSnapshot(cmd) => cmd.venue.as_ref(),
-            Self::Quotes(cmd) => cmd.venue.as_ref(),
-            Self::Trades(cmd) => cmd.venue.as_ref(),
-            Self::Bars(cmd) => cmd.venue.as_ref(),
+            Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
+            Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
+            Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
+            Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
+            // TODO: Extract the below somewhere
+            Self::Bars(cmd) => match &cmd.bar_type {
+                BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
+                BarType::Composite { instrument_id, .. } => Some(&instrument_id.venue),
+            },
         }
     }
 }
@@ -1040,7 +1044,6 @@ pub struct RequestInstrument {
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
@@ -1048,10 +1051,9 @@ pub struct RequestInstrument {
 
 #[derive(Clone, Debug)]
 pub struct RequestData {
-    pub correlation_id: UUID4,
     pub client_id: ClientId,
-    pub venue: Venue,
     pub data_type: DataType,
+    pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
 }
@@ -1063,18 +1065,15 @@ impl RequestInstrument {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<HashMap<String, String>>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
             start,
             end,
             client_id,
-            venue,
             request_id,
             ts_init,
             params,
@@ -1120,9 +1119,8 @@ impl RequestInstruments {
 #[derive(Clone, Debug)]
 pub struct RequestBookSnapshot {
     pub instrument_id: InstrumentId,
-    pub limit: usize,
+    pub depth: Option<NonZeroUsize>,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
@@ -1132,19 +1130,16 @@ impl RequestBookSnapshot {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
-        limit: usize,
+        depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<HashMap<String, String>>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
-            limit,
+            depth,
             client_id,
-            venue,
             request_id,
             ts_init,
             params,
@@ -1157,9 +1152,8 @@ pub struct RequestQuotes {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
-    pub limit: usize,
+    pub limit: Option<NonZeroUsize>,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
@@ -1171,21 +1165,18 @@ impl RequestQuotes {
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
-        limit: usize,
+        limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<HashMap<String, String>>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
             start,
             end,
             limit,
             client_id,
-            venue,
             request_id,
             ts_init,
             params,
@@ -1198,9 +1189,8 @@ pub struct RequestTrades {
     pub instrument_id: InstrumentId,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
-    pub limit: usize,
+    pub limit: Option<NonZeroUsize>,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
@@ -1212,21 +1202,18 @@ impl RequestTrades {
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
-        limit: usize,
+        limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<HashMap<String, String>>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             instrument_id,
             start,
             end,
             limit,
             client_id,
-            venue,
             request_id,
             ts_init,
             params,
@@ -1239,9 +1226,8 @@ pub struct RequestBars {
     pub bar_type: BarType,
     pub start: Option<DateTime<Utc>>,
     pub end: Option<DateTime<Utc>>,
-    pub limit: usize,
+    pub limit: Option<NonZeroUsize>,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<HashMap<String, String>>,
@@ -1253,21 +1239,18 @@ impl RequestBars {
         bar_type: BarType,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
-        limit: usize,
+        limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<HashMap<String, String>>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             bar_type,
             start,
             end,
             limit,
             client_id,
-            venue,
             request_id,
             ts_init,
             params,

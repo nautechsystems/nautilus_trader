@@ -41,7 +41,7 @@ use ustr::Ustr;
 
 use crate::{custom::CustomData, signal::Signal};
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct CacheMap {
     pub currencies: HashMap<Ustr, Currency>,
     pub instruments: HashMap<InstrumentId, InstrumentAny>,

@@ -31,6 +31,7 @@
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_debug_implementations)]
 // #![deny(clippy::missing_errors_doc)]
 
 // Uncomment once we've added trivial `Debug` impls everywhere

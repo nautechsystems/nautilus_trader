@@ -164,7 +164,7 @@ Even when you provide bar data, Nautilus maintains an internal order book for ea
    - For LIMIT orders working in the market, they'll execute if any of the bar's prices reach or cross your limit price (see below).
    - The matching engine continuously processes orders as OHLC prices move, rather than waiting for complete bars.
 
-#### OHLC prices simulation
+#### OHLC Prices Simulation
 
 During backtest execution, each bar is converted into a sequence of four price points:
 
@@ -356,4 +356,29 @@ As the `FillModel` continues to evolve, future versions may introduce more sophi
 - Partial fill simulation
 - Variable slippage based on order size
 - More complex queue position modeling
+:::
+
+## Account Types
+
+Each venue in a backtest has its own account that can be one of the following types:
+
+- Cash account
+- Margin account
+- Betting account
+
+The account type is specified using the `account_type` parameter when adding a venue for a backtest.
+
+### Margin Accounts
+
+A *margin account* facilitates trading of instruments requiring margin, such as futures or leveraged products. It tracks account balances, calculates required margins, and manages leverage to ensure sufficient collateral for positions and orders.
+
+**Key Concepts**:
+
+- **Leverage**: Amplifies trading exposure relative to account equity. Higher leverage increases potential returns and risks.
+- **Initial Margin**: Collateral needed to open a position or submit an order.
+- **Maintenance Margin**: Minimum collateral required to maintain an open position.
+- **Locked Balance**: Funds reserved as collateral, unavailable for new orders or withdrawals.
+
+:::note
+Reduce-only orders do not contribute to locked balance in cash accounts or to initial margin requirements in margin accounts.
 :::

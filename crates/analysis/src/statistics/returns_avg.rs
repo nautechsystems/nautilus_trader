@@ -53,6 +53,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use nautilus_core::UnixNanos;
+    use rstest::rstest;
 
     use super::*;
 
@@ -64,7 +65,7 @@ mod tests {
         new_return
     }
 
-    #[test]
+    #[rstest]
     fn test_empty_returns() {
         let avg = ReturnsAverage {};
         let returns = create_returns(vec![]);
@@ -73,7 +74,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_all_zero() {
         let avg = ReturnsAverage {};
         let returns = create_returns(vec![0.0, 0.0, 0.0]);
@@ -82,7 +83,7 @@ mod tests {
         assert!(result.unwrap().is_nan());
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_non_zero() {
         let avg = ReturnsAverage {};
         let returns = create_returns(vec![10.0, -20.0, 0.0, 30.0, -40.0]);
@@ -92,7 +93,7 @@ mod tests {
         assert_eq!(result.unwrap(), -5.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let avg = ReturnsAverage {};
         assert_eq!(avg.name(), "ReturnsAverage");

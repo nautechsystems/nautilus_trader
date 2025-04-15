@@ -153,6 +153,7 @@ pub struct Logger {
 }
 
 /// Represents a type of log event.
+#[derive(Clone, Debug)]
 pub enum LogEvent {
     /// A log line event.
     Log(LogLine),
@@ -187,6 +188,7 @@ impl Display for LogLine {
 /// of it, such as plain string, colored string, and JSON. It also caches the
 /// results for repeated calls, optimizing performance when the same message
 /// needs to be logged multiple times in different formats.
+#[derive(Clone, Debug)]
 pub struct LogLineWrapper {
     /// The underlying log line that contains the log data.
     line: LogLine,
@@ -776,8 +778,8 @@ mod tests {
         );
     }
 
-    #[test]
     #[ignore = "Flaky test: Passing locally on some systems, failing in CI"]
+    #[rstest]
     fn test_file_rotation_and_backup_limits() {
         // Create a temporary directory for log files
         let temp_dir = tempdir().expect("Failed to create temporary directory");

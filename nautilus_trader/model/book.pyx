@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.model cimport level_drop
 from nautilus_trader.core.rust.model cimport level_exposure
 from nautilus_trader.core.rust.model cimport level_orders
 from nautilus_trader.core.rust.model cimport level_price
+from nautilus_trader.core.rust.model cimport level_side
 from nautilus_trader.core.rust.model cimport level_size
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
@@ -776,6 +777,19 @@ cdef class BookLevel:
 
     def __repr__(self) -> str:
         return f"BookLevel(price={self.price}, orders={self.orders()})"
+
+    @property
+    def side(self) -> OrderSide:
+        """
+        Return the side for the level.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        return <OrderSide>level_side(&self._mem)
+
 
     @property
     def price(self) -> Price:

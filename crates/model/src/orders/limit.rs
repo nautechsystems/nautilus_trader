@@ -55,6 +55,12 @@ pub struct LimitOrder {
 
 impl LimitOrder {
     /// Creates a new [`LimitOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -94,6 +100,7 @@ impl LimitOrder {
                 }
             }
         }
+
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,

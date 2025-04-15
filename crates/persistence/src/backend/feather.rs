@@ -326,6 +326,7 @@ mod tests {
         ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
     };
     use object_store::{ObjectStore, local::LocalFileSystem};
+    use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
@@ -401,7 +402,7 @@ mod tests {
         assert!(writer.size > 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_file_writer_round_trip() {
         let instrument_id = "AAPL.AAPL";
         // Write a dummy value.

@@ -55,6 +55,11 @@ pub struct LimitIfTouchedOrder {
 
 impl LimitIfTouchedOrder {
     /// Creates a new [`LimitIfTouchedOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -85,6 +90,7 @@ impl LimitIfTouchedOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
+        // TODO: Implement new_checked and check quantity positive, add error docs.
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,

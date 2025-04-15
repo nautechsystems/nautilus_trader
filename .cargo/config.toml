@@ -5,11 +5,6 @@ rustflags = [
     "-Aclippy::drop_non_drop",
 ]
 
-[target.x86_64-pc-windows-msvc]
-rustflags = [
-    "-C", "target-feature=+crt-static",
-]
-
 [target.x86_64-apple-darwin]
 rustflags = [
     "-C", "link-arg=-undefined",
@@ -22,7 +17,7 @@ rustflags = [
     "-C", "link-arg=dynamic_lookup",
 ]
 
-# [target.x86_64-unknown-linux-gnu]
-# rustflags = [
-#     "-C", "link-arg=-fuse-ld=mold",
-# ]
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "-C", "target-feature=+crt-static",
+]

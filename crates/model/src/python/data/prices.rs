@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -188,6 +188,26 @@ impl MarkPriceUpdate {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(MarkPriceUpdate))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(instrument_id, price_precision))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
     }
 
     /// Returns a new object from the given dictionary representation.
@@ -376,6 +396,26 @@ impl IndexPriceUpdate {
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(IndexPriceUpdate))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(instrument_id, price_precision))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
     }
 
     /// Returns a new object from the given dictionary representation.

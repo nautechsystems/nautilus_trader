@@ -1,16 +1,50 @@
-# NautilusTrader 1.216.0 Beta
+# NautilusTrader 1.217.0 Beta
 
 Released on TBD (UTC).
 
-This release adds support for Python 3.13 (*not* yet compatible with free-threading).
+### Enhancements
+None
+
+### Breaking Changes
+- Removed catalog `basename_template` argument (#2510), thanks @faysou
+
+### Internal Improvements
+- Upgraded `sqlx` crate to v0.8.4
+
+### Fixes
+- Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
+- Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
+- Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
+
+### Documentation Updates
+None
+
+### Deprecations
+None
+
+---
+
+# NautilusTrader 1.216.0 Beta
+
+Released on 13th April 2025 (UTC).
+
+This release adds support for Python 3.13 (*not* yet compatible with free-threading),
+and introduces support for Linux on ARM64 architecture.
 
 ### Enhancements
 - Added `allow_past` boolean flag for `Clock.set_timer(...)` to control behavior with start times in the past (default `True` to allow start times in the past)
 - Added `allow_past` boolean flag for `Clock.set_time_alert(...)` to control behavior with alert times in the past (default `True` to fire immediate alert)
+- Added risk engine check for GTD order expire time, which will deny if expire time is already in the past
 - Added instrument updating for exchange and matching engine
 - Added additional price and quantity precision validations for matching engine
 - Added log file rotation with additional config options `max_file_size` and `max_backup_count` (#2468), thanks @xingyanan and @twitu
 - Added `bars_timestamp_on_close` config option for `BybitDataClientConfig` (default `True` to match Nautilus conventions)
+- Added `BetfairSequenceCompleted` custom data type for Betfair to mark the completion of a sequence of messages
+- Added Arrow schema for `MarkPriceUpdate` in Rust
+- Added Arrow schema for `IndexPriceUpdate` in Rust
+- Added Arrow schema for `InstrumentClose` in Rust
+- Added `BookLevel.side` property
+- Added `Position.closing_order_side()` instance method
 - Improved robustness of in-flight order check for `LiveExecutionEngine`, once exceeded query retries will resolve submitted orders as rejected and pending orders as canceled
 - Improved logging for `BacktestNode` crashes with full stack trace and prettier config logging
 
@@ -18,6 +52,7 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Changed external bar requests `ts_event` timestamping from on open to on close for Bybit
 
 ### Internal Improvements
+- Added handling and warning for Betfair zero sized fills
 - Improved WebSocket error handling for dYdX (#2499), thanks @davidsblom
 - Ported `GreeksCalculator` to Rust (#2493, #2496), thanks @faysou
 - Upgraded Cython to v3.1.0b1
@@ -28,6 +63,8 @@ This release adds support for Python 3.13 (*not* yet compatible with free-thread
 - Fixed setting component clocks to backtest start time
 - Fixed overflow error in trailing stop calculations
 - Fixed missing `SymbolFilterType` enum member for Binance (#2495), thanks @sunlei
+- Fixed `ts_event` for Bybit bars (#2502), thanks @davidsblom
+- Fixed position ID handling for Binance Futures in hedging mode with execution algorithm order (#2504), thanks for reporting @Oxygen923
 
 ### Documentation Updates
 - Removed obsolete bar limitations in portfolio docs (#2501), thanks @stefansimik

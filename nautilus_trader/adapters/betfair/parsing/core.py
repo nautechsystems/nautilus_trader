@@ -26,6 +26,7 @@ from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
 
+from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -73,6 +74,9 @@ class BetfairParser:
                 updates.extend(instruments)
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
+
+        updates.append(BetfairSequenceCompleted(ts_event=ts_event, ts_init=ts_init))
+
         return updates
 
 

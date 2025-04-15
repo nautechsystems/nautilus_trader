@@ -22,6 +22,7 @@ pub mod closed;
 pub mod opened;
 pub mod snapshot;
 
+#[derive(Debug)]
 pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),

@@ -62,9 +62,3 @@ runs:
         ls -lh dist/ || echo "No dist directory found"
         rm -rf dist/* 2>/dev/null || true
         echo "Cleanup completed"
-
-    - name: Fetch and delete artifacts for current run
-      if: success()
-      shell: bash
-      run: |
-        bash ./scripts/ci/publish-wheels-delete-artifacts.sh

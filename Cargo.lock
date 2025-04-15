@@ -145,9 +145,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.97"
+version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
+checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "arc-swap"
@@ -791,9 +791,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.18"
+version = "1.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "525046617d8376e3db1deffb079e91cef90a89fc3ca5c185bbf8c9ecdd15cd5c"
+checksum = "8e3a13707ac958681c13b39b458c073d0d9bc8a22cb1b2f4c8e55eb72c13f362"
 dependencies = [
  "jobserver",
  "libc",
@@ -903,9 +903,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.35"
+version = "4.5.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8aa86934b44c19c50f87cc2790e19f54f7a67aedb64101c2e1a2e5ecfb73944"
+checksum = "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -913,9 +913,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.35"
+version = "4.5.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2414dbb2dd0695280da6ea9261e327479e9d37b0630f6b53ba2a11c60c679fd9"
+checksum = "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1248,9 +1248,9 @@ dependencies = [
 
 [[package]]
 name = "data-encoding"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
+checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "databento"
@@ -3014,7 +3014,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3027,7 +3027,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3048,7 +3048,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3064,7 +3064,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase-intx"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3103,10 +3103,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
+ "async-stream",
  "async-trait",
  "bytes",
  "cbindgen",
@@ -3120,6 +3121,7 @@ dependencies = [
  "nautilus-model",
  "proptest",
  "pyo3",
+ "pyo3-async-runtimes",
  "regex",
  "rstest",
  "rust_decimal",
@@ -3138,7 +3140,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3161,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3180,7 +3182,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3197,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3225,7 +3227,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3252,7 +3254,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -3264,7 +3266,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3296,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3320,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3352,7 +3354,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3388,7 +3390,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3422,7 +3424,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "criterion",
  "log",
@@ -3440,7 +3442,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "nautilus-coinbase-intx",
  "nautilus-common",
@@ -3462,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "criterion",
  "log",
@@ -3480,7 +3482,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3499,7 +3501,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3515,7 +3517,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3554,7 +3556,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3573,7 +3575,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.46.0"
+version = "0.47.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -4833,9 +4835,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.25"
+version = "0.23.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "822ee9188ac4ec04a2f0531e55d035fb2de73f18b41a63c70c2712503b6fb13c"
+checksum = "df51b5869f3a441595eac5e8ff14d486ff285f7b8c0df8770e49c3b56351f0f0"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -5262,9 +5264,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4410e73b3c0d8442c5f99b425d7a435b5ee0ae4167b3196771dd3f7a01be745f"
+checksum = "14e22987355fbf8cfb813a0cf8cd97b1b4ec834b94dbd759a9e8679d41fabe83"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -5275,10 +5277,11 @@ dependencies = [
 
 [[package]]
 name = "sqlx-core"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a007b6936676aa9ab40207cde35daab0a04b823be8ae004368c0793b96a61e0"
+checksum = "55c4720d7d4cd3d5b00f61d03751c685ad09c33ae8290c8a2c11335e0604300b"
 dependencies = [
+ "base64",
  "bytes",
  "crc",
  "crossbeam-queue",
@@ -5308,9 +5311,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3112e2ad78643fef903618d78cf0aec1cb3134b019730edb039b69eaf531f310"
+checksum = "175147fcb75f353ac7675509bc58abb2cb291caf0fd24a3623b8f7e3eb0a754b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5321,9 +5324,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-macros-core"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e9f90acc5ab146a99bf5061a7eb4976b573f560bc898ef3bf8435448dd5e7ad"
+checksum = "1cde983058e53bfa75998e1982086c5efe3c370f3250bf0357e344fa3352e32b"
 dependencies = [
  "dotenvy",
  "either",
@@ -5347,9 +5350,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-mysql"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4560278f0e00ce64938540546f59f590d60beee33fffbd3b9cd47851e5fff233"
+checksum = "847d2e5393a4f39e47e4f36cab419709bc2b83cbe4223c60e86e1471655be333"
 dependencies = [
  "atoi",
  "base64",
@@ -5389,9 +5392,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-postgres"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5b98a57f363ed6764d5b3a12bfedf62f07aa16e1856a7ddc2a0bb190a959613"
+checksum = "cc35947a541b9e0a2e3d85da444f1c4137c13040267141b208395a0d0ca4659f"
 dependencies = [
  "atoi",
  "base64",
@@ -5426,9 +5429,9 @@ dependencies = [
 
 [[package]]
 name = "sqlx-sqlite"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f85ca71d3a5b24e64e1d08dd8fe36c6c95c339a896cc33068148906784620540"
+checksum = "6c48291dac4e5ed32da0927a0b981788be65674aeb62666d19873ab4289febde"
 dependencies = [
  "atoi",
  "flume",
@@ -5443,6 +5446,7 @@ dependencies = [
  "serde",
  "serde_urlencoded",
  "sqlx-core",
+ "thiserror 2.0.12",
  "tracing",
  "url",
 ]

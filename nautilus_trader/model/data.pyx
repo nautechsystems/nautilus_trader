@@ -3587,6 +3587,106 @@ cdef class InstrumentClose(Data):
         """
         return InstrumentClose.to_dict_c(obj)
 
+    @staticmethod
+    def to_pyo3_list(list[InstrumentClose] closes) -> list[nautilus_pyo3.InstrumentClose]:
+        """
+        Return pyo3 Rust index prices converted from the given legacy Cython objects.
+
+        Parameters
+        ----------
+        closes : list[InstrumentClose]
+            The legacy Cython Rust instrument closes to convert from.
+
+        Returns
+        -------
+        list[nautilus_pyo3.InstrumentClose]
+
+        """
+        cdef list output = []
+
+        pyo3_instrument_id = None
+        cdef uint8_t price_prec = 0
+
+        cdef:
+            InstrumentClose close
+        for close in closes:
+            if pyo3_instrument_id is None:
+                pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(close.instrument_id.value)
+                price_prec = close.close_price.precision
+
+            pyo3_close = nautilus_pyo3.InstrumentClose(
+                pyo3_instrument_id,
+                nautilus_pyo3.Price(float(close.close_price), price_prec),
+                nautilus_pyo3.InstrumentCloseType(instrument_close_type_to_str(close.close_type)),
+                close.ts_event,
+                close.ts_init,
+            )
+            output.append(pyo3_close)
+
+        return output
+
+    @staticmethod
+    def from_pyo3_list(list pyo3_closes) -> list[InstrumentClose]:
+        """
+        Return legacy Cython instrument closes converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_closes : list[nautilus_pyo3.InstrumentClose]
+            The pyo3 Rust instrument closes to convert from.
+
+        Returns
+        -------
+        list[InstrumentClose]
+
+        """
+        cdef list[InstrumentClose] output = []
+
+        for pyo3_close in pyo3_closes:
+            output.append(InstrumentClose.from_pyo3_c(pyo3_close))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_close) -> InstrumentClose:
+        """
+        Return a legacy Cython instrument close converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_close : nautilus_pyo3InstrumentClose.
+            The pyo3 Rust instrument close to convert from.
+
+        Returns
+        -------
+        InstrumentClose
+
+        """
+        return InstrumentClose(
+            instrument_id=InstrumentId.from_str(pyo3_close.instrument_id.value),
+            close_price=Price(float(pyo3_close.close_price), pyo3_close.close_price.precision),
+            close_type=instrument_close_type_from_str(pyo3_close.close_type.value),
+            ts_event=pyo3_close.ts_event,
+            ts_init=pyo3_close.ts_init,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.IndexPriceUpdate:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.InstrumentClose
+
+        """
+        return nautilus_pyo3.InstrumentClose(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price(float(self.close_price), self.close_price.precision),
+            nautilus_pyo3.InstrumentCloseType(instrument_close_type_to_str(self.close_type)),
+            self.ts_event,
+            self.ts_init,
+        )
+
 
 cdef class QuoteTick(Data):
     """
@@ -4870,7 +4970,7 @@ cdef class MarkPriceUpdate(Data):
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(mark_price.instrument_id.value)
                 price_prec = mark_price.value.precision
 
-            pyo3_mark_price = MarkPriceUpdate(
+            pyo3_mark_price = nautilus_pyo3.MarkPriceUpdate(
                 pyo3_instrument_id,
                 nautilus_pyo3.Price(float(mark_price.value), price_prec),
                 mark_price.ts_event,
@@ -5062,7 +5162,7 @@ cdef class IndexPriceUpdate(Data):
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(index_price.instrument_id.value)
                 price_prec = index_price.value.precision
 
-            pyo3_index_price = IndexPriceUpdate(
+            pyo3_index_price = nautilus_pyo3.IndexPriceUpdate(
                 pyo3_instrument_id,
                 nautilus_pyo3.Price(float(index_price.value), price_prec),
                 index_price.ts_event,

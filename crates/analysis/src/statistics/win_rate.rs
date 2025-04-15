@@ -45,9 +45,11 @@ impl PortfolioStatistic for WinRate {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_empty_pnls() {
         let win_rate = WinRate {};
         let result = win_rate.calculate_from_realized_pnls(&[]);
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_winning_trades() {
         let win_rate = WinRate {};
         let realized_pnls = vec![100.0, 50.0, 200.0];
@@ -64,7 +66,7 @@ mod tests {
         assert_eq!(result.unwrap(), 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_all_losing_trades() {
         let win_rate = WinRate {};
         let realized_pnls = vec![-100.0, -50.0, -200.0];
@@ -73,7 +75,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_mixed_trades() {
         let win_rate = WinRate {};
         let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
@@ -82,7 +84,7 @@ mod tests {
         assert_eq!(result.unwrap(), 0.5);
     }
 
-    #[test]
+    #[rstest]
     fn test_name() {
         let win_rate = WinRate {};
         assert_eq!(win_rate.name(), "WinRate");

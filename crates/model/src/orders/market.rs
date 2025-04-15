@@ -100,6 +100,12 @@ impl MarketOrder {
     }
 
     /// Creates a new [`MarketOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `time_in_force` is GTD (invalid for market orders).
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,

@@ -1349,6 +1349,9 @@ class TestCache:
         order1.apply(fill1)
         self.cache.update_order(order1)
 
+        position = Position(AUDUSD_SIM, fill1)
+        self.cache.add_position(position, OmsType.NETTING)
+
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1375,6 +1378,7 @@ class TestCache:
         assert order1 not in self.cache.orders_closed()
         assert self.cache.orders_total_count() == 1
         assert self.cache.orders_closed_count() == 0
+        assert len(position.events) == 0  # <-- Events for order were purged
 
     def test_purge_closed_positions(self):
         # Arrange

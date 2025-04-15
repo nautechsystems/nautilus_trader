@@ -399,6 +399,7 @@ cdef class Position:
                 f"invalid `OrderSide`, was {side}",  # pragma: no cover (design-time error)
             )
 
+
     @staticmethod
     def side_from_order_side(OrderSide side):
         """
@@ -415,6 +416,24 @@ cdef class Position:
 
         """
         return Position.side_from_order_side_c(side)
+
+    cpdef OrderSide closing_order_side(self):
+        """
+        Return the closing order side for the position.
+
+        If the position is ``FLAT`` then will return ``NO_ORDER_SIDE``.
+
+        Returns
+        -------
+        OrderSide
+
+        """
+        if self.side == PositionSide.LONG:
+            return OrderSide.SELL
+        elif self.side == PositionSide.SHORT:
+            return OrderSide.BUY
+        else:
+            return OrderSide.NO_ORDER_SIDE
 
     cpdef signed_decimal_qty(self):
         """

@@ -66,6 +66,7 @@ from nautilus_trader.common.component cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_optional_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
@@ -1384,10 +1385,10 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Batch start:    {format_iso8601(start)}")
-        self._log.info(f"Batch end:      {format_iso8601(end)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Batch start:    {format_optional_iso8601(start)}")
+        self._log.info(f"Batch end:      {format_optional_iso8601(end)}")
         self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -1408,11 +1409,11 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Run finished:   {format_iso8601(self._run_finished)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Run finished:   {format_optional_iso8601(self._run_finished)}")
         self._log.info(f"Elapsed time:   {elapsed_time}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_optional_iso8601(self._backtest_end)}")
         self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:_}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")

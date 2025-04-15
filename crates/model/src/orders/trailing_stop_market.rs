@@ -86,6 +86,7 @@ impl TrailingStopMarketOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
+        // TODO: Implement new_checked and check quantity positive, add error docs.
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,

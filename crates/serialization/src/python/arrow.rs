@@ -18,10 +18,13 @@ use std::io::Cursor;
 use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
-    data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{
+        Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
+        TradeTick, close::InstrumentClose,
+    },
     python::data::{
-        pyobjects_to_bars, pyobjects_to_order_book_deltas, pyobjects_to_quote_ticks,
-        pyobjects_to_trade_ticks,
+        pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
+        pyobjects_to_mark_prices, pyobjects_to_quotes, pyobjects_to_trades,
     },
 };
 use pyo3::{
@@ -32,9 +35,10 @@ use pyo3::{
 };
 
 use crate::arrow::{
-    ArrowSchemaProvider, bars_to_arrow_record_batch_bytes,
-    order_book_deltas_to_arrow_record_batch_bytes, order_book_depth10_to_arrow_record_batch_bytes,
-    quote_ticks_to_arrow_record_batch_bytes, trade_ticks_to_arrow_record_batch_bytes,
+    ArrowSchemaProvider, bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
+    book_depth10_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
+    instrument_closes_to_arrow_record_batch_bytes, mark_prices_to_arrow_record_batch_bytes,
+    quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batches` into Python `bytes`.
@@ -69,6 +73,8 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         stringify!(QuoteTick) => QuoteTick::get_schema_map(),
         stringify!(TradeTick) => TradeTick::get_schema_map(),
         stringify!(Bar) => Bar::get_schema_map(),
+        stringify!(MarkPriceUpdate) => MarkPriceUpdate::get_schema_map(),
+        stringify!(IndexPriceUpdate) => IndexPriceUpdate::get_schema_map(),
         _ => {
             return Err(PyTypeError::new_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -100,20 +106,32 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
 
     match data_type.as_str() {
         stringify!(OrderBookDelta) => {
-            let deltas = pyobjects_to_order_book_deltas(data)?;
-            py_order_book_deltas_to_arrow_record_batch_bytes(py, deltas)
+            let deltas = pyobjects_to_book_deltas(data)?;
+            py_book_deltas_to_arrow_record_batch_bytes(py, deltas)
         }
         stringify!(QuoteTick) => {
-            let quotes = pyobjects_to_quote_ticks(data)?;
-            py_quote_ticks_to_arrow_record_batch_bytes(py, quotes)
+            let quotes = pyobjects_to_quotes(data)?;
+            py_quotes_to_arrow_record_batch_bytes(py, quotes)
         }
         stringify!(TradeTick) => {
-            let trades = pyobjects_to_trade_ticks(data)?;
-            py_trade_ticks_to_arrow_record_batch_bytes(py, trades)
+            let trades = pyobjects_to_trades(data)?;
+            py_trades_to_arrow_record_batch_bytes(py, trades)
         }
         stringify!(Bar) => {
             let bars = pyobjects_to_bars(data)?;
             py_bars_to_arrow_record_batch_bytes(py, bars)
+        }
+        stringify!(MarkPriceUpdate) => {
+            let updates = pyobjects_to_mark_prices(data)?;
+            py_mark_prices_to_arrow_record_batch_bytes(py, updates)
+        }
+        stringify!(IndexPriceUpdate) => {
+            let index_prices = pyobjects_to_index_prices(data)?;
+            py_index_prices_to_arrow_record_batch_bytes(py, index_prices)
+        }
+        stringify!(InstrumentClose) => {
+            let closes = pyobjects_to_index_prices(data)?;
+            py_index_prices_to_arrow_record_batch_bytes(py, closes)
         }
         _ => Err(PyValueError::new_err(format!(
             "unsupported data type: {data_type}"
@@ -121,45 +139,45 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
     }
 }
 
-#[pyfunction(name = "order_book_deltas_to_arrow_record_batch_bytes")]
-pub fn py_order_book_deltas_to_arrow_record_batch_bytes(
+#[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
+pub fn py_book_deltas_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<OrderBookDelta>,
 ) -> PyResult<Py<PyBytes>> {
-    match order_book_deltas_to_arrow_record_batch_bytes(data) {
+    match book_deltas_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
 
-#[pyfunction(name = "order_book_depth10_to_arrow_record_batch_bytes")]
-pub fn py_order_book_depth10_to_arrow_record_batch_bytes(
+#[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
+pub fn py_book_depth10_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<OrderBookDepth10>,
 ) -> PyResult<Py<PyBytes>> {
-    match order_book_depth10_to_arrow_record_batch_bytes(data) {
+    match book_depth10_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
 
-#[pyfunction(name = "quote_ticks_to_arrow_record_batch_bytes")]
-pub fn py_quote_ticks_to_arrow_record_batch_bytes(
+#[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
+pub fn py_quotes_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<QuoteTick>,
 ) -> PyResult<Py<PyBytes>> {
-    match quote_ticks_to_arrow_record_batch_bytes(data) {
+    match quotes_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
 }
 
-#[pyfunction(name = "trade_ticks_to_arrow_record_batch_bytes")]
-pub fn py_trade_ticks_to_arrow_record_batch_bytes(
+#[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
+pub fn py_trades_to_arrow_record_batch_bytes(
     py: Python,
     data: Vec<TradeTick>,
 ) -> PyResult<Py<PyBytes>> {
-    match trade_ticks_to_arrow_record_batch_bytes(data) {
+    match trades_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }
@@ -168,6 +186,39 @@ pub fn py_trade_ticks_to_arrow_record_batch_bytes(
 #[pyfunction(name = "bars_to_arrow_record_batch_bytes")]
 pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
     match bars_to_arrow_record_batch_bytes(data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+        Err(e) => Err(to_pyvalue_err(e)),
+    }
+}
+
+#[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
+pub fn py_mark_prices_to_arrow_record_batch_bytes(
+    py: Python,
+    data: Vec<MarkPriceUpdate>,
+) -> PyResult<Py<PyBytes>> {
+    match mark_prices_to_arrow_record_batch_bytes(data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+        Err(e) => Err(to_pyvalue_err(e)),
+    }
+}
+
+#[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
+pub fn py_index_prices_to_arrow_record_batch_bytes(
+    py: Python,
+    data: Vec<IndexPriceUpdate>,
+) -> PyResult<Py<PyBytes>> {
+    match index_prices_to_arrow_record_batch_bytes(data) {
+        Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
+        Err(e) => Err(to_pyvalue_err(e)),
+    }
+}
+
+#[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
+pub fn py_instrument_closes_to_arrow_record_batch_bytes(
+    py: Python,
+    data: Vec<InstrumentClose>,
+) -> PyResult<Py<PyBytes>> {
+    match instrument_closes_to_arrow_record_batch_bytes(data) {
         Ok(batch) => arrow_record_batch_to_pybytes(py, batch),
         Err(e) => Err(to_pyvalue_err(e)),
     }

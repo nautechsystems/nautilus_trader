@@ -41,6 +41,7 @@ use crate::{
     types::{Currency, Price, Quantity},
 };
 
+#[derive(Debug)]
 pub struct OrderTestBuilder {
     kind: OrderType,
     trader_id: Option<TraderId>,
