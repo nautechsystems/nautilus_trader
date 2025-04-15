@@ -190,7 +190,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_ws_trade_api=}", LogColor.BLUE)
         self._log.info(f"{config.use_http_batch_api=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
-        self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.recv_window_ms=:_}", LogColor.BLUE)
         self._log.info(f"{config.ws_trade_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.futures_leverages=}", LogColor.BLUE)
@@ -283,7 +284,9 @@ class BybitExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay_secs=config.retry_delay or 0.0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
             logger=self._log,
             exc_types=(BybitError,),
             retry_check=should_retry,

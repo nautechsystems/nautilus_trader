@@ -16,12 +16,50 @@
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
+from random import randint
 from typing import Generic, TypeVar
 
 from nautilus_trader.common.component import Logger
 
 
 T = TypeVar("T")
+
+
+def get_exponential_backoff(
+    delay_initial_ms: int,
+    num_attempts: int = 1,
+    backoff_factor: int = 2,
+    delay_max_ms: int = 100_000_000,
+    jitter: bool = True,
+) -> int:
+    """
+    Compute the backoff using exponential backoff and jitter.
+
+    Parameters
+    ----------
+    delay_initial_ms : int
+        The time to sleep in the first attempt.
+    num_attempts : int
+        The number of attempts that have already been made.
+    backoff_factor : float
+        The exponential backoff factor for delays.
+    delay_max_ms : int
+        The maximum delay.
+    jitter : bool, default True
+        Whether or not to apply jitter.
+
+    Notes
+    -----
+    https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
+
+    """
+    if jitter:
+        return randint(  # noqa: S311
+            delay_initial_ms,
+            min(delay_max_ms, delay_initial_ms * backoff_factor ** (num_attempts - 1)),
+        )
+
+    return min(delay_max_ms, delay_initial_ms * backoff_factor ** (num_attempts - 1))
 
 
 class RetryManager(Generic[T]):
@@ -37,6 +75,12 @@ class RetryManager(Generic[T]):
         The maximum number of retries before failure.
     retry_delay_secs : float
         The delay (seconds) between retry attempts.
+    delay_initial_ms : int
+        The initial delay (milliseconds) for retries.
+    delay_max_ms : int
+        The maximum delay (milliseconds) for exponential backoff.
+    backoff_factor : int
+        The exponential backoff factor for retry delays.
     logger : Logger
         The logger for the manager.
     exc_types : tuple[Type[BaseException], ...]
@@ -50,13 +94,17 @@ class RetryManager(Generic[T]):
     def __init__(
         self,
         max_retries: int,
-        retry_delay_secs: float,
+        delay_initial_ms: int,
+        delay_max_ms: int,
+        backoff_factor: int,
         logger: Logger,
         exc_types: tuple[type[BaseException], ...],
         retry_check: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self.max_retries = max_retries
-        self.retry_delay_secs = retry_delay_secs
+        self.delay_initial_ms = delay_initial_ms
+        self.delay_max_ms = delay_max_ms
+        self.backoff_factor = backoff_factor
         self.retries = 0
         self.exc_types = exc_types
         self.retry_check = retry_check
@@ -131,8 +179,15 @@ class RetryManager(Generic[T]):
                         return None  # Operation failed
 
                     self.retries += 1
-                    self._log_retry()
-                    await asyncio.sleep(self.retry_delay_secs)
+                    retry_delay_ms = get_exponential_backoff(
+                        delay_initial_ms=self.delay_initial_ms,
+                        delay_max_ms=self.delay_max_ms,
+                        backoff_factor=self.backoff_factor,
+                        num_attempts=self.retries,
+                        jitter=True,
+                    )
+                    self._log_retry(retry_delay_ms=retry_delay_ms)
+                    await asyncio.sleep(retry_delay_ms / 1000)
         except asyncio.CancelledError:
             self._cancel()
             return None
@@ -160,10 +215,10 @@ class RetryManager(Generic[T]):
         self.result = False
         self.message = "Canceled retry"
 
-    def _log_retry(self) -> None:
+    def _log_retry(self, retry_delay_ms: int) -> None:
         self.log.warning(
             f"Retrying {self.retries}/{self.max_retries} for '{self.name}' "
-            f"in {self.retry_delay_secs}s{self._details_str()}",
+            f"in {retry_delay_ms / 1000}s{self._details_str()}",
         )
 
     def _log_error(self) -> None:
@@ -191,8 +246,12 @@ class RetryManagerPool(Generic[T]):
         The size of the retry manager pool.
     max_retries : int
         The maximum number of retries before failure.
-    retry_delay_secs : float
-        The delay (seconds) between retry attempts.
+    delay_initial_ms : int
+        The initial delay (milliseconds) for retries.
+    delay_max_ms : int
+        The maximum delay (milliseconds) for exponential backoff.
+    backoff_factor : int
+        The exponential backoff factor for retry delays.
     logger : Logger
         The logger for retry managers.
     exc_types : tuple[Type[BaseException], ...]
@@ -207,13 +266,17 @@ class RetryManagerPool(Generic[T]):
         self,
         pool_size: int,
         max_retries: int,
-        retry_delay_secs: float,
+        delay_initial_ms: int,
+        delay_max_ms: int,
+        backoff_factor: int,
         logger: Logger,
         exc_types: tuple[type[BaseException], ...],
         retry_check: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self.max_retries = max_retries
-        self.retry_delay_secs = retry_delay_secs
+        self.delay_initial_ms = delay_initial_ms
+        self.delay_max_ms = delay_max_ms
+        self.backoff_factor = backoff_factor
         self.logger = logger
         self.exc_types = exc_types
         self.retry_check = retry_check
@@ -226,7 +289,9 @@ class RetryManagerPool(Generic[T]):
     def _create_manager(self) -> RetryManager:
         return RetryManager(
             max_retries=self.max_retries,
-            retry_delay_secs=self.retry_delay_secs,
+            delay_initial_ms=self.delay_initial_ms,
+            delay_max_ms=self.delay_max_ms,
+            backoff_factor=self.backoff_factor,
             logger=self.logger,
             exc_types=self.exc_types,
             retry_check=self.retry_check,

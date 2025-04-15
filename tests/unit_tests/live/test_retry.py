@@ -36,7 +36,9 @@ def test_retry_manager_repr() -> None:
     details: list[object] = ["O-123456", "123"]
     retry_manager = RetryManager[str](
         max_retries=3,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         logger=MagicMock(),
         exc_types=(Exception,),
     )
@@ -56,7 +58,9 @@ async def test_retry_manager_successful_run(mock_logger) -> None:
     # Arrange
     retry_manager = RetryManager[str](
         max_retries=3,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -76,7 +80,9 @@ async def test_retry_manager_with_retries(mock_logger) -> None:
     # Arrange
     retry_manager = RetryManager[str](
         max_retries=3,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -96,7 +102,9 @@ async def test_retry_manager_exhausts_retries(mock_logger) -> None:
     # Arrange
     retry_manager = RetryManager[str](
         max_retries=2,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -118,7 +126,9 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger) -> None:
     pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=2,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -138,7 +148,9 @@ async def test_retry_manager_pool_create_new_when_empty(mock_logger) -> None:
     pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=2,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -160,7 +172,9 @@ async def test_retry_manager_with_retry_check(mock_logger) -> None:
 
     retry_manager = RetryManager[str](
         max_retries=3,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
         retry_check=retry_check,
@@ -181,7 +195,9 @@ async def test_retry_manager_cancellation(mock_logger) -> None:
     # Arrange
     retry_manager = RetryManager[str](
         max_retries=5,
-        retry_delay_secs=0.5,
+        delay_initial_ms=500,
+        delay_max_ms=1_000,
+        backoff_factor=2,
         logger=mock_logger,
         exc_types=(Exception,),
     )
@@ -210,7 +226,9 @@ async def test_retry_manager_pool_shutdown(mock_logger) -> None:
     pool = RetryManagerPool[Any](
         pool_size=pool_size,
         max_retries=3,
-        retry_delay_secs=0.1,
+        delay_initial_ms=100,
+        delay_max_ms=200,
+        backoff_factor=2,
         exc_types=(Exception,),
         logger=mock_logger,
     )
