@@ -1,16 +1,19 @@
 use futures::Stream;
 use futures::StreamExt;
-use futures::executor::block_on_stream;
 use futures::stream::SelectAll;
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
-use std::thread;
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task;
+
+use std::any::Any;
+
+use super::registry::get_actor_unchecked;
+use crate::actor::Actor;
+use ustr::Ustr;
 
 /// Control messages that can be sent to the data streams
 #[derive(Debug, Clone)]
@@ -21,8 +24,8 @@ pub enum ControlMessage {
     Skip(i32),
 }
 
-/// A data stream that can be controlled via messages
-pub struct ControlledStream {
+#[allow(missing_debug_implementations)]
+pub struct DataClient {
     /// The unique identifier for the stream
     id: usize,
     /// The current value
@@ -39,7 +42,7 @@ pub struct ControlledStream {
     increasing: bool,
 }
 
-impl ControlledStream {
+impl DataClient {
     /// Create a new controlled stream
     pub fn new(
         id: usize,
@@ -64,7 +67,7 @@ impl ControlledStream {
     }
 }
 
-impl Stream for ControlledStream {
+impl Stream for DataClient {
     type Item = (usize, i32);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -74,6 +77,7 @@ impl Stream for ControlledStream {
         // Check for control messages
         match self.control_rx.try_recv() {
             Ok(ControlMessage::Stop) => {
+                println!("Stopping stream {}", self.id);
                 self.stopped = true;
             }
             Ok(ControlMessage::Skip(n)) => {
@@ -92,7 +96,7 @@ impl Stream for ControlledStream {
         }
 
         // Get the current value
-        let current_value = self.value.clone();
+        let current_value = self.value;
 
         // Compute the next value
         if self.increasing {
@@ -117,6 +121,7 @@ impl Stream for ControlledStream {
     }
 }
 
+#[allow(missing_debug_implementations)]
 /// A runner that multiplexes values from multiple streams
 pub struct StreamRunner {
     index: usize,
@@ -170,13 +175,73 @@ impl DataEngine {
 
     pub fn send_control_message(&self, id: usize, message: ControlMessage) {
         if let Some(tx) = self.channel_map.get(&id) {
-            let _ = tx.send(message);
+            if let Err(e) = tx.send(message) {
+                println!("Error sending control message: {:?}", e);
+            }
         }
+    }
+}
+
+impl Actor for DataEngine {
+    fn id(&self) -> Ustr {
+        "data_engine".into()
+    }
+
+    fn handle(&mut self, msg: &dyn Any) {}
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+fn data_engine_handler(msg: &(usize, ControlMessage)) {
+    let (id, msg) = msg;
+    let actor_id = Ustr::from("data_engine");
+    let data_engine = get_actor_unchecked::<DataEngine>(&actor_id);
+    println!("Sending control message to data engine: {:?}", msg);
+    data_engine.send_control_message(*id, msg.clone());
+}
+
+fn demo_handler(msg: &(usize, i32)) {
+    let (idx, value) = msg;
+    println!("Stream {}: {}", idx, value);
+
+    if *idx == 0 && *value > 5 {
+        println!("Positive stream crossed 5, skipping 5 values on positive stream");
+        crate::msgbus::send(
+            &"data_engine_control_message".into(),
+            &(0, ControlMessage::Skip(5)),
+        );
+    }
+
+    if *idx == 1 && *value < -5 {
+        println!("Negative stream crossed -5, skipping 5 values on negative stream");
+        crate::msgbus::send(
+            &"data_engine_control_message".into(),
+            &(1, ControlMessage::Skip(5)),
+        );
+    }
+
+    // Stop either stream if it crosses 12 (absolute value)
+    if value.abs() > 10 {
+        println!("Stream {} crossed absolute value 10, stopping", idx);
+        crate::msgbus::send(
+            &"data_engine_control_message".into(),
+            &(*idx, ControlMessage::Stop),
+        );
     }
 }
 
 mod tests {
     use super::*;
+    use crate::actor::registry::register_actor;
+    use crate::msgbus::{
+        self, MessageBus,
+        handler::{ShareableMessageHandler, TypedMessageHandler, MessageHandler},
+        set_message_bus,
+    };
+    use std::cell::{RefCell, UnsafeCell};
+    use std::rc::Rc;
 
     /// Run the demo synchronously
     #[test]
@@ -184,12 +249,28 @@ mod tests {
         // Create a runtime for initialization
         let runtime = tokio::runtime::Runtime::new().unwrap();
 
-        // Initialize the streams inside the runtime
-        let (increasing_stream, increasing_tx) = runtime
-            .block_on(async { ControlledStream::new(0, 0, Duration::from_millis(500), true) });
+        let data_engine = Rc::new(UnsafeCell::new(DataEngine::new()));
+        register_actor(data_engine.clone());
 
-        let (decreasing_stream, decreasing_tx) = runtime
-            .block_on(async { ControlledStream::new(1, 0, Duration::from_millis(800), false) });
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+
+        // Register data engine control message handler
+        let handler = TypedMessageHandler::from(data_engine_handler);
+        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
+        msgbus::register("data_engine_control_message", handler);
+
+        // Register demo actor core logic handler
+        let handler = TypedMessageHandler::from(demo_handler);
+        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
+        msgbus::register("demo_handler", handler);
+
+        // Initialize the streams inside the runtime
+        let (increasing_stream, increasing_tx) =
+            runtime.block_on(async { DataClient::new(0, 0, Duration::from_millis(500), true) });
+
+        let (decreasing_stream, decreasing_tx) =
+            runtime.block_on(async { DataClient::new(1, 0, Duration::from_millis(800), false) });
 
         let mut data_engine = DataEngine::new();
         data_engine.add_stream(0, increasing_tx);
@@ -204,23 +285,7 @@ mod tests {
 
         // Process the values synchronously
         for (idx, value) in runner {
-            println!("Stream {}: {}", idx, value);
-
-            if idx == 0 && value > 5 {
-                println!("Positive stream crossed 5, skipping 5 values on positive stream");
-                data_engine.send_control_message(0, ControlMessage::Skip(5));
-            }
-
-            if idx == 1 && value < -5 {
-                println!("Negative stream crossed -5, skipping 5 values on negative stream");
-                data_engine.send_control_message(1, ControlMessage::Skip(5));
-            }
-
-            // Stop either stream if it crosses 12 (absolute value)
-            if value.abs() > 10 {
-                println!("Stream {} crossed absolute value 10, stopping", idx);
-                data_engine.send_control_message(idx, ControlMessage::Stop);
-            }
+            msgbus::send(&"demo_handler".into(), &(idx, value));
         }
 
         println!("All streams have ended");

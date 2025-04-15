@@ -18,6 +18,7 @@ use std::any::Any;
 use ustr::Ustr;
 
 pub mod data_actor;
+pub mod demo;
 #[cfg(feature = "indicators")]
 pub(crate) mod indicators;
 pub mod registry;
