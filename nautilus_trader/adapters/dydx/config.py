@@ -38,9 +38,9 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries for HTTP retries or websocket reconnects.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (seconds) between Hretries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between Hretries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
-        The maximum delay (seconds) between retries.
+        The maximum delay (milliseconds) between retries.
 
     """
 
@@ -79,9 +79,9 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (seconds) between Hretries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
-        The maximum delay (seconds) between retries.
+        The maximum delay (milliseconds) between retries.
 
     """
 

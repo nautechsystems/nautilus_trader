@@ -111,11 +111,9 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
-        The maximum delay (seconds) between retries.
-    retry_delay : PositiveFloat, optional
-        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
     ws_trade_timeout_secs : float, default 5.0

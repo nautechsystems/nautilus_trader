@@ -111,9 +111,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of retries.
     retry_delay_initial_ms : PositiveInt, optional
-        The initial delay (seconds) between Hretries. Short delays with frequent retries may result in account bans.
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
     retry_delay_max_ms : PositiveInt, optional
-        The maximum delay (seconds) between retries.
+        The maximum delay (milliseconds) between retries.
     generate_order_history_from_trades : bool, default False
         If True, uses trades history to generate reports for orders which are no longer active.
         The Polymarket API only returns active orders and trades.
