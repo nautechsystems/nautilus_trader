@@ -49,7 +49,6 @@ from betfair_parser.spec.streaming import stream_decode
 # fmt: off
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import OrderSideParser
-from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -195,7 +194,7 @@ class TestBetfairParsingStreaming:
                 "InstrumentStatus": 7,
                 "OrderBookDeltas": 7,
                 "BettingInstrument": 7,
-                "BetfairSequenceCompleted": 1,
+                "CustomData": 1,
             },
         )
         assert counts == expected
@@ -503,7 +502,7 @@ class TestBetfairParsing:
         assert isinstance(trade, TradeTick)
         assert isinstance(ticker, Data)
         assert isinstance(deltas, OrderBookDeltas)
-        assert isinstance(completed, BetfairSequenceCompleted)
+        assert isinstance(completed, CustomData)
         assert len(deltas.deltas) == 2
 
     def test_make_order_limit(self):

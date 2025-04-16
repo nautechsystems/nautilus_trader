@@ -19,6 +19,7 @@ None
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
 - Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
+- Fixed handling of `BetfairSequenceCompleted` as custom data
 
 ### Documentation Updates
 None
