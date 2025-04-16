@@ -166,8 +166,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
         self._recv_window = config.recv_window_ms
-        self._max_retries: int = config.max_retries or 0
-        self._retry_delay: float = config.retry_delay or 1.0
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
@@ -175,7 +173,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
-        self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
@@ -223,7 +222,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay_secs=config.retry_delay or 0.0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
             logger=self._log,
             exc_types=(BinanceError,),
             retry_check=should_retry,

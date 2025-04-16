@@ -151,8 +151,10 @@ class DYDXDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             base_url=ws_base_url,
             loop=loop,
-            max_send_retries=config.max_ws_send_retries,
-            retry_delay_secs=config.max_ws_retry_delay_secs,
+            max_send_retries=config.max_retries or 3,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
         )
 
         # HTTP API

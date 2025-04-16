@@ -74,7 +74,8 @@ config_node = TradingNodeConfig(
             product_types=[product_type],
             testnet=False,  # If client uses the testnet
             max_retries=3,
-            retry_delay=1.0,
+            retry_delay_initial_ms=1_000,
+            retry_delay_max_ms=10_000,
         ),
     },
     timeout_connection=30.0,

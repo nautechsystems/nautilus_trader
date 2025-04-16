@@ -18,7 +18,6 @@ Define the dYdX configuration classes.
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 
 
@@ -36,18 +35,21 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the dYdX testnet API.
     update_instruments_interval_mins : PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
-    max_ws_send_retries : int, optional
-        Maximum retries when sending websocket messages.
-    max_ws_retry_delay_secs : float, optional
-        The delay (seconds) between retry attempts when resending websocket messages.
+    max_retries : PositiveInt, optional
+        The maximum number of retries for HTTP retries or websocket reconnects.
+    retry_delay_initial_ms : PositiveInt, optional
+        The initial delay (milliseconds) between Hretries. Short delays with frequent retries may result in account bans.
+    retry_delay_max_ms : PositiveInt, optional
+        The maximum delay (milliseconds) between retries.
 
     """
 
     wallet_address: str | None = None
     is_testnet: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
-    max_ws_send_retries: PositiveInt | None = None
-    max_ws_retry_delay_secs: PositiveFloat | None = None
+    max_retries: PositiveInt | None = None
+    retry_delay_initial_ms: PositiveInt | None = None
+    retry_delay_max_ms: PositiveInt | None = None
 
 
 class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -76,8 +78,10 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is connecting to the dYdX testnet API.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
-    retry_delay : PositiveFloat, optional
-        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_initial_ms : PositiveInt, optional
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_max_ms : PositiveInt, optional
+        The maximum delay (milliseconds) between retries.
 
     """
 
@@ -88,4 +92,5 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     is_testnet: bool = False
     max_retries: PositiveInt | None = None
-    retry_delay: PositiveFloat | None = None
+    retry_delay_initial_ms: PositiveInt | None = None
+    retry_delay_max_ms: PositiveInt | None = None
