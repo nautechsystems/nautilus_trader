@@ -29,7 +29,7 @@ impl BusMessage {
     #[getter]
     #[pyo3(name = "topic")]
     fn py_close(&mut self) -> String {
-        self.topic.clone()
+        self.topic.to_string()
     }
 
     #[getter]
