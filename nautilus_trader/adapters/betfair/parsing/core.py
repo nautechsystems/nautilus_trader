@@ -27,10 +27,12 @@ from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
+from nautilus_trader.adapters.betfair.parsing.streaming import BETFAIR_SEQUENCE_COMPLETED_DATA_TYPE
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Currency
@@ -75,9 +77,14 @@ class BetfairParser:
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
 
-        updates.append(BetfairSequenceCompleted(ts_event=ts_event, ts_init=ts_init))
+        updates.append(create_sequence_completed(ts_event=ts_event, ts_init=ts_init))
 
         return updates
+
+
+def create_sequence_completed(ts_event: int, ts_init: int) -> CustomData:
+    completed = BetfairSequenceCompleted(ts_event=ts_event, ts_init=ts_init)
+    return CustomData(BETFAIR_SEQUENCE_COMPLETED_DATA_TYPE, completed)
 
 
 def iter_stream(file_like: BinaryIO):

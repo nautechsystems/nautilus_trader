@@ -29,6 +29,7 @@ from betfair_parser.spec.streaming.type_definitions import PV
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
+from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -70,6 +71,8 @@ PARSE_TYPES = (
     | BSPOrderBookDelta
     | BetfairStartingPrice
 )
+
+BETFAIR_SEQUENCE_COMPLETED_DATA_TYPE = DataType(BetfairSequenceCompleted)
 
 
 def market_change_to_updates(  # noqa: C901
