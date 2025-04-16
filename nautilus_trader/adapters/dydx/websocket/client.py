@@ -72,7 +72,9 @@ class DYDXWebsocketClient:
         loop: asyncio.AbstractEventLoop,
         subscription_rate_limit_per_second: int = 2,
         max_send_retries: int | None = None,
-        retry_delay_secs: float | None = None,
+        delay_initial_ms: int | None = None,
+        delay_max_ms: int | None = None,
+        backoff_factor: int | None = None,
     ) -> None:
         """
         Provide a dYdX streaming WebSocket client.
@@ -88,7 +90,9 @@ class DYDXWebsocketClient:
         self._subscriptions: dict[DYDXChannel, set[str | None]] = defaultdict(set)
         self._subscription_rate_limit_per_second = subscription_rate_limit_per_second
         self._max_send_retries = max_send_retries
-        self._retry_delay_secs = retry_delay_secs
+        self._delay_initial_ms = delay_initial_ms
+        self._delay_max_ms = delay_max_ms
+        self._backoff_factor = backoff_factor
         self._decoder_ws_msg_general = msgspec.json.Decoder(DYDXWsMessageGeneral)
 
     def is_connected(self) -> bool:
@@ -158,7 +162,9 @@ class DYDXWebsocketClient:
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=self._max_send_retries or 0,
-            retry_delay_secs=self._retry_delay_secs or 1.0,
+            delay_initial_ms=self._delay_initial_ms or 1_000,
+            delay_max_ms=self._delay_max_ms or 10_000,
+            backoff_factor=self._backoff_factor or 2,
             logger=self._log,
             exc_types=(WebSocketClientError,),
             retry_check=should_retry,

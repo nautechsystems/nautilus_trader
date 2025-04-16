@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 
 
@@ -111,8 +110,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         Effective only when `use_ws_trade_api` is set to `True`.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
-    retry_delay : PositiveFloat, optional
-        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_initial_ms : PositiveInt, optional
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_max_ms : PositiveInt, optional
+        The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
     ws_trade_timeout_secs : float, default 5.0
@@ -143,7 +144,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_ws_trade_api: bool = False
     use_http_batch_api: bool = False
     max_retries: PositiveInt | None = None
-    retry_delay: PositiveFloat | None = None
+    retry_delay_initial_ms: PositiveInt | None = None
+    retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
     ws_trade_timeout_secs: float | None = 5.0
     futures_leverages: dict[BybitSymbol, PositiveInt] | None = None

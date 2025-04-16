@@ -19,7 +19,6 @@ from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
 
@@ -122,8 +121,10 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The receive window (milliseconds) for Binance HTTP requests.
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
-    retry_delay : PositiveFloat, optional
-        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_initial_ms : PositiveInt, optional
+        The initial delay (milliseconds) between retries. Short delays with frequent retries may result in account bans.
+    retry_delay_max_ms : PositiveInt, optional
+        The maximum delay (milliseconds) between retries.
     futures_leverages : dict[BinanceSymbol, PositiveInt], optional
         The initial leverage to be used for each symbol. It's applicable to futures only.
 
@@ -149,5 +150,6 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     treat_expired_as_canceled: bool = False
     recv_window_ms: PositiveInt = 5_000
     max_retries: PositiveInt | None = None
-    retry_delay: PositiveFloat | None = None
+    retry_delay_initial_ms: PositiveInt | None = None
+    retry_delay_max_ms: PositiveInt | None = None
     futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
