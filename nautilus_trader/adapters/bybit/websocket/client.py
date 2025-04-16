@@ -42,6 +42,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeAuthMsg
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import PositiveFloat
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
@@ -83,7 +84,7 @@ class BybitWebSocketClient:
         Whether the client is a private channel.
     is_trade : bool, optional
         Whether the client is a trade channel.
-    ws_trade_timeout_secs: float, default 5.0
+    ws_trade_timeout_secs: PositiveFloat, default 5.0
         The timeout for trade websocket messages.
     recv_window_ms : int, default 5_000
         The receive window (milliseconds) for Bybit WebSocket order requests.
@@ -106,7 +107,8 @@ class BybitWebSocketClient:
         loop: asyncio.AbstractEventLoop,
         is_private: bool | None = False,
         is_trade: bool | None = False,
-        ws_trade_timeout_secs: float | None = 5.0,
+        ws_trade_timeout_secs: PositiveFloat | None = 5.0,
+        ws_auth_timeout_secs: PositiveFloat | None = 5.0,
         recv_window_ms: int = 5_000,
     ) -> None:
         if is_private and is_trade:
@@ -135,6 +137,10 @@ class BybitWebSocketClient:
         self._is_trade = is_trade
         self._auth_required = is_private or is_trade
         self._is_authenticated = False
+        self._ws_auth_timeout_secs = ws_auth_timeout_secs
+
+        self._reconnect_task: asyncio.Task | None = None
+        self._auth_event = asyncio.Event()
 
         self._decoder_ws_message_general = msgspec_json.Decoder(BybitWsMessageGeneral)
         self._decoder_ws_private_channel_auth = msgspec_json.Decoder(BybitWsPrivateChannelAuthMsg)
@@ -189,7 +195,7 @@ class BybitWebSocketClient:
 
         self._log.warning(f"Trying to reconnect to {self._base_url}")
         self._reconnecting = True
-        self._loop.create_task(self._reconnect_wrapper())
+        self._reconnect_task = self._loop.create_task(self._reconnect_wrapper())
 
     async def _reconnect_wrapper(self) -> None:
         try:
@@ -266,18 +272,38 @@ class BybitWebSocketClient:
 
         if msg.is_auth_success():
             self._is_authenticated = True
+            self._auth_event.set()
             self._log.info(f"{self.channel_type} channel authenticated", LogColor.GREEN)
         else:
             raise RuntimeError(f"{self.channel_type} channel authentication failed: {msg}")
 
     async def _authenticate(self) -> None:
         self._is_authenticated = False
-        signature = self._get_signature()
-        await self._send(signature)
+        self._auth_event.clear()
 
-        while not self._is_authenticated:
-            self._log.debug(f"Waiting for {self.channel_type} channel authentication")
-            await asyncio.sleep(0.1)
+        signature = self._get_signature()
+
+        try:
+            await self._send(signature)
+            await asyncio.wait_for(
+                self._auth_event.wait(),
+                timeout=self._ws_auth_timeout_secs,
+            )
+        except TimeoutError:
+            self._log.warning(f"{self.channel_type} channel authentication timeout")
+            raise
+        except WebSocketClientError as e:
+            self._log.exception(
+                f"{self.channel_type} channel failed to send authentication request",
+                {e},
+            )
+            raise
+        except Exception as e:
+            self._log.exception(
+                f"{self.channel_type} channel unexpected error during authentication",
+                {e},
+            )
+            raise
 
     async def _subscribe(self, subscription: str) -> None:
         self._log.debug(f"Subscribing to {subscription}")
@@ -430,7 +456,7 @@ class BybitWebSocketClient:
         args: list[
             BybitPlaceOrderPostParams | BybitAmendOrderPostParams | BybitCancelOrderPostParams
         ],
-        timeout_secs: float | None,
+        timeout_secs: PositiveFloat | None,
     ) -> BybitWsOrderResponseMsg:
         req_id = UUID4().value
 
