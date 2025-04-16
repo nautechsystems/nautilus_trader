@@ -65,7 +65,6 @@ parquet = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 datafusion = { version = "46.0.1", default-features = false, features = [
-  "compression",
   "parquet",
   "regex_expressions",
   "unicode_expressions",
@@ -74,14 +73,14 @@ object_store = "0.11.2"  # Keep in line with datafusion
 walkdir = "2.5.0"
 
 [dev-dependencies]
-nautilus-testkit = { path = "../testkit" }
+nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
+pretty_assertions = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
-pretty_assertions = "1.4.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
 

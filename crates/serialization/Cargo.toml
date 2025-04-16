@@ -44,7 +44,7 @@ serde = { workspace = true }
 strum = { workspace = true }
 
 [dev-dependencies]
-nautilus-testkit = { path = "../testkit" }
+nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
+pretty_assertions = { workspace = true }
 rstest = { workspace = true }
-pretty_assertions = "1.4.1"
