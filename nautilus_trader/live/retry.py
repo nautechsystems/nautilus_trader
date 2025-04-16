@@ -26,10 +26,10 @@ T = TypeVar("T")
 
 
 def get_exponential_backoff(
-    delay_initial_ms: int,
-    num_attempts: int = 1,
+    num_attempts: int,
+    delay_initial_ms: int = 500,
+    delay_max_ms: int = 2_000,
     backoff_factor: int = 2,
-    delay_max_ms: int = 100_000_000,
     jitter: bool = True,
 ) -> int:
     """
@@ -37,14 +37,14 @@ def get_exponential_backoff(
 
     Parameters
     ----------
-    delay_initial_ms : int
-        The time to sleep in the first attempt.
-    num_attempts : int
+    num_attempts : int, default 1
         The number of attempts that have already been made.
-    backoff_factor : float
-        The exponential backoff factor for delays.
-    delay_max_ms : int
+    delay_initial_ms : int, default 500
+        The time to sleep in the first attempt.
+    delay_max_ms : int, default 2_000
         The maximum delay.
+    backoff_factor : int, default 2
+        The exponential backoff factor for delays.
     jitter : bool, default True
         Whether or not to apply jitter.
 
@@ -52,14 +52,18 @@ def get_exponential_backoff(
     -----
     https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/
 
-    """
-    if jitter:
-        return randint(  # noqa: S311
-            delay_initial_ms,
-            min(delay_max_ms, delay_initial_ms * backoff_factor ** (num_attempts - 1)),
-        )
+    Returns
+    -------
+    int
+        Delay in milliseconds.
 
-    return min(delay_max_ms, delay_initial_ms * backoff_factor ** (num_attempts - 1))
+    """
+    delay = min(delay_max_ms, delay_initial_ms * backoff_factor ** (num_attempts - 1))
+
+    if jitter:
+        return randint(delay_initial_ms, delay)  # noqa: S311
+
+    return delay
 
 
 class RetryManager(Generic[T]):
@@ -73,8 +77,6 @@ class RetryManager(Generic[T]):
     ----------
     max_retries : int
         The maximum number of retries before failure.
-    retry_delay_secs : float
-        The delay (seconds) between retry attempts.
     delay_initial_ms : int
         The initial delay (milliseconds) for retries.
     delay_max_ms : int

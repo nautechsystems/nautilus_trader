@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import random
 from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -23,11 +24,57 @@ import pytest
 from nautilus_trader.common.component import Logger
 from nautilus_trader.live.retry import RetryManager
 from nautilus_trader.live.retry import RetryManagerPool
+from nautilus_trader.live.retry import get_exponential_backoff
 
 
 @pytest.fixture
 def mock_logger():
     return MagicMock(spec=Logger)
+
+
+@pytest.mark.parametrize(
+    (
+        "num_attempts",
+        "delay_initial_ms",
+        "backoff_factor",
+        "delay_max_ms",
+        "jitter",
+        "expected_delay",
+    ),
+    [
+        (1, 100, 2, 200, False, 100),
+        (5, 100, 2, 200, False, 200),
+        (5, 100, 1, 200, False, 100),
+        (1, 100, 2, 200, True, 100),
+        (5, 100, 2, 200, True, 117),
+        (5, 100, 1, 200, True, 100),
+    ],
+)
+def test_retry_backoff(
+    num_attempts: int,
+    delay_initial_ms: int,
+    backoff_factor: int,
+    delay_max_ms: int,
+    jitter: bool,
+    expected_delay: int,
+) -> None:
+    """
+    Test the exponential backoff and jitter calculation.
+    """
+    # Arrange
+    random.seed(1)
+
+    # Act
+    delay = get_exponential_backoff(
+        num_attempts=num_attempts,
+        delay_initial_ms=delay_initial_ms,
+        backoff_factor=backoff_factor,
+        delay_max_ms=delay_max_ms,
+        jitter=jitter,
+    )
+
+    # Assert
+    assert delay == expected_delay
 
 
 def test_retry_manager_repr() -> None:
