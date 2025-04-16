@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 
 
@@ -116,11 +117,13 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     recv_window_ms : PositiveInt, default 5000
         The receive window (milliseconds) for Bybit HTTP requests.
-    ws_trade_timeout_secs : float, default 5.0
+    ws_trade_timeout_secs : PositiveFloat, default 5.0
         The timeout for trade websocket messages.
+    ws_auth_timeout_secs : PositiveFloat, default 5.0
+        The timeout for auth websocket messages.
     futures_leverages : dict[BybitSymbol, PositiveInt], optional
         The leverages for futures.
-    position_mode : BybitPositionMode, optional
+    position_mode : dict[BybitSymbol, BybitPositionMode], optional
         The position mode for `USDT perpetual` and `Inverse futures`.
     margin_mode : BybitMarginMode, optional
         Set Margin Mode.
@@ -147,7 +150,8 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     recv_window_ms: PositiveInt = 5_000
-    ws_trade_timeout_secs: float | None = 5.0
+    ws_trade_timeout_secs: PositiveFloat | None = 5.0
+    ws_auth_timeout_secs: PositiveFloat | None = 5.0
     futures_leverages: dict[BybitSymbol, PositiveInt] | None = None
     position_mode: dict[BybitSymbol, BybitPositionMode] | None = None
     margin_mode: BybitMarginMode | None = None
