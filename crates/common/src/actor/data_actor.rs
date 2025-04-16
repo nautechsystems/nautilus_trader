@@ -79,7 +79,7 @@ use crate::{
     timer::TimeEvent,
 };
 
-/// Configuration for Actor components.
+/// Common configuration for [`DataActor`] based components.
 #[derive(Debug, Clone)]
 pub struct DataActorConfig {
     /// The custom identifier for the Actor.
@@ -115,29 +115,35 @@ impl Actor for DataActorCore {
 }
 
 pub trait DataActor: Actor {
-    /// Returns the state of the actor.
+    /// Returns the [`ComponentState`] of the actor.
     fn state(&self) -> ComponentState;
 
+    /// Returns `true` if the actor is in a `Ready` state.
     fn is_ready(&self) -> bool {
         self.state() == ComponentState::Ready
     }
 
+    /// Returns `true` if the actor is in a `Running` state.
     fn is_running(&self) -> bool {
         self.state() == ComponentState::Running
     }
 
+    /// Returns `true` if the actor is in a `Stopped` state.
     fn is_stopped(&self) -> bool {
         self.state() == ComponentState::Stopped
     }
 
+    /// Returns `true` if the actor is in a `Disposed` state.
     fn is_disposed(&self) -> bool {
         self.state() == ComponentState::Disposed
     }
 
+    /// Returns `true` if the actor is in a `Degraded` state.
     fn is_degraded(&self) -> bool {
         self.state() == ComponentState::Degraded
     }
 
+    /// Returns `true` if the actor is in a `Faulted` state.
     fn is_faulting(&self) -> bool {
         self.state() == ComponentState::Faulted
     }
@@ -598,13 +604,13 @@ pub trait DataActor: Actor {
 
 /// Core functionality for all actors.
 pub struct DataActorCore {
-    /// The component ID for the actor.
+    /// The actor identifier.
     pub actor_id: ActorId,
     /// The actors configuration.
     pub config: DataActorConfig,
     /// The actors clock.
     pub clock: Rc<RefCell<dyn Clock>>,
-    /// The read-only cache for the actor.
+    /// The cache for the actor.
     pub cache: Rc<RefCell<Cache>>,
     state: ComponentState,
     trader_id: Option<TraderId>,
@@ -634,7 +640,7 @@ impl DataActor for DataActorCore {
 }
 
 impl DataActorCore {
-    /// Creates a new [`Actor`] instance.
+    /// Creates a new [`DataActorCore`] instance.
     pub fn new(
         config: DataActorConfig,
         cache: Rc<RefCell<Cache>>,
@@ -841,7 +847,7 @@ impl DataActorCore {
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
-    fn get_or_create_handler<F>(
+    fn get_or_create_handler_for_topic<F>(
         &mut self,
         topic: Ustr,
         create_handler: F,
@@ -916,7 +922,7 @@ impl DataActorCore {
 
         let topic = get_instruments_topic(venue);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |instrument: &InstrumentAny| {
                     get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
@@ -948,7 +954,7 @@ impl DataActorCore {
 
         let topic = get_instrument_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |instrument: &InstrumentAny| {
                     get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
@@ -987,7 +993,7 @@ impl DataActorCore {
 
         let topic = get_book_deltas_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |deltas: &OrderBookDeltas| {
                     get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
@@ -1041,7 +1047,7 @@ impl DataActorCore {
 
         let topic = get_book_snapshots_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |book: &OrderBook| {
                     get_actor_unchecked::<A>(&actor_id).handle_book(book);
@@ -1077,7 +1083,7 @@ impl DataActorCore {
 
         let topic = get_quotes_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |quote: &QuoteTick| {
                     get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
@@ -1110,7 +1116,7 @@ impl DataActorCore {
 
         let topic = get_trades_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |trade: &TradeTick| {
                     get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
@@ -1147,7 +1153,7 @@ impl DataActorCore {
 
         let topic = get_bars_topic(bar_type);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
                 get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
             })))
@@ -1182,7 +1188,7 @@ impl DataActorCore {
 
         let topic = get_mark_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |mark_price: &MarkPriceUpdate| {
                     get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
@@ -1218,7 +1224,7 @@ impl DataActorCore {
 
         let topic = get_index_price_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |index_price: &IndexPriceUpdate| {
                     get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
@@ -1254,7 +1260,7 @@ impl DataActorCore {
 
         let topic = get_instrument_status_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |status: &InstrumentStatus| {
                     get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
@@ -1290,7 +1296,7 @@ impl DataActorCore {
 
         let topic = get_instrument_close_topic(instrument_id);
         let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler(topic, || {
+        let handler = self.get_or_create_handler_for_topic(topic, || {
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
                 move |close: &InstrumentClose| {
                     get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
@@ -1681,7 +1687,7 @@ impl DataActorCore {
             end,
             client_id,
             request_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: now.into(),
             params,
         });
 
@@ -1711,7 +1717,7 @@ impl DataActorCore {
             end,
             client_id,
             request_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: now.into(),
             params,
         });
 
@@ -1764,7 +1770,7 @@ impl DataActorCore {
             limit,
             client_id,
             request_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: now.into(),
             params,
         });
 
@@ -1796,7 +1802,7 @@ impl DataActorCore {
             limit,
             client_id,
             request_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: now.into(),
             params,
         });
 
@@ -1828,7 +1834,7 @@ impl DataActorCore {
             limit,
             client_id,
             request_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: now.into(),
             params,
         });
 
