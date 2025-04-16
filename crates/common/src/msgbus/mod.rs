@@ -22,67 +22,45 @@
 pub mod database;
 pub mod handler;
 pub mod listener;
+pub mod message;
 pub mod stubs;
 pub mod switchboard;
+
+#[cfg(test)]
+mod tests;
 
 use std::{
     any::Any,
     cell::RefCell,
     collections::HashMap,
-    fmt::{Debug, Display},
+    fmt::Debug,
     hash::{Hash, Hasher},
     rc::Rc,
     sync::OnceLock,
 };
 
-use bytes::Bytes;
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
 use nautilus_model::{data::Data, identifiers::TraderId};
-use serde::{Deserialize, Serialize};
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
 use crate::messages::data::DataResponse;
-
-pub const CLOSE_TOPIC: &str = "CLOSE";
-
-/// Represents a bus message including a topic and payload.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
-pub struct BusMessage {
-    /// The topic to publish on.
-    pub topic: String,
-    /// The serialized payload for the message.
-    pub payload: Bytes,
-}
-
-impl Display for BusMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}] {}",
-            self.topic,
-            String::from_utf8_lossy(&self.payload)
-        )
-    }
-}
+// Re-exports
+pub use crate::msgbus::message::BusMessage;
 
 #[allow(missing_debug_implementations)]
-pub struct MessageBusWrapper(Rc<RefCell<MessageBus>>);
+pub struct ShareableMessageBus(Rc<RefCell<MessageBus>>);
 
-unsafe impl Send for MessageBusWrapper {}
-unsafe impl Sync for MessageBusWrapper {}
+unsafe impl Send for ShareableMessageBus {}
+unsafe impl Sync for ShareableMessageBus {}
 
-static MESSAGE_BUS: OnceLock<MessageBusWrapper> = OnceLock::new();
+static MESSAGE_BUS: OnceLock<ShareableMessageBus> = OnceLock::new();
 
 /// Sets the global message bus.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
-    if MESSAGE_BUS.set(MessageBusWrapper(msgbus)).is_err() {
+    if MESSAGE_BUS.set(ShareableMessageBus(msgbus)).is_err() {
         panic!("Failed to set MessageBus");
     }
 }
@@ -93,7 +71,7 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
         // Initialize default message bus
         let msgbus = MessageBus::default();
         let msgbus = Rc::new(RefCell::new(msgbus));
-        let _ = MESSAGE_BUS.set(MessageBusWrapper(msgbus.clone()));
+        let _ = MESSAGE_BUS.set(ShareableMessageBus(msgbus.clone()));
         msgbus
     } else {
         MESSAGE_BUS.get().unwrap().0.clone()
@@ -546,175 +524,5 @@ impl Default for MessageBus {
     /// Creates a new default [`MessageBus`] instance.
     fn default() -> Self {
         Self::new(TraderId::from("TRADER-001"), UUID4::new(), None, None)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub(crate) mod tests {
-
-    use nautilus_core::UUID4;
-    use rstest::*;
-    use stubs::check_handler_was_called;
-
-    use super::*;
-    use crate::msgbus::stubs::{get_call_check_shareable_handler, get_stub_shareable_handler};
-
-    #[rstest]
-    fn test_new() {
-        let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None);
-
-        assert_eq!(msgbus.trader_id, trader_id);
-        assert_eq!(msgbus.name, stringify!(MessageBus));
-    }
-
-    #[rstest]
-    fn test_endpoints_when_no_endpoints() {
-        let msgbus = get_message_bus();
-        assert!(msgbus.borrow().endpoints().is_empty());
-    }
-
-    #[rstest]
-    fn test_topics_when_no_subscriptions() {
-        let msgbus = get_message_bus();
-        assert!(msgbus.borrow().topics().is_empty());
-        assert!(!msgbus.borrow().has_subscribers("my-topic"));
-    }
-
-    #[rstest]
-    fn test_is_subscribed_when_no_subscriptions() {
-        let msgbus = get_message_bus();
-        let handler = get_stub_shareable_handler(None);
-
-        assert!(!msgbus.borrow().is_subscribed("my-topic", handler));
-    }
-
-    #[rstest]
-    fn test_is_registered_when_no_registrations() {
-        let msgbus = get_message_bus();
-        assert!(!msgbus.borrow().is_registered("MyEndpoint"));
-    }
-
-    #[rstest]
-    fn test_regsiter_endpoint() {
-        let msgbus = get_message_bus();
-        let endpoint = "MyEndpoint";
-        let handler = get_stub_shareable_handler(None);
-
-        register(endpoint, handler);
-
-        assert_eq!(msgbus.borrow().endpoints(), vec![endpoint.to_string()]);
-        assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
-    }
-
-    #[rstest]
-    fn test_endpoint_send() {
-        let msgbus = get_message_bus();
-        let endpoint = Ustr::from("MyEndpoint");
-        let handler = get_call_check_shareable_handler(None);
-
-        register(endpoint, handler.clone());
-        assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
-        assert!(!check_handler_was_called(handler.clone()));
-
-        // Send a message to the endpoint
-        send(&endpoint, &"Test Message");
-        assert!(check_handler_was_called(handler));
-    }
-
-    #[rstest]
-    fn test_deregsiter_endpoint() {
-        let msgbus = get_message_bus();
-        let endpoint = Ustr::from("MyEndpoint");
-        let handler = get_stub_shareable_handler(None);
-
-        register(endpoint, handler);
-        deregister(endpoint);
-
-        assert!(msgbus.borrow().endpoints().is_empty());
-    }
-
-    #[rstest]
-    fn test_subscribe() {
-        let msgbus = get_message_bus();
-        let topic = "my-topic";
-        let handler = get_stub_shareable_handler(None);
-
-        subscribe(topic, handler, Some(1));
-
-        assert!(msgbus.borrow().has_subscribers(topic));
-        assert_eq!(msgbus.borrow().topics(), vec![topic]);
-    }
-
-    #[rstest]
-    fn test_unsubscribe() {
-        let msgbus = get_message_bus();
-        let topic = "my-topic";
-        let handler = get_stub_shareable_handler(None);
-
-        subscribe(topic, handler.clone(), None);
-        unsubscribe(topic, handler);
-
-        assert!(!msgbus.borrow().has_subscribers(topic));
-        assert!(msgbus.borrow().topics().is_empty());
-    }
-
-    #[rstest]
-    fn test_matching_subscriptions() {
-        let msgbus = get_message_bus();
-        let topic = "my-topic";
-
-        let handler_id1 = Ustr::from("1");
-        let handler1 = get_stub_shareable_handler(Some(handler_id1));
-
-        let handler_id2 = Ustr::from("2");
-        let handler2 = get_stub_shareable_handler(Some(handler_id2));
-
-        let handler_id3 = Ustr::from("3");
-        let handler3 = get_stub_shareable_handler(Some(handler_id3));
-
-        let handler_id4 = Ustr::from("4");
-        let handler4 = get_stub_shareable_handler(Some(handler_id4));
-
-        subscribe(topic, handler1, None);
-        subscribe(topic, handler2, None);
-        subscribe(topic, handler3, Some(1));
-        subscribe(topic, handler4, Some(2));
-        let topic = Ustr::from(topic);
-
-        let subs = msgbus.borrow().matching_subscriptions(&topic);
-        assert_eq!(subs.len(), 4);
-        assert_eq!(subs[0].handler_id, handler_id4);
-        assert_eq!(subs[1].handler_id, handler_id3);
-        assert_eq!(subs[2].handler_id, handler_id1);
-        assert_eq!(subs[3].handler_id, handler_id2);
-    }
-
-    #[rstest]
-    #[case("*", "*", true)]
-    #[case("a", "*", true)]
-    #[case("a", "a", true)]
-    #[case("a", "b", false)]
-    #[case("data.quotes.BINANCE", "data.*", true)]
-    #[case("data.quotes.BINANCE", "data.quotes*", true)]
-    #[case("data.quotes.BINANCE", "data.*.BINANCE", true)]
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", true)]
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", true)]
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH???", false)]
-    #[case("data.trades.BINANCE.ETHUSD", "data.*.BINANCE.ETH???", true)]
-    // We don't support [seq] style pattern
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[HC]USDT", false)]
-    // We don't support [!seq] style pattern
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[!ABC]USDT", false)]
-    // We don't support [^seq] style pattern
-    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[^ABC]USDT", false)]
-    fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
-        assert_eq!(
-            is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
-            expected
-        );
     }
 }

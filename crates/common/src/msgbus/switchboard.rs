@@ -23,6 +23,8 @@ use ustr::Ustr;
 
 use crate::msgbus::get_message_bus;
 
+pub const CLOSE_TOPIC: &str = "CLOSE";
+
 #[must_use]
 pub fn get_custom_topic(data_type: &DataType) -> Ustr {
     get_message_bus()
