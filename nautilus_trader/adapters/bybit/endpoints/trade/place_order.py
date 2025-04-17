@@ -38,6 +38,8 @@ class BybitPlaceOrderPostParams(
     kw_only=True,
 ):
     category: BybitProductType
+    slippageToleranceType: str | None = None
+    slippageTolerance: str | None = None
 
 
 class BybitPlaceOrderEndpoint(BybitHttpEndpoint):

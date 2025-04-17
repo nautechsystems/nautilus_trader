@@ -10,7 +10,7 @@ None
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
-- Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @davidsblom
+- Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `sqlx` crate to v0.8.5

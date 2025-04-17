@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, List  # noqa: UP035
 
 import msgspec
 
@@ -173,8 +173,8 @@ class BybitOrderHistoryResponseStruct(msgspec.Struct):
 
 
 class BybitPlaceOrder(msgspec.Struct):
-    orderId: str
-    orderLinkId: str
+    orderId: str | None = None
+    orderLinkId: str | None = None
 
 
 class BybitPlaceOrderResponse(msgspec.Struct):
@@ -188,8 +188,8 @@ class BybitPlaceOrderResponse(msgspec.Struct):
 # Cancel order
 ################################################################################
 class BybitCancelOrder(msgspec.Struct):
-    orderId: str
-    orderLinkId: str
+    orderId: str | None = None
+    orderLinkId: str | None = None
 
 
 class BybitCancelOrderResponse(msgspec.Struct):
@@ -218,8 +218,8 @@ class BybitCancelAllOrdersResponse(msgspec.Struct):
 # Amend order
 ################################################################################
 class BybitAmendOrder(msgspec.Struct):
-    orderId: str
-    orderLinkId: str
+    orderId: str | None = None
+    orderLinkId: str | None = None
 
 
 class BybitAmendOrderResponse(msgspec.Struct):
@@ -252,7 +252,7 @@ class BybitPlaceResult(msgspec.Struct):
 
 
 class BybitBatchPlaceOrderExtInfo(msgspec.Struct):
-    list: list[BybitPlaceResult]
+    list: List[BybitPlaceResult] | None = []  # noqa: UP006
 
 
 class BybitBatchPlaceOrder(msgspec.Struct):
@@ -264,7 +264,7 @@ class BybitBatchPlaceOrder(msgspec.Struct):
 
 
 class BybitBatchPlaceOrderResult(msgspec.Struct):
-    list: list[BybitBatchPlaceOrder]
+    list: List[BybitBatchPlaceOrder] | None = []  # noqa: UP006
 
 
 class BybitBatchPlaceOrderResponse(msgspec.Struct):
@@ -286,7 +286,7 @@ class BybitCancelResult(msgspec.Struct):
 
 
 class BybitBatchCancelOrderExtInfo(msgspec.Struct):
-    list: list[BybitCancelResult]
+    list: List[BybitCancelResult] | None = []  # noqa: UP006
 
 
 class BybitBatchCancelOrder(msgspec.Struct):
@@ -297,7 +297,7 @@ class BybitBatchCancelOrder(msgspec.Struct):
 
 
 class BybitBatchCancelOrderResult(msgspec.Struct):
-    list: list[BybitBatchCancelOrder]
+    list: List[BybitBatchCancelOrder] | None = []  # noqa: UP006
 
 
 class BybitBatchCancelOrderResponse(msgspec.Struct):
@@ -319,7 +319,7 @@ class BybitAmendResult(msgspec.Struct):
 
 
 class BybitBatchAmendOrderExtInfo(msgspec.Struct):
-    list: list[BybitAmendResult]
+    list: List[BybitAmendResult] | None = []  # noqa: UP006
 
 
 class BybitBatchAmendOrder(msgspec.Struct):
@@ -330,7 +330,7 @@ class BybitBatchAmendOrder(msgspec.Struct):
 
 
 class BybitBatchAmendOrderResult(msgspec.Struct):
-    list: list[BybitBatchAmendOrder]
+    list: List[BybitBatchAmendOrder] | None = []  # noqa: UP006
 
 
 class BybitBatchAmendOrderResponse(msgspec.Struct):
