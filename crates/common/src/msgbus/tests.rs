@@ -56,6 +56,44 @@ fn test_is_subscribed_when_no_subscriptions() {
 }
 
 #[rstest]
+fn test_get_response_handler_when_no_handler() {
+    let msgbus = get_message_bus();
+    let msgbus_ref = msgbus.borrow();
+    let handler = msgbus_ref.get_response_handler(&UUID4::new());
+    assert!(handler.is_none());
+}
+
+#[rstest]
+fn test_get_response_handler_when_already_registered() {
+    let msgbus = get_message_bus();
+    let mut msgbus_ref = msgbus.borrow_mut();
+    let handler = get_stub_shareable_handler(None);
+
+    let request_id = UUID4::new();
+    msgbus_ref
+        .register_response_handler(&request_id, handler.clone())
+        .unwrap();
+
+    let result = msgbus_ref.register_response_handler(&request_id, handler.clone());
+    assert!(result.is_err());
+}
+
+#[rstest]
+fn test_get_response_handler_when_registered() {
+    let msgbus = get_message_bus();
+    let mut msgbus_ref = msgbus.borrow_mut();
+    let handler = get_stub_shareable_handler(None);
+
+    let request_id = UUID4::new();
+    msgbus_ref
+        .register_response_handler(&request_id, handler.clone())
+        .unwrap();
+
+    let handler = msgbus_ref.get_response_handler(&request_id).unwrap();
+    assert_eq!(handler.id(), handler.id());
+}
+
+#[rstest]
 fn test_is_registered_when_no_registrations() {
     let msgbus = get_message_bus();
     assert!(!msgbus.borrow().is_registered("MyEndpoint"));

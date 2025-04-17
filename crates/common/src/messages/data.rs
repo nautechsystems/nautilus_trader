@@ -1008,6 +1008,23 @@ pub enum RequestCommand {
 }
 
 impl RequestCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn request_id(&self) -> &UUID4 {
+        match self {
+            Self::Data(cmd) => &cmd.request_id,
+            Self::Instruments(cmd) => &cmd.request_id,
+            Self::Instrument(cmd) => &cmd.request_id,
+            Self::BookSnapshot(cmd) => &cmd.request_id,
+            Self::Quotes(cmd) => &cmd.request_id,
+            Self::Trades(cmd) => &cmd.request_id,
+            Self::Bars(cmd) => &cmd.request_id,
+        }
+    }
+
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => Some(&cmd.client_id),

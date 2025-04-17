@@ -31,6 +31,14 @@ pub trait MessageHandler: Any {
     fn as_any(&self) -> &dyn Any;
 }
 
+impl PartialEq for dyn MessageHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl Eq for dyn MessageHandler {}
+
 #[derive(Debug)]
 pub struct TypedMessageHandler<T: 'static + ?Sized, F: Fn(&T) + 'static> {
     id: Ustr,
@@ -123,6 +131,12 @@ fn generate_deterministic_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl ShareableMessageHandler {
+    pub fn id(&self) -> Ustr {
+        self.0.id()
+    }
+}
 
 impl Debug for ShareableMessageHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
