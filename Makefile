@@ -59,7 +59,7 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	CC=clang CXX=clang++ VIRTUAL_ENV="/home/twitu/Code/nautilus_trader/.venv" uv run --active --no-sync pre-commit run --all-files
+	uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: ruff
 ruff:
