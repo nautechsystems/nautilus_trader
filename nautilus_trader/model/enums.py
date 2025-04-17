@@ -367,6 +367,7 @@ if TYPE_CHECKING:
         DAY = 5
         AT_THE_OPEN = 6
         AT_THE_CLOSE = 7
+        RPI = 8
 
     @unique
     class TradingState(Enum):

@@ -1091,6 +1091,7 @@ class TimeInForce(Enum):
     DAY = "DAY"
     AT_THE_OPEN = "AT_THE_OPEN"
     AT_THE_CLOSE = "AT_THE_CLOSE"
+    RPI = "RPI"
 
 class TradingState(Enum):
     ACTIVE = "ACTIVE"

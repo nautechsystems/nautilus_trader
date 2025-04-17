@@ -750,6 +750,10 @@ typedef enum TimeInForce {
      * At the Closing (ATC) - Executes at the market close or expires if not filled.
      */
     AT_THE_CLOSE = 7,
+    /**
+     * Retail Price Improvement (RPI) Order
+     */
+    RPI = 8,
 } TimeInForce;
 
 /**

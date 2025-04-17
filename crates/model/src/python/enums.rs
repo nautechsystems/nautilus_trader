@@ -2011,6 +2011,12 @@ impl TimeInForce {
     fn py_at_the_close() -> Self {
         Self::AtTheClose
     }
+
+    #[classattr]
+    #[pyo3(name = "RPI")]
+    fn py_rpi() -> Self {
+        Self::Rpi
+    }
 }
 
 #[pymethods]

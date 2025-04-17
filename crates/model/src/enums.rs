@@ -1194,6 +1194,8 @@ pub enum TimeInForce {
     AtTheOpen = 6,
     /// At the Closing (ATC) - Executes at the market close or expires if not filled.
     AtTheClose = 7,
+    /// Retail Price Improvement (RPI) Order
+    Rpi = 8,
 }
 
 /// The trading state for a node.
