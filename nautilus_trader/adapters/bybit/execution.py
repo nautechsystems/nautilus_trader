@@ -685,7 +685,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
-            await retry_manager.run(
+            response = await retry_manager.run(
                 "cancel_order",
                 [client_order_id, venue_order_id],
                 self._order_single_client.cancel_order,
@@ -703,10 +703,35 @@ class BybitExecutionClient(LiveExecutionClient):
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
+
+            if response:
+                ret_code = response.retCode
+                if ret_code != 0:
+                    if ret_code == 110001:  # order not exists or too late to cancel
+                        if not order.is_closed:
+                            self.generate_order_canceled(
+                                strategy_id=order.strategy_id,
+                                instrument_id=order.instrument_id,
+                                client_order_id=order.client_order_id,
+                                venue_order_id=order.venue_order_id,
+                                ts_event=self._clock.timestamp_ns(),
+                            )
+                    else:
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=response.retMsg,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+    async def _batch_cancel_orders(  # noqa: C901 (too complex)
+        self,
+        command: BatchCancelOrders,
+    ) -> None:
         # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
 
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -742,7 +767,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
             retry_manager = await self._retry_manager_pool.acquire()
             try:
-                await retry_manager.run(
+                response = await retry_manager.run(
                     "batch_cancel_orders",
                     None,
                     self._order_batch_client.batch_cancel_orders,
@@ -755,13 +780,40 @@ class BybitExecutionClient(LiveExecutionClient):
                         if order is None or order.is_closed:
                             continue
                         self.generate_order_cancel_rejected(
-                            order.strategy_id,
-                            order.instrument_id,
-                            order.client_order_id,
-                            order.venue_order_id,
-                            retry_manager.message,
-                            self._clock.timestamp_ns(),
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=retry_manager.message,
+                            ts_event=self._clock.timestamp_ns(),
                         )
+
+                if response:
+                    for idx, ret_info in enumerate(response.retExtInfo.list):
+                        ret_code = ret_info.code
+                        if ret_code != 0:
+                            order = self._cache.order(
+                                ClientOrderId(response.data.list[idx].orderLinkId),
+                            )
+                            if order is None or order.is_closed:
+                                continue
+                            if ret_code == 110001:  # order not exists or too late to cancel
+                                self.generate_order_canceled(
+                                    strategy_id=order.strategy_id,
+                                    instrument_id=order.instrument_id,
+                                    client_order_id=order.client_order_id,
+                                    venue_order_id=order.venue_order_id,
+                                    ts_event=self._clock.timestamp_ns(),
+                                )
+                            else:
+                                self.generate_order_cancel_rejected(
+                                    strategy_id=order.strategy_id,
+                                    instrument_id=order.instrument_id,
+                                    client_order_id=order.client_order_id,
+                                    venue_order_id=order.venue_order_id,
+                                    reason=ret_info.msg,
+                                    ts_event=self._clock.timestamp_ns(),
+                                )
             finally:
                 await self._retry_manager_pool.release(retry_manager)
 
@@ -876,7 +928,10 @@ class BybitExecutionClient(LiveExecutionClient):
         finally:
             await self._retry_manager_pool.release(retry_manager)
 
-    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+    async def _submit_order_list(  # noqa: C901 (too complex)
+        self,
+        command: SubmitOrderList,
+    ) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         command_orders = command.order_list.orders
@@ -912,13 +967,39 @@ class BybitExecutionClient(LiveExecutionClient):
 
             retry_manager = await self._retry_manager_pool.acquire()
             try:
-                await retry_manager.run(
+                response = await retry_manager.run(
                     "submit_order_list",
                     None,
                     self._order_batch_client.batch_place_orders,
                     product_type=product_type,
                     submit_orders=submit_orders,
                 )
+
+                if not retry_manager.result:
+                    for order in batch_submits:
+                        self.generate_order_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            reason=retry_manager.message,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
+
+                if response:
+                    for idx, ret_info in enumerate(response.retExtInfo.list):
+                        if ret_info.code != 0:
+                            order = self._cache.order(
+                                ClientOrderId(response.data.list[idx].orderLinkId),
+                            )
+                            if order is None:
+                                continue
+                            self.generate_order_rejected(
+                                strategy_id=order.strategy_id,
+                                instrument_id=order.instrument_id,
+                                client_order_id=order.client_order_id,
+                                reason=ret_info.msg,
+                                ts_event=self._clock.timestamp_ns(),
+                            )
             finally:
                 await self._retry_manager_pool.release(retry_manager)
 
@@ -1148,8 +1229,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if client_order_id is None:
             self._log.debug(
-                f"Cannot process order execution for {venue_order_id!r}: "
-                "no `ClientOrderId` found (most likely due to being an external order)",
+                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found (most likely due to being an external order)",
             )
             return
 
@@ -1172,8 +1252,7 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             if strategy_id is None:
                 self._log.warning(
-                    f"Cannot process order execution for {client_order_id!r}: "
-                    "no strategy ID found (most likely due to being an external order)",
+                    f"Cannot process order execution for {client_order_id!r}: no strategy ID found (most likely due to being an external order)",
                 )
                 return
         else:

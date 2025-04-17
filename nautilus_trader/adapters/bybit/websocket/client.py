@@ -31,12 +31,24 @@ from nautilus_trader.adapters.bybit.common.enums import BybitWsOrderRequestMsgOP
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderPostParams
 from nautilus_trader.adapters.bybit.http.errors import BybitError
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAmendOrderResponseMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsBatchAmendOrderResponseMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsBatchCancelOrderResponseMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsBatchPlaceOrderResponseMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsCancelOrderResponseMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderRequestMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderResponseMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderResponseMsgGeneral
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsPlaceOrderResponseMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsPrivateChannelAuthMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeAuthMsg
 from nautilus_trader.common.component import LiveClock
@@ -53,17 +65,14 @@ from nautilus_trader.core.uuid import UUID4
 if TYPE_CHECKING:
     from collections.abc import Awaitable
     from collections.abc import Callable
-    from collections.abc import Coroutine
     from typing import Any
 
-    from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
-    from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
 
 # fmt: on
 
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 
-WsOrderResponseFuture = asyncio.Future[BybitWsOrderResponseMsg]
+WsOrderResponseMsgFuture = asyncio.Future[BybitWsOrderResponseMsg]
 
 
 class BybitWebSocketClient:
@@ -142,12 +151,35 @@ class BybitWebSocketClient:
         self._reconnect_task: asyncio.Task | None = None
         self._auth_event = asyncio.Event()
 
+        self._pending_order_requests: dict[str, WsOrderResponseMsgFuture] = {}
+
         self._decoder_ws_message_general = msgspec_json.Decoder(BybitWsMessageGeneral)
         self._decoder_ws_private_channel_auth = msgspec_json.Decoder(BybitWsPrivateChannelAuthMsg)
         self._decoder_ws_trade_auth = msgspec_json.Decoder(BybitWsTradeAuthMsg)
-        self._decoder_ws_order_response = msgspec_json.Decoder(BybitWsOrderResponseMsg)
 
-        self._pending_order_requests: dict[str, WsOrderResponseFuture] = {}
+        # Decoders for WebSocket order response messages
+        self._decoder_ws_order_resp_general = msgspec_json.Decoder(BybitWsOrderResponseMsgGeneral)
+
+        self._decoder_ws_order_resp_place = msgspec_json.Decoder(BybitWsPlaceOrderResponseMsg)
+        self._decoder_ws_order_resp_amend = msgspec_json.Decoder(BybitWsAmendOrderResponseMsg)
+        self._decoder_ws_order_resp_cancel = msgspec_json.Decoder(BybitWsCancelOrderResponseMsg)
+        self._decoder_ws_order_resp_batch_place = msgspec_json.Decoder(
+            BybitWsBatchPlaceOrderResponseMsg,
+        )
+        self._decoder_ws_order_resp_batch_amend = msgspec_json.Decoder(
+            BybitWsBatchAmendOrderResponseMsg,
+        )
+        self._decoder_ws_order_resp_batch_cancel = msgspec_json.Decoder(
+            BybitWsBatchCancelOrderResponseMsg,
+        )
+        self._decoder_ws_order_resp_map = {
+            BybitWsOrderRequestMsgOP.CREATE: self._decoder_ws_order_resp_place,
+            BybitWsOrderRequestMsgOP.AMEND: self._decoder_ws_order_resp_amend,
+            BybitWsOrderRequestMsgOP.CANCEL: self._decoder_ws_order_resp_cancel,
+            BybitWsOrderRequestMsgOP.CREATE_BATCH: self._decoder_ws_order_resp_batch_place,
+            BybitWsOrderRequestMsgOP.AMEND_BATCH: self._decoder_ws_order_resp_batch_amend,
+            BybitWsOrderRequestMsgOP.CANCEL_BATCH: self._decoder_ws_order_resp_batch_cancel,
+        }
 
     @property
     def subscriptions(self) -> list[str]:
@@ -429,7 +461,7 @@ class BybitWebSocketClient:
 
     def _handle_order_ack(self, raw: bytes) -> None:
         try:
-            msg = self._decoder_ws_order_response.decode(raw)
+            msg: BybitWsOrderResponseMsgGeneral = self._decoder_ws_order_resp_general.decode(raw)
         except Exception as e:
             self._log.exception(f"Failed to decode order ack response {raw!r}", e)
             return
@@ -439,28 +471,32 @@ class BybitWebSocketClient:
             self._log.debug(f"No `reqId` in order ack response: {msg}")
             return
 
-        ret_code = msg.retCode
         future = self._pending_order_requests.pop(req_id, None)
         if future is not None:
-            if ret_code == 0:
-                future.set_result(msg)
-            else:
-                future.set_exception(BybitError(code=ret_code, message=msg.retMsg))
+            try:
+                order_resp: BybitWsOrderResponseMsg = self._decoder_ws_order_resp_map[msg.op].decode(raw)  # type: ignore[attr-defined]
+                future.set_result(order_resp)
+            except Exception as e:
+                self._log.exception(f"Failed to decode order ack response {raw!r}", e)
         else:
             self._log.warning(f"Received ack for `unknown/timeout` reqId={req_id}, msg={msg}")
-            return
 
     async def _order(
         self,
         op: BybitWsOrderRequestMsgOP,
         args: list[
-            BybitPlaceOrderPostParams | BybitAmendOrderPostParams | BybitCancelOrderPostParams
+            BybitPlaceOrderPostParams
+            | BybitAmendOrderPostParams
+            | BybitCancelOrderPostParams
+            | BybitBatchPlaceOrderPostParams
+            | BybitBatchAmendOrderPostParams
+            | BybitBatchCancelOrderPostParams
         ],
         timeout_secs: PositiveFloat | None,
     ) -> BybitWsOrderResponseMsg:
         req_id = UUID4().value
 
-        future: WsOrderResponseFuture = self._loop.create_future()
+        future: WsOrderResponseMsgFuture = self._loop.create_future()
         self._pending_order_requests[req_id] = future
 
         # Build request
@@ -483,24 +519,9 @@ class BybitWebSocketClient:
         except TimeoutError as e:
             self._log.error(f"Order request `{req_id}` timed out. op={op}, args={args}")
             future.cancel()
-            self._pending_order_requests.pop(req_id, None)
             raise BybitError(code=-10_408, message="Request timed out") from e
 
         return ack_resp
-
-    async def _batch_orders(
-        self,
-        tasks: list[Coroutine[Any, Any, BybitWsOrderResponseMsg]],
-    ) -> list[BybitWsOrderResponseMsg]:
-        futures = await asyncio.gather(*tasks, return_exceptions=True)
-
-        results: list[BybitWsOrderResponseMsg] = []
-        for result in futures:
-            if isinstance(result, BybitWsOrderResponseMsg):
-                results.append(result)
-            else:
-                self._log.error(f"Batch orders error: {result}")
-        return results
 
     async def place_order(
         self,
@@ -610,49 +631,30 @@ class BybitWebSocketClient:
         self,
         product_type: BybitProductType,
         submit_orders: list[BybitBatchPlaceOrder],
-    ) -> list[BybitWsOrderResponseMsg]:
-        tasks = [
-            self.place_order(
-                product_type=product_type,
-                symbol=order.symbol,
-                side=order.side,
-                order_type=order.orderType,
-                quantity=order.qty,
-                quote_quantity=order.marketUnit == "quoteCoin",
-                price=order.price,
-                time_in_force=order.timeInForce,
-                client_order_id=order.orderLinkId,
-                reduce_only=order.reduceOnly,
-                close_on_trigger=order.closeOnTrigger,
-                trigger_price=order.triggerPrice,
-                trigger_direction=order.triggerDirection,
-                tp_order_type=order.tpOrderType,
-                sl_order_type=order.slOrderType,
-                tpsl_mode=order.tpslMode,
-                tp_trigger_price=order.takeProfit,
-                sl_trigger_price=order.stopLoss,
-                trigger_type=order.triggerBy,
-                tp_limit_price=order.tpLimitPrice,
-                sl_limit_price=order.slLimitPrice,
-            )
-            for order in submit_orders
-        ]
-
-        return await self._batch_orders(tasks)
+    ) -> BybitWsOrderResponseMsg:
+        return await self._order(
+            timeout_secs=self._ws_trade_timeout_secs,
+            op=BybitWsOrderRequestMsgOP.CREATE_BATCH,
+            args=[
+                BybitBatchPlaceOrderPostParams(
+                    category=product_type,
+                    request=submit_orders,
+                ),
+            ],
+        )
 
     async def batch_cancel_orders(
         self,
         product_type: BybitProductType,
         cancel_orders: list[BybitBatchCancelOrder],
-    ) -> list[BybitWsOrderResponseMsg]:
-        tasks = [
-            self.cancel_order(
-                product_type=product_type,
-                symbol=order.symbol,
-                client_order_id=order.orderLinkId,
-                venue_order_id=order.orderId,
-            )
-            for order in cancel_orders
-        ]
-
-        return await self._batch_orders(tasks)
+    ) -> BybitWsOrderResponseMsg:
+        return await self._order(
+            timeout_secs=self._ws_trade_timeout_secs,
+            op=BybitWsOrderRequestMsgOP.CANCEL_BATCH,
+            args=[
+                BybitBatchCancelOrderPostParams(
+                    category=product_type,
+                    request=cancel_orders,
+                ),
+            ],
+        )
