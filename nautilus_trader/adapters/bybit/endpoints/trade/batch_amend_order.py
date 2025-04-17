@@ -21,6 +21,7 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.schemas.order import BybitBatchAmendOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
@@ -43,6 +44,7 @@ class BybitBatchAmendOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     stopLoss: str | None = None
     tpTriggerBy: str | None = None
     slTriggerBy: str | None = None
+    triggerBy: BybitTriggerType | None = None
     tpLimitPrice: str | None = None
     slLimitPrice: str | None = None
 
