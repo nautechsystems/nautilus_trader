@@ -110,6 +110,8 @@ def log_header(
 
 def log_sysinfo(component: str) -> None: ...
 
+def flush_logs() -> None: ...
+
 # Messaging
 
 class BusMessage:

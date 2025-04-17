@@ -68,6 +68,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         logging::py_logging_clock_set_static_time,
         m
     )?)?;
+    m.add_function(wrap_pyfunction!(logging::py_flush_logs, m)?)?;
     m.add_function(wrap_pyfunction!(xrate::py_get_exchange_rate, m)?)?;
 
     Ok(())

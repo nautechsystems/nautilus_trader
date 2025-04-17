@@ -180,3 +180,13 @@ pub fn py_logging_clock_set_realtime_mode() {
 pub fn py_logging_clock_set_static_time(time_ns: u64) {
     logging_clock_set_static_time(time_ns);
 }
+
+/// Explicitly flush any buffered logs in the logging system.
+///
+/// This is useful when logs need to be flushed at specific points in time,
+/// such as at the end of a backtest run, especially when the log volume is small.
+#[pyfunction]
+#[pyo3(name = "flush_logs")]
+pub fn py_flush_logs() {
+    log::logger().flush();
+}

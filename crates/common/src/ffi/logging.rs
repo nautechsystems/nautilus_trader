@@ -188,3 +188,12 @@ pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
     drop(log_guard);
 }
+
+/// Explicitly flush any buffered logs in the logging system.
+///
+/// This is useful when logs need to be flushed at specific points in time,
+/// such as at the end of a backtest run, especially when the log volume is small.
+#[unsafe(no_mangle)]
+pub extern "C" fn logger_flush() {
+    log::logger().flush();
+}

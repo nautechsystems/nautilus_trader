@@ -427,7 +427,9 @@ impl Logger {
         while let Ok(event) = rx.recv() {
             match event {
                 LogEvent::Flush => {
-                    break;
+                    if let Some(ref mut writer) = file_writer_opt {
+                        writer.flush();
+                    }
                 }
                 LogEvent::Log(line) => {
                     let component_level = component_level.get(&line.component);

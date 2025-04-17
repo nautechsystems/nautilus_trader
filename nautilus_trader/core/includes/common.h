@@ -605,6 +605,14 @@ void logging_log_sysinfo(const char *component_ptr);
 void logger_drop(struct LogGuard_API log_guard);
 
 /**
+ * Explicitly flush any buffered logs in the logging system.
+ *
+ * This is useful when logs need to be flushed at specific points in time,
+ * such as at the end of a backtest run, especially when the log volume is small.
+ */
+void logger_flush(void);
+
+/**
  * # Safety
  *
  * - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
