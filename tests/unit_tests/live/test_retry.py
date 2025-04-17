@@ -180,11 +180,14 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger) -> None:
         logger=mock_logger,
     )
 
-    # Act, Assert
-    async with pool as retry_manager:
-        assert isinstance(retry_manager, RetryManager)
-        assert len(pool._pool) == pool_size - 1
+    # Act
+    retry_manager = await pool.acquire()
 
+    # Assert
+    assert isinstance(retry_manager, RetryManager)
+    assert len(pool._pool) == pool_size - 1
+
+    await pool.release(retry_manager)
     assert len(pool._pool) == pool_size
 
 
@@ -202,12 +205,15 @@ async def test_retry_manager_pool_create_new_when_empty(mock_logger) -> None:
         logger=mock_logger,
     )
 
-    # Act, Assert
-    async with pool as retry_manager1:
-        async with pool as retry_manager2:
-            # Ensure new manager was created as pool empty
-            assert retry_manager1 is not retry_manager2
+    # Act
+    retry_manager1 = await pool.acquire()
+    retry_manager2 = await pool.acquire()
 
+    await pool.release(retry_manager1)
+
+    # Assert
+    # Ensure new manager was created as pool empty
+    assert retry_manager1 is not retry_manager2
     assert len(pool._pool) == pool_size
 
 
@@ -280,23 +286,23 @@ async def test_retry_manager_pool_shutdown(mock_logger) -> None:
         logger=mock_logger,
     )
 
-    async with pool as retry_manager:
+    retry_manager = await pool.acquire()
 
-        async def long_running_task():
-            await retry_manager.run(
-                name="long_running",
-                details=["O-123"],
-                func=AsyncMock(side_effect=Exception("Test Error")),
-            )
+    async def long_running_task():
+        await retry_manager.run(
+            name="long_running",
+            details=["O-123"],
+            func=AsyncMock(side_effect=Exception("Test Error")),
+        )
 
-        task = asyncio.create_task(long_running_task())
+    task = asyncio.create_task(long_running_task())
 
-        # Act
-        await asyncio.sleep(0.2)
-        pool.shutdown()
+    # Act
+    await asyncio.sleep(0.2)
+    pool.shutdown()
 
-        # Assert
-        await task
-        assert len(pool._pool) == 1
-        assert retry_manager.result is False
-        assert retry_manager.message == "Canceled retry"
+    # Assert
+    await task
+    assert len(pool._pool) == 1
+    assert retry_manager.result is False
+    assert retry_manager.message == "Canceled retry"

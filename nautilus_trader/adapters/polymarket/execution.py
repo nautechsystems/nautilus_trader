@@ -301,7 +301,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             params = None
 
         # Check active orders with venue
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             response: list[JSON] | None = await retry_manager.run(
                 "generate_order_status_reports",
                 [command.instrument_id],
@@ -340,6 +341,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         ts_init=self._clock.timestamp_ns(),
                     )
                     reports.append(report)
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
         if self._config.generate_order_history_from_trades:
             self._log.warning(
@@ -481,7 +484,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             f"{repr(venue_order_id) if venue_order_id else ''}",
         )
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
                 [command.client_order_id, venue_order_id],
@@ -512,6 +516,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 client_order_id=command.client_order_id,
                 ts_init=self._clock.timestamp_ns(),
             )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def generate_fill_reports(
         self,
@@ -531,7 +537,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if command.instrument_id:
             details.append(command.instrument_id)
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             response: JSON | None = await retry_manager.run(
                 "generate_fill_reports",
                 details,
@@ -573,6 +580,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     assert report.trade_id not in trade_ids, "trade IDs should be unique"
                     trade_ids.add(report.trade_id)
                     reports.append(report)
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -642,7 +651,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             response: JSON | None = await retry_manager.run(
                 "cancel_order",
                 [order.client_order_id, order.venue_order_id],
@@ -664,6 +674,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     reason=str(reason),
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         # https://docs.polymarket.com/#cancel-orders
@@ -684,7 +696,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             order_ids = [o.venue_order_id.value for o in valid_cancels]
             response: JSON | None = await retry_manager.run(
                 "batch_cancel_orders",
@@ -710,6 +723,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         reason=str(reason),
                         ts_event=self._clock.timestamp_ns(),
                     )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         # https://docs.polymarket.com/#cancel-orders
@@ -723,7 +738,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(f"No open orders to cancel for strategy {command.strategy_id}")
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             order_ids = [o.venue_order_id.value for o in open_orders_strategy]
             response: JSON | None = await retry_manager.run(
                 "cancel_all_orders",
@@ -749,6 +765,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         reason=str(reason),
                         ts_event=self._clock.timestamp_ns(),
                     )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._maintain_active_market(command.instrument_id)
@@ -810,7 +828,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             response: JSON | None = await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
@@ -834,6 +853,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     LogColor.MAGENTA,
                 )
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     def _handle_ws_message(self, raw: bytes) -> None:
         # Uncomment for development
