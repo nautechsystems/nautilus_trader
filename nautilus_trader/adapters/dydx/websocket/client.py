@@ -251,13 +251,16 @@ class DYDXWebsocketClient:
         if self._client is None or self._client.is_active() is False:
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="send_pong",
                 details=[raw],
                 func=self._client.send_pong,
                 data=raw,
             )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     def reconnect(self) -> None:
         """
@@ -561,10 +564,13 @@ class DYDXWebsocketClient:
 
         data = msgspec.json.encode(msg)
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="send_text",
                 details=[data],
                 func=self._client.send_text,
                 data=data,
             )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)

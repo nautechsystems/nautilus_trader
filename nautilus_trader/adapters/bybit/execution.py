@@ -683,7 +683,8 @@ class BybitExecutionClient(LiveExecutionClient):
         client_order_id = command.client_order_id.value
         venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "cancel_order",
                 [client_order_id, venue_order_id],
@@ -702,6 +703,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
@@ -737,7 +740,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 for cancel in batch_cancels
             ]
 
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     "batch_cancel_orders",
                     None,
@@ -758,11 +762,14 @@ class BybitExecutionClient(LiveExecutionClient):
                             retry_manager.message,
                             self._clock.timestamp_ns(),
                         )
+            finally:
+                await self.retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "cancel_all_orders",
                 None,
@@ -783,6 +790,8 @@ class BybitExecutionClient(LiveExecutionClient):
                         retry_manager.message,
                         self._clock.timestamp_ns(),
                     )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -803,7 +812,8 @@ class BybitExecutionClient(LiveExecutionClient):
         trigger_price = str(command.trigger_price) if command.trigger_price else None
         quantity = str(command.quantity) if command.quantity else None
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "modify_order",
                 [client_order_id, venue_order_id],
@@ -825,6 +835,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -845,7 +857,8 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
@@ -860,6 +873,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -895,7 +910,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_event=now_ns,
                 )
 
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     "submit_order_list",
                     None,
@@ -903,6 +919,8 @@ class BybitExecutionClient(LiveExecutionClient):
                     product_type=product_type,
                     submit_orders=submit_orders,
                 )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only

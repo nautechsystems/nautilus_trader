@@ -285,7 +285,6 @@ class RetryManagerPool(Generic[T]):
         self.pool_size = pool_size
         self._pool: list[RetryManager[T]] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
-        self._current_manager: RetryManager[T] | None = None
         self._active_managers: set[RetryManager[T]] = set()
 
     def _create_manager(self) -> RetryManager:
@@ -298,30 +297,6 @@ class RetryManagerPool(Generic[T]):
             exc_types=self.exc_types,
             retry_check=self.retry_check,
         )
-
-    async def __aenter__(self) -> RetryManager:
-        """
-        Asynchronous context manager entry.
-
-        Acquires a `RetryManager` from the pool.
-
-        """
-        self._current_manager = await self.acquire()
-        return self._current_manager
-
-    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
-        """
-        Asynchronous context manager exit.
-
-        Releases the `RetryManager` back into the pool.
-
-        """
-        try:
-            if self._current_manager:
-                await self.release(self._current_manager)
-        finally:
-            # Drop reference to avoid lingering state issues
-            self._current_manager = None
 
     def shutdown(self) -> None:
         """
@@ -357,6 +332,7 @@ class RetryManagerPool(Generic[T]):
                 retry_manager = self._create_manager()
 
             self._active_managers.add(retry_manager)
+            self.logger.debug(f"Acquired {retry_manager!r} (active: {len(self._active_managers)})")
             return retry_manager
 
     async def release(self, retry_manager: RetryManager) -> None:
@@ -373,10 +349,16 @@ class RetryManagerPool(Generic[T]):
         """
         async with self._lock:
             self._active_managers.discard(retry_manager)
+
             if len(self._pool) < self.pool_size:
                 # Append the manager to the pool without clearing its state,
                 # state is cleared on acquisition to avoid potential race conditions.
                 self._pool.append(retry_manager)
+                self.logger.debug(
+                    f"Released {retry_manager!r} back to pool (active: {len(self._active_managers)})",
+                )
             else:
                 # Pool already at capacity
-                self.logger.debug(f"Discarding extra {retry_manager!r}")
+                self.logger.debug(
+                    f"Discarding extra {retry_manager!r} (active: {len(self._active_managers)})",
+                )
