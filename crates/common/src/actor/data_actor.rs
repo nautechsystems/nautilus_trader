@@ -50,7 +50,7 @@ use crate::{
     cache::Cache,
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
-    logging::{CMD, RECV, SENT},
+    logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
             DataCommand, DataResponse, RequestBars, RequestBookSnapshot, RequestCommand,
@@ -731,11 +731,31 @@ impl DataActorCore {
 
     fn send_data_cmd(&self, command: DataCommand) {
         if self.config.log_commands {
-            log::info!("{CMD}{SENT} {command:?}");
+            log::info!("{CMD}{SEND} {command:?}");
         }
 
         let endpoint = MessagingSwitchboard::data_engine_execute();
         msgbus::send(&endpoint, command.as_any())
+    }
+
+    fn send_data_req<A: DataActor>(&self, request: RequestCommand) {
+        if self.config.log_commands {
+            log::info!("{REQ}{SEND} {request:?}");
+        }
+
+        let actor_id = self.actor_id.inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |response: &DataResponse| {
+                get_actor_unchecked::<A>(&actor_id).handle_data_response(response);
+            },
+        )));
+
+        let msgbus = get_message_bus()
+            .borrow_mut()
+            .register_response_handler(request.request_id(), handler);
+
+        let endpoint = MessagingSwitchboard::data_engine_execute();
+        msgbus::send(&endpoint, request.as_any())
     }
 
     pub fn start(&mut self) -> anyhow::Result<()> {

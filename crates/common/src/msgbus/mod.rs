@@ -39,6 +39,7 @@ use std::{
     sync::OnceLock,
 };
 
+use ahash::AHashMap;
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
@@ -83,6 +84,21 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
         handler.0.handle(message);
+    }
+}
+
+/// Sends the `response` to the handler registered for the `correlation_id` (if found).
+pub fn response(correlation_id: &UUID4, message: &dyn Any) {
+    let handler = get_message_bus()
+        .borrow()
+        .get_response_handler(correlation_id)
+        .cloned();
+    if let Some(handler) = handler {
+        handler.0.handle(message);
+    } else {
+        log::error!(
+            "Failed to handle response: handler not found for correlation_id {correlation_id}"
+        )
     }
 }
 
@@ -303,8 +319,10 @@ pub struct MessageBus {
     /// Maps a pattern to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
     patterns: IndexMap<Ustr, Vec<Subscription>>,
-    /// Handles a message or a request destined for a specific endpoint.
+    /// Index of endpoint addresses and their handlers.
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
+    /// Index of request correlation IDs and their response handlers.
+    correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
 }
 
 // SAFETY: Message bus is not meant to be passed between threads
@@ -328,6 +346,7 @@ impl MessageBus {
             subscriptions: IndexMap::new(),
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
+            correlation_index: AHashMap::new(),
             has_backing: false,
         }
     }
@@ -401,10 +420,17 @@ impl MessageBus {
         // TODO: Integrate the backing database
         Ok(())
     }
+
     /// Returns the handler for the given `endpoint`.
     #[must_use]
     pub fn get_endpoint<T: AsRef<str>>(&self, endpoint: T) -> Option<&ShareableMessageHandler> {
         self.endpoints.get(&Ustr::from(endpoint.as_ref()))
+    }
+
+    /// Returns the handler for the given `correlation_id`.
+    #[must_use]
+    pub fn get_response_handler(&self, correlation_id: &UUID4) -> Option<&ShareableMessageHandler> {
+        self.correlation_index.get(correlation_id)
     }
 
     #[must_use]
@@ -431,6 +457,22 @@ impl MessageBus {
         // Sort into priority order
         matching_subs.sort();
         matching_subs
+    }
+
+    pub fn register_response_handler(
+        &mut self,
+        correlation_id: &UUID4,
+        handler: ShareableMessageHandler,
+    ) -> anyhow::Result<()> {
+        if self.correlation_index.contains_key(correlation_id) {
+            return Err(anyhow::anyhow!(
+                "Correlation ID <{correlation_id}> already has a registered handler",
+            ));
+        }
+
+        self.correlation_index.insert(*correlation_id, handler);
+
+        Ok(())
     }
 
     fn matching_handlers<'a>(
