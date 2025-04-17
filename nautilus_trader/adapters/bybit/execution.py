@@ -763,7 +763,7 @@ class BybitExecutionClient(LiveExecutionClient):
                             self._clock.timestamp_ns(),
                         )
             finally:
-                await self.retry_manager_pool.release(retry_manager)
+                await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
