@@ -32,6 +32,10 @@ build-wheel:
 build-wheel-debug:
 	BUILD_MODE=debug uv build --wheel
 
+.PHONY: build-dry-run
+build-dry-run:
+	DRY_RUN=true uv run --active --no-sync build.py
+
 .PHONY: clean
 clean:
 	find . -type d -name "__pycache" -print0 | xargs -0 rm -rf
@@ -55,7 +59,7 @@ format:
 
 .PHONY: pre-commit
 pre-commit:
-	uv run --active --no-sync pre-commit run --all-files
+	CC=clang CXX=clang++ VIRTUAL_ENV="/home/twitu/Code/nautilus_trader/.venv" uv run --active --no-sync pre-commit run --all-files
 
 .PHONY: ruff
 ruff:

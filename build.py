@@ -41,6 +41,8 @@ PARALLEL_BUILD = os.getenv("PARALLEL_BUILD", "true").lower() == "true"
 COPY_TO_SOURCE = os.getenv("COPY_TO_SOURCE", "true").lower() == "true"
 # If PyO3 only then don't build C extensions to reduce compilation time
 PYO3_ONLY = os.getenv("PYO3_ONLY", "").lower() != ""
+# If dry run only print the commands that would be executed
+DRY_RUN = bool(os.getenv("DRY_RUN", ""))
 
 # Precision mode configuration
 # https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode
@@ -120,6 +122,13 @@ RUST_LIB_PATHS: list[Path] = [
 RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
+def _set_feature_flags() -> list[str]:
+    if HIGH_PRECISION:
+        return ["--all-features"]
+    else:
+        return ["--features", "ffi,python,extension-module"]
+
+
 def _build_rust_libs() -> None:
     print("Compiling Rust libraries...")
 
@@ -130,11 +139,7 @@ def _build_rust_libs() -> None:
 
         build_options = " --release" if BUILD_MODE == "release" else ""
 
-        if HIGH_PRECISION:
-            features = ["--all-features"]
-        else:
-            # Enable features needed for main build, but not high_precision
-            features = ["--features", "ffi,python,extension-module"]
+        features = _set_feature_flags()
 
         cmd_args = [
             "cargo",
@@ -372,6 +377,38 @@ def _strip_unneeded_symbols() -> None:
         raise RuntimeError(f"Error when stripping symbols.\n{e}") from e
 
 
+def show_rustanalyzer_settings() -> None:
+    """
+    Show appropriate vscode settings for the build.
+    """
+    import json
+
+    # Set environment variables
+    settings: dict[str, object] = {}
+    for key in [
+        "rust-analyzer.check.extraEnv",
+        "rust-analyzer.runnables.extraEnv",
+        "rust-analyzer.cargo.features",
+    ]:
+        settings[key] = {
+            "CC": os.environ["CC"],
+            "CXX": os.environ["CXX"],
+            "VIRTUAL_ENV": os.environ["VIRTUAL_ENV"],
+        }
+
+    # Set features
+    features = _set_feature_flags()
+    if features[0] == "--all-features":
+        settings["rust-analyzer.cargo.features"] = "all"
+        settings["rust-analyzer.check.features"] = "all"
+    else:
+        settings["rust-analyzer.cargo.features"] = features[1].split(",")
+        settings["rust-analyzer.check.features"] = features[1].split(",")
+
+    print("Set these rust analyzer settings in .vscode/settings.json")
+    print(json.dumps(settings, indent=2))
+
+
 def build() -> None:
     """
     Construct the extensions and distribution.
@@ -435,9 +472,14 @@ if __name__ == "__main__":
     print_env_var_if_exists("LDFLAGS")
     print_env_var_if_exists("LD_LIBRARY_PATH")
     print_env_var_if_exists("RUSTFLAGS")
+    print_env_var_if_exists("DRY_RUN")
 
-    print("\nStarting build...")
-    ts_start = dt.datetime.now(dt.UTC)
-    build()
-    print(f"Build time: {dt.datetime.now(dt.UTC) - ts_start}")
-    print("\033[32m" + "Build completed" + "\033[0m")
+    if DRY_RUN:
+        print("Dry run")
+        show_rustanalyzer_settings()
+    else:
+        print("\nStarting build...")
+        ts_start = dt.datetime.now(dt.UTC)
+        build()
+        print(f"Build time: {dt.datetime.now(dt.UTC) - ts_start}")
+        print("\033[32m" + "Build completed" + "\033[0m")
