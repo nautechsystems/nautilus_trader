@@ -475,7 +475,6 @@ if __name__ == "__main__":
     print_env_var_if_exists("DRY_RUN")
 
     if DRY_RUN:
-        print("Dry run")
         show_rustanalyzer_settings()
     else:
         print("\nStarting build...")
