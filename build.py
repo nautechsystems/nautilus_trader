@@ -122,11 +122,6 @@ RUST_LIB_PATHS: list[Path] = [
 RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
-os.environ["CARGO_LOG"] = "cargo::core::compiler::fingerprint=info"
-os.environ["RUST_LOG"] = "trace"
-print(os.environ)
-
-
 def _set_feature_flags() -> list[str]:
     if HIGH_PRECISION:
         return ["--all-features"]
@@ -148,7 +143,6 @@ def _build_rust_libs() -> None:
 
         cmd_args = [
             "cargo",
-            "-vv",
             "build",
             *build_options.split(),
             *features,
