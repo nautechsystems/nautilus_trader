@@ -159,6 +159,8 @@ pub enum LogEvent {
     Log(LogLine),
     /// A command to flush all logger buffers.
     Flush,
+    /// A command to close the logger.
+    Close,
 }
 
 /// Represents a log event which includes a message.
@@ -353,8 +355,9 @@ impl Logger {
     ) -> anyhow::Result<LogGuard> {
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
 
+        let logger_tx = tx.clone();
         let logger = Self {
-            tx,
+            tx: logger_tx,
             config: config.clone(),
         };
 
@@ -392,7 +395,7 @@ impl Logger {
             }
         }
 
-        Ok(LogGuard::new(handle))
+        Ok(LogGuard::new(handle, Some(tx)))
     }
 
     fn handle_messages(
@@ -426,9 +429,6 @@ impl Logger {
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             match event {
-                LogEvent::Flush => {
-                    break;
-                }
                 LogEvent::Log(line) => {
                     let component_level = component_level.get(&line.component);
 
@@ -458,15 +458,26 @@ impl Logger {
                         }
                     }
 
-                    if let Some(ref mut writer) = file_writer_opt {
-                        if writer.enabled(&wrapper.line) {
-                            if writer.json_format {
-                                writer.write(&wrapper.get_json());
+                    if let Some(ref mut file_writer) = file_writer_opt {
+                        if file_writer.enabled(&wrapper.line) {
+                            if file_writer.json_format {
+                                file_writer.write(&wrapper.get_json());
                             } else {
-                                writer.write(wrapper.get_string());
+                                file_writer.write(wrapper.get_string());
                             }
                         }
                     }
+                }
+                LogEvent::Flush => {
+                    stderr_writer.flush();
+                    stdout_writer.flush();
+
+                    if let Some(ref mut file_writer) = file_writer_opt {
+                        file_writer.flush();
+                    }
+                }
+                LogEvent::Close => {
+                    break;
                 }
             }
         }
@@ -503,26 +514,33 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 #[derive(Debug)]
 pub struct LogGuard {
     handle: Option<std::thread::JoinHandle<()>>,
+    tx: Option<std::sync::mpsc::Sender<LogEvent>>,
 }
 
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance.
     #[must_use]
-    pub const fn new(handle: Option<std::thread::JoinHandle<()>>) -> Self {
-        Self { handle }
+    pub const fn new(
+        handle: Option<std::thread::JoinHandle<()>>,
+        tx: Option<std::sync::mpsc::Sender<LogEvent>>,
+    ) -> Self {
+        Self { handle, tx }
     }
 }
 
 impl Default for LogGuard {
     /// Creates a new default [`LogGuard`] instance.
     fn default() -> Self {
-        Self::new(None)
+        Self::new(None, None)
     }
 }
 
 impl Drop for LogGuard {
     fn drop(&mut self) {
-        log::logger().flush();
+        if let Some(tx) = self.tx.take() {
+            let _ = tx.send(LogEvent::Close);
+        }
+
         if let Some(handle) = self.handle.take() {
             handle.join().expect("Error joining logging handle");
         }

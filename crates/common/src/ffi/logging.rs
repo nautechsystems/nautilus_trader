@@ -185,6 +185,12 @@ pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
 
 /// Flushes global logger buffers of any records.
 #[unsafe(no_mangle)]
+pub extern "C" fn logger_flush() {
+    log::logger().flush();
+}
+
+/// Flushes global logger buffers of any records and then drops the logger.
+#[unsafe(no_mangle)]
 pub extern "C" fn logger_drop(log_guard: LogGuard_API) {
     drop(log_guard);
 }
