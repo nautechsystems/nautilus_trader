@@ -986,6 +986,10 @@ cdef class BacktestEngine:
         if not streaming:
             self.end()
 
+            # Special signal through the component name to ensure flush of logs to file in rust logger.rs
+            logger = Logger("__FLUSH__")
+            logger.error("")
+
     def end(self):
         """
         Manually end the backtest.

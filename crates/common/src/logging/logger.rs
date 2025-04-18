@@ -430,6 +430,13 @@ impl Logger {
                     break;
                 }
                 LogEvent::Log(line) => {
+                    if line.component == Ustr::from("__FLUSH__") {
+                        if let Some(ref mut writer) = file_writer_opt {
+                            writer.flush();
+                        }
+                        continue;
+                    }
+
                     let component_level = component_level.get(&line.component);
 
                     // Check if the component exists in level_filters,
