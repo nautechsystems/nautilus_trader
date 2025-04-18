@@ -8,12 +8,13 @@ Released on TBD (UTC).
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
 
 ### Breaking Changes
-- Removed catalog `basename_template` argument (#2510), thanks @faysou
+None
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
 - Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
+- Improved logger buffers flushing post backtest
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `sqlx` crate to v0.8.5
