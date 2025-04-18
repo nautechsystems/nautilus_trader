@@ -125,6 +125,12 @@ pub fn py_init_logging(
     logging::init_logging(trader_id, instance_id, config, file_config).map_err(to_pyvalue_err)
 }
 
+#[pyfunction()]
+#[pyo3(name = "logger_flush")]
+pub fn py_logger_flush() {
+    log::logger().flush()
+}
+
 fn parse_component_levels(
     original_map: Option<HashMap<String, String>>,
 ) -> HashMap<Ustr, LevelFilter> {
