@@ -219,6 +219,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def write_data(
         self,
         data: list[Data | Event] | list[NautilusRustDataType],
+        basename_template: str = "part-{i}",
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
@@ -233,6 +234,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data : list[Data | Event]
             The data or event objects to be written to the catalog.
+        basename_template : str, default 'part-{i}'
+            A template string used to generate basenames of written data files.
+            The token '{i}' will be replaced with an automatically incremented
+            integer as files are partitioned.
+            If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
         mode : CatalogWriteMode, default 'OVERWRITE'
             The mode to use when writing data and when not using using the "partitioning" option.
             Can be one of the following:
@@ -245,7 +251,10 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         Warnings
         --------
-        By default, any existing data which already exists under a filename will be overwritten.
+        Any existing data which already exists under a filename will be overwritten.
+        If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
+        be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
+        generates unique filenames for different data sets.
 
         Notes
         -----
@@ -259,6 +268,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ------
         ValueError
             If data of the same type is not monotonically increasing (or non-decreasing) based on `ts_init`.
+            If the basename_template does not contain {i}.
 
         """
 
@@ -280,6 +290,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         def obj_to_type(obj: Data) -> type:
             return type(obj) if not isinstance(obj, CustomData) else obj.data.__class__
 
+        if "{i}" not in basename_template:
+            msg = "{i} must be in the basename_template," + f" found `{basename_template}`"
+            raise ValueError(msg)
+
         name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
 
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
@@ -288,6 +302,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 data=chunk,
                 data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
+                basename_template=basename_template,
                 mode=mode,
                 **kwargs,
             )
@@ -297,6 +312,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data: list[Data],
         data_cls: type[Data],
         instrument_id: str | None = None,
+        basename_template: str = "part-{i}",
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
         **kwargs: Any,
     ) -> None:
@@ -312,6 +328,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 table=table,
                 path=path,
                 fs=self.fs,
+                basename_template=basename_template,
                 mode=mode,
             )
         else:
@@ -319,6 +336,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             pds.write_dataset(
                 data=table,
                 base_dir=path,
+                basename_template=f"{basename_template}.parquet",
                 format="parquet",
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
@@ -363,19 +381,23 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table,
         path: str,
         fs: fsspec.AbstractFileSystem,
+        basename_template: str,
         mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     ) -> None:
         fs.mkdirs(path, exist_ok=True)
-        basename_template = "part-{i}"
         name = basename_template.format(i=0)
         parquet_file = f"{path}/{name}.parquet"
         empty_file = parquet_file
         i = 0
 
-        while Path(empty_file).exists():
-            i += 1
-            name = basename_template.format(i=i)
-            empty_file = f"{path}/{name}.parquet"
+        # Do not list the directory when overwriting existing files
+        if mode != CatalogWriteMode.OVERWRITE:
+            # Use the fsspec filesystem to check for existing files. Force a
+            # refresh of the cache to ensure we see the latest state of the filesystem.
+            while fs.exists(empty_file, refresh=True):
+                i += 1
+                name = basename_template.format(i=i)
+                empty_file = f"{path}/{name}.parquet"
 
         if i > 1 and mode != CatalogWriteMode.NEWFILE:
             print(
@@ -386,19 +408,24 @@ class ParquetDataCatalog(BaseDataCatalog):
             parquet_file = empty_file
 
         # following solution from https://stackoverflow.com/a/70817689
-        if (
-            mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND]
-            and Path(parquet_file).exists()
+        if mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND] and fs.exists(
+            parquet_file,
+            refresh=True,
         ):
-            existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
+            existing_table = pq.read_table(
+                source=parquet_file,
+                filesystem=fs,
+                pre_buffer=False,
+                memory_map=True,
+            )
             table = table.cast(existing_table.schema)
 
             if mode == CatalogWriteMode.APPEND:
                 combined_table = pa.concat_tables([existing_table, table])
-                pq.write_table(combined_table, where=parquet_file)
+                pq.write_table(combined_table, filesystem=fs, where=parquet_file)
             elif mode == CatalogWriteMode.PREPEND:
                 combined_table = pa.concat_tables([table, existing_table])
-                pq.write_table(combined_table, where=parquet_file)
+                pq.write_table(combined_table, filesystem=fs, where=parquet_file)
         else:
             pq.write_table(
                 table,
