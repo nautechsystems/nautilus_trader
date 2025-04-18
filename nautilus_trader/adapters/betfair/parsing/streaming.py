@@ -232,7 +232,7 @@ def runner_to_instrument_close(
         selection_handicap=runner.handicap,
     )
 
-    if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
+    if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED, RunnerStatus.HIDDEN):
         return InstrumentClose(
             instrument_id,
             close_price=CLOSE_PRICE_LOSER,

@@ -16,11 +16,14 @@
 import datetime
 from decimal import Decimal
 
+from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core import Data
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -92,6 +95,7 @@ class OrderBookImbalance(Strategy):
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
         assert 0 < config.trigger_imbalance_ratio < 1
         super().__init__(config)
+        self.data: list[Data] = []
 
         # Initialized in on_start
         self.instrument: Instrument | None = None
@@ -110,6 +114,8 @@ class OrderBookImbalance(Strategy):
             self.stop()
             return
 
+        self.subscribe_data(DataType(BetfairSequenceCompleted))
+
         if self.config.use_quote_ticks:
             self.book_type = BookType.L1_MBP
             self.subscribe_quote_ticks(self.instrument.id)
@@ -118,6 +124,9 @@ class OrderBookImbalance(Strategy):
             self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
 
         self._last_trigger_timestamp = self.clock.utc_now()
+
+    def on_data(self, data):
+        self.data.append(data)
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """

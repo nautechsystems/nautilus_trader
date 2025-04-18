@@ -688,6 +688,22 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         # Assert
         assert self.engine.iteration in (8198, 7812)
 
+    def test_custom_data(self):
+        # Arrange
+        config = OrderBookImbalanceConfig(
+            instrument_id=self.instrument.id,
+            max_trade_size=Decimal(20),
+        )
+        strategy = OrderBookImbalance(config=config)
+        self.engine.add_strategy(strategy)
+
+        # Act
+        self.engine.run()
+
+        # Assert
+        assert self.engine.iteration in (8198, 7812)
+        assert len(strategy.data)
+
 
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
