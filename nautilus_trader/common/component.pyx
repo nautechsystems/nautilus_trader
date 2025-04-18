@@ -82,6 +82,7 @@ from nautilus_trader.core.rust.common cimport log_color_to_cstr
 from nautilus_trader.core.rust.common cimport log_level_from_cstr
 from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_drop
+from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logging_clock_set_realtime_mode
 from nautilus_trader.core.rust.common cimport logging_clock_set_static_mode
@@ -1222,6 +1223,10 @@ cpdef bint is_logging_pyo3():
 cpdef void set_logging_pyo3(bint value):
     global LOGGING_PYO3
     LOGGING_PYO3 = value
+
+
+cpdef void flush_logger():
+    logger_flush()
 
 
 cdef class Logger:

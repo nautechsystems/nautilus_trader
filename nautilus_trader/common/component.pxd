@@ -175,6 +175,7 @@ cpdef LogGuard init_logging(
 cdef bint LOGGING_PYO3
 cpdef bint is_logging_initialized()
 cpdef void set_logging_pyo3(bint value)
+cpdef void flush_logger()
 
 
 cdef class Logger:
