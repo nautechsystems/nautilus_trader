@@ -76,9 +76,10 @@ async def run():
             # "instrument_type": frozenset(["perpetual"]),
             # "start": pd.Timestamp("2021-01-01").value,
             # "end": pd.Timestamp("2023-01-01").value,
-            # "effective": pd.Timestamp("2022-01-01").value,
-            "effective": pd.Timestamp("2023-01-01"),
-            # "activation_offset": pd.Timedelta(days=30)
+            "effective": pd.Timestamp("2022-01-01").value,
+            # "effective": pd.Timestamp("2023-01-01"),
+            # "available_offset": pd.Timedelta(days=30).value,
+            # "available_offset": pd.Timedelta(days=30),
         }
 
         # config = InstrumentProviderConfig(load_all=True, filters=filters)

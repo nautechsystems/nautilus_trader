@@ -5116,6 +5116,7 @@ class TardisHttpClient:
         active: bool | None = None,
         start: int | None = None,
         end: int | None = None,
+        available_offset: int | None = None,
         effective: int | None = None,
         ts_init: int | None = None,
     ) -> list[Instrument]: ...
