@@ -3,13 +3,16 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Add WebSocket batch order operations for Bybit (#2521), thanks @sunlei
+- Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
+- Added `UnixNanos::max()` convenience method for the maximum valid value
+- Added `available_offset` filter parameter for `TardisInstrumentProvider`
 
 ### Breaking Changes
 - Removed catalog `basename_template` argument (#2510), thanks @faysou
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
+- Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
