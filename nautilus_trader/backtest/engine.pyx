@@ -75,6 +75,7 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drain
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_drop
 from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
+from nautilus_trader.core.rust.common cimport logger_flush
 from nautilus_trader.core.rust.common cimport logging_is_colored
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
@@ -995,6 +996,8 @@ cdef class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
+        logger_flush()
+
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
 

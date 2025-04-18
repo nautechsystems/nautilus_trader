@@ -602,6 +602,11 @@ void logging_log_sysinfo(const char *component_ptr);
 /**
  * Flushes global logger buffers of any records.
  */
+void logger_flush(void);
+
+/**
+ * Flushes global logger buffers of any records and then drops the logger.
+ */
 void logger_drop(struct LogGuard_API log_guard);
 
 /**
