@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Add WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 
 ### Breaking Changes
 - Removed catalog `basename_template` argument (#2510), thanks @faysou
