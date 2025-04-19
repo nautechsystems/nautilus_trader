@@ -37,7 +37,7 @@ use crate::common::{
     parse::{get_currency, parse_instrument_id, parse_notional, parse_position_side},
 };
 
-/// Parses a Coinbase International Spot instrument into an InstrumentAny::CurrencyPair.
+/// Parses a Coinbase International Spot instrument into an `InstrumentAny::CurrencyPair`.
 pub fn parse_spot_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -90,7 +90,7 @@ pub fn parse_spot_instrument(
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
-/// Parses a Coinbase International perpetual instrument into an InstrumentAny::CryptoPerpetual.
+/// Parses a Coinbase International perpetual instrument into an `InstrumentAny::CryptoPerpetual`.
 pub fn parse_perp_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -319,27 +319,27 @@ pub fn parse_order_status_report(
     if let Some(price) = coinbase_order.price {
         let price = parse_price(&price, price_precision);
         report = report.with_price(price);
-    };
+    }
 
     if let Some(stop_price) = coinbase_order.stop_price {
         let stop_price = parse_price(&stop_price, price_precision);
         report = report.with_trigger_price(stop_price);
         report = report.with_trigger_type(TriggerType::Default); // TBD
-    };
+    }
 
     if let Some(expire_time) = coinbase_order.expire_time {
         report = report.with_expire_time(expire_time.into());
-    };
+    }
 
     if let Some(avg_price) = coinbase_order.avg_price {
         let avg_px = avg_price
             .parse::<f64>()
             .expect("Invalid value for `avg_px`");
         report = report.with_avg_px(avg_px);
-    };
+    }
 
     if let Some(text) = coinbase_order.text {
-        report = report.with_cancel_reason(text)
+        report = report.with_cancel_reason(text);
     }
 
     report = report.with_post_only(coinbase_order.post_only);
@@ -476,7 +476,7 @@ mod tests {
             assert_eq!(perp.base_currency.to_string(), "BTC");
             assert_eq!(perp.quote_currency.to_string(), "USDC");
             assert_eq!(perp.settlement_currency.to_string(), "USDC");
-            assert_eq!(perp.is_inverse, false);
+            assert!(!perp.is_inverse);
             assert_eq!(perp.price_increment.to_string(), "0.1");
             assert_eq!(perp.size_increment.to_string(), "0.0001");
             assert_eq!(perp.multiplier.to_string(), "1.0");

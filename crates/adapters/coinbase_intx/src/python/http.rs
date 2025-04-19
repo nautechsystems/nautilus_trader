@@ -42,22 +42,26 @@ impl CoinbaseIntxHttpClient {
 
     #[getter]
     #[pyo3(name = "base_url")]
+    #[must_use]
     pub fn py_base_url(&self) -> &str {
         self.base_url()
     }
 
     #[getter]
     #[pyo3(name = "api_key")]
+    #[must_use]
     pub fn py_api_key(&self) -> Option<&str> {
         self.api_key()
     }
 
     #[pyo3(name = "is_initialized")]
-    pub fn py_is_initialized(&self) -> bool {
+    #[must_use]
+    pub const fn py_is_initialized(&self) -> bool {
         self.is_initialized()
     }
 
     #[pyo3(name = "get_cached_symbols")]
+    #[must_use]
     pub fn py_get_cached_symbols(&self) -> Vec<String> {
         self.get_cached_symbols()
     }

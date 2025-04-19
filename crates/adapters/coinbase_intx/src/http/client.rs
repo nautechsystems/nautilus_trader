@@ -111,6 +111,7 @@ impl CoinbaseIntxHttpInnerClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
+    #[must_use]
     pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
         Self {
             base_url: base_url.unwrap_or(COINBASE_INTX_REST_URL.to_string()),
@@ -127,6 +128,7 @@ impl CoinbaseIntxHttpInnerClient {
 
     /// Creates a new [`CoinbaseIntxHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
+    #[must_use]
     pub fn with_credentials(
         api_key: String,
         api_secret: String,
@@ -455,7 +457,7 @@ impl CoinbaseIntxHttpInnerClient {
         params: GetOrdersParams,
     ) -> Result<CoinbaseIntxOrderList, CoinbaseIntxHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
-        let path = format!("/api/v1/orders?{}", query);
+        let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
@@ -479,7 +481,7 @@ impl CoinbaseIntxHttpInnerClient {
         params: CancelOrdersParams,
     ) -> Result<Vec<CoinbaseIntxOrder>, CoinbaseIntxHttpError> {
         let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
-        let path = format!("/api/v1/orders?{}", query);
+        let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
 
@@ -491,7 +493,7 @@ impl CoinbaseIntxHttpInnerClient {
         order_id: &str,
         params: ModifyOrderParams,
     ) -> Result<CoinbaseIntxOrder, CoinbaseIntxHttpError> {
-        let path = format!("/api/v1/orders/{}", order_id);
+        let path = format!("/api/v1/orders/{order_id}");
         let body = serde_json::to_vec(&params).expect("Failed to serialize params");
         self.send_request(Method::PUT, &path, Some(body), true)
             .await
@@ -525,6 +527,7 @@ impl CoinbaseIntxHttpClient {
     ///
     /// This version of the client has **no credentials**, so it can only
     /// call publicly accessible endpoints.
+    #[must_use]
     pub fn new(base_url: Option<String>, timeout_secs: Option<u64>) -> Self {
         Self {
             inner: Arc::new(CoinbaseIntxHttpInnerClient::new(base_url, timeout_secs)),
@@ -577,11 +580,13 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Returns the base url being used by the client.
+    #[must_use]
     pub fn base_url(&self) -> &str {
         self.inner.base_url.as_str()
     }
 
     /// Returns the public API key being used by the client.
+    #[must_use]
     pub fn api_key(&self) -> Option<&str> {
         self.inner.credential.clone().map(|c| c.api_key.as_str())
     }
@@ -589,17 +594,19 @@ impl CoinbaseIntxHttpClient {
     /// Checks if the client is initialized.
     ///
     /// The client is considered initialized if any instruments have been cached from the venue.
-    pub fn is_initialized(&self) -> bool {
+    #[must_use]
+    pub const fn is_initialized(&self) -> bool {
         self.cache_initialized
     }
 
     /// Returns the cached instrument symbols.
+    #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
             .lock()
             .unwrap()
             .keys()
-            .map(|k| k.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
 
@@ -750,7 +757,7 @@ impl CoinbaseIntxHttpClient {
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            ))
+            ));
         }
 
         Ok(reports)
@@ -768,7 +775,7 @@ impl CoinbaseIntxHttpClient {
         let mut params = GetPortfolioFillsParamsBuilder::default();
         if let Some(start) = start {
             params.time_from(start);
-        };
+        }
         if let Some(client_order_id) = client_order_id {
             params.client_order_id(client_order_id.to_string());
         }
@@ -955,7 +962,7 @@ impl CoinbaseIntxHttpClient {
         if let Some(side) = order_side {
             let side: CoinbaseIntxSide = side.into();
             params.side(side);
-        };
+        }
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self.inner.http_cancel_orders(params).await?;
@@ -973,7 +980,7 @@ impl CoinbaseIntxHttpClient {
                 instrument.size_precision(),
                 ts_init,
             );
-            reports.push(report)
+            reports.push(report);
         }
 
         Ok(reports)
@@ -995,13 +1002,13 @@ impl CoinbaseIntxHttpClient {
         params.client_order_id(new_client_order_id.as_str());
         if let Some(price) = price {
             params.price(price.to_string());
-        };
+        }
         if let Some(trigger_price) = trigger_price {
             params.price(trigger_price.to_string());
-        };
+        }
         if let Some(quantity) = quantity {
             params.size(quantity.to_string());
-        };
+        }
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
 
         let resp = self

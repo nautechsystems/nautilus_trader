@@ -45,12 +45,14 @@ impl CoinbaseIntxWebSocketClient {
 
     #[getter]
     #[pyo3(name = "url")]
+    #[must_use]
     pub fn py_url(&self) -> &str {
         self.url()
     }
 
     #[getter]
     #[pyo3(name = "api_key")]
+    #[must_use]
     pub fn py_api_key(&self) -> &str {
         self.api_key()
     }
@@ -119,7 +121,7 @@ impl CoinbaseIntxWebSocketClient {
                         Python::with_gil(|py| {
                             call_python(py, &callback, mark_price.into_py_any_unwrap(py));
                             call_python(py, &callback, index_price.into_py_any_unwrap(py));
-                        })
+                        });
                     }
                     NautilusWsMessage::OrderEvent(msg) => Python::with_gil(|py| {
                         let py_obj =
