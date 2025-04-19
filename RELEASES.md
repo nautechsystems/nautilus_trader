@@ -9,6 +9,8 @@ Released on TBD (UTC).
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
 - Added `Quantity::non_zero(...)` method
 - Added `Quantity::non_zero_checked(...)` method
+- Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
+- Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
 
 ### Breaking Changes
 None
