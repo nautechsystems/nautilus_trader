@@ -226,11 +226,13 @@ pub fn parse_book_snapshot_msg_as_quote(
 
     let best_bid = &msg.bids[0];
     let bid_price = Price::new(best_bid.price, price_precision);
-    let bid_size = Quantity::new(best_bid.amount, size_precision);
+    let bid_size = Quantity::non_zero_checked(best_bid.amount, size_precision)
+        .unwrap_or_else(|e| panic!("Invalid {msg:?}: bid_size {e}"));
 
     let best_ask = &msg.asks[0];
     let ask_price = Price::new(best_ask.price, price_precision);
-    let ask_size = Quantity::new(best_ask.amount, size_precision);
+    let ask_size = Quantity::non_zero_checked(best_ask.amount, size_precision)
+        .unwrap_or_else(|e| panic!("Invalid {msg:?}: ask_size {e}"));
 
     QuoteTick::new(
         instrument_id,
@@ -251,7 +253,7 @@ pub fn parse_trade_msg(
     instrument_id: InstrumentId,
 ) -> TradeTick {
     let price = Price::new(msg.price, price_precision);
-    let size = Quantity::new_non_zero_checked(msg.amount, size_precision)
+    let size = Quantity::non_zero_checked(msg.amount, size_precision)
         .unwrap_or_else(|e| panic!("Invalid {msg:?}: size {e}"));
     let aggressor_side = parse_aggressor_side(&msg.side);
     let trade_id = TradeId::new(msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
@@ -283,7 +285,7 @@ pub fn parse_bar_msg(
     let high = Price::new(msg.high, price_precision);
     let low = Price::new(msg.low, price_precision);
     let close = Price::new(msg.close, price_precision);
-    let volume = Quantity::new(msg.volume, size_precision);
+    let volume = Quantity::non_zero(msg.volume, size_precision);
     let ts_event = UnixNanos::from(msg.timestamp);
     let ts_init = UnixNanos::from(msg.local_timestamp);
 

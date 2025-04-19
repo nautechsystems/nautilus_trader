@@ -7,7 +7,8 @@ Released on TBD (UTC).
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
-- Added `Quantity::new_non_zero_checked`
+- Added `Quantity::non_zero(...)` method
+- Added `Quantity::non_zero_checked(...)` method
 
 ### Breaking Changes
 None

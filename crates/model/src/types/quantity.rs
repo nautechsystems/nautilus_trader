@@ -118,7 +118,7 @@ impl Quantity {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_non_zero_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+    pub fn non_zero_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_predicate_true(value != 0.0, "value was zero")?;
         check_fixed_precision(precision)?;
         let rounded_value =
@@ -139,6 +139,16 @@ impl Quantity {
     /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
+    }
+
+    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
+    pub fn non_zero(value: f64, precision: u8) -> Self {
+        Self::non_zero_checked(value, precision).expect(FAILED)
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
@@ -584,35 +594,35 @@ mod tests {
 
     #[rstest]
     fn test_new_non_zero_ok() {
-        let qty = Quantity::new_non_zero_checked(123.456, 3).unwrap();
+        let qty = Quantity::non_zero_checked(123.456, 3).unwrap();
         assert_eq!(qty.raw, Quantity::new(123.456, 3).raw);
         assert!(qty.is_positive());
     }
 
     #[rstest]
     fn test_new_non_zero_zero_input() {
-        assert!(Quantity::new_non_zero_checked(0.0, 0).is_err());
+        assert!(Quantity::non_zero_checked(0.0, 0).is_err());
     }
 
     #[rstest]
     fn test_new_non_zero_rounds_to_zero() {
         // 0.0004 rounded to 3 dp ⇒ 0.000
-        assert!(Quantity::new_non_zero_checked(0.0004, 3).is_err());
+        assert!(Quantity::non_zero_checked(0.0004, 3).is_err());
     }
 
     #[rstest]
     fn test_new_non_zero_negative() {
-        assert!(Quantity::new_non_zero_checked(-1.0, 0).is_err());
+        assert!(Quantity::non_zero_checked(-1.0, 0).is_err());
     }
 
     #[rstest]
     fn test_new_non_zero_exceeds_max() {
-        assert!(Quantity::new_non_zero_checked(QUANTITY_MAX * 10.0, 0).is_err());
+        assert!(Quantity::non_zero_checked(QUANTITY_MAX * 10.0, 0).is_err());
     }
 
     #[rstest]
     fn test_new_non_zero_invalid_precision() {
-        assert!(Quantity::new_non_zero_checked(1.0, FIXED_PRECISION + 1).is_err());
+        assert!(Quantity::non_zero_checked(1.0, FIXED_PRECISION + 1).is_err());
     }
 
     #[rstest]
