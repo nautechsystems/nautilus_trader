@@ -21,7 +21,7 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use strum::Display;
 
-/// Represents different blockchain networks
+/// Represents different blockchain networks.
 #[derive(
     Debug, Clone, Copy, Hash, PartialOrd, PartialEq, Ord, Eq, Display, Serialize, Deserialize,
 )]
@@ -111,13 +111,13 @@ pub enum Blockchain {
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
 #[derive(Debug, Clone)]
 pub struct Chain {
-    /// The blockchain network type
+    /// The blockchain network type.
     pub name: Blockchain,
-    /// The unique identifier for this blockchain
+    /// The unique identifier for this blockchain.
     pub chain_id: u32,
-    /// URL endpoint for HyperSync connection
+    /// URL endpoint for HyperSync connection.
     pub hypersync_url: String,
-    /// URL endpoint for the default RPC connection
+    /// URL endpoint for the default RPC connection.
     pub rpc_url: Option<String>,
 }
 
@@ -131,7 +131,7 @@ impl Chain {
         }
     }
 
-    /// Sets the RPC url endpoint
+    /// Sets the RPC url endpoint.
     pub fn set_rpc_url(&mut self, rpc: String) {
         self.rpc_url = Some(rpc);
     }
@@ -230,7 +230,7 @@ impl Display for Chain {
     }
 }
 
-// Define a module to contain all the chain definitions
+// Define a module to contain all the chain definitions.
 pub mod chains {
     use std::sync::LazyLock;
 
