@@ -337,21 +337,21 @@ class OptionStrategy(Strategy):
         self.request_instrument(self.config.option_id2)
         self.request_instrument(self.bar_type.instrument_id)
 
+        self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"duration_seconds": pd.Timedelta(minutes=1).seconds},
+            params={
+                "duration_seconds": pd.Timedelta(minutes=1).seconds,
+                "append_data": False,
+            },
         )
-        self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
 
         if self.config.load_greeks:
             self.greeks.subscribe_greeks("ES")
 
-    # def on_bar(self, data):
-    #     self.user_log(data)
-
-    # def on_quote_tick(self, data):
-    #     self.user_log(data)
+    def on_quote_tick(self, data):
+        self.user_log(data)
 
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
@@ -359,6 +359,9 @@ class OptionStrategy(Strategy):
         self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
 
         self.start_orders_done = True
+
+    # def on_bar(self, data):
+    #     self.user_log(data)
 
     def on_bar(self, bar):
         self.user_log(
