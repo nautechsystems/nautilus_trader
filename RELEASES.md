@@ -15,6 +15,7 @@ None
 - Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest
+- Improved validations for Tardis trades data
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `sqlx` crate to v0.8.5

@@ -771,6 +771,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 
     while reader.read_record(&mut record)? {
         let record: TardisTradeRecord = record.deserialize(None)?;
+        check_trade_record_size(&record, size_precision);
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -803,6 +804,17 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     }
 
     Ok(trades)
+}
+
+pub fn check_trade_record_size(record: &TardisTradeRecord, precision: u8) {
+    assert!(record.amount != 0.0, "Invalid zero size: {record:?}");
+
+    let rounded_amount =
+        (record.amount * 10.0_f64.powi(precision as i32)).round() / 10.0_f64.powi(precision as i32);
+    assert!(
+        rounded_amount != 0.0,
+        "Invalid size becomes zero after rounding with precision {precision}: {record:?}",
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
