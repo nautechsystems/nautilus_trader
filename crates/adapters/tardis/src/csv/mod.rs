@@ -777,7 +777,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
             None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let price = parse_price(record.price, price_precision);
-        let size = Quantity::new_non_zero_checked(record.amount, size_precision)
+        let size = Quantity::non_zero_checked(record.amount, size_precision)
             .unwrap_or_else(|e| panic!("Invalid {record:?}: size {e}"));
         let aggressor_side = parse_aggressor_side(&record.side);
         let trade_id = TradeId::new(&record.id);
