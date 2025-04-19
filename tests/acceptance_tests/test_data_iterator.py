@@ -33,7 +33,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 
 class TestBacktestDataIterator:
-    def test_multi_data_iterator(self):
+    def test_backtest_data_iterator(self):
         # Arrange
 
         data_iterator = BacktestDataIterator()
@@ -93,7 +93,7 @@ class TestBacktestDataIterator:
         # Assert - No data left
         assert len(data_result_4) == 0
 
-    def test_multi_data_iterator_callback(self):
+    def test_backtest_data_iterator_callback(self):
         # Arrange
 
         callback_data = []
