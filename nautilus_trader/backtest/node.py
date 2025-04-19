@@ -191,9 +191,18 @@ class BacktestNode:
                         )
 
     def build(self) -> None:
+        """
+        Build the backtest engines for all configured backtest runs.
+
+        This method iterates through all backtest run configurations and creates a
+        backtest engine for each configuration that hasn't been initialized yet.
+
+        """
         for config in self._configs:
             try:
-                if config.id not in self._engines:
+                if (
+                    config.id not in self._engines
+                ):  # Only create an engine if one doesn't already exist for this config
                     self._create_engine(
                         run_config_id=config.id,
                         config=config.engine,
@@ -201,7 +210,10 @@ class BacktestNode:
                         data_configs=config.data,
                     )
             except Exception as e:
-                self.log_backtest_exception(e, config)
+                self.log_backtest_exception(
+                    e,
+                    config,
+                )  # Log any exceptions without halting the build process
 
     def _create_engine(
         self,
