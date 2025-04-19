@@ -60,7 +60,7 @@ class TestPersistenceStreaming:
         node = BacktestNode(configs=[run_config])
 
         # Act
-        backtest_result = node.run(raise_exception=True)
+        backtest_result = node.run()
 
         return backtest_result
 

@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.6
+#       jupytext_version: 1.17.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -21,6 +21,8 @@
 
 # %%
 # from nautilus_trader.model.data import DataType
+import pandas as pd
+
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -46,6 +48,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.types import CatalogWriteMode
+from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
 from nautilus_trader.trading.strategy import Strategy
@@ -65,6 +68,8 @@ catalog = load_catalog(catalog_folder)
 future_symbols = ["ESM4"]
 option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 
+# small amount of data to download for testing, very cheap
+# Note that the example below doesn't need any download as the test data is included in the repository
 start_time = "2024-05-09T10:00"
 end_time = "2024-05-09T10:05"
 
@@ -119,10 +124,17 @@ class OptionStrategy(Strategy):
         self.start_orders_done = False
 
     def on_start(self):
-        self.subscribe_quote_ticks(self.config.option_id)
-        self.subscribe_quote_ticks(self.config.option_id2)
-
         self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
+
+        self.request_instrument(self.config.option_id)
+        self.request_instrument(self.config.option_id2)
+        self.request_instrument(self.bar_type.instrument_id)
+
+        self.subscribe_quote_ticks(
+            self.config.option_id,
+            params={"duration_seconds": pd.Timedelta(minutes=1).seconds},
+        )
+        self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
 
         if self.config.load_greeks:
@@ -236,15 +248,25 @@ logging = LoggingConfig(
     log_level="WARN",
     log_level_file="WARN",
     log_directory=".",
-    log_file_format=None,  # 'json' or None
+    log_file_format=None,  # "json" or None
     log_file_name="databento_option_greeks",
+    clear_log_file=True,
+    print_config=False,
+    use_pyo3=False,
 )
 
+catalogs = [
+    DataCatalogConfig(
+        path=catalog.path,
+    ),
+]
+
 engine_config = BacktestEngineConfig(
+    logging=logging,
     actors=actors,
     strategies=strategies,
     streaming=(streaming if stream_data else None),
-    logging=logging,
+    catalogs=catalogs,
 )
 
 # BacktestRunConfig
@@ -296,13 +318,15 @@ configs = [
         data=data,
         venues=venues,
         chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
+        start=start_time,
+        end=end_time,
     ),
 ]
 
 node = BacktestNode(configs=configs)
 
 # %%
-results = node.run(raise_exception=True)
+results = node.run()
 
 # %%
 if stream_data:

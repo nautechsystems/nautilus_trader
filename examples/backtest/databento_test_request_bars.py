@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.6
+#       jupytext_version: 1.17.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -50,8 +50,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 # %%
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from nautilus_trader.adapters.databento.data_utils import init_databento_client
-# from option_trader import DATA_PATH, DATABENTO_API_KEY # personal library, use your own values especially for DATABENTO_API_KEY
+# from option_trader import DATA_PATH # personal library, use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
 catalog_folder = "historical_bars_catalog"
@@ -60,12 +59,13 @@ catalog = load_catalog(catalog_folder)
 future_symbols = ["ESU4"]
 
 # small amount of data to download for testing, very cheap
+# Note that the example below doesn't need any download as the test data is included in the repository
 start_time = "2024-07-01T23:40"
 end_time = "2024-07-02T00:10"
 
-# a valid databento key can be entered here, the example below runs with already saved test data
-# db_data_utils.DATABENTO_API_KEY = DATABENTO_API_KEY
-# init_databento_client()
+# a valid databento key can be entered here (or as an env variable of the same name)
+# DATABENTO_API_KEY = None
+# db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
 # https://databento.com/docs/schemas-and-data-formats/whats-a-schema
 futures_data_bars = databento_data(
@@ -125,6 +125,8 @@ class TestHistoricalAggStrategy(Strategy):
         self.bar_type_1 = BarType.from_str(f"{symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
         self.bar_type_2 = BarType.from_str(f"{symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
         self.bar_type_3 = BarType.from_str(f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+
+        self.request_instrument(symbol_id)
 
         # registering bar types with indicators, request_aggregated_bars below will update both indicators
         # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
@@ -253,8 +255,10 @@ logging = LoggingConfig(
     log_level_file="WARN",
     log_directory=".",
     log_file_format=None,  # "json" or None
-    log_file_name="databento_option_greeks",
+    log_file_name="databento_test_request_bars",
     clear_log_file=True,
+    print_config=False,
+    use_pyo3=False,
 )
 
 catalogs = [
@@ -327,4 +331,4 @@ configs = [
 node = BacktestNode(configs=configs)
 
 # %%
-results = node.run(raise_exception=True)
+results = node.run()

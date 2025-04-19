@@ -421,6 +421,46 @@ cdef class SubscribeQuoteTicks(SubscribeData):
             f"id={self.id}{form_params_str(self.params)})"
         )
 
+    def to_request(
+        self,
+        datetime start: datetime | None,
+        datetime end: datetime | None,
+        callback not None: Callable[[Any], None],
+    ) -> RequestQuoteTicks:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestQuoteTicks
+            The converted request message.
+        """
+        params = self.params.copy() if self.params else {}
+        params["subscription_name"] = f"{self.data_type.type.__name__}.{self.instrument_id}"
+
+        return RequestQuoteTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=params,
+        )
+
 
 cdef class SubscribeTradeTicks(SubscribeData):
     """
@@ -482,6 +522,46 @@ cdef class SubscribeTradeTicks(SubscribeData):
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"
+        )
+
+    def to_request(
+        self,
+        datetime start: datetime | None,
+        datetime end: datetime | None,
+        callback not None: Callable[[Any], None],
+    ) -> RequestTradeTicks:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestTradeTicks
+            The converted request message.
+        """
+        params = self.params.copy() if self.params else {}
+        params["subscription_name"] = f"{self.data_type.type.__name__}.{self.instrument_id}"
+
+        return RequestTradeTicks(
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=params,
         )
 
 
@@ -677,6 +757,46 @@ cdef class SubscribeBars(SubscribeData):
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"id={self.id}{form_params_str(self.params)})"
+        )
+
+    def to_request(
+        self,
+        datetime start: datetime | None,
+        datetime end: datetime | None,
+        callback not None: Callable[[Any], None],
+    ) -> RequestBars:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestBars
+            The converted request message.
+        """
+        params = self.params.copy() if self.params else {}
+        params["subscription_name"] = f"{self.bar_type}"
+
+        return RequestBars(
+            bar_type=self.bar_type,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=params,
         )
 
 
