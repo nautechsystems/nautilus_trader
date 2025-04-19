@@ -34,6 +34,7 @@ class BybitBatchCancelOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     symbol: str
     orderId: str | None = None
     orderLinkId: str | None = None
+    orderFilter: str | None = None  # Spot only
 
 
 class BybitBatchCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):

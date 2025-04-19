@@ -290,7 +290,9 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay_secs=config.retry_delay or 1.0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
             logger=self._log,
             exc_types=(DYDXError, DYDXGRPCError, AioRpcError),
             retry_check=should_retry,
@@ -1255,7 +1257,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="place_order",
                 details=[order.client_order_id],
@@ -1271,6 +1274,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_single(order=command.order)
@@ -1395,7 +1400,8 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         # Execute batch cancel
         if order_batch_list:
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     name="batch_cancel_orders",
                     details=[order.client_order_id for order in orders],
@@ -1418,6 +1424,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                             reason=retry_manager.message,
                             ts_event=self._clock.timestamp_ns(),
                         )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_order_single(
         self,
@@ -1523,7 +1531,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="cancel_order",
                 details=[order.client_order_id, order.venue_order_id],
@@ -1543,3 +1552,5 @@ class DYDXExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)

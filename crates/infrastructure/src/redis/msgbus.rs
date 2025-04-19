@@ -26,8 +26,9 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        BusMessage, CLOSE_TOPIC,
+        BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        switchboard::CLOSE_TOPIC,
     },
     runtime::get_runtime,
 };
@@ -39,6 +40,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
+use ustr::Ustr;
 
 use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
 use crate::redis::{create_redis_connection, get_stream_key};
@@ -149,8 +151,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     }
 
     /// Publishes a message with the given `topic` and `payload`.
-    fn publish(&self, topic: String, payload: Bytes) {
-        let msg = BusMessage { topic, payload };
+    fn publish(&self, topic: Ustr, payload: Bytes) {
+        let msg = BusMessage::new(topic, payload);
         if let Err(e) = self.pub_tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }
@@ -164,10 +166,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         self.heartbeat_signal.store(true, Ordering::Relaxed);
 
         if !self.pub_tx.is_closed() {
-            let msg = BusMessage {
-                topic: CLOSE_TOPIC.to_string(),
-                payload: Bytes::new(), // Empty
-            };
+            let msg = BusMessage::new_close();
+
             if let Err(e) = self.pub_tx.send(msg) {
                 log::error!("Failed to send close message: {e:?}");
             }
@@ -434,7 +434,7 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
             }
         };
 
-        Ok(BusMessage { topic, payload })
+        Ok(BusMessage::with_str_topic(topic, payload))
     } else {
         anyhow::bail!("Invalid stream message format: {stream_msg:?}")
     }
@@ -478,10 +478,8 @@ async fn run_heartbeat(
 }
 
 fn create_heartbeat_msg() -> BusMessage {
-    BusMessage {
-        topic: HEARTBEAT_TOPIC.to_string(),
-        payload: Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes()),
-    }
+    let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
+    BusMessage::with_str_topic(HEARTBEAT_TOPIC, payload)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -758,10 +756,7 @@ mod serial_tests {
         });
 
         // Send a test message
-        let msg = BusMessage {
-            topic: "test_topic".to_string(),
-            payload: Bytes::from("test_payload"),
-        };
+        let msg = BusMessage::with_str_topic("test_topic", Bytes::from("test_payload"));
         tx.send(msg).unwrap();
 
         // Wait until the message is published to Redis
@@ -789,10 +784,7 @@ mod serial_tests {
         assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 
         // Stop publishing task
-        let msg = BusMessage {
-            topic: CLOSE_TOPIC.to_string(),
-            payload: Bytes::new(), // Empty
-        };
+        let msg = BusMessage::new_close();
         tx.send(msg).unwrap();
 
         // Shutdown and cleanup

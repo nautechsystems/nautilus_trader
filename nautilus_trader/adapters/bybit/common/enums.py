@@ -137,6 +137,9 @@ class BybitWsOrderRequestMsgOP(Enum):
     CREATE = "order.create"
     AMEND = "order.amend"
     CANCEL = "order.cancel"
+    CREATE_BATCH = "order.create-batch"
+    AMEND_BATCH = "order.amend-batch"
+    CANCEL_BATCH = "order.cancel-batch"
 
 
 @unique

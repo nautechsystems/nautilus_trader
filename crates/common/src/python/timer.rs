@@ -231,7 +231,14 @@ mod tests {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
             (
                 heap.clone(),
-                LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback, heap),
+                LiveTimer::new(
+                    "TEST_TIMER".into(),
+                    interval_ns,
+                    start_time,
+                    None,
+                    callback,
+                    heap,
+                ),
             )
         };
         let next_time_ns = timer.next_time_ns();
@@ -276,7 +283,7 @@ mod tests {
             (
                 heap.clone(),
                 LiveTimer::new(
-                    "TEST_TIMER",
+                    "TEST_TIMER".into(),
                     interval_ns,
                     start_time,
                     Some(stop_time),
@@ -327,7 +334,7 @@ mod tests {
             (
                 heap.clone(),
                 LiveTimer::new(
-                    "TEST_TIMER",
+                    "TEST_TIMER".into(),
                     interval_ns,
                     start_time,
                     Some(stop_time),

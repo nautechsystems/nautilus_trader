@@ -243,7 +243,7 @@ def market_definition_to_instruments(
             competition_name=market_definition.competition_name or "",
             event_id=market_definition.event_id,
             event_name=market_definition.event_name or "",
-            event_country_code=market_definition.country_code,
+            event_country_code=market_definition.country_code or "",
             event_open_date=pd.Timestamp(market_definition.open_date),
             betting_type=market_definition.betting_type.name,
             market_id=market_definition.market_id,

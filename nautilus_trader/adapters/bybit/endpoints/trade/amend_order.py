@@ -21,8 +21,8 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
@@ -31,23 +31,13 @@ if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 
 
-class BybitAmendOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
+class BybitAmendOrderPostParams(
+    BybitBatchAmendOrder,
+    omit_defaults=True,
+    frozen=True,
+    kw_only=True,
+):
     category: BybitProductType
-    symbol: str
-    orderId: str | None = None
-    orderLinkId: str | None = None
-    orderIv: str | None = None
-    triggerPrice: str | None = None
-    qty: str | None = None
-    price: str | None = None
-    tpslMode: str | None = None
-    takeProfit: str | None = None
-    stopLoss: str | None = None
-    tpTriggerBy: str | None = None
-    slTriggerBy: str | None = None
-    triggerBy: BybitTriggerType | None = None
-    tpLimitPrice: str | None = None
-    slLimitPrice: str | None = None
 
 
 class BybitAmendOrderEndpoint(BybitHttpEndpoint):

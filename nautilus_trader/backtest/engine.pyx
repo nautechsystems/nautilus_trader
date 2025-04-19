@@ -56,6 +56,7 @@ from nautilus_trader.common.component cimport LogGuard
 from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.component cimport TimeEventHandler
+from nautilus_trader.common.component cimport flush_logger
 from nautilus_trader.common.component cimport get_component_clocks
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
@@ -995,6 +996,11 @@ cdef class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_flush()
+        else:
+            flush_logger()
+
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
 

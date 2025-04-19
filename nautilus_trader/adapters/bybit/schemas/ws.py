@@ -15,11 +15,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import msgspec
 
+# fmt: off
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitExecType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
@@ -35,9 +37,18 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.enums import BybitWsOrderRequestMsgOP
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
 from nautilus_trader.adapters.bybit.endpoints.trade.amend_order import BybitAmendOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import BybitBatchAmendOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderPostParams
 from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchAmendOrderExtInfo
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchAmendOrderResult
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderExtInfo
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderResult
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderExtInfo
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderResult
 from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -66,6 +77,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
+
+# fmt: on
 
 if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
@@ -851,16 +864,24 @@ class BybitWsOrderRequestMsg(msgspec.Struct, kw_only=True):
     reqId: str | None = None
     header: dict[str, str]
     op: BybitWsOrderRequestMsgOP
-    args: list[
-        BybitPlaceOrderPostParams | BybitAmendOrderPostParams | BybitCancelOrderPostParams
+    args: Sequence[
+        BybitPlaceOrderPostParams
+        | BybitAmendOrderPostParams
+        | BybitCancelOrderPostParams
+        | BybitBatchPlaceOrderPostParams
+        | BybitBatchAmendOrderPostParams
+        | BybitBatchCancelOrderPostParams
     ] = []
 
 
-class BybitWsOrderResponseMsg(msgspec.Struct, kw_only=True):
-    reqId: str | None = None
+class BybitWsOrderResponseMsgGeneral(msgspec.Struct, kw_only=True):
+    op: BybitWsOrderRequestMsgOP
     retCode: int
+    reqId: str | None = None
     retMsg: str
-    op: str
+
+
+class BybitWsOrderResponseMsg(BybitWsOrderResponseMsgGeneral, kw_only=True):
     header: dict[str, str] | None = None
     connId: str
 
@@ -875,3 +896,18 @@ class BybitWsAmendOrderResponseMsg(BybitWsOrderResponseMsg):
 
 class BybitWsCancelOrderResponseMsg(BybitWsOrderResponseMsg):
     data: BybitCancelOrder
+
+
+class BybitWsBatchPlaceOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitBatchPlaceOrderResult
+    retExtInfo: BybitBatchPlaceOrderExtInfo
+
+
+class BybitWsBatchAmendOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitBatchAmendOrderResult
+    retExtInfo: BybitBatchAmendOrderExtInfo
+
+
+class BybitWsBatchCancelOrderResponseMsg(BybitWsOrderResponseMsg):
+    data: BybitBatchCancelOrderResult
+    retExtInfo: BybitBatchCancelOrderExtInfo

@@ -22,6 +22,7 @@ from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
+from nautilus_trader.adapters.betfair.parsing.core import create_sequence_completed
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -102,3 +103,18 @@ class TestBettingInstrument:
             quantity=betfair_float_to_quantity(quantity),
         ).as_double()
         assert notional == expected
+
+
+def test_betfair_sequence_completed_str_repr() -> None:
+    # Arrange
+    completed = create_sequence_completed(2, 1)
+
+    # Act, Assert
+    assert (
+        str(completed)
+        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"  # noqa
+    )
+    assert (
+        repr(completed)
+        == "CustomData(data_type=BetfairSequenceCompleted, data=BetfairSequenceCompleted(ts_event=1970-01-01T00:00:00.000000002Z, ts_init=1970-01-01T00:00:00.000000001Z))"  # noqa
+    )

@@ -70,7 +70,8 @@ config_node = TradingNodeConfig(
             use_position_ids=False,
             use_reduce_only=False,  # Must be disabled for Hedge mode
             max_retries=3,
-            retry_delay=1.0,
+            retry_delay_initial_ms=1_000,
+            retry_delay_max_ms=10_000,
         ),
     },
     timeout_connection=30.0,

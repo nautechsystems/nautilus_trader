@@ -3,18 +3,33 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
+- Added `UnixNanos::max()` convenience method for the maximum valid value
+- Added `available_offset` filter parameter for `TardisInstrumentProvider`
+- Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
+- Added `Quantity::non_zero(...)` method
+- Added `Quantity::non_zero_checked(...)` method
 
 ### Breaking Changes
-- Removed catalog `basename_template` argument (#2510), thanks @faysou
+None
 
 ### Internal Improvements
-- Upgraded `sqlx` crate to v0.8.4
+- Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
+- Improved handling of time range and effective date filters for `TardisInstrumentProvider`
+- Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
+- Improved logger buffers flushing post backtest
+- Improved validations for Tardis trades data
+- Refined `Price` and `Quantity` validations and correctness
+- Fixed some clippy lints (#2517), thanks @twitu
+- Upgraded `databento` crate to v0.23.0
+- Upgraded `sqlx` crate to v0.8.5
 
 ### Fixes
+- Fixed memory leak in `RetryManager` by simplifying the acquire-release pattern, avoiding the asynchronous context manager protocol that led to state sharing, thanks for reporting @DeevsDeevs
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
 - Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
+- Fixed handling of `BetfairSequenceCompleted` as custom data
 
 ### Documentation Updates
 None

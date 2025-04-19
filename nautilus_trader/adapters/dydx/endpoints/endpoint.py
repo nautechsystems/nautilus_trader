@@ -63,7 +63,9 @@ class DYDXHttpEndpoint:
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=5,
-            retry_delay_secs=1.0,
+            delay_initial_ms=1_000,
+            delay_max_ms=10_000,
+            backoff_factor=2,
             logger=Logger(name="DYDXHttpEndpoint"),
             exc_types=(HttpTimeoutError, HttpError, DYDXError, DecodeError),
             retry_check=should_retry,
@@ -80,7 +82,8 @@ class DYDXHttpEndpoint:
         url_path = url_path or self.url_path
         retry_name = self.name or "http_call"
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             result: bytes | None = await retry_manager.run(
                 name=retry_name,
                 details=[url_path, str(params)],
@@ -89,5 +92,7 @@ class DYDXHttpEndpoint:
                 url_path=url_path,
                 payload=payload,
             )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
         return result

@@ -22,6 +22,7 @@ import msgspec
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrderResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
@@ -30,12 +31,13 @@ if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 
 
-class BybitCancelOrderPostParams(msgspec.Struct, omit_defaults=True, frozen=True):
+class BybitCancelOrderPostParams(
+    BybitBatchCancelOrder,
+    omit_defaults=True,
+    frozen=True,
+    kw_only=True,
+):
     category: BybitProductType
-    symbol: str
-    orderId: str | None = None
-    orderLinkId: str | None = None
-    orderFilter: str | None = None  # Spot only
 
 
 class BybitCancelOrderEndpoint(BybitHttpEndpoint):

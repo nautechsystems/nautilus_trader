@@ -166,8 +166,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
         self._recv_window = config.recv_window_ms
-        self._max_retries: int = config.max_retries or 0
-        self._retry_delay: float = config.retry_delay or 1.0
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
@@ -175,7 +173,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
-        self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
@@ -223,7 +222,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay_secs=config.retry_delay or 0.0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
             logger=self._log,
             exc_types=(BinanceError,),
             retry_check=should_retry,
@@ -689,7 +690,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "submit_order",
                 [order.client_order_id],
@@ -705,6 +707,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_market_order(
         self,
@@ -937,7 +941,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "modify_order",
                 [order.client_order_id, order.venue_order_id],
@@ -957,9 +962,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 "cancel_order",
                 [command.client_order_id, command.venue_order_id],
@@ -977,6 +985,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     retry_manager.message,
                     self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders_strategy: list[Order] = self._cache.orders_open(
@@ -990,7 +1000,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         if open_orders_total_count == len(open_orders_strategy):
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     "cancel_all_open_orders",
                     [command.instrument_id],
@@ -1017,11 +1028,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                             self._clock.timestamp_ns(),
                         )
                 return
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
         # Not every strategy order is included in all orders - so must cancel individually
         # TODO: A future improvement could be to asyncio.gather all cancel tasks
         for order in open_orders_strategy:
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     "cancel_order",
                     [order.client_order_id, order.venue_order_id],
@@ -1039,6 +1053,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         retry_manager.message,
                         self._clock.timestamp_ns(),
                     )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_order_single(
         self,

@@ -16,6 +16,7 @@
 import datetime
 import sys
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 import pyarrow.dataset as ds
@@ -282,7 +283,21 @@ def test_catalog_bars_querying_by_bar_type(catalog: ParquetDataCatalog) -> None:
     assert len(bars) == len(stub_bars) == 10
 
 
-def test_catalog_append_data(catalog: ParquetDataCatalog) -> None:
+@pytest.mark.parametrize(
+    ("mode", "num_expected_bars", "num_expected_files"),
+    [
+        (CatalogWriteMode.APPEND, 20, 1),
+        (CatalogWriteMode.PREPEND, 20, 1),
+        (CatalogWriteMode.NEWFILE, 20, 2),
+        (CatalogWriteMode.OVERWRITE, 10, 1),
+    ],
+)
+def test_catalog_append_data(
+    catalog: ParquetDataCatalog,
+    mode: CatalogWriteMode,
+    num_expected_bars: int,
+    num_expected_files: int,
+) -> None:
     # Arrange
     bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
     instrument = TestInstrumentProvider.adabtc_binance()
@@ -291,15 +306,31 @@ def test_catalog_append_data(catalog: ParquetDataCatalog) -> None:
         bar_type,
         instrument,
     )
-    catalog.write_data(stub_bars)
+    catalog.write_data(stub_bars, mode=mode)
 
     # Act
-    catalog.write_data(stub_bars, mode=CatalogWriteMode.APPEND)
+    catalog.write_data(stub_bars, mode=mode)
 
     # Assert
     bars = catalog.bars(bar_types=[str(bar_type)])
     all_bars = catalog.bars()
-    assert len(bars) == len(all_bars) == 20
+    assert len(bars) == len(all_bars) == num_expected_bars
+    assert len(list(Path(catalog.path).rglob("*.parquet"))) == num_expected_files
+
+
+def test_catalog_wrong_basename_template(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
+    instrument = TestInstrumentProvider.adabtc_binance()
+    stub_bars = TestDataStubs.binance_bars_from_csv(
+        "ADABTC-1m-2021-11-27.csv",
+        bar_type,
+        instrument,
+    )
+
+    # Act, assert
+    with pytest.raises(ValueError):
+        catalog.write_data(stub_bars, basename_template="wrong-template")
 
 
 def test_catalog_bars_querying_by_instrument_id(catalog: ParquetDataCatalog) -> None:

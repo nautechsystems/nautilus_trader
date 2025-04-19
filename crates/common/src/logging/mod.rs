@@ -39,7 +39,7 @@ use self::{
 use crate::enums::LogLevel;
 
 pub const RECV: &str = "<--";
-pub const SENT: &str = "-->";
+pub const SEND: &str = "-->";
 pub const CMD: &str = "[CMD]";
 pub const EVT: &str = "[EVT]";
 pub const DOC: &str = "[DOC]";

@@ -83,8 +83,7 @@ def get_exchange_rate(
 
 class LogGuard: ...
 
-def init_tracing() -> None:
-    ...
+def init_tracing() -> None: ...
 
 def init_logging(
     trader_id: TraderId,
@@ -109,6 +108,7 @@ def log_header(
 ) -> None: ...
 
 def log_sysinfo(component: str) -> None: ...
+def logger_flush() -> None: ...
 
 # Messaging
 
@@ -5116,6 +5116,7 @@ class TardisHttpClient:
         active: bool | None = None,
         start: int | None = None,
         end: int | None = None,
+        available_offset: int | None = None,
         effective: int | None = None,
         ts_init: int | None = None,
     ) -> list[Instrument]: ...

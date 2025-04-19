@@ -15,6 +15,7 @@
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use ustr::Ustr;
 
 use super::BusMessage;
 
@@ -63,8 +64,8 @@ impl MessageBusListener {
     }
 
     /// Publishes a message with the given `topic` and `payload`.
-    pub fn publish(&self, topic: String, payload: Bytes) {
-        let msg = BusMessage { topic, payload };
+    pub fn publish(&self, topic: Ustr, payload: Bytes) {
+        let msg = BusMessage::new(topic, payload);
         if let Err(e) = self.tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }
@@ -136,7 +137,7 @@ mod tests {
         });
 
         // Publish a message
-        listener.publish("test-topic".to_string(), Bytes::from("test-payload"));
+        listener.publish(Ustr::from("test-topic"), Bytes::from("test-payload"));
 
         // Wait for the message to be processed
         tokio::select! {
@@ -180,7 +181,7 @@ mod tests {
             for i in 0..3 {
                 assert!(
                     received
-                        .contains(&(topics_clone[i].to_string(), payloads_clone[i].to_string()))
+                        .contains(&(Ustr::from(topics_clone[i]), payloads_clone[i].to_string()))
                 );
             }
 
@@ -190,7 +191,7 @@ mod tests {
         // Publish messages
         for i in 0..3 {
             listener.publish(
-                topics[i].to_string(),
+                Ustr::from(topics[i]),
                 Bytes::from(payloads[i].as_bytes().to_vec()),
             );
         }
@@ -229,6 +230,6 @@ mod tests {
         assert!(listener.is_closed());
 
         // Publishing should log an error but not panic
-        listener.publish("test-topic".to_string(), Bytes::from("test-payload"));
+        listener.publish(Ustr::from("test-topic"), Bytes::from("test-payload"));
     }
 }
