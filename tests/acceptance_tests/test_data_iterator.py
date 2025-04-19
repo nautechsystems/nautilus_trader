@@ -140,6 +140,7 @@ class TestBacktestNodeWithBacktestDataIterator:
     #  but prefer subscribing to messages for final comparison tests
     # def test_backtest_logs_same_with_and_without_data_configs(self, log_path) -> None:
     #     # Arrange
+    #     print(f"{log_path=}")
     #     log_file = log_path / "test_logs.log"
     #     log_file_with_data = log_path / "test_logs_with_data.log"
     #     log_file_without_data = log_path / "test_logs_without_data.log"
