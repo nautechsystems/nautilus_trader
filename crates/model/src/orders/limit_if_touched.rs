@@ -529,182 +529,99 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rstest::rstest;
+
     use crate::{
-        enums::{OrderSide, TimeInForce, TriggerType},
+        enums::{OrderSide, OrderType, TimeInForce, TriggerType},
+        instruments::{CurrencyPair, stubs::*},
+        orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
     };
 
-    fn ids() -> (
-        TraderId,
-        StrategyId,
-        InstrumentId,
-        ClientOrderId,
-        UUID4,
-        UnixNanos,
-    ) {
-        (
-            TraderId::from("TRADER‑1"),
-            StrategyId::from("STRAT‑1"),
-            InstrumentId::default(),
-            ClientOrderId::from("CL‑1"),
-            UUID4::new(),
-            UnixNanos::new(0),
-        )
+    // ─────────────────────────────────────────────────────────────────────────
+    // Happy‑path: nothing should panic.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[rstest]
+    fn ok(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
     }
 
-    #[test]
-    fn ok() {
-        let (t, s, i, c, u, ts) = ids();
-        let o = LimitIfTouchedOrder::new_checked(
-            t,
-            s,
-            i,
-            c,
-            OrderSide::Buy,
-            Quantity::from(1),
-            Price::from("30000"),
-            Price::from("30200"),
-            TriggerType::LastPrice,
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            u,
-            ts,
-        )
-        .unwrap();
-        assert_eq!(o.quantity(), Quantity::from(1));
+    // ─────────────────────────────────────────────────────────────────────────
+    // Quantity must be strictly positive.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
+    fn quantity_zero(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(0)) // ← invalid
+            .build();
     }
 
-    #[test]
-    fn quantity_zero() {
-        let (t, s, i, c, u, ts) = ids();
-        assert!(
-            LimitIfTouchedOrder::new_checked(
-                t,
-                s,
-                i,
-                c,
-                OrderSide::Buy,
-                Quantity::from(0),
-                Price::from("1"),
-                Price::from("1"),
-                TriggerType::LastPrice,
-                TimeInForce::Gtc,
-                None,
-                false,
-                false,
-                false,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                u,
-                ts,
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("not positive")
-        );
+    // ─────────────────────────────────────────────────────────────────────────
+    // GTD requires a non‑zero expire_time.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    fn gtd_without_expire(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .time_in_force(TimeInForce::Gtd) // but no expire_time()
+            .build();
     }
 
-    #[test]
-    fn gtd_without_expire() {
-        let (t, s, i, c, u, ts) = ids();
-        assert!(
-            LimitIfTouchedOrder::new_checked(
-                t,
-                s,
-                i,
-                c,
-                OrderSide::Buy,
-                Quantity::from(1),
-                Price::from("1"),
-                Price::from("1"),
-                TriggerType::LastPrice,
-                TimeInForce::Gtd,
-                None,
-                false,
-                false,
-                false,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                u,
-                ts,
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("expire_time")
-        );
+    // ─────────────────────────────────────────────────────────────────────────
+    // BUY: trigger_price must be ≥ price.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[rstest]
+    #[should_panic(expected = "BUY Limit‑If‑Touched must have `trigger_price` >= `price`")]
+    fn buy_trigger_lt_price(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("31000"))
+            .trigger_price(Price::from("30000")) // ← lower than limit
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
     }
 
-    #[test]
-    fn buy_trigger_lt_price() {
-        let (t, s, i, c, u, ts) = ids();
-        assert!(
-            LimitIfTouchedOrder::new_checked(
-                t,
-                s,
-                i,
-                c,
-                OrderSide::Buy,
-                Quantity::from(1),
-                Price::from("31000"),
-                Price::from("30000"),
-                TriggerType::LastPrice,
-                TimeInForce::Gtc,
-                None,
-                false,
-                false,
-                false,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                u,
-                ts,
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("trigger_price")
-        );
+    // ─────────────────────────────────────────────────────────────────────────
+    // SELL: trigger_price must be ≤ price.
+    // ─────────────────────────────────────────────────────────────────────────
+    #[rstest]
+    #[should_panic(expected = "SELL Limit‑If‑Touched must have `trigger_price` <= `price`")]
+    fn sell_trigger_gt_price(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("31000")) // ← higher than limit
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
     }
 }
