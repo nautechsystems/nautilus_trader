@@ -25,25 +25,48 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+# @pytest.fixture(scope="session", autouse=True)
+# def bypass_logging():
+#     """
+#     Fixture to bypass logging for all tests.
+#
+#     `autouse=True` will mean this function is run prior to every test. To disable this
+#     to debug specific tests, simply comment this out.
+#
+#     """
+#     # Uncomment below for tracing logs from Rust
+#     # from nautilus_trader.core import nautilus_pyo3
+#     # nautilus_pyo3.init_tracing()
+#     guard = init_logging(
+#         level_stdout=LogLevel.DEBUG,
+#         bypass=True,  # Set this to False to see logging in tests
+#         # print_config=True,
+#     )
+#     # Yield guard to keep it alive for the session lifetime, avoiding garbage collection
+#     yield guard
+
+
+@pytest.fixture(scope="session")
+def session_tmp_path(tmp_path_factory):
+    return tmp_path_factory.mktemp("logs")
+
+
 @pytest.fixture(scope="session", autouse=True)
-def bypass_logging():
-    """
-    Fixture to bypass logging for all tests.
-
-    `autouse=True` will mean this function is run prior to every test. To disable this
-    to debug specific tests, simply comment this out.
-
-    """
-    # Uncomment below for tracing logs from Rust
-    # from nautilus_trader.core import nautilus_pyo3
-    # nautilus_pyo3.init_tracing()
+def bypass_logging(session_tmp_path):
     guard = init_logging(
-        level_stdout=LogLevel.DEBUG,
-        bypass=True,  # Set this to False to see logging in tests
-        # print_config=True,
+        level_stdout=LogLevel.WARNING,
+        level_file=LogLevel.WARNING,
+        directory=str(session_tmp_path),
+        file_name="test_logs",
+        bypass=False,
     )
-    # Yield guard to keep it alive for the session lifetime, avoiding garbage collection
+
     yield guard
+
+
+@pytest.fixture(name="log_path")
+def fixture_log_path(bypass_logging, session_tmp_path):
+    return session_tmp_path
 
 
 @pytest.fixture(name="audusd_instrument")

@@ -124,6 +124,7 @@ def databento_data(
     base_path=None,
     write_data_mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
     use_exchange_as_venue=False,
+    load_databento_files_if_exist=False,
     **kwargs,
 ):
     """
@@ -154,6 +155,8 @@ def databento_data(
         How to add or overwrite data to an existing catalog, defaults to CatalogWriteMode.OVERWRITE.
     use_exchange_as_venue : bool, optional
         Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
+    load_databento_files_if_exist : bool, optional
+        Whether to load Databento files if they already exist, defaults to False.
     **kwargs
         Additional keyword arguments to pass to the Databento API.
 
@@ -185,7 +188,7 @@ def databento_data(
             **kwargs,
         )
     else:
-        definition = load_databento_data(definition_file)
+        definition = load_databento_data(definition_file) if load_databento_files_if_exist else None
 
     # downloading and saving data
     data_file_name = f"{file_prefix}_{schema}_{start_time}_{end_time}.dbn.zst".replace(":", "h")
@@ -203,7 +206,7 @@ def databento_data(
                 **kwargs,
             )
         else:
-            data = load_databento_data(data_file)
+            data = load_databento_data(data_file) if load_databento_files_if_exist else None
     else:
         data = None
 
