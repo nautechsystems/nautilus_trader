@@ -24,7 +24,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{FAILED, check_in_range_inclusive_f64},
+    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
@@ -105,6 +105,32 @@ impl Quantity {
         Ok(Self { raw, precision })
     }
 
+    /// Creates a new [`Quantity`] instance with a guaranteed non zero value.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is zero.
+    /// - If `value` becomes zero after rounding to `precision`.
+    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_non_zero_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+        check_predicate_true(value != 0.0, "value was zero")?;
+        check_fixed_precision(precision)?;
+        let rounded_value =
+            (value * 10.0_f64.powi(precision as i32)).round() / 10.0_f64.powi(precision as i32);
+        check_predicate_true(
+            rounded_value != 0.0,
+            &format!("value {value} was zero after rounding to precision {precision}"),
+        )?;
+
+        Self::new_checked(value, precision)
+    }
+
     /// Creates a new [`Quantity`] instance.
     ///
     /// # Panics
@@ -116,7 +142,24 @@ impl Quantity {
     }
 
     /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
+        if raw == QUANTITY_UNDEF {
+            check_predicate_true(
+                precision == 0,
+                "`precision` must be 0 when `raw` is QUANTITY_UNDEF",
+            )
+            .expect(FAILED);
+        }
+        check_predicate_true(
+            raw == QUANTITY_UNDEF || raw <= QUANTITY_RAW_MAX,
+            &format!("raw outside valid range, was {raw}"),
+        )
+        .expect(FAILED);
         check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
@@ -148,7 +191,7 @@ impl Quantity {
     /// Returns `true` if the value of this instance is position (> 0).
     #[must_use]
     pub fn is_positive(&self) -> bool {
-        self.raw > 0
+        self.raw != QUANTITY_UNDEF && self.raw > 0
     }
 
     /// Returns the value of this instance as an `f64`.
@@ -537,6 +580,39 @@ mod tests {
         let q1 = Quantity::new(2.0, 1);
         let q2 = Quantity::new(3.0, 2);
         let _ = q1 * q2;
+    }
+
+    #[rstest]
+    fn test_new_non_zero_ok() {
+        let qty = Quantity::new_non_zero_checked(123.456, 3).unwrap();
+        assert_eq!(qty.raw, Quantity::new(123.456, 3).raw);
+        assert!(qty.is_positive());
+    }
+
+    #[rstest]
+    fn test_new_non_zero_zero_input() {
+        assert!(Quantity::new_non_zero_checked(0.0, 0).is_err());
+    }
+
+    #[rstest]
+    fn test_new_non_zero_rounds_to_zero() {
+        // 0.0004 rounded to 3 dp ⇒ 0.000
+        assert!(Quantity::new_non_zero_checked(0.0004, 3).is_err());
+    }
+
+    #[rstest]
+    fn test_new_non_zero_negative() {
+        assert!(Quantity::new_non_zero_checked(-1.0, 0).is_err());
+    }
+
+    #[rstest]
+    fn test_new_non_zero_exceeds_max() {
+        assert!(Quantity::new_non_zero_checked(QUANTITY_MAX * 10.0, 0).is_err());
+    }
+
+    #[rstest]
+    fn test_new_non_zero_invalid_precision() {
+        assert!(Quantity::new_non_zero_checked(1.0, FIXED_PRECISION + 1).is_err());
     }
 
     #[rstest]

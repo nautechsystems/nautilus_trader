@@ -250,10 +250,9 @@ pub fn parse_trade_msg(
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> TradeTick {
-    check_trade_msg_size(&msg, size_precision);
-
     let price = Price::new(msg.price, price_precision);
-    let size = Quantity::new(msg.amount, size_precision);
+    let size = Quantity::new_non_zero_checked(msg.amount, size_precision)
+        .unwrap_or_else(|e| panic!("Invalid {msg:?}: size {e}"));
     let aggressor_side = parse_aggressor_side(&msg.side);
     let trade_id = TradeId::new(msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
     let ts_event = UnixNanos::from(msg.timestamp);
@@ -289,17 +288,6 @@ pub fn parse_bar_msg(
     let ts_init = UnixNanos::from(msg.local_timestamp);
 
     Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
-}
-
-pub fn check_trade_msg_size(msg: &TradeMsg, precision: u8) {
-    assert!(msg.amount != 0.0, "Invalid zero size: {msg:?}");
-
-    let rounded_amount =
-        (msg.amount * 10.0_f64.powi(precision as i32)).round() / 10.0_f64.powi(precision as i32);
-    assert!(
-        rounded_amount != 0.0,
-        "Invalid size becomes zero after rounding with precision {precision}: {msg:?}",
-    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////

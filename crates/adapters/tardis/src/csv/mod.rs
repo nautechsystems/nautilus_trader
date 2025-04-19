@@ -771,14 +771,14 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 
     while reader.read_record(&mut record)? {
         let record: TardisTradeRecord = record.deserialize(None)?;
-        check_trade_record_size(&record, size_precision);
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
             None => parse_instrument_id(&record.exchange, record.symbol),
         };
         let price = parse_price(record.price, price_precision);
-        let size = Quantity::new(record.amount, size_precision);
+        let size = Quantity::new_non_zero_checked(record.amount, size_precision)
+            .unwrap_or_else(|e| panic!("Invalid {record:?}: size {e}"));
         let aggressor_side = parse_aggressor_side(&record.side);
         let trade_id = TradeId::new(&record.id);
         let ts_event = parse_timestamp(record.timestamp);
@@ -804,17 +804,6 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     }
 
     Ok(trades)
-}
-
-pub fn check_trade_record_size(record: &TardisTradeRecord, precision: u8) {
-    assert!(record.amount != 0.0, "Invalid zero size: {record:?}");
-
-    let rounded_amount =
-        (record.amount * 10.0_f64.powi(precision as i32)).round() / 10.0_f64.powi(precision as i32);
-    assert!(
-        rounded_amount != 0.0,
-        "Invalid size becomes zero after rounding with precision {precision}: {record:?}",
-    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
