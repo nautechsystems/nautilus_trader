@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
+- Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
 
 ### Breaking Changes
 None
