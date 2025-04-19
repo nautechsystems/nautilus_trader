@@ -46,6 +46,31 @@ def bypass_logging():
     yield guard
 
 
+# TODO: useful for using logs in tests (don't submit tests using logs though,
+#  prefer using the message bus for checking intermediate data, see acceptance_tests/test_data_iterator.py)
+# @pytest.fixture(scope="session")
+# def session_tmp_path(tmp_path_factory):
+#     return tmp_path_factory.mktemp("logs")
+#
+#
+# @pytest.fixture(scope="session", autouse=True)
+# def bypass_logging(session_tmp_path):
+#     guard = init_logging(
+#         level_stdout=LogLevel.WARNING,
+#         level_file=LogLevel.WARNING,
+#         directory=str(session_tmp_path),
+#         file_name="test_logs",
+#         bypass=False,
+#     )
+#
+#     yield guard
+#
+#
+# @pytest.fixture(name="log_path")
+# def fixture_log_path(bypass_logging, session_tmp_path):
+#     return session_tmp_path
+
+
 @pytest.fixture(name="audusd_instrument")
 def fixture_audusd_instrument() -> CurrencyPair:
     return TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("SIM"))

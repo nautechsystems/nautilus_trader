@@ -235,7 +235,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._add_subscription_quote_ticks(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_trade_ticks(self, SubscribeTradeTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -248,7 +248,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._add_subscription_trade_ticks(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_mark_prices(self, SubscribeMarkPrices command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -287,7 +287,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._add_subscription_bars(command.bar_type)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_instrument_status(self, SubscribeInstrumentStatus command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -327,13 +327,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         self._remove_subscription_quote_ticks(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void unsubscribe_trade_ticks(self, UnsubscribeTradeTicks command):
         Condition.not_none(command.instrument_id, "instrument_id")
 
         self._remove_subscription_trade_ticks(command.instrument_id)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void unsubscribe_mark_prices(self, UnsubscribeMarkPrices command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -351,7 +351,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(command.bar_type, "bar_type")
 
         self._remove_subscription_bars(command.bar_type)
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void unsubscribe_instrument_status(self, UnsubscribeInstrumentStatus command):
         Condition.not_none(command.instrument_id, "instrument_id")
