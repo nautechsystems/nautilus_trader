@@ -21,7 +21,7 @@ pub struct RpcNodeResponse<T>
 where
     T: DeserializeOwned,
 {
-    /// JSON-RPC version identifier
+    /// JSON-RPC version identifier.
     pub jsonrpc: String,
     /// Name of the RPC method that was called.
     pub method: String,
@@ -38,7 +38,7 @@ where
 {
     /// ID of the subscription associated with the RPC response.
     pub subscription: String,
-    /// Deserialized result
+    /// Deserialized result.
     #[serde(bound(deserialize = ""))]
     pub result: T,
 }

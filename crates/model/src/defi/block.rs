@@ -19,34 +19,34 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 use ustr::Ustr;
 
-/// Represent Ethereum-compatible compatible blockchain block with essential metadata
+/// Represent Ethereum-compatible compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Block {
-    /// The unique identifier hash of the block
-    hash: Ustr,
-    /// The block height/number in the blockchain
+    /// The unique identifier hash of the block.
+    hash: String,
+    /// The block height/number in the blockchain.
     #[serde(deserialize_with = "deserialize_hex_number")]
     number: u64,
-    /// Hash of the parent block
+    /// Hash of the parent block.
     #[serde(rename = "parentHash")]
-    parent_hash: Ustr,
-    /// Address of the miner or validator who produced this block
+    parent_hash: String,
+    /// Address of the miner or validator who produced this block.
     miner: Ustr,
-    /// Maximum amount of gas allowed in this block
+    /// Maximum amount of gas allowed in this block.
     #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_number")]
     gas_limit: u64,
-    /// Total gas actually used by all transactions in this block
+    /// Total gas actually used by all transactions in this block.
     #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_number")]
     gas_used: u64,
-    /// Unix timestamp when the block was created
+    /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]
     timestamp: UnixNanos,
 }
 
 impl Block {
     pub fn new(
-        hash: Ustr,
-        parent_hash: Ustr,
+        hash: String,
+        parent_hash: String,
         number: u64,
         miner: Ustr,
         gas_limit: u64,
@@ -77,7 +77,7 @@ impl Display for Block {
     }
 }
 
-/// Custom deserializer function for hex numbers
+/// Custom deserializer function for hex numbers.
 fn deserialize_hex_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -88,7 +88,7 @@ where
     u64::from_str_radix(without_prefix, 16).map_err(serde::de::Error::custom)
 }
 
-/// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`
+/// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
 fn deserialize_hex_timestamp<'de, D>(deserializer: D) -> Result<UnixNanos, D::Error>
 where
     D: Deserializer<'de>,
