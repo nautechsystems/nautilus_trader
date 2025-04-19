@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
+- Added `Quantity::new_non_zero_checked`
 
 ### Breaking Changes
 None
@@ -17,6 +18,7 @@ None
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest
 - Improved validations for Tardis trades data
+- Refined `Price` and `Quantity` validations and correctness
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `sqlx` crate to v0.8.5
