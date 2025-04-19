@@ -64,10 +64,13 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
+    println!("registering currency: {}", currency.code);
+    println!("before currency: {:?}", CURRENCY_MAP.lock().unwrap());
     CURRENCY_MAP
         .lock()
         .unwrap()
         .insert(currency.code.to_string(), currency);
+    println!("after currency: {:?}", CURRENCY_MAP.lock().unwrap());
 }
 
 /// # Safety

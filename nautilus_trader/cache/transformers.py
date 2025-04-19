@@ -136,6 +136,46 @@ def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noq
 
 
 ################################################################################
+# Position
+################################################################################
+def transform_position_to_pyo3(
+    position: Position,
+    instrument: Instrument,
+) -> nautilus_pyo3.Position:
+    events = position.events
+    if len(events) == 0:
+        raise ValueError("Missing events in position")
+
+    initial_fill = events.pop(0)
+    initial_fill_pyo3 = nautilus_pyo3.OrderFilled.from_dict(initial_fill)
+    instrument_pyo3 = transform_instrument_to_pyo3(instrument)
+    position_pyo3 = nautilus_pyo3.Position(instrument_pyo3, initial_fill_pyo3)
+
+    for event in events:
+        event_pyo3 = nautilus_pyo3.OrderFilled.from_dict(event.to_dict())
+        position.apply(event_pyo3)
+
+    return position_pyo3
+
+
+def transform_position_from_pyo3(position_pyo3, instrument_pyo3) -> Position:
+    events_pyo3 = position_pyo3.events
+    if len(events_pyo3) == 0:
+        raise ValueError("Missing events in position")
+
+    initial_fill_pyo3 = events_pyo3.pop(0)
+    initial_fill = OrderFilled.from_dict(initial_fill_pyo3)
+    instrument = transform_instrument_from_pyo3(instrument_pyo3)
+    position = Position(instrument, initial_fill)
+
+    for event_pyo3 in events_pyo3:
+        event = OrderFilled.from_dict(event_pyo3.to_dict())
+        position.apply(event)
+
+    return position
+
+
+################################################################################
 # Orders
 ################################################################################
 def transform_order_event_to_pyo3(order_event):  # noqa: C901
@@ -190,12 +230,39 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
         return nautilus_pyo3.StopMarketOrder.create(order_event_pyo3)
     elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.STOP_LIMIT:
         return nautilus_pyo3.StopLimitOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.MARKET_IF_TOUCHED:
+        return nautilus_pyo3.MarketIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.LIMIT_IF_TOUCHED:
+        return nautilus_pyo3.LimitIfTouchedOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_MARKET:
+        return nautilus_pyo3.TrailingStopMarketOrder.create(order_event_pyo3)
+    elif order_event_pyo3.order_type == nautilus_pyo3.OrderType.TRAILING_STOP_LIMIT:
+        return nautilus_pyo3.TrailingStopLimitOrder.create(order_event_pyo3)
     else:
         raise ValueError(f"Unknown order type: {order_event_pyo3.order_type}")
 
 
 def from_order_initialized_pyo3_to_order_cython(order_event):
-    order_event_cython = OrderInitialized.from_dict(order_event.to_dict())
+    order_event_dict = order_event.to_dict()
+    if "expire_time" in order_event_dict:
+        expire_time = order_event_dict.get("expire_time")
+        order_event_dict["expire_time_ns"] = 0 if expire_time is None else expire_time
+
+    order_event_cython = OrderInitialized.from_dict(order_event_dict)
+    option_keys = [
+        "price",
+        "expire_time_ns",
+        "display_qty",
+        "trigger_price",
+        "limit_offset",
+        "trigger_type",
+        "trailing_offset",
+        "trailing_offset_type",
+    ]
+    for key in option_keys:
+        if key in order_event_dict:
+            order_event_cython.options[key] = order_event_dict[key]
+
     return OrderUnpacker.from_init(order_event_cython)
 
 
@@ -243,8 +310,12 @@ def transform_order_to_pyo3(order: Order):
         raise KeyError("init event should be of type OrderInitialized")
     order_py3 = from_order_initialized_cython_to_order_pyo3(init_event)
     for event_cython in events:
-        event_pyo3 = transform_order_event_to_pyo3(event_cython)
-        order_py3.apply(event_pyo3)
+        if isinstance(event_cython, OrderInitialized):
+            order_py3 = from_order_initialized_cython_to_order_pyo3(event_cython)
+        else:
+            event_pyo3 = transform_order_event_to_pyo3(event_cython)
+            order_py3.apply(event_pyo3)
+
     return order_py3
 
 

@@ -238,7 +238,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
+    async fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -517,29 +517,32 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
+    async fn load_strategy(
+        &self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
+    fn delete_strategy(&mut self, strategy_id: &StrategyId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
         let query = DatabaseQuery::Add(key, value.into());
         self.tx
             .send(query)
             .map_err(|e| anyhow::anyhow!("Failed to send query to database message handler: {e}"))
     }
 
-    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddCurrency(*currency);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to query add_currency to database message handler: {e}")
         })
     }
 
-    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddInstrument(instrument.clone());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_instrument to database message handler: {e}")
@@ -550,14 +553,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), false);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
-    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddOrder(order.clone(), client_id, false);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
@@ -573,7 +576,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -822,25 +825,29 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
+    fn update_strategy(
+        &mut self,
+        id: &str,
+        strategy: HashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), true);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
-    fn update_order(&self, event: &OrderEventAny) -> anyhow::Result<()> {
+    fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::UpdateOrder(event.clone());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_order to database message handler: {e}")
         })
     }
 
-    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
 

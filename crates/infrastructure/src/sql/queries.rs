@@ -896,7 +896,6 @@ impl DatabaseQueries {
     }
 
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
-        println!("Adding bar: {:?}", bar);
         sqlx::query(r#"
             INSERT INTO "bar" (
                 instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at
