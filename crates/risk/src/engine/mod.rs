@@ -716,7 +716,7 @@ impl RiskEngine {
             };
 
             if self.config.debug {
-                log::debug!("Balance impact: {}", order_balance_impact);
+                log::debug!("Balance impact: {order_balance_impact}");
             }
 
             if let Some(free_val) = free {
@@ -788,7 +788,7 @@ impl RiskEngine {
                             .quantity()
                             .raw
                             .try_into()
-                            .map_err(|e| log::error!("Unable to convert Quantity to f64: {}", e))
+                            .map_err(|e| log::error!("Unable to convert Quantity to f64: {e}"))
                             .unwrap(),
                         base_currency,
                     );
@@ -1047,7 +1047,7 @@ impl RiskEngine {
         // We intend to extend the risk engine to be able to handle additional events.
         // For now we just log.
         if self.config.debug {
-            log::debug!("{}{} {event:?}", RECV, EVT);
+            log::debug!("{RECV}{EVT} {event:?}");
         }
     }
 }
@@ -4392,11 +4392,11 @@ mod tests {
     ) {
         msgbus::register(
             MessagingSwitchboard::exec_engine_process(),
-            process_order_event_handler.clone(),
+            process_order_event_handler,
         );
         msgbus::register(
             MessagingSwitchboard::exec_engine_execute(),
-            execute_order_event_handler.clone(),
+            execute_order_event_handler,
         );
 
         let quote = QuoteTick::new(
@@ -4423,7 +4423,7 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(simple_cache));
 
-        let mut risk_engine = get_risk_engine(Some(cache.clone()), None, None, false);
+        let mut risk_engine = get_risk_engine(Some(cache), None, None, false);
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_xbtusd_bitmex.id())
             .side(OrderSide::Buy)

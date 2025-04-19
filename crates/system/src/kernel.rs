@@ -55,9 +55,9 @@ impl NautilusKernel {
         Self {
             name,
             instance_id,
+            config,
             data_engine,
             exec_engine,
-            config,
             cache,
             clock,
         }

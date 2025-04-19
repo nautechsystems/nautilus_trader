@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides PyO3 bindings for the Coinbase International FIX client.
+//! Provides `PyO3` bindings for the Coinbase International FIX client.
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::prelude::*;
@@ -37,30 +37,35 @@ impl CoinbaseIntxFixClient {
 
     #[getter]
     #[pyo3(name = "endpoint")]
+    #[must_use]
     pub fn py_endpoint(&self) -> &str {
         self.endpoint()
     }
 
     #[getter]
     #[pyo3(name = "api_key")]
+    #[must_use]
     pub fn py_api_key(&self) -> &str {
         self.api_key()
     }
 
     #[getter]
     #[pyo3(name = "portfolio_id")]
+    #[must_use]
     pub fn py_portfolio_id(&self) -> &str {
         self.portfolio_id()
     }
 
     #[getter]
     #[pyo3(name = "sender_comp_id")]
+    #[must_use]
     pub fn py_sender_comp_id(&self) -> &str {
         self.sender_comp_id()
     }
 
     #[getter]
     #[pyo3(name = "target_comp_id")]
+    #[must_use]
     pub fn py_target_comp_id(&self) -> &str {
         self.target_comp_id()
     }

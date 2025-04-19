@@ -315,8 +315,7 @@ mod tests {
 
         assert_eq!(
             result, expected,
-            "Test failed with start={:?}, end={:?}, offset={:?}, effective={:?}",
-            start, end, available_offset, effective
+            "Test failed with start={start:?}, end={end:?}, offset={available_offset:?}, effective={effective:?}"
         );
     }
 
