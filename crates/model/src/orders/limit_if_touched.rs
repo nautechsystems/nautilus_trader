@@ -16,8 +16,10 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
-use rust_decimal::Decimal;
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_false},
+};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -29,10 +31,13 @@ use crate::{
     },
     events::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
-        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
-        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TraderId, Venue, VenueOrderId,
     },
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        Currency, Money, Price, Quantity, price::check_positive_price,
+        quantity::check_positive_quantity,
+    },
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,6 +59,91 @@ pub struct LimitIfTouchedOrder {
 }
 
 impl LimitIfTouchedOrder {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_positive_quantity(quantity, "quantity")?;
+        check_positive_price(price, "price")?;
+        check_positive_price(trigger_price, "trigger_price")?;
+
+        if let Some(disp) = display_qty {
+            check_positive_quantity(disp, "display_qty")?;
+            check_predicate_false(disp > quantity, "`display_qty` may not exceed `quantity`")?;
+        }
+
+        if matches!(time_in_force, TimeInForce::Gtd) {
+            let exp = expire_time.unwrap_or_default();
+            check_predicate_false(exp == 0, "`expire_time` required for GTD orders")?;
+        }
+
+        match order_side {
+            OrderSide::Buy if trigger_price < price => {
+                anyhow::bail!("BUY LIT orders require trigger_price ≥ price")
+            }
+            OrderSide::Sell if trigger_price > price => {
+                anyhow::bail!("SELL LIT orders require trigger_price ≤ price")
+            }
+            _ => {}
+        }
+
+        Ok(Self::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type,
+            time_in_force,
+            expire_time,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+        ))
+    }
+
     /// Creates a new [`LimitIfTouchedOrder`] instance.
     ///
     /// # Errors
@@ -90,30 +180,21 @@ impl LimitIfTouchedOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        // TODO: Implement new_checked and check quantity positive, add error docs.
-        let init_order = OrderInitialized::new(
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
             order_side,
-            OrderType::LimitIfTouched,
             quantity,
+            price,
+            trigger_price,
+            trigger_type,
             time_in_force,
+            expire_time,
             post_only,
             reduce_only,
             quote_quantity,
-            false,
-            init_id,
-            ts_init,
-            ts_init,
-            Some(price),
-            Some(trigger_price),
-            Some(trigger_type),
-            None,
-            None,
-            None,
-            expire_time,
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
@@ -125,30 +206,20 @@ impl LimitIfTouchedOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        );
-        Self {
-            core: OrderCore::new(init_order),
-            price,
-            trigger_price,
-            trigger_type,
-            expire_time,
-            is_post_only: post_only,
-            display_qty,
-            trigger_instrument_id,
-            is_triggered: false,
-            ts_triggered: None,
-        }
+            init_id,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 }
 
 impl Deref for LimitIfTouchedOrder {
     type Target = OrderCore;
-
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.core
     }
 }
-
 impl DerefMut for LimitIfTouchedOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
@@ -176,7 +247,7 @@ impl Order for LimitIfTouchedOrder {
         self.instrument_id
     }
 
-    fn symbol(&self) -> Symbol {
+    fn symbol(&self) -> crate::identifiers::Symbol {
         self.instrument_id.symbol
     }
 
@@ -196,11 +267,11 @@ impl Order for LimitIfTouchedOrder {
         self.position_id
     }
 
-    fn account_id(&self) -> Option<AccountId> {
+    fn account_id(&self) -> Option<crate::identifiers::AccountId> {
         self.account_id
     }
 
-    fn last_trade_id(&self) -> Option<TradeId> {
+    fn last_trade_id(&self) -> Option<crate::identifiers::TradeId> {
         self.last_trade_id
     }
 
@@ -260,11 +331,11 @@ impl Order for LimitIfTouchedOrder {
         self.display_qty
     }
 
-    fn limit_offset(&self) -> Option<Decimal> {
+    fn limit_offset(&self) -> Option<rust_decimal::Decimal> {
         None
     }
 
-    fn trailing_offset(&self) -> Option<Decimal> {
+    fn trailing_offset(&self) -> Option<rust_decimal::Decimal> {
         None
     }
 
@@ -356,7 +427,7 @@ impl Order for LimitIfTouchedOrder {
         &self.commissions
     }
 
-    fn events(&self) -> Vec<&OrderEventAny> {
+    fn events(&self) -> Vec<&crate::events::OrderEventAny> {
         self.events.iter().collect()
     }
 
@@ -364,34 +435,29 @@ impl Order for LimitIfTouchedOrder {
         self.venue_order_ids.iter().collect()
     }
 
-    fn trade_ids(&self) -> Vec<&TradeId> {
+    fn trade_ids(&self) -> Vec<&crate::identifiers::TradeId> {
         self.trade_ids.iter().collect()
     }
 
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
-        if let OrderEventAny::Updated(ref event) = event {
-            self.update(event);
-        };
-        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
-
+        if let OrderEventAny::Updated(ref upd) = event {
+            self.update(upd);
+        }
+        let filled = matches!(event, OrderEventAny::Filled(_));
         self.core.apply(event)?;
-
-        if is_order_filled {
+        if filled {
             self.core.set_slippage(self.price);
-        };
-
+        }
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if let Some(price) = event.price {
-            self.price = price;
+        if let Some(px) = event.price {
+            self.price = px;
         }
-
-        if let Some(trigger_price) = event.trigger_price {
-            self.trigger_price = trigger_price;
+        if let Some(tp) = event.trigger_price {
+            self.trigger_price = tp;
         }
-
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
     }
@@ -400,32 +466,28 @@ impl Order for LimitIfTouchedOrder {
         Some(self.is_triggered)
     }
 
-    fn set_position_id(&mut self, position_id: Option<PositionId>) {
-        self.position_id = position_id;
+    // setters that forward into `self`
+    fn set_position_id(&mut self, id: Option<PositionId>) {
+        self.position_id = id;
+    }
+    fn set_quantity(&mut self, q: Quantity) {
+        self.quantity = q;
+    }
+    fn set_leaves_qty(&mut self, lq: Quantity) {
+        self.leaves_qty = lq;
+    }
+    fn set_emulation_trigger(&mut self, trig: Option<TriggerType>) {
+        self.emulation_trigger = trig;
+    }
+    fn set_is_quote_quantity(&mut self, val: bool) {
+        self.is_quote_quantity = val;
+    }
+    fn set_liquidity_side(&mut self, side: LiquiditySide) {
+        self.liquidity_side = Some(side);
     }
 
-    fn set_quantity(&mut self, quantity: Quantity) {
-        self.quantity = quantity;
-    }
-
-    fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
-        self.leaves_qty = leaves_qty;
-    }
-
-    fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
-        self.emulation_trigger = emulation_trigger;
-    }
-
-    fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
-        self.is_quote_quantity = is_quote_quantity;
-    }
-
-    fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
-    }
-
-    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
-        self.core.would_reduce_only(side, position_qty)
+    fn would_reduce_only(&self, side: PositionSide, pos_qty: Quantity) -> bool {
+        self.core.would_reduce_only(side, pos_qty)
     }
 
     fn previous_status(&self) -> Option<OrderStatus> {
@@ -434,43 +496,215 @@ impl Order for LimitIfTouchedOrder {
 }
 
 impl From<OrderInitialized> for LimitIfTouchedOrder {
-    fn from(event: OrderInitialized) -> Self {
+    fn from(e: OrderInitialized) -> Self {
         Self::new(
-            event.trader_id,
-            event.strategy_id,
-            event.instrument_id,
-            event.client_order_id,
-            event.order_side,
-            event.quantity,
-            event
-                .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
-            event
-                .trigger_price // TODO: Improve this error, model order domain errors
-                .expect(
-                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
-                ),
-            event
-                .trigger_type
-                .expect("Error initializing order: `trigger_type` was `None`"),
-            event.time_in_force,
-            event.expire_time,
-            event.post_only,
-            event.reduce_only,
-            event.quote_quantity,
-            event.display_qty,
-            event.emulation_trigger,
-            event.trigger_instrument_id,
-            event.contingency_type,
-            event.order_list_id,
-            event.linked_order_ids,
-            event.parent_order_id,
-            event.exec_algorithm_id,
-            event.exec_algorithm_params,
-            event.exec_spawn_id,
-            event.tags,
-            event.event_id,
-            event.ts_event,
+            e.trader_id,
+            e.strategy_id,
+            e.instrument_id,
+            e.client_order_id,
+            e.order_side,
+            e.quantity,
+            e.price.expect("price missing"),
+            e.trigger_price.expect("trigger_price missing"),
+            e.trigger_type.expect("trigger_type missing"),
+            e.time_in_force,
+            e.expire_time,
+            e.post_only,
+            e.reduce_only,
+            e.quote_quantity,
+            e.display_qty,
+            e.emulation_trigger,
+            e.trigger_instrument_id,
+            e.contingency_type,
+            e.order_list_id,
+            e.linked_order_ids,
+            e.parent_order_id,
+            e.exec_algorithm_id,
+            e.exec_algorithm_params,
+            e.exec_spawn_id,
+            e.tags,
+            e.event_id,
+            e.ts_event,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        enums::{OrderSide, TimeInForce, TriggerType},
+        types::{Price, Quantity},
+    };
+
+    fn ids() -> (
+        TraderId,
+        StrategyId,
+        InstrumentId,
+        ClientOrderId,
+        UUID4,
+        UnixNanos,
+    ) {
+        (
+            TraderId::from("TRADER‑1"),
+            StrategyId::from("STRAT‑1"),
+            InstrumentId::default(),
+            ClientOrderId::from("CL‑1"),
+            UUID4::new(),
+            UnixNanos::new(0),
+        )
+    }
+
+    #[test]
+    fn ok() {
+        let (t, s, i, c, u, ts) = ids();
+        let o = LimitIfTouchedOrder::new_checked(
+            t,
+            s,
+            i,
+            c,
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from("30000"),
+            Price::from("30200"),
+            TriggerType::LastPrice,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            u,
+            ts,
+        )
+        .unwrap();
+        assert_eq!(o.quantity(), Quantity::from(1));
+    }
+
+    #[test]
+    fn quantity_zero() {
+        let (t, s, i, c, u, ts) = ids();
+        assert!(
+            LimitIfTouchedOrder::new_checked(
+                t,
+                s,
+                i,
+                c,
+                OrderSide::Buy,
+                Quantity::from(0),
+                Price::from("1"),
+                Price::from("1"),
+                TriggerType::LastPrice,
+                TimeInForce::Gtc,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                u,
+                ts,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("not positive")
+        );
+    }
+
+    #[test]
+    fn gtd_without_expire() {
+        let (t, s, i, c, u, ts) = ids();
+        assert!(
+            LimitIfTouchedOrder::new_checked(
+                t,
+                s,
+                i,
+                c,
+                OrderSide::Buy,
+                Quantity::from(1),
+                Price::from("1"),
+                Price::from("1"),
+                TriggerType::LastPrice,
+                TimeInForce::Gtd,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                u,
+                ts,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("expire_time")
+        );
+    }
+
+    #[test]
+    fn buy_trigger_lt_price() {
+        let (t, s, i, c, u, ts) = ids();
+        assert!(
+            LimitIfTouchedOrder::new_checked(
+                t,
+                s,
+                i,
+                c,
+                OrderSide::Buy,
+                Quantity::from(1),
+                Price::from("31000"),
+                Price::from("30000"),
+                TriggerType::LastPrice,
+                TimeInForce::Gtc,
+                None,
+                false,
+                false,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                u,
+                ts,
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("trigger_price")
+        );
     }
 }
