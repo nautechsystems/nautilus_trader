@@ -360,25 +360,59 @@ As the `FillModel` continues to evolve, future versions may introduce more sophi
 
 ## Account Types
 
-Each venue in a backtest has its own account that can be one of the following types:
+When you attach a venue to the engine—either for live trading or a back‑test—you must pick one of three accounting modes by passing the `account_type` parameter:
 
-- Cash account
-- Margin account
-- Betting account
+| Account type           | Typical use-case                                         | What the engine locks                                                                                              |
+| ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
+| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | `notional + (2 × taker fee × notional)` for every open order, so commissions for both entry and exit are reserved. |
+| Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
+| Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
 
-The account type is specified using the `account_type` parameter when adding a venue for a backtest.
+Example of adding a `CASH` account for trading on Binance Spot with assets directly:
+
+```python
+from nautilus_trader.model.enums import AccountType
+
+
+engine.add_venue(
+    venue_code="BINANCE",
+    account_type=AccountType.CASH,   #  CASH | MARGIN | BETTING
+    ...
+)
+```
+
+### Cash Accounts
+
+Cash accounts settle trades in full; there is no leverage and therefore no concept of margin.
+To guarantee you can always pay commissions, the engine pre‑reserves:
+
+    locked = notional + (2 × taker_fee × notional)
+
+The “× 2” covers a full round‑trip—entering and closing the position—even if the close uses a market (taker) order.
 
 ### Margin Accounts
 
-A *margin account* facilitates trading of instruments requiring margin, such as futures or leveraged products. It tracks account balances, calculates required margins, and manages leverage to ensure sufficient collateral for positions and orders.
+A *margin account* facilitates trading of instruments requiring margin, such as futures or leveraged products.
+It tracks account balances, calculates required margins, and manages leverage to ensure sufficient collateral for positions and orders.
 
 **Key Concepts**:
 
 - **Leverage**: Amplifies trading exposure relative to account equity. Higher leverage increases potential returns and risks.
-- **Initial Margin**: Collateral needed to open a position or submit an order.
+- **Initial Margin**: Collateral required to submit an order to open a position.
 - **Maintenance Margin**: Minimum collateral required to maintain an open position.
 - **Locked Balance**: Funds reserved as collateral, unavailable for new orders or withdrawals.
 
 :::note
-Reduce-only orders do not contribute to locked balance in cash accounts or to initial margin requirements in margin accounts.
+Reduce-only orders **do not** contribute to `balance_locked` in cash accounts,
+nor do they add to initial margin in margin accounts—as they can only reduce existing exposure.
+:::
+
+### Betting Accounts
+
+Betting accounts are specialised for venues where you stake an amount to win or lose a fixed payout (some prediction markets, sports books, etc.).
+The engine locks only the stake required by the venue; leverage and margin are not applicable.
+
+:::tip
+Keep these nuances in mind when sizing orders: in a cash account the commission buffer can make the locked balance appear larger than the raw notional,
+and in a margin account leverage multiplies both your potential gain and risk of liquidation.
 :::
