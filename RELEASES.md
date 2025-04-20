@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added `Quantity::non_zero_checked(...)` method
 - Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
 - Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
+- Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
 
 ### Breaking Changes
 None
