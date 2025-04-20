@@ -1674,6 +1674,13 @@ cdef class DataEngine(Component):
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
 
+        if isinstance(request, RequestInstrument):
+            if len(data) == 0:
+                self._log.error(f"Cannot find instrument for {request.instrument_id}")
+                return
+
+            data = data[0]
+
         params = request.params.copy()
         params["update_catalog_mode"] = None
 
