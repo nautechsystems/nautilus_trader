@@ -193,7 +193,7 @@ pub struct CoinbaseIntxInstrumentQuote {
 /// Represents a Coinbase International fee tier.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxFeeTier {
-    /// Type of fee tier (e.g., "REGULAR", "LIQUIDITY_PROGRAM")
+    /// Type of fee tier (e.g., "REGULAR", "`LIQUIDITY_PROGRAM`")
     pub fee_tier_type: CoinbaseIntxFeeTierType,
     /// Type of instrument this fee tier applies to.
     pub instrument_type: String, // Not the same as CoinbaseInstrumentType
@@ -216,7 +216,7 @@ pub struct CoinbaseIntxFeeTier {
 /// Represents Coinbase International portfolio fee rates.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoinbaseIntxPortfolioFeeRates {
-    /// Type of instrument this fee rate applies to (e.g., "SPOT", "PERPETUAL_FUTURE")
+    /// Type of instrument this fee rate applies to (e.g., "SPOT", "`PERPETUAL_FUTURE`")
     pub instrument_type: String, // Not the same as CoinbaseInstrumentType.
     /// Unique identifier for the fee tier.
     pub fee_tier_id: String,
@@ -510,12 +510,12 @@ mod tests {
         assert_eq!(parsed.asset_name, "BTC");
         assert_eq!(parsed.status, CoinbaseIntxAssetStatus::Active);
         assert_eq!(parsed.collateral_weight, 0.9);
-        assert_eq!(parsed.supported_networks_enabled, true);
+        assert!(parsed.supported_networks_enabled);
         assert_eq!(parsed.min_borrow_qty, Some("0".to_string()));
         assert_eq!(parsed.max_borrow_qty, Some("0".to_string()));
         assert_eq!(parsed.loan_collateral_requirement_multiplier, 0.0);
         assert_eq!(parsed.account_collateral_limit, Some("0".to_string()));
-        assert_eq!(parsed.ecosystem_collateral_limit_breached, false);
+        assert!(!parsed.ecosystem_collateral_limit_breached);
     }
 
     #[rstest]
@@ -743,8 +743,8 @@ mod tests {
         assert_eq!(parsed.exec_qty, "0");
         assert_eq!(parsed.avg_price, Some("0".to_string()));
         assert_eq!(parsed.fee, Some("0".to_string()));
-        assert_eq!(parsed.post_only, false);
-        assert_eq!(parsed.close_only, false);
+        assert!(!parsed.post_only);
+        assert!(!parsed.close_only);
         assert_eq!(parsed.algo_strategy, None);
         assert_eq!(parsed.text, None);
     }

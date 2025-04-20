@@ -115,16 +115,19 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Returns the websocket url being used by the client.
+    #[must_use]
     pub fn url(&self) -> &str {
         self.url.as_str()
     }
 
     /// Returns the public API key being used by the client.
+    #[must_use]
     pub fn api_key(&self) -> &str {
         self.credential.api_key.as_str()
     }
 
     /// Returns a value indicating whether the client is active.
+    #[must_use]
     pub fn is_active(&self) -> bool {
         match &self.inner {
             Some(inner) => inner.is_active(),
@@ -133,6 +136,7 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Returns a value indicating whether the client is closed.
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         match &self.inner {
             Some(inner) => inner.is_closed(),
@@ -681,10 +685,9 @@ impl CoinbaseIntxWsMessageHandler {
                                 return None;
                             }
                         }
-                    } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
-                        return None;
                     }
+                    tracing::error!("No instrument found for {}", msg.product_id);
+                    return None;
                 }
                 CoinbaseIntxWsMessage::BookUpdate(msg) => {
                     if let Some(inst) = self.instruments.get(&msg.product_id) {
@@ -782,9 +785,8 @@ impl CoinbaseIntxWsMessageHandler {
                             }
                             (None, None) => continue,
                         };
-                    } else {
-                        tracing::error!("No instrument found for {}", msg.product_id);
                     }
+                    tracing::error!("No instrument found for {}", msg.product_id);
                 }
                 CoinbaseIntxWsMessage::CandleSnapshot(msg) => {
                     if let Some(inst) = self.instruments.get(&msg.product_id) {

@@ -38,14 +38,14 @@ pub fn calculate_fixed_risk_position_size(
     units: usize,
 ) -> Quantity {
     if exchange_rate.is_zero() {
-        return instrument.make_qty(0.0);
+        return instrument.make_qty(0.0, None);
     }
 
     let risk_points = calculate_risk_ticks(entry, stop_loss, &instrument);
     let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate);
 
     if risk_points <= Decimal::ZERO {
-        return instrument.make_qty(0.0);
+        return instrument.make_qty(0.0, None);
     }
 
     let mut position_size =
@@ -66,7 +66,7 @@ pub fn calculate_fixed_risk_position_size(
     let final_size: Decimal = position_size_batched.min(
         instrument
             .max_quantity()
-            .unwrap_or_else(|| instrument.make_qty(0.0))
+            .unwrap_or_else(|| instrument.make_qty(0.0, None))
             .as_decimal(),
     );
 

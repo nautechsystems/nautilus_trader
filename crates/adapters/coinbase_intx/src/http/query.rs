@@ -95,7 +95,7 @@ pub struct GetOrdersParams {
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instrument: Option<String>,
-    /// Type of instrument ("SPOT" or "PERPETUAL_FUTURE").
+    /// Type of instrument ("SPOT" or "`PERPETUAL_FUTURE`").
     #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instrument_type: Option<String>,
