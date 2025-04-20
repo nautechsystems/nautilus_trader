@@ -554,6 +554,8 @@ cdef class MarginAccount(Account):
         """
         Calculate the initial (order) margin.
 
+        Pre‑reserves `notional + (2 × taker_fee × notional)` to cover a full round‑trip commission.
+
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
 

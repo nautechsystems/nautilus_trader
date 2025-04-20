@@ -36,7 +36,7 @@ use crate::common::{
     parse::{coinbase_channel_as_bar_spec, get_currency, parse_instrument_id},
 };
 
-/// Parses a Coinbase spot instrument into an InstrumentAny::CurrencyPair.
+/// Parses a Coinbase spot instrument into an `InstrumentAny::CurrencyPair`.
 pub fn parse_spot_instrument(
     definition: &CoinbaseIntxWsInstrumentMsg,
     margin_init: Option<Decimal>,
@@ -89,7 +89,7 @@ pub fn parse_spot_instrument(
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
-/// Parses a Coinbase perpetual instrument into an InstrumentAny::CryptoPerpetual.
+/// Parses a Coinbase perpetual instrument into an `InstrumentAny::CryptoPerpetual`.
 pub fn parse_perp_instrument(
     definition: &CoinbaseIntxWsInstrumentMsg,
     margin_init: Option<Decimal>,

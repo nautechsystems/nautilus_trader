@@ -154,7 +154,7 @@ impl BacktestEngine {
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
 
-        let account_id = AccountId::from(format!("{}-001", venue).as_str());
+        let account_id = AccountId::from(format!("{venue}-001").as_str());
         let exec_client = BacktestExecutionClient::new(
             self.kernel.config.trader_id,
             account_id,
@@ -171,7 +171,7 @@ impl BacktestEngine {
             .exec_engine
             .register_client(exec_client)
             .unwrap();
-        log::info!("Adding exchange {} to engine", venue);
+        log::info!("Adding exchange {venue} to engine");
     }
 
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {

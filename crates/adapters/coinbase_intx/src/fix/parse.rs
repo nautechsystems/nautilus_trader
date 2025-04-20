@@ -29,8 +29,8 @@ use crate::common::{consts::COINBASE_INTX_VENUE, parse::parse_instrument_id};
 // Reasonable default precision for now, as reports will be converted in the clients.
 const DEFAULT_PRECISION: u8 = 8;
 
-/// Parse a FIX execution report message to create a Nautilus OrderStatusReport.
-pub(crate) fn convert_to_order_status_report(
+/// Parse a FIX execution report message to create a Nautilus `OrderStatusReport`.
+pub fn convert_to_order_status_report(
     message: &FixMessage,
     account_id: AccountId,
     ts_init: UnixNanos,
@@ -168,8 +168,8 @@ pub(crate) fn convert_to_order_status_report(
     Ok(report)
 }
 
-/// Parse a FIX execution report to a Nautilus FillReport
-pub(crate) fn convert_to_fill_report(
+/// Parse a FIX execution report to a Nautilus `FillReport`
+pub fn convert_to_fill_report(
     message: &FixMessage,
     account_id: AccountId,
     ts_init: UnixNanos,

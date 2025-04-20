@@ -21,9 +21,7 @@ pub mod enums;
 pub mod http;
 pub mod machine;
 
-use std::str::FromStr;
-
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::enums::parse_enum;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -39,8 +37,9 @@ pub fn py_tardis_normalize_symbol_str(
     is_inverse: Option<bool>,
 ) -> PyResult<String> {
     let symbol = Ustr::from(&symbol);
-    let exchange = Exchange::from_str(&exchange).map_err(to_pyvalue_err)?;
-    let instrument_type = InstrumentType::from_str(&instrument_type).map_err(to_pyvalue_err)?;
+    let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
+    let instrument_type: InstrumentType =
+        parse_enum(&instrument_type, stringify!(instrument_type))?;
 
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
 }

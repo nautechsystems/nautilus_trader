@@ -114,36 +114,43 @@ impl CoinbaseIntxFixClient {
     }
 
     /// Returns the FIX endpoint being used by the client.
+    #[must_use]
     pub fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
     /// Returns the public API key being used by the client.
+    #[must_use]
     pub fn api_key(&self) -> &str {
         self.api_key.as_str()
     }
 
     /// Returns the Coinbase International portfolio ID being used by the client.
+    #[must_use]
     pub fn portfolio_id(&self) -> &str {
         self.portfolio_id.as_str()
     }
 
     /// Returns the sender company ID being used by the client.
+    #[must_use]
     pub fn sender_comp_id(&self) -> &str {
         self.sender_comp_id.as_str()
     }
 
     /// Returns the target company ID being used by the client.
+    #[must_use]
     pub fn target_comp_id(&self) -> &str {
         self.target_comp_id.as_str()
     }
 
     /// Checks if the client is connected.
+    #[must_use]
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::SeqCst)
     }
 
     /// Checks if the client is logged on.
+    #[must_use]
     pub fn is_logged_on(&self) -> bool {
         self.logged_on.load(Ordering::SeqCst)
     }
@@ -279,7 +286,9 @@ impl CoinbaseIntxFixClient {
         self.processing_task = Some(Arc::new(tokio::spawn(async move {
             tracing::debug!("Started task 'maintain FIX connection'");
 
-            let mut last_logon_attempt = std::time::Instant::now() - Duration::from_secs(10);
+            let mut last_logon_attempt = std::time::Instant::now()
+                .checked_sub(Duration::from_secs(10))
+                .unwrap();
 
             loop {
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -409,7 +418,7 @@ impl CoinbaseIntxFixClient {
             tracing::info!("Logging on...");
 
             match socket.send_bytes(logon_msg.to_bytes()).await {
-                Ok(_) => tracing::debug!("Sent logon message"),
+                Ok(()) => tracing::debug!("Sent logon message"),
                 Err(e) => tracing::error!("Error on logon: {e}"),
             }
         } else {
@@ -449,7 +458,7 @@ impl CoinbaseIntxFixClient {
 
         if let Some(socket) = &self.socket {
             match socket.send_bytes(logout_msg.to_bytes()).await {
-                Ok(_) => tracing::debug!("Sent logout message"),
+                Ok(()) => tracing::debug!("Sent logout message"),
                 Err(e) => tracing::error!("Error on logout: {e}"),
             }
         } else {

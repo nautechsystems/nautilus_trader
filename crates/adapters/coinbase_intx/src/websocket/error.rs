@@ -29,7 +29,7 @@ pub enum CoinbaseIntxWsError {
     JsonError(String),
     #[error("Client error: {0}")]
     ClientError(String),
-    /// Wrapping the underlying HttpClientError from the network crate.
+    /// Wrapping the underlying `HttpClientError` from the network crate.
     // #[error("Network error: {0}")]
     // WebSocketClientError(WebSocketClientError),  // TODO: Implement Debug
     /// Any unknown HTTP status or unexpected response from Coinbase.
