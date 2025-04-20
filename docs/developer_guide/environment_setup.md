@@ -150,3 +150,79 @@ List of commands are:
 
 1. `nautilus database init`: Will bootstrap schema, roles and all sql files located in `schema` root directory (like `tables.sql`)
 2. `nautilus database drop`: Will drop all tables, roles and data in target Postgres database
+
+## Rust analyzer settings
+
+Rust analyzer is a popular language server for Rust and has integrations for many IDEs. It is recommended to configure rust analyzer to have same environment variables as `make build-debug` for faster compile times. Below tested configurations for VSCode and Astro Nvim are provided. For more information see [PR](https://github.com/nautechsystems/nautilus_trader/pull/2524) or rust analyzer [config docs](https://rust-analyzer.github.io/book/configuration.html).
+
+### VSCode
+
+You can add the following settings to your VSCode `settings.json` file:
+
+```
+    "rust-analyzer.restartServerOnConfigChange": true,
+    "rust-analyzer.linkedProjects": [
+        "Cargo.toml"
+    ],
+    "rust-analyzer.cargo.features": "all",
+    "rust-analyzer.check.workspace": false,
+    "rust-analyzer.check.extraEnv": {
+        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "CC": "clang",
+        "CXX": "clang++"
+    },
+    "rust-analyzer.cargo.extraEnv": {
+        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "CC": "clang",
+        "CXX": "clang++"
+    },
+    "rust-analyzer.runnables.extraEnv": {
+        "VIRTUAL_ENV": "<path-to-your-virtual-environment>/.venv",
+        "CC": "clang",
+        "CXX": "clang++"
+    },
+    "rust-analyzer.check.features": "all",
+    "rust-analyzer.testExplorer": true
+```
+
+### Astro Nvim (Neovim + AstroLSP)
+
+You can add the following to your astro lsp config file:
+
+```
+    config = {
+      rust_analyzer = {
+        settings = {
+          ["rust-analyzer"] = {
+            restartServerOnConfigChange = true,
+            linkedProjects = { "Cargo.toml" },
+            cargo = {
+              features = "all",
+              extraEnv = {
+                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+                CC = "clang",
+                CXX = "clang++",
+              },
+            },
+            check = {
+              workspace = false,
+              command = "check",
+              features = "all",
+              extraEnv = {
+                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+                CC = "clang",
+                CXX = "clang++",
+              },
+            },
+            runnables = {
+              extraEnv = {
+                VIRTUAL_ENV = "<path-to-your-virtual-environment>/.venv",
+                CC = "clang",
+                CXX = "clang++",
+              },
+            },
+            testExplorer = true,
+          },
+        },
+      },
+```
