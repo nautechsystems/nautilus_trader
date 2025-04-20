@@ -144,6 +144,7 @@ def _build_rust_libs() -> None:
         cmd_args = [
             "cargo",
             "build",
+            "--lib",
             *build_options.split(),
             *features,
         ]
