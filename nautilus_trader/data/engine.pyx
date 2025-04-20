@@ -1388,7 +1388,7 @@ cdef class DataEngine(Component):
         update_catalog_mode = request.params.get("update_catalog_mode", None)
 
         if self._catalogs and update_catalog_mode is None:
-            self._query_catalog(request)
+            self.query_catalog(request)
             return
 
         if client is None:
@@ -1405,7 +1405,7 @@ cdef class DataEngine(Component):
         )[0]
 
         if last_timestamp:
-            self._query_catalog(request)
+            self.query_catalog(request)
             return
 
         if client is None:
@@ -1508,7 +1508,7 @@ cdef class DataEngine(Component):
             new_request.params.get("update_catalog_mode", None),
             None
         )
-        self._query_catalog(new_request)
+        self.query_catalog(new_request)
 
         # Client query after the catalog
         if used_end_request > used_end_catalog and client is not None:
@@ -1593,7 +1593,7 @@ cdef class DataEngine(Component):
             end_catalog,
         )
 
-    cpdef void _query_catalog(self, RequestData request):
+    cpdef void query_catalog(self, RequestData request, bint query_past_data = True):
         cdef datetime start = request.start
         cdef datetime end = request.end
 
@@ -1604,7 +1604,7 @@ cdef class DataEngine(Component):
         # Validate request time range
         Condition.is_true(ts_start <= ts_end, f"{ts_start=} was greater than {ts_end=}")
 
-        if end is not None and ts_end > ts_now:
+        if end is not None and ts_end > ts_now and query_past_data:
             self._log.warning(
                 "Cannot request data beyond current time. "
                 f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(ts_now)}",
@@ -1613,6 +1613,8 @@ cdef class DataEngine(Component):
 
         data = []
 
+        # Note: if some data is contained in several catalogs (one per month for example),
+        # ensure that the DataCatalogConfig list passed to BacktestEngineConfig is ordered in chronological order
         if isinstance(request, RequestInstruments):
             for catalog in self._catalogs.values():
                 data += catalog.instruments()
@@ -1656,7 +1658,7 @@ cdef class DataEngine(Component):
                 )
 
         # Validate data is not from the future
-        if data and data[-1].ts_init > ts_now:
+        if data and data[-1].ts_init > ts_now and query_past_data:
             raise RuntimeError(
                 "Invalid response: Historical data from the future: "
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
@@ -1682,6 +1684,13 @@ cdef class DataEngine(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+
+        if not query_past_data:
+            # When not querying past data it means the backtest engine is requesting on the fly new data
+            callback = request.callback
+            callback(response)
+            return
+
         self._handle_response(response)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
