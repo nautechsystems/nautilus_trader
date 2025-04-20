@@ -1,8 +1,8 @@
 PROJECT?=nautechsystems/nautilus_trader
 REGISTRY?=ghcr.io/
-IMAGE?=${REGISTRY}${PROJECT}
+IMAGE?=$(REGISTRY)$(PROJECT)
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
-IMAGE_FULL?=${IMAGE}:${GIT_TAG}
+IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 .PHONY: install
 install:
@@ -38,8 +38,8 @@ build-dry-run:
 
 .PHONY: clean
 clean:
-	find . -type d -name "__pycache" -print0 | xargs -0 rm -rf
-	find . -type f -a \( -name "*.so" -o -name "*.dll" \) -print0 | xargs -0 rm -f
+	find . -type d -name "__pycache__" -print0 | xargs -0 rm -rf
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -print0 | xargs -0 rm -f
 	rm -rf \
 		.benchmarks/ \
 		.mypy_cache/ \
@@ -51,6 +51,8 @@ clean:
 
 .PHONY: distclean
 distclean: clean
+	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
+	@echo "⚠️  nuking working tree (git clean -fxd)…"
 	git clean -fxd -e tests/test_data/large/
 
 .PHONY: format
@@ -65,7 +67,6 @@ pre-commit:
 ruff:
 	uv run --active --no-sync ruff check . --fix
 
-# Requires cargo-outdated (currently broken waiting for 2024 edition update)
 .PHONY: outdated
 outdated:
 	cargo outdated
@@ -114,28 +115,28 @@ cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest
 cargo-test:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi, defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "python,ffi,defi" --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
 cargo-test-debug: check-nextest
 cargo-test-debug:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi,high-precision,defi"
+	cargo nextest run --workspace --features "python,ffi,high-precision,defi"
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
 cargo-test-standard-precision-debug: check-nextest
 cargo-test-standard-precision-debug:
-	RUST_BACKTRACE=$(RUST_BACKTRACE) HIGH_PRECISION=$(HIGH_PRECISION) cargo nextest run --workspace --features "python,ffi"
+	cargo nextest run --workspace --features "python,ffi"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest
@@ -156,24 +157,24 @@ cargo-doc:
 
 .PHONY: docker-build
 docker-build: clean
-	docker pull ${IMAGE_FULL} || docker pull ${IMAGE}:nightly ||  true
-	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t ${IMAGE_FULL} .
+	docker pull $(IMAGE_FULL) || docker pull $(IMAGE):nightly || true
+	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t $(IMAGE_FULL) .
 
 .PHONY: docker-build-force
 docker-build-force:
-	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t ${IMAGE_FULL} .
+	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t $(IMAGE_FULL) .
 
 .PHONY: docker-push
 docker-push:
-	docker push ${IMAGE_FULL}
+	docker push $(IMAGE_FULL)
 
 .PHONY: docker-build-jupyter
 docker-build-jupyter:
-	docker build --build-arg GIT_TAG=${GIT_TAG} -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t ${IMAGE}:jupyter .
+	docker build --build-arg GIT_TAG=$(GIT_TAG) -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
 
 .PHONY: docker-push-jupyter
 docker-push-jupyter:
-	docker push ${IMAGE}:jupyter
+	docker push $(IMAGE):jupyter
 
 .PHONY: start-services
 start-services:
