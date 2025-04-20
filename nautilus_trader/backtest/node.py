@@ -190,106 +190,31 @@ class BacktestNode:
                             f"No order book data available for {venue} with book type {venue_config.book_type}",
                         )
 
-    def run(self, raise_exception=False) -> list[BacktestResult]:
+    def build(self) -> None:
         """
-        Run the backtest node which will synchronously execute the list of loaded
-        backtest run configs.
+        Can be optionally run before a backtest to build backtest engines for all
+        configured backtest runs.
 
-        Parameters
-        ----------
-        raise_exception : bool, default False
-            If True, an exception raised from a backtest will be re-raised and halt the node.
-            If False, exceptions raised from backtest(s) will be printed to stdout.
-
-        Returns
-        -------
-        list[BacktestResult]
-            The results of the backtest runs.
+        This can be useful to subscribe to a topic before running a backtest to collect
+        any type of information.
 
         """
-        results: list[BacktestResult] = []
-
         for config in self._configs:
             try:
-                result = self._run(
-                    run_config_id=config.id,
-                    engine_config=config.engine,
-                    venue_configs=config.venues,
-                    data_configs=config.data,
-                    chunk_size=config.chunk_size,
-                    dispose_on_completion=config.dispose_on_completion,
-                    start=config.start,
-                    end=config.end,
-                )
-                results.append(result)
+                if (
+                    config.id not in self._engines
+                ):  # Only create an engine if one doesn't already exist for this config
+                    self._create_engine(
+                        run_config_id=config.id,
+                        config=config.engine,
+                        venue_configs=config.venues,
+                        data_configs=config.data,
+                    )
             except Exception as e:
-                # Broad catch all prevents a single backtest run from halting
-                # the execution of the other backtests (such as a zero balance exception).
-                if not is_logging_initialized():
-                    _guard = init_logging()
-
-                log = Logger(type(self).__name__)
-                log.exception("Error running backtest", e)
-                if config.engine is not None:
-                    log.info("Engine config:", LogColor.MAGENTA)
-                    log.info(json.dumps(json.loads(config.engine.json()), indent=2))
-                log.info("Venue configs:", LogColor.MAGENTA)
-                for venue_config in config.venues:
-                    log.info(json.dumps(json.loads(venue_config.json()), indent=2))
-                log.info("Data configs:", LogColor.MAGENTA)
-                for data_config in config.data:
-                    log.info(json.dumps(json.loads(data_config.json()), indent=2))
-
-                if raise_exception:
-                    raise e
-
-        return results
-
-    def _run(
-        self,
-        run_config_id: str,
-        engine_config: BacktestEngineConfig,
-        venue_configs: list[BacktestVenueConfig],
-        data_configs: list[BacktestDataConfig],
-        chunk_size: int | None,
-        dispose_on_completion: bool,
-        start: str | int | None = None,
-        end: str | int | None = None,
-    ) -> BacktestResult:
-        engine: BacktestEngine = self._create_engine(
-            run_config_id=run_config_id,
-            config=engine_config,
-            venue_configs=venue_configs,
-            data_configs=data_configs,
-        )
-
-        # Run backtest
-        if chunk_size is not None:
-            self._run_streaming(
-                run_config_id=run_config_id,
-                engine=engine,
-                data_configs=data_configs,
-                chunk_size=chunk_size,
-                start=start,
-                end=end,
-            )
-        else:
-            self._run_oneshot(
-                run_config_id=run_config_id,
-                engine=engine,
-                data_configs=data_configs,
-                start=start,
-                end=end,
-            )
-
-        if dispose_on_completion:
-            # Drop data and all state
-            engine.dispose()
-        else:
-            # Drop data
-            engine.clear_data()
-
-        return engine.get_result()
+                self.log_backtest_exception(
+                    e,
+                    config,
+                )  # Log any exceptions without halting the build process
 
     def _create_engine(
         self,
@@ -350,6 +275,75 @@ class BacktestNode:
                         engine.add_instrument(instrument)
 
         return engine
+
+    def run(self) -> list[BacktestResult]:
+        """
+        Run the backtest node which will synchronously execute the list of loaded
+        backtest run configs.
+
+        Returns
+        -------
+        list[BacktestResult]
+            The results of the backtest runs.
+
+        """
+        self.build()
+        results: list[BacktestResult] = []
+
+        for config in self._configs:
+            try:
+                result = self._run(
+                    run_config_id=config.id,
+                    data_configs=config.data,
+                    chunk_size=config.chunk_size,
+                    dispose_on_completion=config.dispose_on_completion,
+                    start=config.start,
+                    end=config.end,
+                )
+                results.append(result)
+            except Exception as e:
+                self.log_backtest_exception(e, config)
+
+        return results
+
+    def _run(
+        self,
+        run_config_id: str,
+        data_configs: list[BacktestDataConfig],
+        chunk_size: int | None,
+        dispose_on_completion: bool,
+        start: str | int | None = None,
+        end: str | int | None = None,
+    ) -> BacktestResult:
+        engine: BacktestEngine = self.get_engine(run_config_id)
+
+        # Run backtest
+        if chunk_size is not None:
+            self._run_streaming(
+                run_config_id=run_config_id,
+                engine=engine,
+                data_configs=data_configs,
+                chunk_size=chunk_size,
+                start=start,
+                end=end,
+            )
+        else:
+            self._run_oneshot(
+                run_config_id=run_config_id,
+                engine=engine,
+                data_configs=data_configs,
+                start=start,
+                end=end,
+            )
+
+        if dispose_on_completion:
+            # Drop data and all state
+            engine.dispose()
+        else:
+            # Drop data
+            engine.clear_data()
+
+        return engine.get_result()
 
     def _run_streaming(  # noqa: C901
         self,
@@ -520,6 +514,29 @@ class BacktestNode:
                 client_id=result.client_id,
                 sort=True,  # Already sorted from backend
             )
+
+    def log_backtest_exception(self, e: Exception, config: BacktestRunConfig):
+        # Broad catch all prevents a single backtest run from halting
+        # the execution of the other backtests (such as a zero balance exception).
+        if not is_logging_initialized():
+            _guard = init_logging()
+
+        log = Logger(type(self).__name__)
+        log.exception("Error running backtest", e)
+
+        if config.engine is not None:
+            log.info("Engine config:", LogColor.MAGENTA)
+            log.info(json.dumps(json.loads(config.engine.json()), indent=2))
+
+        log.info("Venue configs:", LogColor.MAGENTA)
+
+        for venue_config in config.venues:
+            log.info(json.dumps(json.loads(venue_config.json()), indent=2))
+
+        log.info("Data configs:", LogColor.MAGENTA)
+
+        for data_config in config.data:
+            log.info(json.dumps(json.loads(data_config.json()), indent=2))
 
 
 def get_instrument_ids(config: BacktestDataConfig) -> list[InstrumentId]:
