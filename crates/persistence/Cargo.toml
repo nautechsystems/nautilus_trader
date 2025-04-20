@@ -64,12 +64,12 @@ anyhow = { workspace = true }
 parquet = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "46.0.1", default-features = false, features = [
+datafusion = { version = "47.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
 ] }
-object_store = "0.11.2"  # Keep in line with datafusion
+object_store = "0.12.0"
 walkdir = "2.5.0"
 
 [dev-dependencies]
