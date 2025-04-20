@@ -177,22 +177,22 @@ class NautilusKernel:
         self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
         logging: LoggingConfig = config.logging or LoggingConfig()
 
+        if logging.clear_log_file and logging.log_directory and logging.log_file_name:
+            file_path = Path(
+                logging.log_directory,
+                f"{logging.log_file_name}.{'log' if logging.log_file_format is None else 'json'}",
+            )
+
+            if file_path.exists():
+                # Truncate log file to zero length and reset metadata
+                file_path.touch()
+                file_path.open("w").close()
+
         if not is_logging_initialized():
             if "RUST_LOG" not in os.environ:
                 os.environ["RUST_LOG"] = "off"
 
             if not logging.bypass_logging:
-                if logging.clear_log_file and logging.log_directory and logging.log_file_name:
-                    file_path = Path(
-                        logging.log_directory,
-                        f"{logging.log_file_name}.{'log' if logging.log_file_format is None else 'json'}",
-                    )
-
-                    if file_path.exists():
-                        # Truncate log file to zero length and reset metadata
-                        file_path.touch()
-                        file_path.open("w").close()
-
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
 
