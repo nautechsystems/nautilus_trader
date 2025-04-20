@@ -3,14 +3,23 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
+- Added `UnixNanos::max()` convenience method for the maximum valid value
+- Added `available_offset` filter parameter for `TardisInstrumentProvider`
+- Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
+- Added `Quantity::non_zero(...)` method
+- Added `Quantity::non_zero_checked(...)` method
 
 ### Breaking Changes
-- Removed catalog `basename_template` argument (#2510), thanks @faysou
+None
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
+- Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
+- Improved logger buffers flushing post backtest
+- Improved validations for Tardis trades data
+- Refined `Price` and `Quantity` validations and correctness
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `sqlx` crate to v0.8.5

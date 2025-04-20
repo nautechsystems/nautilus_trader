@@ -24,7 +24,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::{FAILED, check_in_range_inclusive_f64},
+    correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true},
     parsing::precision_from_str,
 };
 use rust_decimal::Decimal;
@@ -138,6 +138,20 @@ impl Price {
     /// This function panics:
     /// - If a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn from_raw(raw: PriceRaw, precision: u8) -> Self {
+        if raw == PRICE_UNDEF {
+            check_predicate_true(
+                precision == 0,
+                "`precision` must be 0 when `raw` is PRICE_UNDEF",
+            )
+            .expect(FAILED);
+        }
+        check_predicate_true(
+            raw == PRICE_ERROR
+                || raw == PRICE_UNDEF
+                || (raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX),
+            &format!("raw value outside valid range, was {raw}"),
+        )
+        .expect(FAILED);
         check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
@@ -194,6 +208,12 @@ impl Price {
     #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
+    }
+
+    /// Returns `true` if the value of this instance is position (> 0).
+    #[must_use]
+    pub fn is_positive(&self) -> bool {
+        self.raw != PRICE_UNDEF && self.raw > 0
     }
 
     /// Returns the value of this instance as an `f64`.
@@ -447,6 +467,9 @@ impl<'de> Deserialize<'de> for Price {
 ///
 /// Returns an error if the validation check fails.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
+    if value.raw == PRICE_UNDEF {
+        anyhow::bail!("{FAILED}: invalid `Price` for '{param}', was PRICE_UNDEF")
+    }
     if !value.is_positive() {
         anyhow::bail!("{FAILED}: invalid `Price` for '{param}' not positive, was {value}")
     }
@@ -521,6 +544,32 @@ mod tests {
     #[should_panic(expected = "Condition failed: invalid f64 for 'value' not in range")]
     fn test_min_value_exceeded() {
         Price::new(PRICE_MIN - 0.1, FIXED_PRECISION);
+    }
+
+    #[rstest]
+    fn test_is_positive_ok() {
+        // A normal, non‑zero price should be positive.
+        let price = Price::new(42.0, 2);
+        assert!(price.is_positive());
+
+        // `check_positive_price` should accept it without error.
+        check_positive_price(price, "price").unwrap();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid `Price` for 'price' not positive")]
+    fn test_is_positive_rejects_non_positive() {
+        // Zero is NOT positive.
+        let zero = Price::zero(2);
+        check_positive_price(zero, "price").unwrap();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "invalid `Price` for 'price', was PRICE_UNDEF")]
+    fn test_is_positive_rejects_undefined() {
+        // PRICE_UNDEF must also be rejected.
+        let undef = Price::from_raw(PRICE_UNDEF, 0);
+        check_positive_price(undef, "price").unwrap();
     }
 
     #[rstest]

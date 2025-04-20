@@ -24,9 +24,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import CryptoFuture
-from nautilus_trader.model.instruments import CryptoOption
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import instruments_from_pyo3
 
 
@@ -69,11 +66,16 @@ class TardisInstrumentProvider(InstrumentProvider):
         instrument_type = filters.get("instrument_type")
         contract_type = filters.get("contract_type")
         active = filters.get("active")
-        activation_offset = filters.get("activation_offset")
         start = filters.get("start")
         end = filters.get("end")
+        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
         ts_init = time.time_ns()
+
+        if isinstance(available_offset, pd.Timedelta):
+            available_offset_ns = available_offset.value
+        else:
+            available_offset_ns = available_offset
 
         if isinstance(effective, pd.Timestamp):
             effective_ns = effective.value
@@ -93,17 +95,11 @@ class TardisInstrumentProvider(InstrumentProvider):
                     active=active,
                     start=start,
                     end=end,
+                    available_offset=available_offset_ns,
                     effective=effective_ns,
                     ts_init=ts_init,
                 )
                 instruments = instruments_from_pyo3(pyo3_instruments)
-
-                if effective:
-                    instruments = self.filter_futures_and_options_active_time_range(
-                        instruments=instruments,
-                        effective=effective,
-                        activation_offset=activation_offset,
-                    )
 
                 for instrument in instruments:
                     self.add(instrument=instrument)
@@ -134,11 +130,16 @@ class TardisInstrumentProvider(InstrumentProvider):
         instrument_type = filters.get("instrument_type")
         contract_type = filters.get("contract_type")
         active = filters.get("active")
-        activation_offset = filters.get("activation_offset")
         start = filters.get("start")
         end = filters.get("end")
+        available_offset = filters.get("available_offset")
         effective = filters.get("effective")
         ts_init = time.time_ns()
+
+        if isinstance(available_offset, pd.Timedelta):
+            available_offset_ns = available_offset.value
+        else:
+            available_offset_ns = available_offset
 
         if isinstance(effective, pd.Timestamp):
             effective_ns = effective.value
@@ -156,17 +157,11 @@ class TardisInstrumentProvider(InstrumentProvider):
                 active=active,
                 start=start,
                 end=end,
+                available_offset=available_offset_ns,
                 effective=effective_ns,
                 ts_init=ts_init,
             )
             instruments = instruments_from_pyo3(pyo3_instruments)
-
-            if effective:
-                instruments = self.filter_futures_and_options_active_time_range(
-                    instruments=instruments,
-                    effective=effective,
-                    activation_offset=activation_offset,
-                )
 
             for instrument in instruments:
                 symbol = instrument.id.symbol.value
@@ -177,28 +172,3 @@ class TardisInstrumentProvider(InstrumentProvider):
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         await self.load_ids_async([instrument_id], filters)
-
-    def filter_futures_and_options_active_time_range(
-        self,
-        instruments: list[Instrument],
-        effective: pd.Timestamp,
-        activation_offset: pd.Timedelta | None = None,
-    ) -> list[Instrument]:
-        effective_ns = effective.value
-        activation_offset_ns = 0 if activation_offset is None else activation_offset.value
-
-        result = []
-        for instrument in instruments:
-            if not isinstance(instrument, (CryptoFuture | CryptoOption)):
-                result.append(instrument)
-                continue
-
-            is_active = (
-                instrument.activation_ns + activation_offset_ns < effective_ns
-                and instrument.expiration_ns > effective_ns
-            )
-
-            if is_active:
-                result.append(instrument)
-
-        return result

@@ -22,6 +22,7 @@ use reqwest::Response;
 use super::{
     TARDIS_BASE_URL,
     error::{Error, TardisErrorResponse},
+    instruments::is_available,
     models::InstrumentInfo,
     parse::parse_instrument_any,
     query::InstrumentFilter,
@@ -148,11 +149,15 @@ impl TardisHttpClient {
     /// Returns all Nautilus instrument definitions for the given `exchange`, and filter params.
     ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
+    #[allow(clippy::too_many_arguments)]
     pub async fn instruments(
         &self,
         exchange: Exchange,
         symbol: Option<&str>,
         filter: Option<&InstrumentFilter>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        available_offset: Option<UnixNanos>,
         effective: Option<UnixNanos>,
         ts_init: Option<UnixNanos>,
     ) -> Result<Vec<InstrumentAny>> {
@@ -160,6 +165,7 @@ impl TardisHttpClient {
 
         Ok(response
             .into_iter()
+            .filter(|info| is_available(info, start, end, available_offset, effective))
             .flat_map(|info| parse_instrument_any(info, effective, ts_init, self.normalize_symbols))
             .collect())
     }

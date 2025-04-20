@@ -56,8 +56,10 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
             def __repr__(self):
                 repr = self.fields_repr()
+                has_fields = not repr.endswith("()")
+
                 time_repr = (
-                    f", ts_event={unix_nanos_to_iso8601(self._ts_event)}, "
+                    f"{', ' if has_fields else ''}ts_event={unix_nanos_to_iso8601(self._ts_event)}, "
                     + f"ts_init={unix_nanos_to_iso8601(self._ts_init)})"
                 )
 
