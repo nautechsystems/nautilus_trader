@@ -437,7 +437,7 @@ Currently there exists:
 - `BarDataWrangler`
 
 :::warning
-At the risk of causing confusion, there are also a growing number of DataWrangler v2 components, which will take a `pd.DataFrame` typically
+There are a number of **DataWrangler v2** components, which will take a `pd.DataFrame` typically
 with a different fixed width Nautilus Arrow v2 schema, and output PyO3 Nautilus objects which are only compatible with the new version
 of the Nautilus core, currently in development.
 
