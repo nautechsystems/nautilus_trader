@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from libc.math cimport floor
 from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
@@ -250,6 +251,7 @@ cdef class Instrument(Data):
 
         self._min_price_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.price_increment)))
         self._min_size_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.size_increment)))
+        self._increment_pow10 = 10 ** -self._min_size_increment_precision
 
         # Assign tick scheme if named
         if self.tick_scheme_name is not None:
@@ -633,7 +635,7 @@ cdef class Instrument(Data):
 
         return prices
 
-    cpdef Quantity make_qty(self, value):
+    cpdef Quantity make_qty(self, value, bint round_down=False):
         """
         Return a new quantity from the given value using the instruments size
         precision.
@@ -642,6 +644,10 @@ cdef class Instrument(Data):
         ----------
         value : integer, float, str or Decimal
             The value of the quantity.
+        round_down : bool, default False
+            If True, always rounds down to the nearest valid increment.
+            If False, uses the `round` function (banker's rounding) which
+            rounds to the nearest even digit when exactly halfway between two values.
 
         Returns
         -------
@@ -655,9 +661,17 @@ cdef class Instrument(Data):
         """
         # Check if original_value is greater than zero and rounded_value is "effectively" zero
         cdef double original_value = float(value)
-        cdef double rounded_value = round(original_value, self._min_size_increment_precision)
-        cdef double epsilon = 10 ** -(self._min_size_increment_precision + 1)
-        if original_value > 0.0 and abs(rounded_value) < epsilon:
+        cdef double inc_pow10 = self._increment_pow10
+        cdef double rounded_value = 0.0
+
+        if round_down:
+            # Round down to the nearest valid increment
+            rounded_value = floor(original_value / inc_pow10) *inc_pow10
+        else:
+            # Use standard rounding behavior (banker's rounding)
+            rounded_value = round(original_value, self._min_size_increment_precision)
+
+        if original_value > 0 and rounded_value < inc_pow10 * 0.1:
             raise ValueError(
                 f"Invalid `value` for quantity: {value} was rounded to zero "
                 f"due to size increment {self.size_increment} "
