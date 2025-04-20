@@ -18,7 +18,20 @@ use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use ustr::Ustr;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    FromRepr,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
@@ -31,7 +44,20 @@ pub enum InstrumentType {
     Combo,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    FromRepr,
+)]
 #[serde(rename_all = "lowercase")]
 /// The type of option.
 pub enum OptionType {
@@ -40,7 +66,20 @@ pub enum OptionType {
 }
 
 /// The aggressor side of the trade.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    FromRepr,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum TradeSide {
     Buy,
@@ -50,7 +89,20 @@ pub enum TradeSide {
 
 /// The bar kind.
 #[allow(missing_docs)]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display, FromRepr, EnumString)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    FromRepr,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum BarKind {
     Time,

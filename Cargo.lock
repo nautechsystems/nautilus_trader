@@ -3113,6 +3113,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "strum",
  "toml",
  "ustr",
  "uuid",

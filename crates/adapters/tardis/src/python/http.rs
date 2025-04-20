@@ -13,11 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, enums::parse_enum, to_pyruntime_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
@@ -59,7 +57,7 @@ impl TardisHttpClient {
         ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let exchange = Exchange::from_str(&exchange).map_err(to_pyvalue_err)?;
+        let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
 
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)
