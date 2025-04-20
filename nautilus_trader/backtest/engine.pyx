@@ -1035,6 +1035,11 @@ cdef class BacktestEngine:
 
         self._log_post_run()
 
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_flush()
+        else:
+            flush_logger()
+
     def get_result(self):
         """
         Return the backtest result from the last run.
