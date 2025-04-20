@@ -25,6 +25,7 @@ None
 - Refined `Price` and `Quantity` validations and correctness
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
+- Upgraded `datafusion` crate to v47.0.0
 - Upgraded `sqlx` crate to v0.8.5
 
 ### Fixes
