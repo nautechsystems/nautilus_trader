@@ -45,7 +45,7 @@ fn bench_check_string_contains() {
 }
 
 fn bench_check_equal() {
-    black_box(check_equal(42, 42, "lhs", "rhs")).unwrap();
+    black_box(check_equal(&42, &42, "lhs", "rhs")).unwrap();
 }
 
 fn bench_check_in_range_inclusive_u8() {
