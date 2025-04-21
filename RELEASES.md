@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
 - Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
 - Fixed handling of `BetfairSequenceCompleted` as custom data
+- Fixed the instrument class of `IndexInstrument`, changing to `SPOT` to correctly represent a spot index of underlying constituents
 
 ### Documentation Updates
 - Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu
