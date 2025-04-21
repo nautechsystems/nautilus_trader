@@ -22,6 +22,7 @@ None
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest
 - Improved validations for Tardis trades data
+- Improved build time by only compiling libraries (#2539), thanks @twitu
 - Refined `Price` and `Quantity` validations and correctness
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.23.0
@@ -36,7 +37,7 @@ None
 - Fixed handling of `BetfairSequenceCompleted` as custom data
 
 ### Documentation Updates
-None
+- Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu
 
 ### Deprecations
 None
