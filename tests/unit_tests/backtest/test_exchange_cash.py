@@ -410,3 +410,24 @@ class TestSimulatedExchangeCashAccount:
         assert not self.cache.positions_open()
         assert self.exchange.get_account().balance_total(USD) == expected_usd
         assert len(self.exchange.get_account().events) == 5
+
+    def test_book_depth_can_fill(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        depth = TestDataStubs.order_book_depth10(instrument_id=_AAPL_XNAS.id)
+        self.data_engine.process(depth)
+        self.exchange.process_order_book_depth10(depth)
+
+        order1 = self.strategy.order_factory.market(
+            _AAPL_XNAS.id,
+            OrderSide.BUY,
+            Quantity.from_int(100),
+        )
+
+        # Act
+        self.strategy.submit_order(order1)
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.FILLED

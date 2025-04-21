@@ -38,6 +38,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import account_type_from_str
@@ -197,10 +198,12 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     def on_data(self, data: Data) -> None:
         # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, (OrderBookDelta)):
+        if isinstance(data, OrderBookDelta):
             self.exchange.process_order_book_delta(data)
-        elif isinstance(data, (OrderBookDeltas)):
+        elif isinstance(data, OrderBookDeltas):
             self.exchange.process_order_book_deltas(data)
+        elif isinstance(data, OrderBookDepth10):
+            self.exchange.process_order_book_depth10(data)
         elif isinstance(data, QuoteTick):
             self.exchange.process_quote_tick(data)
         elif isinstance(data, TradeTick):

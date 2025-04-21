@@ -67,6 +67,7 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
@@ -450,6 +451,26 @@ cdef class OrderMatchingEngine:
         #     raise RuntimeError(data.time_in_force)
 
         self.iterate(deltas.ts_init)
+
+    cpdef void process_order_book_depth10(self, OrderBookDepth10 depth):
+        """
+        Process the exchanges market for the given order book depth.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The order book depth to process.
+
+        """
+        Condition.not_none(depth, "depth")
+
+        if is_logging_initialized():
+            self._log.debug(f"Processing {depth!r}")
+
+        self._book.apply_depth(depth)
+
+        self.iterate(depth.ts_init)
+
 
     cpdef void process_quote_tick(self, QuoteTick tick) :
         """

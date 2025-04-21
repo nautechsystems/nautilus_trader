@@ -43,6 +43,7 @@ from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
@@ -147,6 +148,7 @@ cdef class OrderMatchingEngine:
 
     cpdef void process_order_book_delta(self, OrderBookDelta delta)
     cpdef void process_order_book_deltas(self, OrderBookDeltas deltas)
+    cpdef void process_order_book_depth10(self, OrderBookDepth10 depth)
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)

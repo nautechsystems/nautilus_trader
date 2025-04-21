@@ -735,6 +735,32 @@ cdef class SimulatedExchange:
 
         matching_engine.process_order_book_deltas(deltas)
 
+    cpdef void process_order_book_depth10(self, OrderBookDepth10 depth):
+        """
+        Process the exchanges market for the given order book deltas.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The order book depth to process.
+
+        """
+        Condition.not_none(depth, "depth")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(depth)
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(depth.instrument_id)
+        if matching_engine is None:
+            instrument = self.cache.instrument(depth.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {depth.instrument_id}")
+            self.add_instrument(instrument)
+            matching_engine = self._matching_engines[depth.instrument_id]
+
+        matching_engine.process_order_book_depth10(depth)
+
     cpdef void process_quote_tick(self, QuoteTick tick):
         """
         Process the exchanges market for the given quote tick.
