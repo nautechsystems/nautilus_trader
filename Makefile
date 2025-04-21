@@ -101,7 +101,13 @@ cargo-build:
 
 .PHONY: cargo-update
 cargo-update:
-	cargo update && cargo install cargo-nextest && cargo install cargo-llvm-cov
+	cargo update \
+	&& cargo install cargo-nextest \
+	&& cargo install cargo-llvm-cov
+
+.PHONY:
+cargo-check:
+	cargo check --workspace --all-features
 
 .PHONY: check-nextest
 check-nextest:
