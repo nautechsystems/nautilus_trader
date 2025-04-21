@@ -177,17 +177,14 @@ impl BaseAccount {
             OrderSide::Sell => quantity.as_f64(),
             _ => panic!("Invalid `OrderSide` in `base_calculate_balance_locked`"),
         };
-        // Add expected commission
-        let taker_fee = instrument.taker_fee().to_f64().unwrap();
-        let locked: f64 = (notional * taker_fee).mul_add(2.0, notional);
 
         // Handle inverse
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-            Ok(Money::new(locked, base_currency))
+            Ok(Money::new(notional, base_currency))
         } else if side == OrderSide::Buy {
-            Ok(Money::new(locked, quote_currency))
+            Ok(Money::new(notional, quote_currency))
         } else if side == OrderSide::Sell {
-            Ok(Money::new(locked, base_currency))
+            Ok(Money::new(notional, base_currency))
         } else {
             panic!("Invalid `OrderSide` in `base_calculate_balance_locked`")
         }

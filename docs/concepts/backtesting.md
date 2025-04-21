@@ -364,7 +364,7 @@ When you attach a venue to the engine—either for live trading or a back‑test
 
 | Account type           | Typical use-case                                         | What the engine locks                                                                                              |
 | ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
-| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | `notional + (2 × taker fee × notional)` for every open order, so commissions for both entry and exit are reserved. |
+| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | Notional value for every position a pending order would open.                                                      |
 | Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
 | Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
 
@@ -384,11 +384,6 @@ engine.add_venue(
 ### Cash Accounts
 
 Cash accounts settle trades in full; there is no leverage and therefore no concept of margin.
-To guarantee you can always pay commissions, the engine pre‑reserves:
-
-    locked = notional + (2 × taker_fee × notional)
-
-The “× 2” covers a full round‑trip—entering and closing the position—even if the close uses a market (taker) order.
 
 ### Margin Accounts
 
@@ -411,8 +406,3 @@ nor do they add to initial margin in margin accounts—as they can only reduce e
 
 Betting accounts are specialised for venues where you stake an amount to win or lose a fixed payout (some prediction markets, sports books, etc.).
 The engine locks only the stake required by the venue; leverage and margin are not applicable.
-
-:::tip
-Keep these nuances in mind when sizing orders: in a cash account the commission buffer can make the locked balance appear larger than the raw notional,
-and in a margin account leverage multiplies both your potential gain and risk of liquidation.
-:::

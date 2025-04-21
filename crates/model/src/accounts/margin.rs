@@ -185,9 +185,8 @@ impl MarginAccount {
         }
         let adjusted_notional = notional / leverage;
         let initial_margin_f64 = instrument.margin_init().to_f64().unwrap();
-        let mut margin = adjusted_notional * initial_margin_f64;
-        // add taker fee
-        margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap() * 2.0;
+        let margin = adjusted_notional * initial_margin_f64;
+
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
             Money::new(margin, instrument.base_currency().unwrap())
@@ -211,9 +210,8 @@ impl MarginAccount {
         }
         let adjusted_notional = notional / leverage;
         let margin_maint_f64 = instrument.margin_maint().to_f64().unwrap();
-        let mut margin = adjusted_notional * margin_maint_f64;
-        // Add taker fee
-        margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap();
+        let margin = adjusted_notional * margin_maint_f64;
+
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
             Money::new(margin, instrument.base_currency().unwrap())
@@ -293,6 +291,7 @@ impl Account for MarginAccount {
     fn balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_total(currency)
     }
+
     fn balances_total(&self) -> HashMap<Currency, Money> {
         self.base_balances_total()
     }
@@ -300,6 +299,7 @@ impl Account for MarginAccount {
     fn balance_free(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_free(currency)
     }
+
     fn balances_free(&self) -> HashMap<Currency, Money> {
         self.base_balances_free()
     }
@@ -307,6 +307,7 @@ impl Account for MarginAccount {
     fn balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         self.base_balance_locked(currency)
     }
+
     fn balances_locked(&self) -> HashMap<Currency, Money> {
         self.base_balances_locked()
     }
@@ -318,24 +319,31 @@ impl Account for MarginAccount {
     fn last_event(&self) -> Option<AccountState> {
         self.base_last_event()
     }
+
     fn events(&self) -> Vec<AccountState> {
         self.events.clone()
     }
+
     fn event_count(&self) -> usize {
         self.events.len()
     }
+
     fn currencies(&self) -> Vec<Currency> {
         self.balances.keys().copied().collect()
     }
+
     fn starting_balances(&self) -> HashMap<Currency, Money> {
         self.balances_starting.clone()
     }
+
     fn balances(&self) -> HashMap<Currency, AccountBalance> {
         self.balances.clone()
     }
+
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
     }
+
     fn calculate_balance_locked(
         &mut self,
         instrument: InstrumentAny,
@@ -346,6 +354,7 @@ impl Account for MarginAccount {
     ) -> anyhow::Result<Money> {
         self.base_calculate_balance_locked(instrument, side, quantity, price, use_quote_for_inverse)
     }
+
     fn calculate_pnls(
         &self,
         instrument: InstrumentAny,
@@ -354,6 +363,7 @@ impl Account for MarginAccount {
     ) -> anyhow::Result<Vec<Money>> {
         self.base_calculate_pnls(instrument, fill, position)
     }
+
     fn calculate_commission(
         &self,
         instrument: InstrumentAny,
@@ -567,7 +577,7 @@ mod tests {
             Price::from("0.8000"),
             None,
         );
-        assert_eq!(result, Money::from("48.06 USD"));
+        assert_eq!(result, Money::from("48.00 USD"));
     }
 
     #[rstest]
@@ -582,7 +592,7 @@ mod tests {
             Price::from("0.8"),
             None,
         );
-        assert_eq!(result, Money::from("240.32 USD"));
+        assert_eq!(result, Money::from("240.00 USD"));
     }
 
     #[rstest]
@@ -596,14 +606,14 @@ mod tests {
             Price::from("11493.60"),
             Some(false),
         );
-        assert_eq!(result_use_quote_inverse_true, Money::from("0.10005568 BTC"));
+        assert_eq!(result_use_quote_inverse_true, Money::from("0.08700494 BTC"));
         let result_use_quote_inverse_false = margin_account.calculate_initial_margin(
             xbtusd_bitmex,
             Quantity::from(100_000),
             Price::from("11493.60"),
             Some(true),
         );
-        assert_eq!(result_use_quote_inverse_false, Money::from("1150 USD"));
+        assert_eq!(result_use_quote_inverse_false, Money::from("1000 USD"));
     }
 
     #[rstest]
@@ -617,7 +627,7 @@ mod tests {
             Price::from("11493.60"),
             None,
         );
-        assert_eq!(result, Money::from("0.03697710 BTC"));
+        assert_eq!(result, Money::from("0.03045173 BTC"));
     }
 
     #[rstest]
@@ -632,7 +642,7 @@ mod tests {
             Price::from("1"),
             None,
         );
-        assert_eq!(result, Money::from("600.40 USD"));
+        assert_eq!(result, Money::from("600.00 USD"));
     }
 
     #[rstest]
@@ -647,6 +657,6 @@ mod tests {
             Price::from("100000.00"),
             None,
         );
-        assert_eq!(result, Money::from("0.00042500 BTC"));
+        assert_eq!(result, Money::from("0.00035000 BTC"));
     }
 }
