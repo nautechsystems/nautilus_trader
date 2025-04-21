@@ -759,7 +759,7 @@ cdef class SimulatedExchange:
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[depth.instrument_id]
 
-        matching_engine.process_order_book_deltas(depth)
+        matching_engine.process_order_book_depth10(depth)
 
     cpdef void process_quote_tick(self, QuoteTick tick):
         """
