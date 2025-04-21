@@ -215,8 +215,8 @@ impl SimulatedExchange {
 
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         check_equal(
-            instrument.id().venue,
-            self.id,
+            &instrument.id().venue,
+            &self.id,
             "Venue of instrument id",
             "Venue of simulated exchange",
         )

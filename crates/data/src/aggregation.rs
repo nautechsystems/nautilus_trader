@@ -103,8 +103,8 @@ impl BarBuilder {
     #[must_use]
     pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
-            bar_type.aggregation_source(),
-            AggregationSource::Internal,
+            &bar_type.aggregation_source(),
+            &AggregationSource::Internal,
             "bar_type.aggregation_source",
             "AggregationSource::Internal",
         )

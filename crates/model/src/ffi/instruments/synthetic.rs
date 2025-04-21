@@ -130,7 +130,7 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
         .map(std::string::ToString::to_string)
         .collect::<Vec<String>>();
 
-    string_vec_to_bytes(components_vec)
+    string_vec_to_bytes(&components_vec)
 }
 
 #[unsafe(no_mangle)]
