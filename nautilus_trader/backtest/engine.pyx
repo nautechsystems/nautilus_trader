@@ -91,6 +91,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport book_type_to_str
@@ -1204,6 +1205,9 @@ cdef class BacktestEngine:
                 elif isinstance(data, OrderBookDeltas):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_order_book_deltas(data)
+                elif isinstance(data, OrderBookDepth10):
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_depth10(data)
                 elif isinstance(data, QuoteTick):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_quote_tick(data)
