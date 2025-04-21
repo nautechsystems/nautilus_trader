@@ -737,7 +737,7 @@ cdef class SimulatedExchange:
 
     cpdef void process_order_book_depth10(self, OrderBookDepth10 depth):
         """
-        Process the exchanges market for the given order book deltas.
+        Process the exchanges market for the given order book depth.
 
         Parameters
         ----------
