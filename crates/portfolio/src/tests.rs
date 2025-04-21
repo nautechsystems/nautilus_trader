@@ -660,7 +660,7 @@ fn test_update_orders_open_margin_account(
             .get(&instrument_btcusdt.id())
             .unwrap()
             .as_f64(),
-        10.5
+        3.5
     );
 }
 
@@ -716,7 +716,7 @@ fn test_order_accept_updates_margin_init(
             .get(&instrument_btcusdt.id())
             .unwrap()
             .as_f64(),
-        1.5
+        0.5
     );
 }
 

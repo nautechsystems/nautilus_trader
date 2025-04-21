@@ -148,7 +148,7 @@ class TestMarginAccount:
         )
 
         # Assert
-        assert result == Money(48.06, USD)
+        assert result == Money(48.00, USD)
 
     def test_calculate_margin_init_with_default_leverage(self):
         # Arrange
@@ -163,13 +163,13 @@ class TestMarginAccount:
         )
 
         # Assert
-        assert result == Money(240.32, USD)
+        assert result == Money(240.00, USD)
 
     @pytest.mark.parametrize(
         ("use_quote_for_inverse", "expected"),
         [
-            [False, Money(0.10005568, BTC)],
-            [True, Money(1150.00, USD)],
+            [False, Money(0.08700494, BTC)],
+            [True, Money(1000.00, USD)],
         ],
     )
     def test_calculate_margin_init_with_no_leverage_for_inverse(
@@ -205,7 +205,7 @@ class TestMarginAccount:
         )
 
         # Assert
-        assert result == Money(0.03697710, BTC)
+        assert result == Money(0.03045173, BTC)
 
     def test_calculate_margin_maint_with_leverage_fx_instrument(self):
         # Arrange
@@ -222,7 +222,7 @@ class TestMarginAccount:
         )
 
         # Assert
-        assert result == Money(600.40, USD)
+        assert result == Money(600.00, USD)
 
     def test_calculate_margin_maint_with_leverage_inverse_instrument(self):
         # Arrange
@@ -239,4 +239,4 @@ class TestMarginAccount:
         )
 
         # Assert
-        assert result == Money(0.00042500, BTC)
+        assert result == Money(0.00035000, BTC)

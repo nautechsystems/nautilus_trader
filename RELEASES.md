@@ -14,10 +14,12 @@ Released on TBD (UTC).
 - Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
 
 ### Breaking Changes
-None
+- Removed fees from locked balance calculations for `CASH` accounts
+- Removed fees from margin calculations for `MARGIN` accounts
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
+- Simplified default locked balance and margin calculations to not include fees
 - Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest

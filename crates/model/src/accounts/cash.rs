@@ -427,7 +427,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("800032 USD"));
+        assert_eq!(balance_locked, Money::from("800000 USD"));
     }
 
     #[rstest]
@@ -444,7 +444,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("1000040 AUD"));
+        assert_eq!(balance_locked, Money::from("1000000 AUD"));
     }
 
     #[rstest]
