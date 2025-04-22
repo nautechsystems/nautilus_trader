@@ -1442,11 +1442,11 @@ cdef class DataEngine(Component):
     def _convert_update_catalog_mode(self, update_catalog_mode: UpdateCatalogMode, catalog_write_mode: CatalogWriteMode) -> CatalogWriteMode | None:
         if update_catalog_mode is None:
             return None
-        elif update_catalog_mode is UpdateCatalogMode.MODIFY:
+        elif update_catalog_mode == UpdateCatalogMode.MODIFY:
             return catalog_write_mode
-        elif update_catalog_mode is UpdateCatalogMode.OVERWRITE:
+        elif update_catalog_mode == UpdateCatalogMode.OVERWRITE:
             return CatalogWriteMode.OVERWRITE
-        elif update_catalog_mode is UpdateCatalogMode.NEWFILE:
+        elif update_catalog_mode == UpdateCatalogMode.NEWFILE:
             return CatalogWriteMode.NEWFILE
 
     cpdef void _handle_date_range_request(
@@ -2016,17 +2016,21 @@ cdef class DataEngine(Component):
         if len(ticks) == 0:
             return
 
-        if type(ticks[0]) is Bar:
+        # Determine if catalog should be queried/appended (non-PREPEND means last)
+        cdef bint is_last = (update_catalog_mode != CatalogWriteMode.PREPEND)
+
+        # distinguish Bars vs other data types via isinstance to allow subclasses
+        if isinstance(ticks[0], Bar):
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=Bar,
                 bar_type=ticks[0].bar_type,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
         else:
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=type(ticks[0]),
                 instrument_id=ticks[0].instrument_id,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
 
         # We don't want to write in the catalog several times the same instrument
