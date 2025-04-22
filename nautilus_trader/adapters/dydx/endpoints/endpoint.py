@@ -63,8 +63,8 @@ class DYDXHttpEndpoint:
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=5,
-            delay_initial_ms=1_000,
-            delay_max_ms=10_000,
+            delay_initial_ms=100,
+            delay_max_ms=5_000,
             backoff_factor=2,
             logger=Logger(name="DYDXHttpEndpoint"),
             exc_types=(HttpTimeoutError, HttpError, DYDXError, DecodeError),
@@ -77,7 +77,7 @@ class DYDXHttpEndpoint:
         params: Any | None = None,
         url_path: str | None = None,
     ) -> bytes | None:
-        payload: dict = self.decoder.decode(self.encoder.encode(params))
+        payload: dict[str, Any] = self.decoder.decode(self.encoder.encode(params))
         method_call = self._method_request[self.endpoint_type]
         url_path = url_path or self.url_path
         retry_name = self.name or "http_call"

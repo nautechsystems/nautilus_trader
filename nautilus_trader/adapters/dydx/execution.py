@@ -88,6 +88,7 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
@@ -1021,22 +1022,23 @@ class DYDXExecutionClient(LiveExecutionClient):
             else Money(Decimal(0), instrument.quote_currency)
         )
 
-        self.generate_order_filled(
-            strategy_id=order.strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            venue_position_id=None,
-            trade_id=TradeId(fill_msg.id),
-            order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
-            order_type=order.order_type,
-            last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
-            last_px=Price(Decimal(fill_msg.price), instrument.price_precision),
-            quote_currency=instrument.quote_currency,
-            commission=commission,
-            liquidity_side=self._enum_parser.parse_dydx_liquidity_side(fill_msg.liquidity),
-            ts_event=dt_to_unix_nanos(fill_msg.createdAt),
-        )
+        if order.status != OrderStatus.FILLED:
+            self.generate_order_filled(
+                strategy_id=order.strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                venue_position_id=None,
+                trade_id=TradeId(fill_msg.id),
+                order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
+                order_type=order.order_type,
+                last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
+                last_px=Price(Decimal(fill_msg.price), instrument.price_precision),
+                quote_currency=instrument.quote_currency,
+                commission=commission,
+                liquidity_side=self._enum_parser.parse_dydx_liquidity_side(fill_msg.liquidity),
+                ts_event=dt_to_unix_nanos(fill_msg.createdAt),
+            )
 
     def _get_order_builder(self, instrument: Instrument) -> OrderBuilder:
         """
