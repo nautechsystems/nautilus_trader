@@ -484,9 +484,7 @@ class TestDataEngine:
         assert self.data_engine.command_count == 2
         assert self.data_engine.subscribed_custom_data() == []
 
-    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(
-        self,
-    ):
+    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
