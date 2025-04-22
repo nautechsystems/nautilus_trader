@@ -18,4 +18,6 @@
 
 pub mod block;
 pub mod chain;
+pub mod hex;
 pub mod rpc;
+pub mod transaction;
