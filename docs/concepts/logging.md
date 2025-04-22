@@ -58,20 +58,13 @@ For detailed information about log file naming conventions and rotation behavior
 
 #### Log file rotation
 
-The logging system is designed to manage log files efficiently through **daily log file rotation** as its default behavior.
-This means a new log file is created each day based on the system's date, keeping logs neatly organized by day.
-Unless additional rotation settings are applied, all logs for a given day are appended to a single file.
-
-- **Daily rotation**:
-  - Enabled by default when using the automatic naming convention.
-  - A new log file is created each day based on UTC time.
-  - This behavior is disabled if a custom `log_file_name` is specified, meaning the same file will be used indefinitely unless size-based rotation is configured.
+The logging system supports **size-based file rotation**. By default (when no size threshold is set), a single log file
+is created at startup and all log messages are appended to it for the duration of the process.
 
 - **Size-based rotation**:
-  - Enabled by configuring the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
-  - Before the log file reaches this size, a new file is started.
-  - This allows multiple files to be created within a single day if the size threshold is reached repeatedly.
-  - The `log_file_max_backup_count` parameter (default: 5) determines how many backup files are retained. Older backups are deleted once this limit is exceeded.
+  - Enabled by setting the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
+  - When writing a log entry would make the file exceed this size, the current file is closed and a new one is created.
+  - The `log_file_max_backup_count` parameter (default: 5) specifies how many rotated backup files to keep; oldest files are removed when this limit is exceeded.
 
 To keep disk usage in check, the system includes backup file management:
 
