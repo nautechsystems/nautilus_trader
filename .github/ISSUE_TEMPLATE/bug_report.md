@@ -2,15 +2,17 @@
 name: Bug Report
 about: Report a bug here
 labels:
-  - bug
+- bug
 ---
 
 # Bug Report
 
-### Expected Behavior
+## Expected Behavior
+
 Add here...
 
 ### Actual Behavior
+
 Add here...
 
 ### Steps to Reproduce the Problem

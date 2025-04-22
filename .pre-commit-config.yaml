@@ -127,12 +127,25 @@ repos:
           types-toml,
         ]
 
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.15  # uv version
+    hooks:
+      - id: uv-lock
+
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
     hooks:
       - id: nbstripout
 
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.6.14  # uv version
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2
     hooks:
-      - id: uv-lock
+      - id: markdownlint-cli2
+        name: markdownlint
+        entry: markdownlint-cli2
+        args:
+          - --config
+          - .markdownlint.jsonc
+          - --fix
+        files: "\\.md$"
+        exclude: '^(CLA\.md|CONTRIBUTING\.md|RELEASES\.md)$'

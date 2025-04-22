@@ -26,14 +26,14 @@ their own standard libraries.
 
 Great care will be taken with the use of Rusts `unsafe` facility - which just enables a small set of additional language features, thereby changing
 the contract between the interface and caller, shifting some responsibility for guaranteeing correctness
-from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding _any_ undefined behavior.
+from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding *any* undefined behavior.
 The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
 ## Safety Policy
 
 To maintain the high standards of correctness the project strives for, it's necessary to specify a reasonable policy
 to adhere to when implementing `unsafe` Rust.
-- If a function is `unsafe` to call, there _must_ be a `Safety` section in the documentation explaining why the function is `unsafe`
+- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
 and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - All `unsafe` code blocks must be completely covered by unit tests within the same source file.
 

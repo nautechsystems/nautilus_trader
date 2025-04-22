@@ -36,11 +36,11 @@ You can find functional live example scripts [here](https://github.com/nautechsy
 
 Before implementing your trading strategies, please ensure that either TWS (Trader Workstation) or IB Gateway is currently running. You have the option to log in to one of these standalone applications using your personal credentials or alternatively, via `DockerizedIBGateway`.
 
-### Establish Connection to an Existing Gateway or TWS:
+### Establish Connection to an Existing Gateway or TWS
 
 Should you choose to connect to a pre-existing Gateway or TWS, it is crucial that you specify the `host` and `port` parameters in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig` to guarantee a successful connection.
 
-### Establish Connection to DockerizedIBGateway:
+### Establish Connection to DockerizedIBGateway
 
 In this case, it's essential to supply `dockerized_gateway` with an instance of `DockerizedIBGatewayConfig` in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig`. It's important to stress, however, that `host` and `port` parameters aren't necessary in this context.
 The following example provides a clear illustration of how to establish a connection to a Dockerized Gateway, which is judiciously managed internally by the Factories.
@@ -161,6 +161,7 @@ for_loading_instrument_range = IBContract(
 > **Note**: The `secType` and `symbol` should be specified for the Underlying Contract.
 
 Some more examples of building IBContracts:
+
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
@@ -269,6 +270,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 ```
 
 ### Integration with Databento Data Client
+
 To integrate with `DatabentoDataClient`, set the `symbology_method` in `InteractiveBrokersInstrumentProviderConfig`
 to `SymbologyMethod.DATABENTO`. This ensures seamless compatibility with Databento symbology, eliminating the need
 for manual translations or mappings within your strategy.
@@ -276,7 +278,6 @@ for manual translations or mappings within your strategy.
 When using this configuration:
 - `InteractiveBrokersInstrumentProvider` will not publish instruments to the cache to prevent conflicts.
 - Instruments Cache management must be handled exclusively by `DatabentoDataClient`.
-
 
 ### Data Client
 
@@ -334,8 +335,7 @@ to accommodate IB-specific requirements. A `TradingNode` is then instantiated fr
 and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added.
 Finally, the node is built and run.
 
-You can find additional examples here: https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers
-
+You can find additional examples here: <https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers>
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE

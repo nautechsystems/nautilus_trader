@@ -38,6 +38,7 @@ The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, 
 individual order parameters (as explained below).
 
 This diagram illustrates message flow (commands and events) across the Nautilus execution components.
+
 ```
                   ┌───────────────────┐
                   │                   │

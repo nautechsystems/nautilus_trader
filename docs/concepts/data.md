@@ -454,6 +454,7 @@ of the Nautilus core, currently in development.
 4. The Nautilus `list[Data]` is the output of the data loading process.
 
 The following diagram illustrates how raw data is transformed into Nautilus data structures:
+
 ```
   ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
   │          │    │                      │                  │                      │
@@ -473,6 +474,7 @@ Concretely, this would involve:
 - `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
 
 The following example shows how to accomplish the above in Python:
+
 ```python
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
@@ -577,7 +579,9 @@ You can use one of the following write mode with catalog.write_data:
 :::
 
 ### Reading data
+
 Any stored data can then be read back into memory:
+
 ```python
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 import pandas as pd
@@ -698,11 +702,13 @@ cargo run --bin to_json trades.parquet
 This will create `trades.json` and `trades.metadata.json` files.
 
 **2. Switch to new schema version**:
+
 ```bash
 git checkout <new-version>
 ```
 
 **3. Convert from JSON back to new schema Parquet**:
+
 ```bash
 cargo run --features high-precision --bin to_parquet trades.json
 ```
@@ -717,6 +723,7 @@ This will create a `trades.parquet` file with the new schema.
 - Perform migrations in a staging environment before applying them to production data.
 
 ## Custom Data
+
 Due to the modular nature of the Nautilus design, it is possible to set up systems
 with very flexible data streams, including custom user-defined data types. This
 guide covers some possible use cases for this functionality.

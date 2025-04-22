@@ -13,6 +13,7 @@ running the examples. See the [installation guide](https://nautilustrader.io/doc
 for more information.
 
 To execute an example script from the `examples` directory, use a command similar to the following:
+
 ```
 python backtest/crypto_ema_cross_ethusdt_trade_ticks.py
 ```

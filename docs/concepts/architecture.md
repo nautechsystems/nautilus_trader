@@ -14,7 +14,7 @@ of NautilusTrader, this section covers:
 - And finally, the implementation techniques that are crucial for performance, reliability, and robustness.
 
 :::note
-Throughout the documentation, the term _"Nautilus system boundary"_ refers to operations within
+Throughout the documentation, the term *"Nautilus system boundary"* refers to operations within
 the runtime of a single Nautilus node (also known as a "trader instance").
 :::
 
@@ -67,7 +67,7 @@ The platform has been designed to share as much common code between backtest, sa
 This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,
 providing a common core system 'kernel'.
 
-The _ports and adapters_ architectural style enables modular components to be integrated into the
+The *ports and adapters* architectural style enables modular components to be integrated into the
 core system, providing various hooks for user-defined or custom component implementations.
 
 ### Messaging
@@ -80,11 +80,11 @@ resulted in arriving at this design, as it was found the overhead of context swi
 didn't actually result in improved performance.
 
 When considering the logic of how your algo trading will work within the system boundary, you can expect each component to consume messages
-in a deterministic synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
+in a deterministic synchronous way (*similar* to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
 
 :::note
 Of interest is the LMAX exchange architecture, which achieves award winning performance running on
-a single thread. You can read about their _disruptor_ pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
+a single thread. You can read about their *disruptor* pattern based architecture in [this interesting article](https://martinfowler.com/articles/lmax.html) by Martin Fowler.
 :::
 
 ## Framework organization
@@ -168,7 +168,7 @@ Rust or Cython to be installed at runtime.
 The design of the platform prioritizes software correctness and safety at the highest level.
 
 The Rust codebase in `nautilus_core` is always type safe and memory safe as guaranteed by the `rustc` compiler,
-and so is _correct by construction_ (unless explicitly marked `unsafe`, see the Rust section of the [Developer Guide](../developer_guide/rust.md)).
+and so is *correct by construction* (unless explicitly marked `unsafe`, see the Rust section of the [Developer Guide](../developer_guide/rust.md)).
 
 Cython provides type safety at the C level at both compile time, and runtime:
 

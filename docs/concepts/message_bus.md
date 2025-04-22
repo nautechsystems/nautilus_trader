@@ -305,6 +305,7 @@ message_bus=MessageBusConfig(
 ```
 
 ### Database config
+
 A `DatabaseConfig` must be provided, for a default Redis setup on the local
 loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
 
@@ -404,39 +405,41 @@ The message bus within a `TradingNode` (node) is referred to as the "internal me
 A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
 The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
 
-                      ┌───────────────────────────┐
-                      │                           │
-                      │                           │
-                      │                           │
-                      │      Producer Node        │
-                      │                           │
-                      │                           │
-                      │                           │
-                      │                           │
-                      │                           │
-                      │                           │
-                      └─────────────┬─────────────┘
-                                    │
-                                    │
-    ┌───────────────────────────────▼──────────────────────────────┐
-    │                                                              │
-    │                            Stream                            │
-    │                                                              │
-    └─────────────┬────────────────────────────────────┬───────────┘
-                  │                                    │
-                  │                                    │
-    ┌─────────────▼───────────┐          ┌─────────────▼───────────┐
-    │                         │          │                         │
-    │                         │          │                         │
-    │     Consumer Node 1     │          │     Consumer Node 2     │
-    │                         │          │                         │
-    │                         │          │                         │
-    │                         │          │                         │
-    │                         │          │                         │
-    │                         │          │                         │
-    │                         │          │                         │
-    │                         │          │                         │
-    └─────────────────────────┘          └─────────────────────────┘
+```
+                  ┌───────────────────────────┐
+                  │                           │
+                  │                           │
+                  │                           │
+                  │      Producer Node        │
+                  │                           │
+                  │                           │
+                  │                           │
+                  │                           │
+                  │                           │
+                  │                           │
+                  └─────────────┬─────────────┘
+                                │
+                                │
+┌───────────────────────────────▼──────────────────────────────┐
+│                                                              │
+│                            Stream                            │
+│                                                              │
+└─────────────┬────────────────────────────────────┬───────────┘
+              │                                    │
+              │                                    │
+┌─────────────▼───────────┐          ┌─────────────▼───────────┐
+│                         │          │                         │
+│                         │          │                         │
+│     Consumer Node 1     │          │     Consumer Node 2     │
+│                         │          │                         │
+│                         │          │                         │
+│                         │          │                         │
+│                         │          │                         │
+│                         │          │                         │
+│                         │          │                         │
+│                         │          │                         │
+└─────────────────────────┘          └─────────────────────────┘
+```
 
 :::tip
 Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.

@@ -40,25 +40,25 @@ a clear explanatory message.
 - An order is **aggressive** if its type is `MARKET`, or if its executing as a *marketable* order (i.e., taking liquidity).
 - An order is **passive** if not *marketable* (i.e., providing liquidity).
 - An order is **active local** if it remains within the local system boundary in one of the following three non-terminal statuses:
-    - `INITIALIZED`
-    - `EMULATED`
-    - `RELEASED`
+  - `INITIALIZED`
+  - `EMULATED`
+  - `RELEASED`
 - An order is **in-flight** when at one of the following statuses:
-    - `SUBMITTED`
-    - `PENDING_UPDATE`
-    - `PENDING_CANCEL`
+  - `SUBMITTED`
+  - `PENDING_UPDATE`
+  - `PENDING_CANCEL`
 - An order is **open** when at one of the following (non-terminal) statuses:
-    - `ACCEPTED`
-    - `TRIGGERED`
-    - `PENDING_UPDATE`
-    - `PENDING_CANCEL`
-    - `PARTIALLY_FILLED`
+  - `ACCEPTED`
+  - `TRIGGERED`
+  - `PENDING_UPDATE`
+  - `PENDING_CANCEL`
+  - `PARTIALLY_FILLED`
 - An order is **closed** when at one of the following (terminal) statuses:
-    - `DENIED`
-    - `REJECTED`
-    - `CANCELED`
-    - `EXPIRED`
-    - `FILLED`
+  - `DENIED`
+  - `REJECTED`
+  - `CANCELED`
+  - `EXPIRED`
+  - `FILLED`
 
 ## Execution instructions
 
@@ -88,7 +88,7 @@ at which the order will expire and be removed from the exchanges order book (or 
 
 An order which is marked as `post_only` will only ever participate in providing liquidity to the
 limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
-important for market makers, or traders seeking to restrict the order to a liquidity _maker_ fee tier.
+important for market makers, or traders seeking to restrict the order to a liquidity *maker* fee tier.
 
 ### Reduce-only
 
@@ -501,7 +501,7 @@ specific exchange they are being routed to.
 - `OUO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-updates-other when triggered or modified).
 
 :::info
-These contingency types relate to ContingencyType FIX tag <1385> https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html.
+These contingency types relate to ContingencyType FIX tag <1385> <https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html>.
 :::
 
 #### One Triggers the Other (OTO)
