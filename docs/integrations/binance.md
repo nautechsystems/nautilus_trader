@@ -70,7 +70,7 @@ See the Binance [API Reference](../api_reference/adapters/binance.md) for full d
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
 spot assets and futures contracts. Because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
-pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance).
+pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for *both* natively by Binance).
 
 Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
 E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
@@ -250,7 +250,7 @@ to `True` (this is `False` by default.)
 
 Some Binance instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
-In these cases, a _warn and continue_ approach is taken (the instrument will not
+In these cases, a *warn and continue* approach is taken (the instrument will not
 be available).
 
 These warnings may cause unnecessary log noise, and so it's possible to
@@ -274,6 +274,7 @@ directions to mitigate risk and potentially profit from market volatility.
 To use Binance Future Hedge mode, you need to follow the three items below:
 - 1. Before starting the strategy, ensure that hedge mode is configured on Binance.
 - 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
+
     ```python
     config = TradingNodeConfig(
         ...,  # Omitted
@@ -300,6 +301,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
     ```
 
 - 3. When submitting an order, use a suffix (`LONG` or `SHORT` ) in the `position_id` to indicate the position direction.
+
     ```python
     class EMACrossHedgeMode(Strategy):
         ...,  # Omitted

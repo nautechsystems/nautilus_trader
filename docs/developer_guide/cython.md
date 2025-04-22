@@ -26,12 +26,12 @@ This will ensure Python exceptions are not ignored, and instead are “bubbled u
 Improved debugging support for Cython has remained a highly up-voted PyCharm
 feature for many years. Unfortunately, it's safe to assume that PyCharm will not
 be receiving first class support for Cython debugging
-https://youtrack.jetbrains.com/issue/PY-9476.
+<https://youtrack.jetbrains.com/issue/PY-9476>.
 
 ### Cython Docs
 
 The following recommendations are contained in the Cython docs:
-https://cython.readthedocs.io/en/latest/src/userguide/debugging.html
+<https://cython.readthedocs.io/en/latest/src/userguide/debugging.html>
 
 The summary is it involves manually running a specialized version of `gdb` from the command line.
 We don't recommend this workflow.

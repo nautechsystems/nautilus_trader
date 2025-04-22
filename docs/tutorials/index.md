@@ -16,6 +16,7 @@ Make sure you are following the tutorial docs which match the version of Nautilu
 :::
 
 ## Running in docker
+
 Alternatively, a self-contained dockerized Jupyter notebook server is available for download, which does not require any setup or
 installation. This is the fastest way to get up and running to try out NautilusTrader. Bear in mind that any data will be
 deleted when the container is deleted.
@@ -27,7 +28,7 @@ deleted when the container is deleted.
 - Run the docker container, exposing the jupyter port:
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
 - Open your web browser to `localhost:{port}`
-  - http://localhost:8888
+  - <http://localhost:8888>
 
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
@@ -36,6 +37,6 @@ more logging then the notebook will hang during cell execution. A fix is current
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.
 
-- https://github.com/jupyterlab/jupyterlab/issues/12845
-- https://github.com/deshaw/jupyterlab-limit-output
+- <https://github.com/jupyterlab/jupyterlab/issues/12845>
+- <https://github.com/deshaw/jupyterlab-limit-output>
 :::

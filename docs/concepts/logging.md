@@ -89,13 +89,13 @@ The format depends on whether file rotation is enabled:
 
 **With rotation disabled**:
 
-  - **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
-  - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
-  - **Components**:
-    - `{trader_id}`: The trader identifier.
-    - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
-    - `{instance_id}`: A unique instance identifier.
-    - `{log|json}`: File suffix based on format setting.
+- **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
+- **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
+- **Components**:
+  - `{trader_id}`: The trader identifier.
+  - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
+  - `{instance_id}`: A unique instance identifier.
+  - `{log|json}`: File suffix based on format setting.
 
 **Custom naming**:
 
@@ -146,6 +146,7 @@ It's possible to use `Logger` objects directly, and these can be initialized any
 
 If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`,
 then you can activate logging in the following way:
+
 ```python
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import Logger

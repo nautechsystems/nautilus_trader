@@ -82,6 +82,7 @@ order: LimitOrder = self.order_factory.limit(
 ```
 
 To specify the number of blocks that an order is active:
+
 ```python
 from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
 
@@ -99,6 +100,7 @@ order: LimitOrder = self.order_factory.limit(
 ```
 
 ## Market orders
+
 Market orders require specifying a price to for price slippage protection and use hidden orders.
 By setting a price for a market order, you can limit the potential price slippage. For example,
 if you set the price of $100 for a market buy order, the order will only be executed if the market price
@@ -111,6 +113,7 @@ create a hidden order that will only be executed if the market price reaches the
 If the market price is not specified, a default value of 0 is used.
 
 To specify the price when creating a market order:
+
 ```python
 order = self.order_factory.market(
     instrument_id=self.instrument_id,
@@ -122,6 +125,7 @@ order = self.order_factory.market(
 ```
 
 ## Stop limit and stop market orders
+
 Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
 for conditional orders.
 
@@ -226,7 +230,7 @@ config = TradingNodeConfig(
 
 Some dYdX instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
-In these cases, a _warn and continue_ approach is taken (the instrument will not be available).
+In these cases, a *warn and continue* approach is taken (the instrument will not be available).
 
 ## Order books
 

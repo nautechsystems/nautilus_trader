@@ -204,6 +204,7 @@ with certain methods which may expect a Cython provided type. There are pyo3 -> 
 object conversion methods available, which can be found in the API reference.
 
 Here is a general pattern for converting a pyo3 `Price` to a Cython `Price`:
+
 ```python
 price = Price.from_raw(pyo3_price.raw, pyo3_price.precision)
 ```

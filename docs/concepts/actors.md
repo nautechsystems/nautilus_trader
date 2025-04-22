@@ -54,7 +54,7 @@ When working with data in Nautilus, it's important to understand the relationshi
 *requests/subscriptions* and their corresponding callback handlers. The system uses different handlers
 depending on whether the data is historical or real-time.
 
-### Historical vs Real-time Data
+### Historical vs real-time data
 
 The system distinguishes between two types of data flow:
 
@@ -68,7 +68,7 @@ The system distinguishes between two types of data flow:
    - Processed through specific handlers like `on_bar()`, `on_quote_tick()`, etc.
    - Used for live data processing.
 
-### Callback Handlers
+### Callback handlers
 
 Here's how different data operations map to their handlers:
 

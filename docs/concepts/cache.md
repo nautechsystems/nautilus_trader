@@ -396,6 +396,7 @@ venue_instrument_ids = self.cache.instrument_ids(venue=venue)  # Get instrument 
 ```
 
 ##### Currencies
+
 ```python
 # Get currency information
 currency = self.cache.load_currency("USD")  # Loads currency data for USD

@@ -1,4 +1,5 @@
 # Testing
+
 The test suite is divided into broad categories of tests including:
 
 - Unit tests
@@ -58,7 +59,7 @@ run `make cargo-test-debug` instead of `make cargo-test`.
 In IntellijIdea, to debug parametrised tests starting with `#[rstest]` with arguments defined in the header of the test
 you need to modify the run configuration of the test so it looks like
 `test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
-(remove ` -- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to
+(remove `-- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to
 the n-th parametrised test starting at 1).
 The reason for this is [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851)
 (the test is expanded into a module with several functions named `case_n`).

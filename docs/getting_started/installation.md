@@ -112,43 +112,39 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
-       ```bash
-       curl https://sh.rustup.rs -sSf | sh
-       ```
+
+           curl https://sh.rustup.rs -sSf | sh
    - Windows:
-       - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+     - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
    - Verify (any system):
        from a terminal session run: `rustc --version`
 
 2. Enable `cargo` in the current shell:
    - Linux and macOS:
-       ```bash
-       source $HOME/.cargo/env
-       ```
+
+           source $HOME/.cargo/env
    - Windows:
      - Start a new PowerShell
 
-3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
+     1. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
    - Linux:
-       ```bash
-       sudo apt-get install clang
-       ```
+
+           sudo apt-get install clang
    - Windows:
-       1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
-          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
-       2. Enable `clang` in the current shell:
-          ```powershell
-          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
-          ```
-   - Verify (any system):
+     1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
+        - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+     2. Enable `clang` in the current shell:
+
+              [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+        - Verify (any system):
        from a terminal session run: `clang --version`
 
-4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
+3. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
        curl -LsSf https://astral.sh/uv/install.sh | sh
 
-5. Clone the source with `git`, and install from the project's root directory:
+4. Clone the source with `git`, and install from the project's root directory:
 
        git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
        cd nautilus_trader
@@ -186,9 +182,7 @@ The minimum supported Redis version is 6.2 (required for [streams](https://redis
 For a quick setup, we recommend using a [Redis Docker container](https://hub.docker.com/_/redis/). You can find an example setup in the `.docker` directory,
 or run the following command to start a container:
 
-```bash
-docker run -d --name redis -p 6379:6379 redis:latest
-```
+    docker run -d --name redis -p 6379:6379 redis:latest
 
 This command will:
 
@@ -237,17 +231,13 @@ The precision mode is determined by:
 
 #### High-precision mode (128-bit)
 
-```bash
-export HIGH_PRECISION=true
-make install-debug
-```
+    export HIGH_PRECISION=true
+    make install-debug
 
 #### Standard-precision mode (64-bit)
 
-```bash
-export HIGH_PRECISION=false
-make install-debug
-```
+    export HIGH_PRECISION=false
+    make install-debug
 
 :::info
 See the [Value Types](../concepts/overview.md#value-types) specifications for more details.

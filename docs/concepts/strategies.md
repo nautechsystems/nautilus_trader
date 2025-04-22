@@ -31,7 +31,7 @@ of all available methods.
 
 There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting the `Strategy` class
-- The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
+- The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class
 
 :::tip
 Once a strategy is defined, the same source code can be used for backtesting and live trading.
@@ -250,6 +250,7 @@ See the `Clock` [API reference](../api_reference/common.md) for a complete list 
 While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
 
 To get the current UTC timestamp as a tz-aware `pd.Timestamp`:
+
 ```python
 import pandas as pd
 
@@ -258,6 +259,7 @@ now: pd.Timestamp = self.clock.utc_now()
 ```
 
 To get the current UTC timestamp as nanoseconds since the UNIX epoch:
+
 ```python
 unix_nanos: int = self.clock.timestamp_ns()
 ```
@@ -268,6 +270,7 @@ Time alerts can be set which will result in a `TimeEvent` being dispatched to th
 specified alert time. In a live context, this might be slightly delayed by a few microseconds.
 
 This example sets a time alert to trigger one minute from the current time:
+
 ```python
 self.clock.set_time_alert(
     name="MyTimeAlert1",
@@ -281,6 +284,7 @@ Continuous timers can be set up which will generate a `TimeEvent` at regular int
 or is canceled.
 
 This example sets a timer to fire once per minute, starting immediately:
+
 ```python
 self.clock.set_timer(
     name="MyTimer1",
@@ -393,11 +397,12 @@ can still be initialized directly with the `Order.__init__(...)` constructor if 
 
 The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
 
-- If an `emulation_trigger` is specified, the command will _firstly_ be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will _firstly_ be sent to the relevant `ExecAlgorithm`
-- Otherwise, the command will _firstly_ be sent to the `RiskEngine`
+- If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecAlgorithm`
+- Otherwise, the command will *firstly* be sent to the `RiskEngine`
 
 This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
+
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TriggerType
@@ -424,6 +429,7 @@ You can specify both order emulation and an execution algorithm.
 :::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
+
 ```python
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -456,15 +462,16 @@ If the order is currently *open* then the status will become `PENDING_CANCEL`.
 
 The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command will flow to for execution depends on the following:
 
-- If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will _firstly_ be sent to the relevant `ExecAlgorithm`
-- Otherwise, the order will _firstly_ be sent to the `ExecutionEngine`
+- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will *firstly* be sent to the relevant `ExecAlgorithm`
+- Otherwise, the order will *firstly* be sent to the `ExecutionEngine`
 
 :::info
 Any managed GTD timer will also be canceled after the command has left the strategy.
 :::
 
 The following shows how to cancel an individual order:
+
 ```python
 
 self.cancel_order(order)
@@ -472,6 +479,7 @@ self.cancel_order(order)
 ```
 
 The following shows how to cancel a batch of orders:
+
 ```python
 from nautilus_trader.model import Order
 
@@ -502,14 +510,15 @@ At least one value must differ from the original order for the command to be val
 
 The component a `ModifyOrder` command will flow to for execution depends on the following:
 
-- If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
-- Otherwise, the order will _firstly_ be sent to the `RiskEngine`
+- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`
+- Otherwise, the order will *firstly* be sent to the `RiskEngine`
 
 :::info
 Once an order is under the control of an execution algorithm, it cannot be directly modified by a strategy (only canceled).
 :::
 
 The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
+
 ```python
 from nautilus_trader.model import Quantity
 
@@ -608,7 +617,7 @@ instrument. The number of instruments a single strategy can work with is only li
 
 ### Managed GTD expiry
 
-It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
+It's possible for the strategy to manage expiry for orders with a time in force of GTD (*Good 'till Date*).
 This may be desirable if the exchange/broker does not support this time in force option, or for any
 reason you prefer the strategy to manage this.
 

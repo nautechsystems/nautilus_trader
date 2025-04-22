@@ -1,7 +1,7 @@
 # Instruments
 
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
-currently a number of subclasses representing a range of _asset classes_ and _instrument classes_ which are supported by the platform:
+currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
 - `Equity` (generic Equity)
 - `FuturesContract` (generic Futures Contract)
 - `FuturesSpread` (generic Futures Spread)
@@ -17,8 +17,8 @@ currently a number of subclasses representing a range of _asset classes_ and _in
 All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
 For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETHUSDT-PERP.BINANCE`.
 
-All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets),
-and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
+All native symbols *should* be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets),
+and the `{symbol.venue}` combination *must* be unique for a Nautilus system.
 
 :::warning
 The correct instrument must be matched to a market dataset such as ticks or order book data for logically sound operation.
@@ -55,6 +55,7 @@ from nautilus_trader.model.instruments import Instrument
 
 instrument = Instrument(...)  # <-- provide all necessary parameters
 ```
+
 See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 ## Live trading
@@ -76,11 +77,13 @@ instrument = self.cache.instrument(instrument_id)
 ```
 
 It's also possible to subscribe to any changes to a particular instrument:
+
 ```python
 self.subscribe_instrument(instrument_id)
 ```
 
 Or subscribe to all instrument changes for an entire venue:
+
 ```python
 from nautilus_trader.model import Venue
 
@@ -101,12 +104,12 @@ def on_instrument(instrument: Instrument) -> None:
 ## Precisions and increments
 
 The instrument objects are a convenient way to organize the specification of an
-instrument through _read-only_ properties. Correct price and quantity precisions, as well as
+instrument through *read-only* properties. Correct price and quantity precisions, as well as
 minimum price and size increments, multipliers and standard lot sizes, are available.
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise invalid
-values for prices and quantities _can_ result in the exchange rejecting orders.
+values for prices and quantities *can* result in the exchange rejecting orders.
 :::
 
 ## Limits
@@ -122,7 +125,7 @@ dependent and can include:
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
-published limits _can_ result in the exchange rejecting orders.
+published limits *can* result in the exchange rejecting orders.
 :::
 
 ## Prices and quantities
@@ -285,6 +288,7 @@ Even small discrepancies in commission calculations can significantly impact str
 :::
 
 ## Additional info
+
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
 included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user

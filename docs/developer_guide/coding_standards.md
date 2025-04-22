@@ -1,6 +1,7 @@
 # Coding Standards
 
 ## Code Style
+
 The current codebase can be used as a guide for formatting conventions.
 Additional guidelines are provided below.
 

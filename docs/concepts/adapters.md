@@ -3,7 +3,7 @@
 The NautilusTrader design integrates data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage.
 
-An integrations adapter is _typically_ comprised of the following main components:
+An integrations adapter is *typically* comprised of the following main components:
 
 - `HttpClient`
 - `WebSocketClient`
@@ -23,6 +23,7 @@ The use cases for the instruments available from an `InstrumentProvider` are eit
 ### Research and backtesting
 
 Here is an example of discovering the current instruments for the Binance Futures testnet:
+
 ```python
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
