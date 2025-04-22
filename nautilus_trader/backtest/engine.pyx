@@ -772,7 +772,7 @@ cdef class BacktestEngine:
         self._log.debug(f"_handle_subscribe {duration_seconds=}")
         self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
         self._data_requests[subscription_name] = request
-        self._data_engine.query_catalog(request, query_past_data=False)
+        self._kernel._msgbus.request(endpoint="DataEngine.request", request=request)
 
     cpdef void _handle_data_response(self, DataResponse response):
         cdef list data = response.data
@@ -809,7 +809,7 @@ cdef class BacktestEngine:
 
         self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
         cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time))
-        self._data_engine.query_catalog(new_request, query_past_data=False)
+        self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     def dump_pickled_data(self) -> bytes:
         """
