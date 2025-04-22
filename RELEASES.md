@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest
 - Improved validations for Tardis trades data
+- Improved correctness of client registration and deregistration for `ExecutionEngine`
 - Improved build time by only compiling libraries (#2539), thanks @twitu
 - Refined `Price` and `Quantity` validations and correctness
 - Filter fill events if order is already filled for dYdX (#2547), thanks @davidsblom
@@ -47,6 +48,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 - Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu
+- Fixed alignment with code for some `ExecutionEngine` docstrings
 
 ### Deprecations
 None

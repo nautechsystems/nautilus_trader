@@ -76,7 +76,7 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_disconnected(self)
     cpdef bint check_residuals(self)
     cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id)
-    cpdef set get_external_order_claims_instruments(self)
+    cpdef set[InstrumentId] get_external_order_claims_instruments(self)
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders)
     cpdef void set_manage_own_order_books(self, bint value)
 
