@@ -68,6 +68,7 @@ from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -313,9 +314,9 @@ cdef class ExecutionEngine(Component):
 
         return self._external_order_claims.get(instrument_id)
 
-    cpdef set get_external_order_claims_instruments(self):
+    cpdef set[InstrumentId] get_external_order_claims_instruments(self):
         """
-        Get all external order claims instrument IDs.
+        Get all instrument IDs registered for external order claims.
 
         Returns
         -------
@@ -326,16 +327,16 @@ cdef class ExecutionEngine(Component):
 
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders):
         """
-        Get all execution clients for the given orders.
+        Get all execution clients corresponding to the given orders.
 
         Parameters
         ----------
-        order : list[Order]
-            The orders for the execution clients.
+        orders : list[Order]
+            The orders to locate associated execution clients for.
 
         Returns
         -------
-        list[ExecutionClient]
+        set[ExecutionClient]
 
         """
         Condition.not_none(orders, "orders")
@@ -362,7 +363,8 @@ cdef class ExecutionEngine(Component):
 
         for venue in venues:
             client = self._routing_map.get(venue, self._default_client)
-            clients.add(client)
+            if client is not None:
+                clients.add(client)
 
         return clients
 
@@ -401,15 +403,29 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_in(client.id, self._clients, "client.id", "_clients")
 
-        self._clients[client.id] = client
+        cdef str routing_log = ""
 
-        routing_log = ""
+        # Default routing client
         if client.venue is None:
-            if self._default_client is None:
-                self._default_client = client
-                routing_log = " for default routing"
+            if self._default_client is not None:
+                raise ValueError(
+                    f"Default execution client already registered ("
+                    f"{self._default_client.id!r}); use register_default_client to override"
+                )
+            self._default_client = client
+            routing_log = " for default routing"
+        # Venue-specific routing
         else:
+            if client.venue in self._routing_map:
+                existing = self._routing_map[client.venue]
+                raise ValueError(
+                    f"Execution client for venue {client.venue!r} "
+                    f"already registered ({existing.id!r})"
+                )
             self._routing_map[client.venue] = client
+
+        # Finally register in client registry
+        self._clients[client.id] = client
 
         self._log.info(f"Registered ExecutionClient-{client}{routing_log}")
 
@@ -528,13 +544,20 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
+        # Remove client from registry
         del self._clients[client.id]
 
-        if client.venue is None:
-            if self._default_client == client:
-                self._default_client = None
-        else:
-            del self._routing_map[client.venue]
+        # Clear default routing client if it matches
+        if self._default_client is not None and self._default_client == client:
+            self._default_client = None
+
+        # Remove any venue-specific routing entries for this client
+        cdef list to_remove = []
+        for venue, mapped_client in self._routing_map.items():
+            if mapped_client == client:
+                to_remove.append(venue)
+        for venue in to_remove:
+            del self._routing_map[venue]
 
         self._log.info(f"Deregistered {client}")
 
