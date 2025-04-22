@@ -39,6 +39,8 @@ Released on TBD (UTC).
 - Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
 - Fixed handling of `BetfairSequenceCompleted` as custom data
 - Fixed the instrument class of `IndexInstrument`, changing to `SPOT` to correctly represent a spot index of underlying constituents
+- Fixed data range request `end` handling for `DataEngine`
+- Fixed unsubscribe instrument close for `DataEngine`
 
 ### Documentation Updates
 - Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu

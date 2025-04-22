@@ -1311,8 +1311,9 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe for synthetic instrument `InstrumentClose` data")
             return
 
+        # Only unsubscribe if currently subscribed
         if command.instrument_id in client.subscribed_instrument_close():
-            client.subscribe_instrument_close(command)
+            client.unsubscribe_instrument_close(command)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
@@ -1465,7 +1466,8 @@ cdef class DataEngine(Component):
         cdef datetime used_start_catalog = min_date(start_catalog, now)
         cdef datetime used_end_catalog = min_date(end_catalog, now)
         cdef datetime used_start_request = min_date(request.start, now) if request.start is not None else time_object_to_dt(0)
-        cdef datetime used_end_request = min_date(request.end, now) if request.start is not None else now
+        # Cap request end to now, default to now if no end specified
+        cdef datetime used_end_request = min_date(request.end, now) if request.end is not None else now
 
         if used_start_request > used_end_request:
             self._log.error(f"Cannot handle request: incompatible request dates for {request}")
@@ -2032,8 +2034,8 @@ cdef class DataEngine(Component):
             return
 
         if timestamp_bound_catalog is None and len(self._catalogs) > 0:
-            # If more than one catalog exists, the first declared one is the default one
-            last_timestamp_catalog = list(self._catalogs.values())[0]
+            # If more than one catalog exists, use the first declared one as default
+            timestamp_bound_catalog = list(self._catalogs.values())[0]
 
         if timestamp_bound_catalog is not None:
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)
