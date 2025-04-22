@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.23.0
 - Upgraded `datafusion` crate to v47.0.0
 - Upgraded `sqlx` crate to v0.8.5
+- Upgraded `pyo3` crate to v0.24.2
 
 ### Fixes
 - Fixed memory leak in `RetryManager` by simplifying the acquire-release pattern, avoiding the asynchronous context manager protocol that led to state sharing, thanks for reporting @DeevsDeevs
