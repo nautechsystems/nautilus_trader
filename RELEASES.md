@@ -13,6 +13,7 @@ Released on TBD (UTC).
 - Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
 - Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
 - Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
+- Added mark price subscription for Binance Futures (#2548), thanks @bartolootrit
 
 ### Breaking Changes
 - Removed fees from locked balance calculations for `CASH` accounts
@@ -27,8 +28,9 @@ Released on TBD (UTC).
 - Improved validations for Tardis trades data
 - Improved build time by only compiling libraries (#2539), thanks @twitu
 - Refined `Price` and `Quantity` validations and correctness
+- Filter fill events if order is already filled for dYdX (#2547), thanks @davidsblom
 - Fixed some clippy lints (#2517), thanks @twitu
-- Upgraded `databento` crate to v0.23.0
+- Upgraded `databento` crate to v0.24.0
 - Upgraded `datafusion` crate to v47.0.0
 - Upgraded `sqlx` crate to v0.8.5
 - Upgraded `pyo3` crate to v0.24.2
