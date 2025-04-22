@@ -67,7 +67,9 @@ pub extern "C" fn logging_set_bypass() {
 /// Shuts down the logging system.
 #[unsafe(no_mangle)]
 pub extern "C" fn logging_shutdown() {
-    todo!()
+    // Flush any buffered logs and mark logging as uninitialized
+    log::logger().flush();
+    LOGGING_INITIALIZED.store(false, Ordering::Relaxed);
 }
 
 /// Returns whether the core logger is using ANSI colors.
@@ -177,8 +179,12 @@ pub fn parse_component_levels(
             let mut new_map = HashMap::new();
             for (key, value) in map {
                 let ustr_key = Ustr::from(&key);
-                let value = parse_level_filter_str(value.as_str().unwrap());
-                new_map.insert(ustr_key, value);
+                // Expect the JSON value to be a string representing a log level
+                let s = value
+                    .as_str()
+                    .expect("Invalid component log level: expected string");
+                let lvl = parse_level_filter_str(s);
+                new_map.insert(ustr_key, lvl);
             }
             new_map
         }
