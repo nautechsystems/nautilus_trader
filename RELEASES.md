@@ -10,10 +10,11 @@ Released on TBD (UTC).
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
 - Added `Quantity::non_zero(...)` method
 - Added `Quantity::non_zero_checked(...)` method
-- Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
-- Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
 - Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
 - Added mark price subscription for Binance Futures (#2548), thanks @bartolootrit
+- Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
+- Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
+- Added `Transaction` primitive for blockchain domain model (#2551), thanks @filipmacek
 
 ### Breaking Changes
 - Removed fees from locked balance calculations for `CASH` accounts
@@ -38,6 +39,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed consistent ordering of execution events (#2513), thanks for reporting @stastnypremysl
+- Fixed type error when generating an elapsed time for backtests with no elapsed time
 - Fixed memory leak in `RetryManager` by simplifying the acquire-release pattern, avoiding the asynchronous context manager protocol that led to state sharing, thanks for reporting @DeevsDeevs
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
@@ -46,6 +48,7 @@ Released on TBD (UTC).
 - Fixed the instrument class of `IndexInstrument`, changing to `SPOT` to correctly represent a spot index of underlying constituents
 - Fixed data range request `end` handling for `DataEngine`
 - Fixed unsubscribe instrument close for `DataEngine`
+- Reverted removal of rotate log file on UTC date change (#2552), thanks @twitu
 
 ### Documentation Updates
 - Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu
