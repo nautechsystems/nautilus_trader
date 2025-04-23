@@ -11,8 +11,8 @@ use tokio::task;
 
 use std::any::Any;
 
-use super::registry::get_actor_unchecked;
-use crate::actor::Actor;
+use nautilus_common::actor::Actor;
+use nautilus_common::actor::registry::get_actor_unchecked;
 use ustr::Ustr;
 
 /// Control messages that can be sent to the data streams
@@ -212,7 +212,7 @@ fn demo_handler(msg: &(usize, i32)) {
 
     if *idx == 0 && *value > 5 {
         println!("Positive stream crossed 5, skipping 5 values on positive stream");
-        crate::msgbus::send(
+        nautilus_common::msgbus::send(
             &"data_engine_control_message".into(),
             &(*idx, ControlMessage::Skip(5)),
         );
@@ -220,7 +220,7 @@ fn demo_handler(msg: &(usize, i32)) {
 
     if *idx == 1 && *value < -5 {
         println!("Negative stream crossed -5, skipping 5 values on negative stream");
-        crate::msgbus::send(
+        nautilus_common::msgbus::send(
             &"data_engine_control_message".into(),
             &(*idx, ControlMessage::Skip(5)),
         );
@@ -229,7 +229,7 @@ fn demo_handler(msg: &(usize, i32)) {
     // Stop either stream if it crosses 12 (absolute value)
     if value.abs() > 10 {
         println!("Stream {} crossed absolute value 10, stopping", idx);
-        crate::msgbus::send(
+        nautilus_common::msgbus::send(
             &"data_engine_control_message".into(),
             &(*idx, ControlMessage::Stop),
         );
@@ -238,8 +238,8 @@ fn demo_handler(msg: &(usize, i32)) {
 
 mod tests {
     use super::*;
-    use crate::actor::registry::register_actor;
-    use crate::msgbus::{
+    use nautilus_common::actor::registry::register_actor;
+    use nautilus_common::msgbus::{
         self, MessageBus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         set_message_bus,
