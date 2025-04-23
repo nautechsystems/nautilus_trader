@@ -18,6 +18,7 @@ price available. Conversely, *Limit* orders provide liquidity, they act as stand
 at a specified limit price.
 
 The order types available for the platform are (using the enum values):
+
 - `MARKET`
 - `LIMIT`
 - `STOP_MARKET`
@@ -677,6 +678,7 @@ There are several ways to query emulation status:
 #### Through the Cache
 
 The following `Cache` methods are available:
+
 - `self.cache.orders_emulated(...)`: Returns all currently emulated orders
 - `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated
 - `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders
@@ -686,6 +688,7 @@ See the full [API reference](../../api_reference/cache) for additional details.
 #### Direct order queries
 
 You can query order objects directly using:
+
 - `order.is_emulated`
 
 If either of these return `False`, then the order has been *released* from the

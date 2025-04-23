@@ -98,6 +98,7 @@ It sets approvals for the USDC token and Conditional Token Framework (CTF) contr
 Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
+
 - Install the web3 Python package: `pip install -U web3==5.28`
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
@@ -144,6 +145,7 @@ This allows Polymarket to interact with your funds when executing trades and ens
 To trade with Polymarket using an EOA wallet, follow these steps to generate your API keys:
 
 1. Ensure the following environment variables are set:
+
 - `POLYMARKET_PK`: Your private key for signing transactions.
 - `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
 
@@ -184,10 +186,12 @@ We recommend using environment variables to manage your credentials.
 ## Orders
 
 The following order types are supported on Polymarket:
+
 - `MARKET` (executed as a marketable limit order)
 - `LIMIT`
 
 The following time in force options are available:
+
 - `GTC`: Good Till Cancel
 - `GTD`: Good Till Date (second granularity based on UNIX time)
 - `FOK`: Fill or Kill

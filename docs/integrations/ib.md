@@ -69,6 +69,7 @@ print(gateway.container.logs())
 ```
 
 **Note**: To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the `DockerizedIBGatewayConfig`, or set the following environment variables:
+
 - `TWS_USERNAME`
 - `TWS_PASSWORD`
 
@@ -276,6 +277,7 @@ to `SymbologyMethod.DATABENTO`. This ensures seamless compatibility with Databen
 for manual translations or mappings within your strategy.
 
 When using this configuration:
+
 - `InteractiveBrokersInstrumentProvider` will not publish instruments to the cache to prevent conflicts.
 - Instruments Cache management must be handled exclusively by `DatabentoDataClient`.
 

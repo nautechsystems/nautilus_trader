@@ -21,6 +21,7 @@ the runtime of a single Nautilus node (also known as a "trader instance").
 ## Design philosophy
 
 The major architectural techniques and design patterns employed by NautilusTrader are:
+
 - [Domain driven design (DDD)](https://en.wikipedia.org/wiki/Domain-driven_design)
 - [Event-driven architecture](https://en.wikipedia.org/wiki/Event-driven_programming)
 - [Messaging patterns](https://en.wikipedia.org/wiki/Messaging_pattern) (Pub/Sub, Req/Rep, point-to-point)

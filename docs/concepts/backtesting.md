@@ -209,6 +209,7 @@ engine.add_venue(
 When backtesting with different types of data, Nautilus implements specific handling for slippage and spread simulation:
 
 For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated with high accuracy by:
+
 - Filling orders against actual order book levels.
 - Matching available size at each price level sequentially.
 - Maintaining realistic order book depth impact (per order fill).
@@ -216,6 +217,7 @@ For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated wit
 For L1 data types (e.g., L1 orderbook, trades, quotes, bars), slippage is handled through:
 
 **Initial fill slippage** (`prob_slippage`):
+
 - Controlled by the `prob_slippage` parameter of the `FillModel`.
 - Determines if the initial fill will occur one tick away from current market price.
 - Example: With `prob_slippage=0.5`, a market BUY has 50% chance of filling one tick above the best ask price.
@@ -311,6 +313,7 @@ engine = BacktestEngine(
   - This simulates consistent adverse price movement against your orders.
 
 **prob_fill_on_stop** (default: `1.0`)
+
 - Stop order is just shorter name for stop-market order, that convert to market orders when market-price touches the stop-price.
 - That means, stop order order-fill mechanics is simply market-order mechanics, that is controlled by the `prob_slippage` parameter.
 
@@ -353,9 +356,11 @@ The `FillModel` has certain limitations to keep in mind:
 
 :::note
 As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
+
 - Partial fill simulation
 - Variable slippage based on order size
 - More complex queue position modeling
+
 :::
 
 ## Account Types

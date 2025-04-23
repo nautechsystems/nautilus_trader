@@ -434,6 +434,7 @@ The `Cache` is not designed to be a full database replacement. For large dataset
 The `Cache` and `Portfolio` components serve different but complementary purposes in NautilusTrader:
 
 **Cache**:
+
 - Maintains the historical knowledge and current state of the trading system.
 - Updates immediately for local state changes (initializing an order to be submitted)
 - Updates asynchronously as external events occur (order is filled).
@@ -441,6 +442,7 @@ The `Cache` and `Portfolio` components serve different but complementary purpose
 - All data a strategy has received (events/updates) is stored in Cache.
 
 **Portfolio**:
+
 - Aggregated position/exposure and account information.
 - Provides current state without history.
 
@@ -461,12 +463,14 @@ class MyStrategy(Strategy):
 Choosing between storing data in the `Cache` versus strategy variables depends on your specific needs:
 
 **Cache Storage**:
+
 - Use for data that needs to be shared between strategies.
 - Best for data that needs to persist between system restarts.
 - Acts as a central database accessible to all components.
 - Ideal for state that needs to survive strategy resets.
 
 **Strategy Variables**:
+
 - Use for strategy-specific calculations.
 - Better for temporary values and intermediate results.
 - Provides faster access and better encapsulation.

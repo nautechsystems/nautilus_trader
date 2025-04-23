@@ -7,6 +7,7 @@ The core logger operates in a separate thread and uses a multi-producer single-c
 This design ensures that the main thread remains performant, avoiding potential bottlenecks caused by log string formatting or file I/O operations.
 
 Logging output is configurable and supports:
+
 - **stdout/stderr writer** for console output
 - **file writer** for persistent storage of logs
 
@@ -20,6 +21,7 @@ Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
 Log level (`LogLevel`) values include (and generally match Rusts `tracing` level filters):
+
 - `OFF`
 - `DEBUG`
 - `INFO`

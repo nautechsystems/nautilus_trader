@@ -30,6 +30,7 @@ of all available methods.
 :::
 
 There are two main parts of a Nautilus trading strategy:
+
 - The strategy implementation itself, defined by inheriting the `Strategy` class
 - The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class
 
@@ -209,6 +210,7 @@ def on_event(self, event: Event) -> None:
 
 The following example shows a typical `on_start` handler method implementation (taken from the example EMA cross strategy).
 Here we can see the following:
+
 - Indicators being registered to receive bar updates
 - Historical data being requested (to hydrate the indicators)
 - Live data being subscribed to

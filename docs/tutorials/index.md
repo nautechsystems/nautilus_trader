@@ -11,8 +11,10 @@ These notebooks not only serve as valuable learning aids but also lets you to ex
 
 :::tip
 Make sure you are following the tutorial docs which match the version of NautilusTrader you are running:
+
 - **Latest**: These docs are built from the HEAD of the `master` branch and work with the latest stable release.
 - **Nightly**: These docs are built from the HEAD of the `nightly` branch and work with bleeding edge and experimental changes/features currently in development.
+
 :::
 
 ## Running in docker
@@ -39,4 +41,5 @@ Jupyter, or throttling the log flushing from Nautilus.
 
 - <https://github.com/jupyterlab/jupyterlab/issues/12845>
 - <https://github.com/deshaw/jupyterlab-limit-output>
+
 :::

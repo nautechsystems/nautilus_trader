@@ -188,10 +188,12 @@ Either pass the corresponding `wallet_address` and `mnemonic` values to the conf
 set the following environment variables:
 
 For dYdX live clients, you can set:
+
 - `DYDX_WALLET_ADDRESS`
 - `DYDX_MNEMONIC`
 
 For dYdX testnet clients, you can set:
+
 - `DYDX_TESTNET_WALLET_ADDRESS`
 - `DYDX_TESTNET_MNEMONIC`
 
