@@ -30,7 +30,7 @@ use nautilus_model::{
         Bar, BarType, BookOrder, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::TraderId,
+    identifiers::{ClientId, TraderId},
     instruments::{CurrencyPair, stubs::audusd_sim},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -45,6 +45,7 @@ use crate::{
     clock::{Clock, TestClock},
     enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
+    messages::data::BarsResponse,
     msgbus::{
         self,
         switchboard::{
@@ -53,10 +54,12 @@ use crate::{
         },
     },
     testing::init_logger_for_testing,
+    timer::TimeEvent,
 };
 
 struct TestDataActor {
     core: DataActorCore,
+    pub received_time_events: Vec<TimeEvent>,
     pub received_data: Vec<String>, // Use string for simplicity
     pub received_books: Vec<OrderBook>,
     pub received_deltas: Vec<OrderBookDelta>,
@@ -105,6 +108,11 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        self.received_time_events.push(event.clone());
+        Ok(())
+    }
+
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         self.received_data.push(format!("{data:?}"));
         Ok(())
@@ -134,6 +142,24 @@ impl DataActor for TestDataActor {
         self.received_bars.push(*bar);
         Ok(())
     }
+
+    fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        // Push to common received vec
+        self.received_quotes.extend(quotes);
+        Ok(())
+    }
+
+    fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        // Push to common received vec
+        self.received_trades.extend(trades);
+        Ok(())
+    }
+
+    fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
+        // Push to common received vec
+        self.received_bars.extend(bars);
+        Ok(())
+    }
 }
 
 // Custom functionality as required
@@ -145,6 +171,7 @@ impl TestDataActor {
     ) -> Self {
         Self {
             core: DataActorCore::new(config, cache, clock),
+            received_time_events: Vec::new(),
             received_data: Vec::new(),
             received_books: Vec::new(),
             received_deltas: Vec::new(),
@@ -153,6 +180,7 @@ impl TestDataActor {
             received_bars: Vec::new(),
         }
     }
+
     #[allow(dead_code)] // TODO: Under development
     pub fn custom_function(&mut self) {}
 }
@@ -324,6 +352,50 @@ fn test_unsubscribe_custom_data(
 
     // Actor should not receive new data
     assert_eq!(actor.received_data.len(), 2);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_book_deltas(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_book_deltas::<TestDataActor>(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        None,
+        None,
+        false,
+        None,
+    );
+
+    let topic = get_book_deltas_topic(audusd_sim.id);
+
+    let order = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.00000"),
+        Quantity::from("100000"),
+        123456,
+    );
+    let delta = OrderBookDelta::new(
+        audusd_sim.id,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
+
+    msgbus::publish(&topic, &deltas);
+
+    assert_eq!(actor.received_deltas.len(), 1);
 }
 
 #[rstest]
@@ -608,7 +680,7 @@ fn test_unsubscribe_bars(
 }
 
 #[rstest]
-fn test_subscribe_and_receive_book_deltas(
+fn test_request_bars(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -618,35 +690,18 @@ fn test_subscribe_and_receive_book_deltas(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_book_deltas::<TestDataActor>(
-        audusd_sim.id,
-        BookType::L2_MBP,
-        None,
-        None,
-        false,
-        None,
-    );
+    let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
+    let request_id = actor
+        .request_bars::<TestDataActor>(bar_type, None, None, None, None, None)
+        .unwrap();
 
-    let topic = get_book_deltas_topic(audusd_sim.id);
+    let client_id = ClientId::new("TestClient");
+    let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-EXTERNAL").unwrap();
+    let data = vec![Bar::default()];
+    let ts_init = UnixNanos::default();
+    let response = BarsResponse::new(request_id, client_id, bar_type, data, ts_init, None);
 
-    let order = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("1.00000"),
-        Quantity::from("100000"),
-        123456,
-    );
-    let delta = OrderBookDelta::new(
-        audusd_sim.id,
-        BookAction::Add,
-        order,
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(2),
-    );
-    let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
+    msgbus::response(&request_id, response.as_any());
 
-    msgbus::publish(&topic, &deltas);
-
-    assert_eq!(actor.received_deltas.len(), 1);
+    assert_eq!(actor.received_bars.len(), 1);
 }

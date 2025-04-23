@@ -45,7 +45,6 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     num::NonZeroUsize,
     rc::Rc,
-    sync::Arc,
 };
 
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
@@ -449,32 +448,17 @@ impl DataEngine {
         }
     }
 
-    // TODO: Upgrade to response message handling
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
-        match resp.data_type.type_name() {
-            stringify!(InstrumentAny) => {
-                let instruments = Arc::downcast::<Vec<InstrumentAny>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_instruments(instruments);
+        match &resp {
+            DataResponse::Instruments(resp) => {
+                self.handle_instruments(&resp.data);
             }
-            stringify!(QuoteTick) => {
-                let quotes = Arc::downcast::<Vec<QuoteTick>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_quotes(quotes);
-            }
-            stringify!(TradeTick) => {
-                let trades = Arc::downcast::<Vec<TradeTick>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_trades(trades);
-            }
-            stringify!(Bar) => {
-                let bars =
-                    Arc::downcast::<Vec<Bar>>(resp.data.clone()).expect("Invalid response data");
-                self.handle_bars(bars);
-            }
-            type_name => log::error!("Cannot handle request, type {type_name} is unrecognized"),
+            DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
+            DataResponse::Trades(resp) => self.handle_trades(&resp.data),
+            DataResponse::Bars(resp) => self.handle_bars(&resp.data),
+            _ => todo!(),
         }
 
         get_message_bus().borrow().send_response(resp);
@@ -853,7 +837,7 @@ impl DataEngine {
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
-    fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
+    fn handle_instruments(&self, instruments: &[InstrumentAny]) {
         // TODO: Improve by adding bulk update methods to cache and database
         let mut cache = self.cache.as_ref().borrow_mut();
         for instrument in instruments.iter() {
@@ -863,20 +847,20 @@ impl DataEngine {
         }
     }
 
-    fn handle_quotes(&self, quotes: Arc<Vec<QuoteTick>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(&quotes) {
+    fn handle_quotes(&self, quotes: &[QuoteTick]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(quotes) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
-    fn handle_trades(&self, trades: Arc<Vec<TradeTick>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(&trades) {
+    fn handle_trades(&self, trades: &[TradeTick]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
-    fn handle_bars(&self, bars: Arc<Vec<Bar>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(&bars) {
+    fn handle_bars(&self, bars: &[Bar]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
             log::error!("Error on cache insert: {e}");
         }
     }
