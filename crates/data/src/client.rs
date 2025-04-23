@@ -32,7 +32,7 @@ use indexmap::IndexMap;
 use nautilus_common::{
     clock::Clock,
     messages::data::{
-        DataResponse, RequestBars, RequestBookSnapshot, RequestData, RequestInstrument,
+        CustomDataResponse, RequestBars, RequestBookSnapshot, RequestData, RequestInstrument,
         RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
         SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
         SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
@@ -573,18 +573,22 @@ impl DataClientAdapter {
         self.client.request_bars(req)
     }
 
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+    // TODO: Below handler style is deprecated (need to update incorrect CustomDataResponse)
+    ///////////////////////////////////////////////////////////////////////////////////////////////
+
     #[must_use]
     pub fn handle_instrument(
         &self,
         instrument: InstrumentAny,
         correlation_id: UUID4,
-    ) -> DataResponse {
+    ) -> CustomDataResponse {
         let instrument_id = instrument.id();
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instrument);
 
-        DataResponse::new(
+        CustomDataResponse::new(
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -601,12 +605,12 @@ impl DataClientAdapter {
         venue: Venue,
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
-    ) -> DataResponse {
+    ) -> CustomDataResponse {
         let metadata = IndexMap::from([("venue".to_string(), venue.to_string())]);
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instruments);
 
-        DataResponse::new(
+        CustomDataResponse::new(
             correlation_id,
             self.client_id,
             venue,
@@ -623,12 +627,12 @@ impl DataClientAdapter {
         instrument_id: &InstrumentId,
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
-    ) -> DataResponse {
+    ) -> CustomDataResponse {
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
         let data = Arc::new(quotes);
 
-        DataResponse::new(
+        CustomDataResponse::new(
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -645,12 +649,12 @@ impl DataClientAdapter {
         instrument_id: &InstrumentId,
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
-    ) -> DataResponse {
+    ) -> CustomDataResponse {
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
         let data = Arc::new(trades);
 
-        DataResponse::new(
+        CustomDataResponse::new(
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -667,12 +671,12 @@ impl DataClientAdapter {
         bar_type: &BarType,
         bars: Vec<Bar>,
         correlation_id: UUID4,
-    ) -> DataResponse {
+    ) -> CustomDataResponse {
         let metadata = IndexMap::from([("bar_type".to_string(), bar_type.to_string())]);
         let data_type = DataType::new(stringify!(Bar), Some(metadata));
         let data = Arc::new(bars);
 
-        DataResponse::new(
+        CustomDataResponse::new(
             correlation_id,
             self.client_id,
             bar_type.instrument_id().venue,

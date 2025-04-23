@@ -87,7 +87,7 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
     }
 }
 
-/// Sends the `response` to the handler registered for the `correlation_id` (if found).
+/// Sends the response to the handler registered for the `correlation_id` (if found).
 pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     let handler = get_message_bus()
         .borrow()
@@ -508,7 +508,7 @@ impl MessageBus {
 
     /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
-        if let Some(handler) = self.get_endpoint(message.client_id.inner()) {
+        if let Some(handler) = self.get_response_handler(message.correlation_id()) {
             handler.0.handle(&message);
         }
     }

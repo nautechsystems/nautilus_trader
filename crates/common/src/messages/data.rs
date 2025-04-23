@@ -18,9 +18,11 @@ use std::{any::Any, collections::HashMap, num::NonZeroUsize, sync::Arc};
 use chrono::{DateTime, Utc};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{Bar, BarType, DataType, QuoteTick, TradeTick},
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
+    instruments::InstrumentAny,
+    orderbook::OrderBook,
 };
 
 #[derive(Clone, Debug)]
@@ -1275,10 +1277,38 @@ impl RequestBars {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum DataResponse {
+    Data(CustomDataResponse),
+    Instruments(InstrumentsResponse),
+    Book(BookResponse),
+    Quotes(QuotesResponse),
+    Trades(TradesResponse),
+    Bars(BarsResponse),
+}
+
+impl DataResponse {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn correlation_id(&self) -> &UUID4 {
+        match self {
+            Self::Data(resp) => &resp.correlation_id,
+            Self::Instruments(resp) => &resp.correlation_id,
+            Self::Book(resp) => &resp.correlation_id,
+            Self::Quotes(resp) => &resp.correlation_id,
+            Self::Trades(resp) => &resp.correlation_id,
+            Self::Bars(resp) => &resp.correlation_id,
+        }
+    }
+}
+
 pub type Payload = Arc<dyn Any + Send + Sync>;
 
 #[derive(Clone, Debug)]
-pub struct DataResponse {
+pub struct CustomDataResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -1288,7 +1318,7 @@ pub struct DataResponse {
     pub params: Option<HashMap<String, String>>,
 }
 
-impl DataResponse {
+impl CustomDataResponse {
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,
@@ -1304,6 +1334,181 @@ impl DataResponse {
             venue,
             data_type,
             data: Arc::new(data),
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InstrumentsResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: Vec<InstrumentAny>,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl InstrumentsResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: Vec<InstrumentAny>,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BookResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: OrderBook,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl BookResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: OrderBook,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct QuotesResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: Vec<QuoteTick>,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl QuotesResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: Vec<QuoteTick>,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct TradesResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: Vec<TradeTick>,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl TradesResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: Vec<TradeTick>,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BarsResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub bar_type: BarType,
+    pub data: Vec<Bar>,
+    pub ts_init: UnixNanos,
+    pub params: Option<HashMap<String, String>>,
+}
+
+impl BarsResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        bar_type: BarType,
+        data: Vec<Bar>,
+        ts_init: UnixNanos,
+        params: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            bar_type,
+            data,
             ts_init,
             params,
         }
