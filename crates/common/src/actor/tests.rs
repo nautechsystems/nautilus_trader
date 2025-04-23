@@ -40,7 +40,7 @@ use ustr::Ustr;
 
 use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
 use crate::{
-    actor::registry::{get_actor_unchecked, register_actor},
+    actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
     clock::{Clock, TestClock},
     enums::ComponentState,
@@ -187,6 +187,29 @@ fn test_logging() -> Option<LogGuard> {
     Some(init_logger_for_testing(Some(LevelFilter::Trace)).unwrap())
 }
 
+/// A simple Actor implementation for testing.
+struct DummyActor {
+    id_str: Ustr,
+    count: usize,
+}
+impl DummyActor {
+    fn new<S: AsRef<str>>(s: S) -> Self {
+        DummyActor {
+            id_str: Ustr::from_str(s.as_ref()).unwrap(),
+            count: 0,
+        }
+    }
+}
+impl Actor for DummyActor {
+    fn id(&self) -> Ustr {
+        self.id_str
+    }
+    fn handle(&mut self, _msg: &dyn std::any::Any) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 fn register_data_actor(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -201,6 +224,53 @@ fn register_data_actor(
     let actor_rc = Rc::new(UnsafeCell::new(actor));
     register_actor(actor_rc);
     actor_id.inner()
+}
+
+/// Helper to register a dummy actor and return its Rc.
+fn register_dummy(name: &str) -> Rc<UnsafeCell<dyn Actor>> {
+    let actor = DummyActor::new(name);
+    let rc: Rc<UnsafeCell<dyn Actor>> = Rc::new(UnsafeCell::new(actor));
+    register_actor(rc.clone());
+    rc
+}
+
+#[rstest]
+#[case("actor-001")]
+#[case("actor-002")]
+fn test_register_and_get(#[case] name: &str) {
+    let rc = register_dummy(name);
+    // Retrieve by id
+    let id = unsafe { &*rc.get() }.id();
+    let found = get_actor(&id).expect("actor not found");
+    // Should be same Rc pointer
+    assert!(Rc::ptr_eq(&rc, &found));
+}
+
+#[rstest]
+fn test_get_nonexistent() {
+    let id = Ustr::from_str("no_such_actor").unwrap();
+    assert!(get_actor(&id).is_none());
+}
+
+#[should_panic(expected = "Actor for")]
+#[rstest]
+fn test_get_actor_unchecked_panic() {
+    let id = Ustr::from_str("unknown").unwrap();
+    // Should panic due to missing actor
+    let _: &mut DummyActor = get_actor_unchecked(&id);
+}
+
+#[rstest]
+fn test_get_actor_unchecked_mutate() {
+    let name = "mutant";
+    let _rc = register_dummy(name);
+    let id = Ustr::from_str(name).unwrap();
+    // Mutate via unchecked
+    let actor_ref: &mut DummyActor = get_actor_unchecked(&id);
+    actor_ref.count = 42;
+    // Read back via unchecked again
+    let actor_ref2: &mut DummyActor = get_actor_unchecked(&id);
+    assert_eq!(actor_ref2.count, 42);
 }
 
 #[rstest]
@@ -254,6 +324,139 @@ fn test_unsubscribe_custom_data(
 
     // Actor should not receive new data
     assert_eq!(actor.received_data.len(), 2);
+}
+
+#[rstest]
+fn test_unsubscribe_book_deltas(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_book_deltas::<TestDataActor>(
+        audusd_sim.id,
+        BookType::L2_MBP,
+        None,
+        None,
+        false,
+        None,
+    );
+
+    let topic = get_book_deltas_topic(audusd_sim.id);
+
+    let order = BookOrder::new(
+        OrderSide::Buy,
+        Price::from("1.00000"),
+        Quantity::from("100000"),
+        123456,
+    );
+    let delta = OrderBookDelta::new(
+        audusd_sim.id,
+        BookAction::Add,
+        order,
+        0,
+        1,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
+
+    msgbus::publish(&topic, &deltas);
+
+    // Unsubscribe
+    actor.unsubscribe_book_deltas::<TestDataActor>(audusd_sim.id, None, None);
+
+    let delta2 = OrderBookDelta::new(
+        audusd_sim.id,
+        BookAction::Add,
+        order,
+        0,
+        2,
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    let deltas2 = OrderBookDeltas::new(audusd_sim.id, vec![delta2]);
+
+    // Publish again
+    msgbus::publish(&topic, &deltas2);
+
+    // Should still only have one delta
+    assert_eq!(actor.received_deltas.len(), 1);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_book_snapshots(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let book_type = BookType::L2_MBP;
+    let interval_ms = NonZeroUsize::new(1_000).unwrap();
+
+    actor.subscribe_book_at_interval::<TestDataActor>(
+        audusd_sim.id,
+        book_type,
+        None,
+        interval_ms,
+        None,
+        None,
+    );
+
+    let topic = get_book_snapshots_topic(audusd_sim.id);
+    let book = OrderBook::new(audusd_sim.id, book_type);
+
+    msgbus::publish(&topic, &book);
+
+    assert_eq!(actor.received_books.len(), 1);
+}
+
+#[rstest]
+fn test_unsubscribe_book_snapshots(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let book_type = BookType::L2_MBP;
+    let interval_ms = NonZeroUsize::new(1_000).unwrap();
+
+    actor.subscribe_book_at_interval::<TestDataActor>(
+        audusd_sim.id,
+        book_type,
+        None,
+        interval_ms,
+        None,
+        None,
+    );
+
+    let topic = get_book_snapshots_topic(audusd_sim.id);
+    let book = OrderBook::new(audusd_sim.id, book_type);
+
+    msgbus::publish(&topic, &book);
+
+    assert_eq!(actor.received_books.len(), 1);
+
+    actor.unsubscribe_book_snapshots::<TestDataActor>(audusd_sim.id, None, None);
+
+    // Publish more book refs
+    msgbus::publish(&topic, &book);
+    msgbus::publish(&topic, &book);
+
+    // Should still only have one book
+    assert_eq!(actor.received_books.len(), 1);
 }
 
 #[rstest]
@@ -446,137 +649,4 @@ fn test_subscribe_and_receive_book_deltas(
     msgbus::publish(&topic, &deltas);
 
     assert_eq!(actor.received_deltas.len(), 1);
-}
-
-#[rstest]
-fn test_unsubscribe_book_deltas(
-    clock: Rc<RefCell<TestClock>>,
-    cache: Rc<RefCell<Cache>>,
-    trader_id: TraderId,
-    audusd_sim: CurrencyPair,
-) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
-    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.start().unwrap();
-
-    actor.subscribe_book_deltas::<TestDataActor>(
-        audusd_sim.id,
-        BookType::L2_MBP,
-        None,
-        None,
-        false,
-        None,
-    );
-
-    let topic = get_book_deltas_topic(audusd_sim.id);
-
-    let order = BookOrder::new(
-        OrderSide::Buy,
-        Price::from("1.00000"),
-        Quantity::from("100000"),
-        123456,
-    );
-    let delta = OrderBookDelta::new(
-        audusd_sim.id,
-        BookAction::Add,
-        order,
-        0,
-        1,
-        UnixNanos::from(1),
-        UnixNanos::from(2),
-    );
-    let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
-
-    msgbus::publish(&topic, &deltas);
-
-    // Unsubscribe
-    actor.unsubscribe_book_deltas::<TestDataActor>(audusd_sim.id, None, None);
-
-    let delta2 = OrderBookDelta::new(
-        audusd_sim.id,
-        BookAction::Add,
-        order,
-        0,
-        2,
-        UnixNanos::from(3),
-        UnixNanos::from(4),
-    );
-    let deltas2 = OrderBookDeltas::new(audusd_sim.id, vec![delta2]);
-
-    // Publish again
-    msgbus::publish(&topic, &deltas2);
-
-    // Should still only have one delta
-    assert_eq!(actor.received_deltas.len(), 1);
-}
-
-#[rstest]
-fn test_subscribe_and_receive_book_snapshots(
-    clock: Rc<RefCell<TestClock>>,
-    cache: Rc<RefCell<Cache>>,
-    trader_id: TraderId,
-    audusd_sim: CurrencyPair,
-) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
-    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.start().unwrap();
-
-    let book_type = BookType::L2_MBP;
-    let interval_ms = NonZeroUsize::new(1_000).unwrap();
-
-    actor.subscribe_book_snapshots::<TestDataActor>(
-        audusd_sim.id,
-        book_type,
-        None,
-        interval_ms,
-        None,
-        None,
-    );
-
-    let topic = get_book_snapshots_topic(audusd_sim.id);
-    let book = OrderBook::new(audusd_sim.id, book_type);
-
-    msgbus::publish(&topic, &book);
-
-    assert_eq!(actor.received_books.len(), 1);
-}
-
-#[rstest]
-fn test_unsubscribe_book_snapshots(
-    clock: Rc<RefCell<TestClock>>,
-    cache: Rc<RefCell<Cache>>,
-    trader_id: TraderId,
-    audusd_sim: CurrencyPair,
-) {
-    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
-    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
-    actor.start().unwrap();
-
-    let book_type = BookType::L2_MBP;
-    let interval_ms = NonZeroUsize::new(1_000).unwrap();
-
-    actor.subscribe_book_snapshots::<TestDataActor>(
-        audusd_sim.id,
-        book_type,
-        None,
-        interval_ms,
-        None,
-        None,
-    );
-
-    let topic = get_book_snapshots_topic(audusd_sim.id);
-    let book = OrderBook::new(audusd_sim.id, book_type);
-
-    msgbus::publish(&topic, &book);
-
-    assert_eq!(actor.received_books.len(), 1);
-
-    actor.unsubscribe_book_snapshots::<TestDataActor>(audusd_sim.id, None, None);
-
-    // Publish more book refs
-    msgbus::publish(&topic, &book);
-    msgbus::publish(&topic, &book);
-
-    // Should still only have one book
-    assert_eq!(actor.received_books.len(), 1);
 }
