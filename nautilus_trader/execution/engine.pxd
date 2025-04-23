@@ -19,7 +19,6 @@ from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
-from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -31,6 +30,7 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -52,6 +52,7 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict[StrategyId, OmsType] _oms_overrides
     cdef readonly dict[InstrumentId, StrategyId] _external_order_claims
     cdef readonly str snapshot_positions_timer_name
+    cdef list[PositionEvent] _pending_position_events
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""

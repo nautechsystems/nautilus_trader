@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` crate to v0.24.2
 
 ### Fixes
+- Fixed consistent ordering of execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed memory leak in `RetryManager` by simplifying the acquire-release pattern, avoiding the asynchronous context manager protocol that led to state sharing, thanks for reporting @DeevsDeevs
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs

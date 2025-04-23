@@ -24,6 +24,8 @@ The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
+from libc.stdint cimport uint64_t
+
 from collections import defaultdict
 from decimal import Decimal
 
@@ -56,6 +58,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
@@ -167,7 +170,6 @@ cdef class Portfolio(PortfolioFacade):
 
         # Required subscriptions
         self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
-        self._msgbus.subscribe(topic="events.position.*", handler=self.update_position, priority=10)
         self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
 
         if config.use_mark_prices:
@@ -526,6 +528,11 @@ cdef class Portfolio(PortfolioFacade):
             ts_event=event.ts_event,
         )
 
+        if isinstance(event, OrderFilled):
+            maybe_account_state = self._update_position(event.instrument_id, event.account_id, event.ts_event)
+            if maybe_account_state is not None:
+                account_state = maybe_account_state
+
         if account_state is None:
             self._log.debug(f"Added pending calculation for {instrument.id}")
             self._pending_calcs.add(instrument.id)
@@ -547,48 +554,49 @@ cdef class Portfolio(PortfolioFacade):
             The event to update with.
 
         """
-        Condition.not_none(event, "event")
+        self._update_position(event.instrument_id, event.account_id, event.ts_event)
 
+    cdef AccountState _update_position(self, InstrumentId instrument_id, AccountId account_id, uint64_t ts_event):
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
-            instrument_id=event.instrument_id,
+            instrument_id=instrument_id,
         )
         self._update_net_position(
-            instrument_id=event.instrument_id,
+            instrument_id=instrument_id,
             positions_open=positions_open,
         )
 
-        self._realized_pnls[event.instrument_id] = self._calculate_realized_pnl(
-            instrument_id=event.instrument_id,
+        self._realized_pnls[instrument_id] = self._calculate_realized_pnl(
+            instrument_id=instrument_id,
         )
-        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
-            instrument_id=event.instrument_id,
+        self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(
+            instrument_id=instrument_id,
         )
 
-        cdef Account account = self._cache.account(event.account_id)
+        cdef Account account = self._cache.account(account_id)
         if account is None:
             self._log.error(
                 f"Cannot update position: "
-                f"no account registered for {event.account_id}",
+                f"no account registered for {account_id}",
             )
             return  # No account registered
 
         if account.type != AccountType.MARGIN or not account.calculate_account_state:
             return  # Nothing to calculate
 
-        cdef Instrument instrument = self._cache.instrument(event.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot update position: "
-                f"no instrument found for {event.instrument_id}",
+                f"no instrument found for {instrument_id}",
             )
             return  # No instrument found
 
-        self._accounts.update_positions(
+        return self._accounts.update_positions(
             account=account,
             instrument=instrument,
             positions_open=positions_open,
-            ts_event=event.ts_event,
+            ts_event=ts_event,
         )
 
     def _reset(self) -> None:

@@ -524,7 +524,7 @@ class TestTrader:
         self.trader.subscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 6
+        assert len(self.msgbus.subscriptions("events*")) == 5
         assert "events*" in self.msgbus.topics()
         assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
 
@@ -537,4 +537,4 @@ class TestTrader:
         self.trader.unsubscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 5
+        assert len(self.msgbus.subscriptions("events*")) == 4
