@@ -22,8 +22,7 @@ includes sending commands to, and receiving events from, the trading venue
 endpoints via its registered execution clients.
 
 The engine employs a simple fan-in fan-out messaging pattern to execute
-`TradingCommand` messages, and process `AccountState` or `OrderEvent` type
-messages.
+`TradingCommand` messages and `OrderEvent` messages.
 
 Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
@@ -48,7 +47,6 @@ from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport LogColor
-from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -57,12 +55,9 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
-from nautilus_trader.core.rust.model cimport OrderStatus
-from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
-from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -91,11 +86,11 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class ExecutionEngine(Component):
@@ -150,6 +145,8 @@ cdef class ExecutionEngine(Component):
             trader_id=msgbus.trader_id,
             clock=clock,
         )
+
+        self._pending_position_events = []
 
         # Configuration
         self.debug: bool = config.debug
@@ -1050,6 +1047,25 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
+        # Publish events
+        self._msgbus.publish_c(
+            topic=f"events.order.{event.strategy_id}",
+            msg=event,
+        )
+        if self.snapshot_orders:
+            self._create_order_state_snapshot(order)
+
+        for pos_event in self._pending_position_events:
+            self._msgbus.publish_c(
+                topic=f"events.position.{pos_event.strategy_id}",
+                msg=pos_event,
+            )
+            if self.snapshot_positions:
+                position = self.cache.position(pos_event.position_id)
+                self._create_position_state_snapshot(position, open_only=isinstance(pos_event, PositionOpened))
+
+        self._pending_position_events.clear()
+
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
         # Check for strategy OMS override
@@ -1171,13 +1187,6 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
 
-        self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id}",
-            msg=event,
-        )
-        if self.snapshot_orders:
-            self._create_order_state_snapshot(order)
-
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
@@ -1222,8 +1231,6 @@ cdef class ExecutionEngine(Component):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
-            if self.snapshot_positions:
-                self._create_position_state_snapshot(position, open_only=True)
         else:
             try:
                 # Always snapshot opening positions to handle NETTING OMS
@@ -1242,10 +1249,7 @@ cdef class ExecutionEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id}",
-            msg=event,
-        )
+        self._pending_position_events.append(event)
 
         return position
 
@@ -1258,8 +1262,6 @@ cdef class ExecutionEngine(Component):
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)
-        if self.snapshot_positions:
-            self._create_position_state_snapshot(position, open_only=False)
 
         cdef PositionEvent event
         if position.is_closed_c():
@@ -1277,10 +1279,7 @@ cdef class ExecutionEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id}",
-            msg=event,
-        )
+        self._pending_position_events.append(event)
 
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill):
         return (

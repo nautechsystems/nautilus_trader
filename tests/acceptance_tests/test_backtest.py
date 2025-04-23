@@ -117,9 +117,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
-        assert self.engine.iteration == 115044
+        assert self.engine.iteration == 115_044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            996_814.33,
+            996_498.80,
             USD,
         )
 
@@ -179,9 +179,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
-        assert self.engine.iteration == 115044
+        assert self.engine.iteration == 115_044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1_023_530.50,
+            974_269.71,
             USD,
         )
 
@@ -241,9 +241,9 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         # Assert
         assert strategy.fast_ema.count == 8353
-        assert self.engine.iteration == 120468
+        assert self.engine.iteration == 120_468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            961_069.95,
+            987_607.44,
             GBP,
         )
 
@@ -268,10 +268,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 8353
-        assert self.engine.iteration == 120468
+        assert strategy.fast_ema.count == 8_353
+        assert self.engine.iteration == 120_468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            1_008_966.94,
+            998_967.44,
             GBP,
         )
 
@@ -297,9 +297,9 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 41761
-        assert self.engine.iteration == 120468
+        assert self.engine.iteration == 120_468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            241_080.17,
+            850_143.71,
             GBP,
         )
 
@@ -377,10 +377,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 30117
-        assert self.engine.iteration == 60234
+        assert strategy.fast_ema.count == 30_117
+        assert self.engine.iteration == 60_234
         ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(1_088_115.65, USD)
+        assert ending_balance == Money(953_220.61, USD)
 
 
 class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
@@ -544,7 +544,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert strategy.fast_ema.count == 1771
         assert self.engine.iteration == 100_000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            991_881.44,
+            996_601.43,
             AUD,
         )
 
@@ -567,7 +567,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert strategy.fast_ema.count == 1_000
         assert self.engine.iteration == 100_000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            996_361.60,
+            998_121.60,
             AUD,
         )
 
@@ -621,9 +621,9 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
         # Assert
         assert strategy.fast_ema.count == 279
-        assert self.engine.iteration == 69806
+        assert self.engine.iteration == 69_806
         expected_commission = Money(127.56763570, USDT)
-        expected_usdt = Money(998_869.96375810, USDT)
+        expected_usdt = Money(999_764.32147162, USDT)
         assert self.engine.portfolio.account(self.venue).commission(USDT) == expected_commission
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
 
@@ -745,4 +745,4 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         # Assert
         assert self.engine.iteration == 4216
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("924.64", GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(927.19, GBP)
