@@ -21,7 +21,7 @@ use std::{
     sync::OnceLock,
 };
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use log::LevelFilter;
 use regex::Regex;
 
@@ -124,6 +124,8 @@ pub struct FileRotateConfig {
     pub max_backup_count: u32,
     /// Current file size tracking.
     cur_file_size: u64,
+    /// Current file creation date.
+    cur_file_creation_date: NaiveDate,
     /// Queue of backup file paths (oldest first).
     backup_files: VecDeque<PathBuf>,
 }
@@ -134,6 +136,7 @@ impl Default for FileRotateConfig {
             max_file_size: 10 * 1024 * 1024, // 10MB default
             max_backup_count: 5,
             cur_file_size: 0,
+            cur_file_creation_date: Utc::now().date_naive(),
             backup_files: VecDeque::new(),
         }
     }
@@ -146,6 +149,7 @@ impl From<(u64, u32)> for FileRotateConfig {
             max_file_size,
             max_backup_count,
             cur_file_size: 0,
+            cur_file_creation_date: Utc::now().date_naive(),
             backup_files: VecDeque::new(),
         }
     }
@@ -284,7 +288,10 @@ impl FileWriter {
         self.file_config
             .file_rotate
             .as_ref()
-            .map(|config| config.cur_file_size >= config.max_file_size)
+            .map(|config| {
+                config.cur_file_size >= config.max_file_size
+                    || config.cur_file_creation_date != Utc::now().date_naive()
+            })
             .unwrap_or(false)
     }
 
@@ -306,6 +313,7 @@ impl FileWriter {
                     // Add current file to backup queue
                     rotate_config.backup_files.push_back(self.path.clone());
                     rotate_config.cur_file_size = 0;
+                    rotate_config.cur_file_creation_date = Utc::now().date_naive();
                     cleanup_backups(rotate_config);
                 }
 
