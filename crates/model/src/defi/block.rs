@@ -15,9 +15,11 @@
 
 use std::fmt::{Display, Formatter};
 
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-use serde::{Deserialize, Deserializer};
+use nautilus_core::UnixNanos;
+use serde::Deserialize;
 use ustr::Ustr;
+
+use crate::defi::hex::{deserialize_hex_number, deserialize_hex_timestamp};
 
 /// Represent Ethereum-compatible compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Deserialize)]
@@ -77,30 +79,6 @@ impl Display for Block {
     }
 }
 
-/// Custom deserializer function for hex numbers.
-fn deserialize_hex_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex_string = String::deserialize(deserializer)?;
-    let without_prefix = hex_string.trim_start_matches("0x");
-
-    u64::from_str_radix(without_prefix, 16).map_err(serde::de::Error::custom)
-}
-
-/// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
-fn deserialize_hex_timestamp<'de, D>(deserializer: D) -> Result<UnixNanos, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex_string = String::deserialize(deserializer)?;
-    let without_prefix = hex_string.trim_start_matches("0x");
-
-    u64::from_str_radix(without_prefix, 16)
-        .map(|num| UnixNanos::new(num * NANOSECONDS_IN_SECOND))
-        .map_err(serde::de::Error::custom)
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
@@ -109,7 +87,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::Block;
-    use crate::defi::rpc::RpcNodeResponse;
+    use crate::defi::rpc::RpcNodeWssResponse;
 
     #[fixture]
     fn eth_rpc_block_response() -> String {
@@ -242,7 +220,8 @@ mod tests {
 
     #[rstest]
     fn test_ethereum_block_parsing(eth_rpc_block_response: String) {
-        let block = match serde_json::from_str::<RpcNodeResponse<Block>>(&eth_rpc_block_response) {
+        let block = match serde_json::from_str::<RpcNodeWssResponse<Block>>(&eth_rpc_block_response)
+        {
             Ok(rpc_response) => rpc_response.params.result,
             Err(e) => panic!("Failed to deserialize block response with error {}", e),
         };
@@ -275,7 +254,7 @@ mod tests {
     #[rstest]
     fn test_polygon_block_parsing(polygon_rpc_block_response: String) {
         let block =
-            match serde_json::from_str::<RpcNodeResponse<Block>>(&polygon_rpc_block_response) {
+            match serde_json::from_str::<RpcNodeWssResponse<Block>>(&polygon_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
                 Err(e) => panic!("Failed to deserialize block response with error {}", e),
             };
@@ -307,10 +286,11 @@ mod tests {
 
     #[rstest]
     fn test_base_block_parsing(base_rpc_block_response: String) {
-        let block = match serde_json::from_str::<RpcNodeResponse<Block>>(&base_rpc_block_response) {
-            Ok(rpc_response) => rpc_response.params.result,
-            Err(e) => panic!("Failed to deserialize block response with error {}", e),
-        };
+        let block =
+            match serde_json::from_str::<RpcNodeWssResponse<Block>>(&base_rpc_block_response) {
+                Ok(rpc_response) => rpc_response.params.result,
+                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+            };
         assert_eq!(
             block.to_string(),
             "Block(number=29139628, timestamp=2025-04-19T13:16:43+00:00, hash=0x14575c65070d455e6d20d5ee17be124917a33ce4437dd8615a56d29e8279b7ad)".to_string(),
@@ -340,7 +320,7 @@ mod tests {
     #[rstest]
     fn test_arbitrum_block_parsing(arbitrum_rpc_block_response: String) {
         let block =
-            match serde_json::from_str::<RpcNodeResponse<Block>>(&arbitrum_rpc_block_response) {
+            match serde_json::from_str::<RpcNodeWssResponse<Block>>(&arbitrum_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
                 Err(e) => panic!("Failed to deserialize block response with error {}", e),
             };
