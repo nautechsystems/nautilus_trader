@@ -1055,6 +1055,9 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
+        cdef:
+            PositionEvent pos_event
+            Position position
         for pos_event in self._pending_position_events:
             self._msgbus.publish_c(
                 topic=f"events.position.{pos_event.strategy_id}",
