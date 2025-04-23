@@ -2,6 +2,7 @@
 
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
 currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
+
 - `Equity` (generic Equity)
 - `FuturesContract` (generic Futures Contract)
 - `FuturesSpread` (generic Futures Spread)
@@ -116,6 +117,7 @@ values for prices and quantities *can* result in the exchange rejecting orders.
 
 Certain value limits are optional for instruments and can be `None`, these are exchange
 dependent and can include:
+
 - `max_quantity` (maximum quantity for a single order)
 - `min_quantity` (minimum quantity for a single order)
 - `max_notional` (maximum value of a single order)
@@ -163,6 +165,7 @@ When setting up an exchange venue, you'll specify one of these account types:
 To understand trading on margin, let’s start with some key terms:
 
 **Notional Value**: The total contract value in the quote currency. It represents the full market value of your position. For example, with EUR/USD futures on CME (symbol 6E).
+
 - Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
 - If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 

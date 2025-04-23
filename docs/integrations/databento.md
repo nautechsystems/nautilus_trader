@@ -58,6 +58,7 @@ which enforce a standardized way to normalize market data.
 The integration provides a decoder which can convert DBN format data to Nautilus objects.
 
 The same Rust implemented Nautilus decoder is used for:
+
 - Loading and decoding DBN files from disk
 - Decoding historical and live data in real time
 
@@ -104,6 +105,7 @@ as a venue identifier. You can read more about Databento dataset naming conventi
 Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the following
 exchanges are all grouped under the `GLBX` venue. These mappings can be determined from the
 instruments `exchange` field:
+
 - `CBCM`: XCME-XCBT inter-exchange spread
 - `NYUM`: XNYM-DUMX inter-exchange spread
 - `XCBT`: Chicago Board of Trade (CBOT)
@@ -136,8 +138,10 @@ The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` dat
 
 :::info
 See the following Databento docs for further information:
+
 - [Databento standards and conventions - timestamps](https://databento.com/docs/standards-and-conventions/common-fields-enums-types#timestamps)
 - [Databento timestamping guide](https://databento.com/docs/architecture/timestamping-guide)
+
 :::
 
 ## Data types
@@ -246,6 +250,7 @@ self.request_data(
 ## Performance considerations
 
 When backtesting with Databento DBN data, there are two options:
+
 - Store the data in DBN (`.dbn.zst`) format files and decode to Nautilus objects on every run
 - Convert the DBN files to Nautilus objects and then write to the data catalog once (stored as Nautilus Parquet format on disk)
 
@@ -328,6 +333,7 @@ See also the [Data concepts guide](../concepts/data.md).
 
 The `DatabentoDataClient` is a Python class which contains other Databento adapter classes.
 There are two `DatabentoLiveClient`s per Databento dataset:
+
 - One for MBO (order book deltas) real-time feeds
 - One for all other real-time feeds
 

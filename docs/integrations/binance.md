@@ -165,18 +165,22 @@ Either pass the corresponding `api_key` and `api_secret` values to the configura
 set the following environment variables:
 
 For Binance Spot/Margin live clients, you can set:
+
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
 For Binance Spot/Margin testnet clients, you can set:
+
 - `BINANCE_TESTNET_API_KEY`
 - `BINANCE_TESTNET_API_SECRET`
 
 For Binance Futures live clients, you can set:
+
 - `BINANCE_FUTURES_API_KEY`
 - `BINANCE_FUTURES_API_SECRET`
 
 For Binance Futures testnet clients, you can set:
+
 - `BINANCE_FUTURES_TESTNET_API_KEY`
 - `BINANCE_FUTURES_TESTNET_API_SECRET`
 
@@ -272,6 +276,7 @@ Binance Futures Hedge mode is a position mode where a trader opens positions in 
 directions to mitigate risk and potentially profit from market volatility.
 
 To use Binance Future Hedge mode, you need to follow the three items below:
+
 - 1. Before starting the strategy, ensure that hedge mode is configured on Binance.
 - 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
 

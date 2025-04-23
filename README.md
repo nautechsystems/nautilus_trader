@@ -21,8 +21,8 @@
 | `macOS (ARM64)`    | 1.86.0+ | 3.11-3.13  |
 | `Windows (x86_64)` | 1.86.0+ | 3.11-3.13  |
 
-- **Docs**: https://nautilustrader.io/docs/
-- **Website**: https://nautilustrader.io
+- **Docs**: <https://nautilustrader.io/docs/>
+- **Website**: <https://nautilustrader.io>
 - **Support**: [support@nautilustrader.io](mailto:support@nautilustrader.io)
 
 ## Introduction
@@ -60,10 +60,10 @@ including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless 
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/raw/develop/assets/nautilus-art.png "nautilus")
 
-> _nautilus - from ancient Greek 'sailor' and naus 'ship'._
+> *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
 >
-> _The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
-> The idea is that this can be translated to the aesthetics of design and architecture._
+> *The nautilus shell consists of modular chambers with a growth factor which approximates a logarithmic spiral.
+> The idea is that this can be translated to the aesthetics of design and architecture.*
 
 ## Why NautilusTrader?
 
@@ -88,7 +88,7 @@ with CPython C extension modules then able to offer a Python-native environment,
 Python was originally created decades ago as a simple scripting language with a clean straightforward syntax.
 It has since evolved into a fully fledged general purpose object-oriented programming language.
 Based on the TIOBE index, Python is currently the most popular programming language in the world.
-Not only that, Python has become the _de facto lingua franca_ of data science, machine learning, and artificial intelligence.
+Not only that, Python has become the *de facto lingua franca* of data science, machine learning, and artificial intelligence.
 
 The language out of the box is not without its drawbacks however, especially in the context of
 implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
@@ -120,7 +120,7 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 
 ## Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
+NautilusTrader is modularly designed to work with *adapters*, enabling connectivity to trading venues
 and data providers by translating their raw APIs into a unified interface and normalized domain model.
 
 The following integrations are currently supported:
@@ -144,6 +144,7 @@ The following integrations are currently supported:
 - **Type**: The type of integration (often the venue type).
 
 ### Status
+
 - `building`: Under construction and likely not in a usable state.
 - `beta`: Completed to a minimally working state and in a beta testing phase.
 - `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
@@ -273,9 +274,11 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
+
        ```bash
        curl https://sh.rustup.rs -sSf | sh
        ```
+
    - Windows:
        - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
        - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
@@ -284,24 +287,30 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
 2. Enable `cargo` in the current shell:
    - Linux and macOS:
+
        ```bash
        source $HOME/.cargo/env
        ```
+
    - Windows:
      - Start a new PowerShell
 
 3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
    - Linux:
+
        ```bash
        sudo apt-get install clang
        ```
+
    - Windows:
        1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
           - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
        2. Enable `clang` in the current shell:
+
           ```powershell
           [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
           ```
+
    - Verify (any system):
        from a terminal session run: `clang --version`
 
@@ -391,8 +400,9 @@ Then open your browser at the following address:
 > logging will cause the notebook to hang during cell execution. We are investigating a fix, which
 > may involve either raising the configured rate limits for Jupyter or throttling the log flushing
 > from Nautilus.
-> - https://github.com/jupyterlab/jupyterlab/issues/12845
-> - https://github.com/deshaw/jupyterlab-limit-output
+>
+> - <https://github.com/jupyterlab/jupyterlab/issues/12845>
+> - <https://github.com/deshaw/jupyterlab-limit-output>
 
 ## Development
 
@@ -440,10 +450,10 @@ developer looking to contribute or just want to learn more about the platform, a
 >
 > NautilusTrader does not issue, promote, or endorse any cryptocurrency tokens. Any claims or communications suggesting otherwise are unauthorized and false.
 >
-> All official updates and communications from NautilusTrader will be shared exclusively through https://nautilustrader.io, our [Discord server](https://discord.gg/NautilusTrader),
+> All official updates and communications from NautilusTrader will be shared exclusively through <https://nautilustrader.io>, our [Discord server](https://discord.gg/NautilusTrader),
 > or our X (Twitter) account: [@NautilusTrader](https://x.com/NautilusTrader).
 >
-> If you encounter any suspicious activity, please report it to the appropriate platform and contact us at info@nautechsystems.io.
+> If you encounter any suspicious activity, please report it to the appropriate platform and contact us at <info@nautechsystems.io>.
 
 ## License
 
@@ -454,7 +464,7 @@ Contributions to the project are welcome and require the completion of a standar
 
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
-For more information, visit https://nautilustrader.io.
+For more information, visit <https://nautilustrader.io>.
 
 © 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 

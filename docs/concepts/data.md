@@ -21,6 +21,7 @@ However, backtests can also be conducted on any of the supported market data typ
 A high-performance order book implemented in Rust is available to maintain order book state based on provided data.
 
 `OrderBook` instances are maintained per instrument for both backtesting and live trading, with the following book types available:
+
 - `L3_MBO`: **Market by order (MBO)** or L3 data, uses every order book event at every price level, keyed by order ID.
 - `L2_MBP`: **Market by price (MBP)** or L2 data, aggregates order book events by price level.
 - `L1_MBP`: **Market by price (MBP)** or L1 data, also known as best bid and offer (BBO), captures only top-level updates.
@@ -161,6 +162,7 @@ use this convention:
 `{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
 
 **Notes**:
+
 - The derived bar type must use an `INTERNAL` aggregation source (since this is how the bar is aggregated).
 - The sampled bar type must have a higher granularity than the derived bar type.
 - The sampled instrument ID is inferred to match that of the derived bar type.
@@ -260,6 +262,7 @@ NautilusTrader provides two distinct operations for working with bars:
 - **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
 
 These methods work together in a typical workflow:
+
 1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior.
 2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time.
 
@@ -418,6 +421,7 @@ NautilusTrader facilitates data loading and conversion for three main use cases:
 Regardless of the destination, the process remains the same: converting diverse external data formats into Nautilus data structures.
 
 To achieve this, two main components are necessary:
+
 - A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object
 - A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects
 
@@ -572,10 +576,12 @@ Rust Arrow schema implementations are available for the follow data types (enhan
 By default any data which already exists under a filename will be overwritten.
 
 You can use one of the following write mode with catalog.write_data:
+
 - CatalogWriteMode.OVERWRITE
 - CatalogWriteMode.APPEND
 - CatalogWriteMode.PREPEND
 - CatalogWriteMode.NEWFILE, which will create a file name of the form `part-{i}.parquet` where `i` is an integer starting at 0.
+
 :::
 
 ### Reading data

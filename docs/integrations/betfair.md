@@ -50,6 +50,7 @@ See also the [Betfair Getting Started - Application Keys](https://betfair-develo
 There are two options for supplying your credentials to the Betfair clients.
 Either pass the corresponding values to the config dictionaries, or
 set the following environment variables:
+
 - `BETFAIR_USERNAME`
 - `BETFAIR_PASSWORD`
 - `BETFAIR_APP_KEY`

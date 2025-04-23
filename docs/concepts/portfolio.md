@@ -14,6 +14,7 @@ There are a variety of [built-in portfolio statistics](https://github.com/nautec
 which are used to analyse a trading portfolios performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.
+
 - PnLs based statistics (per currency)
 - Returns based statistics
 - Positions based statistics

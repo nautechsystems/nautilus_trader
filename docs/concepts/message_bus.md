@@ -67,6 +67,7 @@ This decouples components, allowing them to interact indirectly via the message 
 #### Key benefits and use cases
 
 The message bus approach is ideal when you need:
+
 - **Cross-component communication** within the system.
 - **Flexibility** to define any topic and send any type of payload (any Python object).
 - **Decoupling** between publishers and subscribers who don't need to know about each other.
@@ -117,6 +118,7 @@ and ordering of events - crucial for correct backtest processing.
 #### Key Benefits and Use Cases
 
 The Data publish/subscribe approach excels when you need:
+
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
 - **Proper event ordering** via built-in timestamps (`ts_event`, `ts_init`) crucial for backtest accuracy.
 - **Data persistence and serialization** through the `@customdataclass` decorator, integrating seamlessly with NautilusTrader's data catalog system.
@@ -129,9 +131,11 @@ The Data publish/subscribe approach excels when you need:
 #### Inheriting from `Data` vs. using `@customdataclass`
 
 **Inheriting from `Data` class:**
+
 - Defines abstract properties `ts_event` and `ts_init` that must be implemented by the subclass. These ensure proper data ordering in backtests based on timestamps.
 
 **The `@customdataclass` decorator:**
+
 - Adds `ts_event` and `ts_init` attributes if they are not already present.
 - Provides serialization functions: `to_dict()`, `from_dict()`, `to_bytes()`, `to_arrow()`, etc.
 - Enables data persistence and external communication.
@@ -174,6 +178,7 @@ This is the simplest messaging approach, requiring no custom class definitions.
 #### Key Benefits and Use Cases
 
 The Signal messaging approach shines when you need:
+
 - **Simple, lightweight notifications/alerts** like "RiskThresholdExceeded" or "TrendUp".
 - **Quick, on-the-fly messaging** without defining custom classes.
 - **Broadcasting alerts or flags** as primitive data (`int`, `float`, or `str`).
@@ -312,6 +317,7 @@ loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
 ### Encoding
 
 Two encodings are currently supported by the built-in `Serializer` used by the `MessageBus`:
+
 - JSON (`json`)
 - MessagePack (`msgpack`)
 

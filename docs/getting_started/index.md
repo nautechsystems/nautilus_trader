@@ -1,6 +1,7 @@
 # Getting Started
 
 To get started with NautilusTrader you will need the following:
+
 - A Python environment with the `nautilus_trader` package installed.
 - A way to launch Python scripts for backtesting and/or live trading (either from the command line, or Jupyter notebook etc).
 
@@ -79,4 +80,5 @@ Jupyter, or throttling the log flushing from Nautilus.
 
 - <https://github.com/jupyterlab/jupyterlab/issues/12845>
 - <https://github.com/deshaw/jupyterlab-limit-output>
+
 :::

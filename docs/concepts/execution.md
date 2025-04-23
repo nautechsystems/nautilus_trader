@@ -5,6 +5,7 @@ simultaneously (per instance). Several interacting components are involved in ex
 crucial to understand the possible flows of execution messages (commands and events).
 
 The main execution-related components include:
+
 - `Strategy`
 - `ExecAlgorithm` (execution algorithms)
 - `OrderEmulator`
@@ -16,6 +17,7 @@ The main execution-related components include:
 
 The `Strategy` base class inherits from `Actor` and so contains all of the common data related
 methods. It also provides methods for managing orders and trade execution:
+
 - `submit_order(...)`
 - `submit_order_list(...)`
 - `modify_order(...)`
@@ -183,6 +185,7 @@ engine.add_exec_algorithm(exec_algorithm)
 ```
 
 For this particular algorithm, two parameters must be specified:
+
 - `horizon_secs`
 - `interval_secs`
 
@@ -221,11 +224,13 @@ over the wire, such as ints, floats, and strings).
 To implement a custom execution algorithm you must define a class which inherits from `ExecAlgorithm`.
 
 An execution algorithm is a type of `Actor`, so it's capable of the following:
+
 - Request and subscribe to data
 - Access the `Cache`
 - Set time alerts and/or timers using a `Clock`
 
 Additionally it can:
+
 - Access the central `Portfolio`
 - Spawn secondary orders from a received primary (original) order
 

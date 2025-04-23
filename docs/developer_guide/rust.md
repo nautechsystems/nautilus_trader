@@ -33,6 +33,7 @@ The definition for what the Rust language designers consider undefined behavior 
 
 To maintain the high standards of correctness the project strives for, it's necessary to specify a reasonable policy
 to adhere to when implementing `unsafe` Rust.
+
 - If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
 and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - All `unsafe` code blocks must be completely covered by unit tests within the same source file.

@@ -9,6 +9,7 @@ into a unified interface and normalized domain model.
 ## Structure of an adapter
 
 An adapter typically consists of several components:
+
 1. **Instrument Provider**: Supplies instrument definitions
 2. **Data Client**: Handles live market data feeds and historical data requests
 3. **Execution Client**: Handles order execution and management
@@ -53,6 +54,7 @@ class TemplateInstrumentProvider(InstrumentProvider):
 ```
 
 **Key Methods**:
+
 - `load_all_async`: Loads all instruments asynchronously, optionally applying filters
 - `load_ids_async`: Loads specific instruments by their IDs
 - `load_async`: Loads a single instrument by its ID
@@ -96,6 +98,7 @@ class TemplateLiveDataClient(LiveDataClient):
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the data provider
 - `_disconnect`: Closes the connection to the data provider
 - `reset`: Resets the state of the client
@@ -147,6 +150,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `reset`: Resets the state of the client
@@ -216,6 +220,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `_submit_order`: Submits a new order to the venue
@@ -257,6 +262,7 @@ class TemplateExecClientConfig(LiveExecClientConfig):
 ```
 
 **Key Attributes**:
+
 - `api_key`: The API key for authenticating with the data provider
 - `api_secret`: The API secret for authenticating with the data provider
 - `base_url`: The base URL for connecting to the data provider’s API
