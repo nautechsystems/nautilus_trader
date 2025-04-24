@@ -197,7 +197,9 @@ We recommend using the latest supported version of Python and setting up [nautil
 
 To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
 
-    pip install -U nautilus_trader
+```bash
+pip install -U nautilus_trader
+```
 
 ### From the Nautech Systems package index
 
@@ -210,7 +212,9 @@ Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and 
 
 To install the latest stable release:
 
-    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+```
 
 #### Development wheels
 
@@ -243,11 +247,15 @@ By default, pip installs the latest stable release. Adding the `--pre` flag ensu
 
 To install the latest available pre-release (including development wheels):
 
-    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+```
 
 To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
 
-    pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+```
 
 #### Available versions
 
@@ -255,7 +263,9 @@ You can view all available versions of `nautilus_trader` on the [package index](
 
 To programmatically fetch and list available versions:
 
-    curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+```bash
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+```
 
 #### Branch updates
 
@@ -316,13 +326,17 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 
 4. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-       curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
 
 5. Clone the source with `git`, and install from the project's root directory:
 
-       git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
-       cd nautilus_trader
-       uv sync --all-extras
+    ```bash
+    git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
+    cd nautilus_trader
+    uv sync --all-extras
+    ```
 
 > [!NOTE]
 >
@@ -382,16 +396,22 @@ Docker containers are built using the base image `python:3.12-slim` with the fol
 
 You can pull the container images as follows:
 
-    docker pull ghcr.io/nautechsystems/<image_variant_tag> --platform linux/amd64
+```bash
+docker pull ghcr.io/nautechsystems/<image_variant_tag> --platform linux/amd64
+```
 
 You can launch the backtest example container by running:
 
-    docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64
-    docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
+```bash
+docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64
+docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly
+```
 
 Then open your browser at the following address:
 
-    http://127.0.0.1:8888/lab
+```bash
+http://127.0.0.1:8888/lab
+```
 
 > [!WARNING]
 >
@@ -417,7 +437,9 @@ by avoiding interference.
 
 You can install cargo-nextest by running:
 
-    cargo install cargo-nextest
+```bash
+cargo install cargo-nextest
+```
 
 > [!TIP]
 >
