@@ -117,8 +117,7 @@ impl FromStr for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` is not a valid UUID version 4 RFC 4122.
+    /// This function panics if the `value` is not a valid UUID version 4 RFC 4122.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(value)?;
         Self::validate_v4(&uuid);
@@ -131,8 +130,7 @@ impl From<&str> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` string is not a valid UUID version 4 RFC 4122.
+    /// This function panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: &str) -> Self {
         value
             .parse()
@@ -145,8 +143,7 @@ impl From<String> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` string is not a valid UUID version 4 RFC 4122.
+    /// This function panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: String) -> Self {
         Self::from(value.as_str())
     }
@@ -157,8 +154,7 @@ impl From<uuid::Uuid> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` is not a valid UUID version 4 RFC 4122.
+    /// This function panics if the `value` is not a valid UUID version 4 RFC 4122.
     fn from(value: uuid::Uuid) -> Self {
         Self::validate_v4(&value);
         Self::from_validated_uuid(&value)
