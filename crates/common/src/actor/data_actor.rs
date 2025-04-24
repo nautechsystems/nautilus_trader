@@ -486,20 +486,6 @@ pub trait DataActor: Actor {
         }
     }
 
-    /// Handles received instruments.
-    fn handle_instruments(&mut self, instruments: &Vec<InstrumentAny>) {
-        for instrument in instruments {
-            self.handle_instrument(instrument);
-        }
-    }
-
-    /// Handles received quotes.
-    fn handle_quotes(&mut self, quotes: &Vec<QuoteTick>) {
-        for quote in quotes {
-            self.handle_historical_data(quote);
-        }
-    }
-
     /// Handles received historical data.
     fn handle_historical_data(&mut self, data: &dyn Any) {
         log_received(&data);
@@ -1078,48 +1064,6 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching order book deltas published on the message bus are forwarded
-    /// to the `on_book_deltas` handler.
-    pub fn subscribe_book_depth<A: DataActor>(
-        &mut self,
-        instrument_id: InstrumentId,
-        book_type: BookType,
-        depth: Option<NonZeroUsize>,
-        client_id: Option<ClientId>,
-        managed: bool,
-        params: Option<HashMap<String, String>>,
-    ) {
-        self.check_registered();
-
-        let topic = get_book_deltas_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |deltas: &OrderBookDeltas| {
-                    get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
-                },
-            )))
-        });
-
-        msgbus::subscribe(topic, handler, None);
-
-        let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
-            instrument_id,
-            book_type,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
-            depth,
-            managed,
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
-    }
-
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
     pub fn subscribe_quotes<A: DataActor>(
         &mut self,
@@ -1473,10 +1417,13 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from [`OrderBook`] snapshots for the `instrument_id`.
-    pub fn unsubscribe_book_snapshots<A: DataActor>(
-        &self,
+    /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
+    ///
+    /// The `interval_ms` must match a previously subscribed interval.
+    pub fn unsubscribe_book_at_interval<A: DataActor>(
+        &mut self,
         instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
         params: Option<HashMap<String, String>>,
     ) {

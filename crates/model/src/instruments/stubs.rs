@@ -328,6 +328,11 @@ pub fn audusd_sim() -> CurrencyPair {
 }
 
 #[fixture]
+pub fn gbpusd_sim() -> CurrencyPair {
+    default_fx_ccy(Symbol::from("GBP/USD"), Some(Venue::from("SIM")))
+}
+
+#[fixture]
 pub fn usdjpy_idealpro() -> CurrencyPair {
     default_fx_ccy(Symbol::from("USD/JPY"), Some(Venue::from("IDEALPRO")))
 }
