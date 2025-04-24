@@ -282,17 +282,18 @@ impl FileWriter {
         file_path.set_extension(suffix);
         file_path
     }
-
+    /// Checks if writing the next log line (of given size) should trigger file rotation
     #[must_use]
-    pub fn should_rotate_file(&mut self) -> bool {
-        self.file_config
-            .file_rotate
-            .as_ref()
-            .map(|config| {
-                config.cur_file_size >= config.max_file_size
-                    || config.cur_file_creation_date != Utc::now().date_naive()
-            })
-            .unwrap_or(false)
+    pub fn should_rotate_file(&self, next_line_size: u64) -> bool {
+        if let Some(ref rotate_config) = self.file_config.file_rotate {
+            let today = Utc::now().date_naive();
+            let exceed_size = rotate_config.cur_file_size > 0
+                && rotate_config.cur_file_size + next_line_size > rotate_config.max_file_size;
+            let date_changed = rotate_config.cur_file_creation_date != today;
+            exceed_size || date_changed
+        } else {
+            false
+        }
     }
 
     fn rotate_file(&mut self) {
@@ -344,7 +345,7 @@ fn cleanup_backups(rotate_config: &mut FileRotateConfig) {
         .filter(|path| path.exists())
         .for_each(|path| match std::fs::remove_file(&path) {
             Ok(_) => tracing::debug!("Removed old log file: {}", path.display()),
-            Err(e) => tracing::error!("Failed to remove old log file {}: {}", path.display(), e),
+            Err(e) => tracing::error!("Failed to remove old log file {}: {e}", path.display()),
         });
 }
 
@@ -353,14 +354,9 @@ impl LogWriter for FileWriter {
         let line = strip_ansi_codes(line);
         let line_size = line.len() as u64;
 
-        // Check if we need to rotate the file
-        // Only rotate if the current file size plus the new line size exceeds max_file_size
-        if let Some(rotate_config) = &mut self.file_config.file_rotate {
-            if rotate_config.cur_file_size > 0
-                && rotate_config.cur_file_size + line_size > rotate_config.max_file_size
-            {
-                self.rotate_file();
-            }
+        // Rotate file if needed (size threshold or UTC date change)
+        if self.should_rotate_file(line_size) {
+            self.rotate_file();
         }
 
         match self.buf.write_all(line.as_bytes()) {
