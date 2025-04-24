@@ -25,9 +25,11 @@ use std::{
 
 use log::LevelFilter;
 use nautilus_core::UnixNanos;
+use nautilus_model::data::stubs::{stub_instrument_close, stub_instrument_status};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, TraderId, Venue},
@@ -53,7 +55,9 @@ use crate::{
         self,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
-            get_custom_topic, get_quotes_topic, get_trades_topic,
+            get_custom_topic, get_index_price_topic, get_instrument_close_topic,
+            get_instrument_status_topic, get_instrument_topic, get_instruments_topic,
+            get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
     testing::init_logger_for_testing,
@@ -70,6 +74,10 @@ struct TestDataActor {
     pub received_quotes: Vec<QuoteTick>,
     pub received_trades: Vec<TradeTick>,
     pub received_bars: Vec<Bar>,
+    pub received_mark_prices: Vec<MarkPriceUpdate>,
+    pub received_index_prices: Vec<IndexPriceUpdate>,
+    pub received_status: Vec<InstrumentStatus>,
+    pub received_closes: Vec<InstrumentClose>,
 }
 
 impl Deref for TestDataActor {
@@ -169,6 +177,26 @@ impl DataActor for TestDataActor {
         self.received_bars.extend(bars);
         Ok(())
     }
+
+    fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
+        self.received_mark_prices.push(*mark_price);
+        Ok(())
+    }
+
+    fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
+        self.received_index_prices.push(*index_price);
+        Ok(())
+    }
+
+    fn on_instrument_status(&mut self, status: &InstrumentStatus) -> anyhow::Result<()> {
+        self.received_status.push(*status);
+        Ok(())
+    }
+
+    fn on_instrument_close(&mut self, close: &InstrumentClose) -> anyhow::Result<()> {
+        self.received_closes.push(*close);
+        Ok(())
+    }
 }
 
 // Custom functionality as required
@@ -188,6 +216,10 @@ impl TestDataActor {
             received_quotes: Vec::new(),
             received_trades: Vec::new(),
             received_bars: Vec::new(),
+            received_mark_prices: Vec::new(),
+            received_index_prices: Vec::new(),
+            received_status: Vec::new(),
+            received_closes: Vec::new(),
         }
     }
 
@@ -830,4 +862,157 @@ fn test_request_bars(
 
     assert_eq!(actor.received_bars.len(), 1);
     assert_eq!(actor.received_bars[0], bar);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_instruments(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let venue = Venue::from("SIM");
+    actor.subscribe_instruments::<TestDataActor>(venue, None, None);
+
+    let topic = get_instruments_topic(venue);
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    msgbus::publish(&topic, &inst1);
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    msgbus::publish(&topic, &inst2);
+
+    assert_eq!(actor.received_instruments.len(), 2);
+    assert_eq!(actor.received_instruments[0], inst1);
+    assert_eq!(actor.received_instruments[1], inst2);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_instrument(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_instrument::<TestDataActor>(audusd_sim.id, None, None);
+
+    let topic = get_instrument_topic(audusd_sim.id);
+    let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
+    let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
+    msgbus::publish(&topic, &inst1);
+    msgbus::publish(&topic, &inst2);
+
+    assert_eq!(actor.received_instruments.len(), 2);
+    assert_eq!(actor.received_instruments[0], inst1);
+    assert_eq!(actor.received_instruments[1], inst2);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_mark_prices(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_mark_prices::<TestDataActor>(audusd_sim.id, None, None);
+
+    let topic = get_mark_price_topic(audusd_sim.id);
+    let mp1 = MarkPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    msgbus::publish(&topic, &mp1);
+    let mp2 = MarkPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00010"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    msgbus::publish(&topic, &mp2);
+
+    assert_eq!(actor.received_mark_prices.len(), 2);
+    assert_eq!(actor.received_mark_prices[0], mp1);
+    assert_eq!(actor.received_mark_prices[1], mp2);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_index_prices(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_index_prices::<TestDataActor>(audusd_sim.id, None, None);
+
+    let topic = get_index_price_topic(audusd_sim.id);
+    let ip = IndexPriceUpdate::new(
+        audusd_sim.id,
+        Price::from("1.00000"),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+    msgbus::publish(&topic, &ip);
+
+    assert_eq!(actor.received_index_prices.len(), 1);
+    assert_eq!(actor.received_index_prices[0], ip);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_instrument_status(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    stub_instrument_status: InstrumentStatus,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let instrument_id = stub_instrument_status.instrument_id;
+    actor.subscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
+
+    let topic = get_instrument_status_topic(instrument_id);
+    msgbus::publish(&topic, &stub_instrument_status);
+
+    assert_eq!(actor.received_status.len(), 1);
+    assert_eq!(actor.received_status[0], stub_instrument_status);
+}
+
+#[rstest]
+fn test_subscribe_and_receive_instrument_close(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    stub_instrument_close: InstrumentClose,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let instrument_id = stub_instrument_close.instrument_id;
+    actor.subscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
+
+    let topic = get_instrument_close_topic(instrument_id);
+    msgbus::publish(&topic, &stub_instrument_close);
+
+    assert_eq!(actor.received_closes.len(), 1);
+    assert_eq!(actor.received_closes[0], stub_instrument_close);
 }
