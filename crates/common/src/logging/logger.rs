@@ -469,14 +469,21 @@ impl Logger {
                     }
                 }
                 LogEvent::Flush => {
-                    stderr_writer.flush();
                     stdout_writer.flush();
+                    stderr_writer.flush();
 
                     if let Some(ref mut file_writer) = file_writer_opt {
                         file_writer.flush();
                     }
                 }
                 LogEvent::Close => {
+                    // Final flush
+                    stdout_writer.flush();
+                    stderr_writer.flush();
+
+                    if let Some(ref mut file_writer) = file_writer_opt {
+                        file_writer.flush();
+                    }
                     break;
                 }
             }
