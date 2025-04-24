@@ -50,7 +50,9 @@ use crate::{
     clock::{Clock, TestClock},
     enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
-    messages::data::{BarsResponse, InstrumentsResponse, QuotesResponse, TradesResponse},
+    messages::data::{
+        BarsResponse, BookResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+    },
     msgbus::{
         self,
         switchboard::{
@@ -175,6 +177,19 @@ impl DataActor for TestDataActor {
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_bars.extend(bars);
+        Ok(())
+    }
+
+    fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
+        // Capture raw historical data items
+        // Attempt to downcast to &str or String
+        if let Some(s) = data.downcast_ref::<&str>() {
+            self.received_data.push(s.to_string());
+        } else if let Some(s) = data.downcast_ref::<String>() {
+            self.received_data.push(s.clone());
+        } else {
+            self.received_data.push(format!("{:?}", data));
+        }
         Ok(())
     }
 
@@ -1015,4 +1030,40 @@ fn test_subscribe_and_receive_instrument_close(
 
     assert_eq!(actor.received_closes.len(), 1);
     assert_eq!(actor.received_closes[0], stub_instrument_close);
+}
+
+#[rstest]
+fn test_request_book_snapshot(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    // Request a book snapshot
+    let request_id = actor
+        .request_book_snapshot::<TestDataActor>(audusd_sim.id, None, None, None)
+        .unwrap();
+
+    // Build a dummy book and response
+    let client_id = ClientId::new("Client2");
+    let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+    // Provide ts_init and no params
+    let ts_init = UnixNanos::default();
+    let response = BookResponse::new(
+        request_id,
+        client_id,
+        audusd_sim.id,
+        book.clone(),
+        ts_init,
+        None,
+    );
+    msgbus::response(&request_id, response.as_any());
+
+    // Should trigger on_book and record the book
+    assert_eq!(actor.received_books.len(), 1);
+    assert_eq!(actor.received_books[0], book);
 }
