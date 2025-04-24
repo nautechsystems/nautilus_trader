@@ -60,26 +60,27 @@ For detailed information about log file naming conventions and rotation behavior
 
 #### Log file rotation
 
-The logging system supports **size-based file rotation**. By default (when no size threshold is set), a single log file
-is created at startup and all log messages are appended to it for the duration of the process.
+By default (when no `log_file_max_size` is specified), a single log file is created at startup and all log messages are
+appended to it for the duration of the process. Setting the `log_file_max_size` parameter enables file rotation. When
+file rotation is enabled, log files will automatically rotate under two conditions:
 
 - **Size-based rotation**:
-  - Enabled by setting the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
-  - When writing a log entry would make the file exceed this size, the current file is closed and a new one is created.
-  - The `log_file_max_backup_count` parameter (default: 5) specifies how many rotated backup files to keep; oldest files are removed when this limit is exceeded.
-
-To keep disk usage in check, the system includes backup file management:
-
+  - Enabled by specifying the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
+  - When writing a log entry would make the current file exceed this size, the file is closed and a new one is created.
+- **Date-based rotation**:
+  - When the UTC date changes (at UTC midnight), the current log file is closed and a new one is started.
+  - This ensures one log file per UTC day, even if the size threshold is not reached.
 - **Backup file management**:
-  - The maximum number of backup files is controlled by `log_file_max_backup_count` (default: 5).
-  - When this limit is surpassed, the oldest backup files are automatically removed.
+  - Controlled by the `log_file_max_backup_count` parameter (default: 5), which limits the total number of rotated files
+    (including those created by size or date rotations).
+  - When this limit is exceeded, the oldest backup files are automatically removed.
 
 #### Log file naming convention
 
 The default naming convention ensures log files are uniquely identifiable and timestamped.
 The format depends on whether file rotation is enabled:
 
-**With rotation enabled**:
+**With file rotation enabled**:
 
 - **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S:%3f}_{instance_id}.{log|json}`
 - **Example**: `TESTER-001_2025-04-09_210721:521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
@@ -89,7 +90,7 @@ The format depends on whether file rotation is enabled:
   - `{instance_id}`: A unique instance identifier.
   - `{log|json}`: File suffix based on format setting.
 
-**With rotation disabled**:
+**With file rotation disabled**:
 
 - **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
 - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
