@@ -30,8 +30,11 @@ use nautilus_model::{
         Bar, BarType, BookOrder, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, TraderId},
-    instruments::{CurrencyPair, stubs::audusd_sim},
+    identifiers::{ClientId, TraderId, Venue},
+    instruments::{
+        CurrencyPair, InstrumentAny,
+        stubs::{audusd_sim, gbpusd_sim},
+    },
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
@@ -45,7 +48,7 @@ use crate::{
     clock::{Clock, TestClock},
     enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
-    messages::data::BarsResponse,
+    messages::data::{BarsResponse, InstrumentsResponse, QuotesResponse, TradesResponse},
     msgbus::{
         self,
         switchboard::{
@@ -60,6 +63,7 @@ use crate::{
 struct TestDataActor {
     core: DataActorCore,
     pub received_time_events: Vec<TimeEvent>,
+    pub received_instruments: Vec<InstrumentAny>,
     pub received_data: Vec<String>, // Use string for simplicity
     pub received_books: Vec<OrderBook>,
     pub received_deltas: Vec<OrderBookDelta>,
@@ -110,6 +114,11 @@ impl DataActor for TestDataActor {
 
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         self.received_time_events.push(event.clone());
+        Ok(())
+    }
+
+    fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.received_instruments.push(instrument.clone());
         Ok(())
     }
 
@@ -172,6 +181,7 @@ impl TestDataActor {
         Self {
             core: DataActorCore::new(config, cache, clock),
             received_time_events: Vec::new(),
+            received_instruments: Vec::new(),
             received_data: Vec::new(),
             received_books: Vec::new(),
             received_deltas: Vec::new(),
@@ -461,7 +471,7 @@ fn test_unsubscribe_book_deltas(
 }
 
 #[rstest]
-fn test_subscribe_and_receive_book_snapshots(
+fn test_subscribe_and_receive_book_at_interval(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -492,7 +502,7 @@ fn test_subscribe_and_receive_book_snapshots(
 }
 
 #[rstest]
-fn test_unsubscribe_book_snapshots(
+fn test_unsubscribe_book_at_interval(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
@@ -521,7 +531,7 @@ fn test_unsubscribe_book_snapshots(
 
     assert_eq!(actor.received_books.len(), 1);
 
-    actor.unsubscribe_book_snapshots::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_book_at_interval::<TestDataActor>(audusd_sim.id, interval_ms, None, None);
 
     // Publish more book refs
     msgbus::publish(&topic, &book);
@@ -680,6 +690,120 @@ fn test_unsubscribe_bars(
 }
 
 #[rstest]
+fn test_request_instrument(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_instrument::<TestDataActor>(audusd_sim.id, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let data = vec![instrument.clone()];
+    let ts_init = UnixNanos::default();
+    let response =
+        InstrumentsResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+
+    msgbus::response(&request_id, response.as_any());
+
+    assert_eq!(actor.received_instruments.len(), 1);
+    assert_eq!(actor.received_instruments[0], instrument);
+}
+
+#[rstest]
+fn test_request_instruments(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+    gbpusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let venue = Venue::from("SIM");
+    let request_id = actor
+        .request_instruments::<TestDataActor>(Some(venue), None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let instrument1 = InstrumentAny::CurrencyPair(audusd_sim);
+    let instrument2 = InstrumentAny::CurrencyPair(gbpusd_sim);
+    let data = vec![instrument1.clone(), instrument2.clone()];
+    let ts_init = UnixNanos::default();
+    let response =
+        InstrumentsResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+
+    msgbus::response(&request_id, response.as_any());
+
+    assert_eq!(actor.received_instruments.len(), 2);
+    assert_eq!(actor.received_instruments[0], instrument1);
+    assert_eq!(actor.received_instruments[1], instrument2);
+}
+
+#[rstest]
+fn test_request_quotes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_quotes::<TestDataActor>(audusd_sim.id, None, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let quote = QuoteTick::default();
+    let data = vec![quote];
+    let ts_init = UnixNanos::default();
+    let response = QuotesResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+
+    msgbus::response(&request_id, response.as_any());
+
+    assert_eq!(actor.received_quotes.len(), 1);
+    assert_eq!(actor.received_quotes[0], quote);
+}
+
+#[rstest]
+fn test_request_trades(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_trades::<TestDataActor>(audusd_sim.id, None, None, None, None, None)
+        .unwrap();
+
+    let client_id = ClientId::new("TestClient");
+    let trade = TradeTick::default();
+    let data = vec![trade];
+    let ts_init = UnixNanos::default();
+    let response = TradesResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+
+    msgbus::response(&request_id, response.as_any());
+
+    assert_eq!(actor.received_trades.len(), 1);
+    assert_eq!(actor.received_trades[0], trade);
+}
+
+#[rstest]
 fn test_request_bars(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -696,12 +820,14 @@ fn test_request_bars(
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
-    let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-EXTERNAL").unwrap();
-    let data = vec![Bar::default()];
+    let bar_type = BarType::from_str("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL").unwrap();
+    let bar = Bar::default();
+    let data = vec![bar];
     let ts_init = UnixNanos::default();
     let response = BarsResponse::new(request_id, client_id, bar_type, data, ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
     assert_eq!(actor.received_bars.len(), 1);
+    assert_eq!(actor.received_bars[0], bar);
 }
