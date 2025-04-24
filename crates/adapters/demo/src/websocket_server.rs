@@ -12,7 +12,7 @@ pub struct NegativeStreamServer {
 
 impl NegativeStreamServer {
     pub async fn setup() -> Self {
-        let server = tokio::net::TcpListener::bind(format!("127.0.0.1:0"))
+        let server = tokio::net::TcpListener::bind("127.0.0.1:0".to_string())
             .await
             .unwrap();
         let port = server.local_addr().unwrap().port();
@@ -50,16 +50,13 @@ impl NegativeStreamServer {
                 // Task to handle incoming messages
                 task::spawn(async move {
                     while let Some(Ok(msg)) = receiver.next().await {
-                        match msg {
-                            tokio_tungstenite::tungstenite::protocol::Message::Text(txt) => {
-                                if txt == "SKIP" {
-                                    counter_clone_2
-                                        .fetch_add(5, std::sync::atomic::Ordering::SeqCst);
-                                } else if txt == "STOP" {
-                                    break;
-                                }
+                        if let tokio_tungstenite::tungstenite::protocol::Message::Text(txt) = msg {
+                            if txt == "SKIP" {
+                                counter_clone_2
+                                    .fetch_add(5, std::sync::atomic::Ordering::SeqCst);
+                            } else if txt == "STOP" {
+                                break;
                             }
-                            _ => {}
                         }
                     }
 

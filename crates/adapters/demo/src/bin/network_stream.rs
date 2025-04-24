@@ -2,12 +2,7 @@ use std::cell::UnsafeCell;
 use std::rc::Rc;
 
 use nautilus_common::actor::registry::register_actor;
-use nautilus_common::msgbus::handler::MessageHandler;
-use nautilus_common::msgbus::handler::ShareableMessageHandler;
-use nautilus_common::msgbus::handler::TypedMessageHandler;
-use nautilus_common::msgbus::register;
 use nautilus_demo::big_brain_actor::BigBrainActor;
-use nautilus_demo::big_brain_actor::negative_handler;
 use nautilus_demo::data_client::MockNetworkDataClient;
 use nautilus_demo::http_server::start_positive_stream_http_server;
 use nautilus_demo::websocket_server::NegativeStreamServer;
@@ -57,13 +52,10 @@ async fn main_logic() {
         }
         message = websocket_message_stream_select_all.next() => {
             if let Some(message) = message {
-                match message {
-                    Message::Text(text) => {
-                        println!("Received text message: {}", text);
-                        let data = text.parse::<i32>().unwrap();
-                        nautilus_common::msgbus::send(&Ustr::from("negative_stream"), &data);
-                    }
-                    _ => {}
+                if let Message::Text(text) = message {
+                    println!("Received text message: {}", text);
+                    let data = text.parse::<i32>().unwrap();
+                    nautilus_common::msgbus::send(&Ustr::from("negative_stream"), &data);
                 }
             }
         }

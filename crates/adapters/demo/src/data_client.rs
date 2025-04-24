@@ -1,7 +1,6 @@
-use futures::StreamExt;
 use nautilus_common::actor::Actor;
 use nautilus_common::actor::registry::get_actor_unchecked;
-use nautilus_common::messages::data::{DataResponse, RequestData, RequestTrades};
+use nautilus_common::messages::data::{DataResponse, RequestData};
 use nautilus_common::msgbus::handler::{
     MessageHandler, ShareableMessageHandler, TypedMessageHandler,
 };
@@ -16,7 +15,6 @@ use std::any::Any;
 use std::net::SocketAddr;
 use std::rc::Rc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
-use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 pub struct MockNetworkDataClient {

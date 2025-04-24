@@ -17,6 +17,12 @@ pub struct BigBrainActor {
     pub neg_val: i32,
 }
 
+impl Default for BigBrainActor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BigBrainActor {
     pub fn new() -> Self {
         Self {

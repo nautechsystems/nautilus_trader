@@ -3,10 +3,10 @@ use futures::StreamExt;
 use futures::stream::SelectAll;
 use std::collections::HashMap;
 use std::pin::Pin;
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio::task;
 
 use std::any::Any;
@@ -15,7 +15,6 @@ use nautilus_common::actor::Actor;
 use nautilus_common::actor::registry::get_actor_unchecked;
 use ustr::Ustr;
 
-use tokio::net::TcpStream;
 
 /// Control messages that can be sent to the data streams
 #[derive(Debug, Clone)]
