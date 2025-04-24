@@ -3189,7 +3189,6 @@ version = "0.47.0"
 dependencies = [
  "anyhow",
  "arrow",
- "async-stream",
  "axum",
  "chrono",
  "criterion",
@@ -3217,6 +3216,7 @@ dependencies = [
  "thiserror 2.0.12",
  "thousands",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",

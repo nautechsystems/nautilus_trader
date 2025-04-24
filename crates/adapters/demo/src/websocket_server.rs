@@ -1,19 +1,22 @@
 use futures::SinkExt;
 use futures::StreamExt;
+use std::net::SocketAddr;
 use tokio::task;
 use tokio::time::Duration;
 
-struct NegativeStreamServer {
+pub struct NegativeStreamServer {
     task: tokio::task::JoinHandle<()>,
     port: u16,
+    pub address: SocketAddr,
 }
 
 impl NegativeStreamServer {
-    async fn setup() -> Self {
+    pub async fn setup() -> Self {
         let server = tokio::net::TcpListener::bind(format!("127.0.0.1:0"))
             .await
             .unwrap();
         let port = server.local_addr().unwrap().port();
+        let address = server.local_addr().unwrap();
 
         let task = task::spawn(async move {
             // Keep accepting connections
@@ -52,7 +55,7 @@ impl NegativeStreamServer {
                                 if txt == "SKIP" {
                                     counter_clone_2
                                         .fetch_add(5, std::sync::atomic::Ordering::SeqCst);
-                                } else if txt == "close-now" {
+                                } else if txt == "STOP" {
                                     break;
                                 }
                             }
@@ -66,7 +69,11 @@ impl NegativeStreamServer {
             }
         });
 
-        Self { task, port }
+        Self {
+            task,
+            address,
+            port,
+        }
     }
 }
 

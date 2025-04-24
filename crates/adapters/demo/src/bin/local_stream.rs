@@ -1,8 +1,3 @@
-pub mod data_client;
-pub mod http_server;
-pub mod websocket_server;
-pub mod big_brain_actor;
-
 use futures::Stream;
 use futures::StreamExt;
 use futures::stream::SelectAll;
@@ -243,68 +238,62 @@ fn demo_handler(msg: &(usize, i32)) {
     }
 }
 
-mod tests {
-    use super::*;
-    use data_client::MockNetworkDataClient;
-    use nautilus_common::actor::registry::register_actor;
-    use nautilus_common::msgbus::{
-        self, MessageBus,
-        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
-        set_message_bus,
-    };
-    use std::cell::{RefCell, UnsafeCell};
-    use std::rc::Rc;
+use nautilus_common::actor::registry::register_actor;
+use nautilus_common::msgbus::{
+    self, MessageBus,
+    handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
+    set_message_bus,
+};
+use std::cell::{RefCell, UnsafeCell};
+use std::rc::Rc;
 
-    /// Run the demo synchronously
-    #[test]
-    pub fn run_demo_sync() {
-        // Create a runtime for initialization
-        let runtime = tokio::runtime::Runtime::new().unwrap();
+pub fn main() {
+    // Create a runtime for initialization
+    let runtime = tokio::runtime::Runtime::new().unwrap();
 
-        let data_engine = Rc::new(UnsafeCell::new(DataEngine::new()));
-        register_actor(data_engine.clone());
+    let data_engine = Rc::new(UnsafeCell::new(DataEngine::new()));
+    register_actor(data_engine.clone());
 
-        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
-        set_message_bus(msgbus.clone());
+    let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+    set_message_bus(msgbus.clone());
 
-        // Register data engine control message handler
-        let handler = TypedMessageHandler::from(data_engine_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        msgbus::register("data_engine_control_message", handler);
+    // Register data engine control message handler
+    let handler = TypedMessageHandler::from(data_engine_handler);
+    let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
+    msgbus::register("data_engine_control_message", handler);
 
-        // Register demo actor core logic handler
-        let handler = TypedMessageHandler::from(demo_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        msgbus::register("demo_handler", handler);
+    // Register demo actor core logic handler
+    let handler = TypedMessageHandler::from(demo_handler);
+    let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
+    msgbus::register("demo_handler", handler);
 
-        // Initialize the streams inside the runtime
-        let (increasing_stream, increasing_tx) =
-            runtime.block_on(async { DataClient::new(0, 0, Duration::from_millis(500), true) });
+    // Initialize the streams inside the runtime
+    let (increasing_stream, increasing_tx) =
+        runtime.block_on(async { DataClient::new(0, 0, Duration::from_millis(500), true) });
 
-        let (decreasing_stream, decreasing_tx) =
-            runtime.block_on(async { DataClient::new(1, 0, Duration::from_millis(800), false) });
+    let (decreasing_stream, decreasing_tx) =
+        runtime.block_on(async { DataClient::new(1, 0, Duration::from_millis(800), false) });
 
-        let actor_id = Ustr::from("data_engine");
-        let data_engine = get_actor_unchecked::<DataEngine>(&actor_id);
-        data_engine.add_stream(0, increasing_tx);
-        data_engine.add_stream(1, decreasing_tx);
+    let actor_id = Ustr::from("data_engine");
+    let data_engine = get_actor_unchecked::<DataEngine>(&actor_id);
+    data_engine.add_stream(0, increasing_tx);
+    data_engine.add_stream(1, decreasing_tx);
 
-        assert!(data_engine.channel_map.len() == 2);
-        assert!(data_engine.channel_map.get(&0).is_some());
-        assert!(data_engine.channel_map.get(&1).is_some());
+    assert!(data_engine.channel_map.len() == 2);
+    assert!(data_engine.channel_map.get(&0).is_some());
+    assert!(data_engine.channel_map.get(&1).is_some());
 
-        // Create the runner
-        let mut runner = StreamRunner::new(runtime);
-        runner.add_stream(increasing_stream);
-        runner.add_stream(decreasing_stream);
+    // Create the runner
+    let mut runner = StreamRunner::new(runtime);
+    runner.add_stream(increasing_stream);
+    runner.add_stream(decreasing_stream);
 
-        println!("Running demo synchronously");
+    println!("Running demo synchronously");
 
-        // Process the values synchronously
-        for (idx, value) in runner {
-            msgbus::send(&"demo_handler".into(), &(idx, value));
-        }
-
-        println!("All streams have ended");
+    // Process the values synchronously
+    for (idx, value) in runner {
+        msgbus::send(&"demo_handler".into(), &(idx, value));
     }
+
+    println!("All streams have ended");
 }

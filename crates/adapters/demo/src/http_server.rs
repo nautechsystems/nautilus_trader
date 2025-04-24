@@ -25,7 +25,7 @@ fn get_unique_port() -> u16 {
     port
 }
 
-async fn start_positive_stream_http_server()
+pub async fn start_positive_stream_http_server()
 -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
     let port = get_unique_port();
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
