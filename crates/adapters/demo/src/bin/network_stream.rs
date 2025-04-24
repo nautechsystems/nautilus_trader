@@ -16,9 +16,11 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use ustr::Ustr;
 
 async fn main_logic() {
+    println!("Reached here");
     let http_address = start_positive_stream_http_server().await.unwrap();
     let websocket_server = NegativeStreamServer::setup().await;
 
+    println!("Reached here");
     // Initialize data client with http and websocket streams
     let (data_client, http_stream, websocket_stream) =
         MockNetworkDataClient::start(http_address, websocket_server.address).await;
@@ -28,6 +30,7 @@ async fn main_logic() {
     register_actor(actor_data_client);
     MockNetworkDataClient::register_message_handlers();
 
+    println!("Reached here");
     // Initialize big brain actor
     let big_brain_actor = BigBrainActor::new();
     let big_brain_actor = Rc::new(UnsafeCell::new(big_brain_actor));
@@ -43,6 +46,7 @@ async fn main_logic() {
         SelectAll::new();
     websocket_message_stream_select_all.push(websocket_stream);
 
+    println!("Reached here");
     tokio::select! {
         data_response = data_response_select_all.next() => {
             if let Some(data_response) = data_response {
