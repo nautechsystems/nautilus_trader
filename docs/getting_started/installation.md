@@ -21,7 +21,9 @@ We recommend using the latest supported version of Python and setting up [nautil
 
 To install the latest [nautilus_trader]([nautilus_trader](https://pypi.org/project/nautilus_trader/)) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
-    pip install -U nautilus_trader
+```bash
+pip install -U nautilus_trader
+```
 
 ## Extras
 
@@ -35,7 +37,9 @@ Install optional dependencies as 'extras' for specific integrations:
 
 To install with specific extras using pip:
 
-    pip install -U "nautilus_trader[docker,ib]"
+```bash
+pip install -U "nautilus_trader[docker,ib]"
+```
 
 ## From the Nautech Systems package index
 
@@ -48,7 +52,9 @@ Stable wheels correspond to official releases of `nautilus_trader` on PyPI, and 
 
 To install the latest stable release:
 
-    pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install -U nautilus_trader --index-url=https://packages.nautechsystems.io/simple
+```
 
 ### Development wheels
 
@@ -81,11 +87,15 @@ By default, pip installs the latest stable release. Adding the `--pre` flag ensu
 
 To install the latest available pre-release (including development wheels):
 
-    pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install -U nautilus_trader --pre --index-url=https://packages.nautechsystems.io/simple
+```
 
 To install a specific development wheel (e.g., `1.208.0a20241212` for December 12, 2024):
 
-    pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+```bash
+pip install nautilus_trader==1.208.0a20241212 --index-url=https://packages.nautechsystems.io/simple
+```
 
 ### Available versions
 
@@ -93,7 +103,9 @@ You can view all available versions of `nautilus_trader` on the [package index](
 
 To programmatically request and list available versions:
 
-    curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href=")[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+```bash
+curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | grep -oP '(?<=<a href="))[^"]+(?=")' | awk -F'#' '{print $1}' | sort
+```
 
 ### Branch updates
 
@@ -113,42 +125,65 @@ as specified in the `pyproject.toml`. We highly recommend installing using [uv](
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
 
-           curl https://sh.rustup.rs -sSf | sh
-   - Windows:
-     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-     - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
-   - Verify (any system):
-       from a terminal session run: `rustc --version`
+```bash
+curl https://sh.rustup.rs -sSf | sh
+```
+
+- Windows:
+  - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+  - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+- Verify (any system):
+    from a terminal session run: `rustc --version`
 
 2. Enable `cargo` in the current shell:
    - Linux and macOS:
 
-           source $HOME/.cargo/env
-   - Windows:
-     - Start a new PowerShell
+```bash
+source $HOME/.cargo/env
+```
+
+- Windows:
+  - Start a new PowerShell
 
      1. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
-   - Linux:
+- Linux:
 
-           sudo apt-get install clang
-   - Windows:
-     1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
-        - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
-     2. Enable `clang` in the current shell:
+```bash
+sudo apt-get install clang
+```
 
-              [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
-        - Verify (any system):
-       from a terminal session run: `clang --version`
+- Windows:
+
+1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
+
+- Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+
+2. Enable `clang` in the current shell:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+```
+
+- Verify (any system):
+  from a terminal session run:
+
+```bash
+clang --version`
+```
 
 3. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
 
-       curl -LsSf https://astral.sh/uv/install.sh | sh
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 4. Clone the source with `git`, and install from the project's root directory:
 
-       git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
-       cd nautilus_trader
-       uv sync --all-extras
+```bash
+git clone --branch develop --depth 1 https://github.com/nautechsystems/nautilus_trader
+cd nautilus_trader
+uv sync --all-extras
+```
 
 :::note
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
@@ -159,7 +194,9 @@ The `--depth 1` flag fetches just the latest commit for a faster, lightweight cl
 To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
-    pip install <file-name>.whl
+```bash
+pip install <file-name>.whl
+```
 
 ## Versioning and releases
 
@@ -182,7 +219,9 @@ The minimum supported Redis version is 6.2 (required for [streams](https://redis
 For a quick setup, we recommend using a [Redis Docker container](https://hub.docker.com/_/redis/). You can find an example setup in the `.docker` directory,
 or run the following command to start a container:
 
-    docker run -d --name redis -p 6379:6379 redis:latest
+```bash
+docker run -d --name redis -p 6379:6379 redis:latest
+```
 
 This command will:
 
@@ -231,13 +270,17 @@ The precision mode is determined by:
 
 #### High-precision mode (128-bit)
 
-    export HIGH_PRECISION=true
-    make install-debug
+```bash
+export HIGH_PRECISION=true
+make install-debug
+```
 
 #### Standard-precision mode (64-bit)
 
-    export HIGH_PRECISION=false
-    make install-debug
+```bash
+export HIGH_PRECISION=false
+make install-debug
+```
 
 :::info
 See the [Value Types](../concepts/overview.md#value-types) specifications for more details.

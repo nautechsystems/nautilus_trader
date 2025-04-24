@@ -57,14 +57,14 @@
   "MD032": true,
   // MD034/no-bare-urls : Bare URL used : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md034.md
   "MD034": true,
+  // MD046/code-block-style : Code block style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md046.md
+  "MD046": {
+    // Block style
+    "style": "fenced"
+  },
   // MD049/emphasis-style : Emphasis style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md049.md
   "MD049": {
     // Emphasis style
     "style": "asterisk"
   }
-  // MD046/code-block-style : Code block style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md046.md
-  // "MD046": {
-  //   // Block style
-  //   "style": "fenced"  // FIX
-  // },
 }
