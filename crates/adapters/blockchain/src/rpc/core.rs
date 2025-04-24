@@ -108,6 +108,41 @@ impl CoreBlockchainRpcClient {
         }
     }
 
+    pub async fn next_rpc_message(&mut self) -> Option<Message> {
+        match &mut self.wss_consumer_rx {
+            Some(rx) => rx.recv().await,
+            None => None,
+        }
+    }
+
+    pub async fn process_rpc_messages(&mut self) {
+        while let Some(msg) = self.next_rpc_message().await {
+            match msg {
+                Message::Text(text) => {
+                    match serde_json::from_str::<serde_json::Value>(&text) {
+                        Ok(json) => {
+                            // check if json serde Value contains both the id field and result field
+                            if json.get("id").is_some() && json.get("result").is_some() {
+                                let subscription_request_id =
+                                    json.get("id").unwrap().as_u64().unwrap();
+                                let result = json.get("result").unwrap().to_string();
+                                println!(
+                                    "SUBSCRIPTION ----->>> {subscription_request_id} : {result}"
+                                )
+                            } else {
+                                println!("DATA ----->>> {text}")
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Error parsing RPC response to json value: {}", e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
         self.subscribe_events(String::from("newHeads")).await
     }

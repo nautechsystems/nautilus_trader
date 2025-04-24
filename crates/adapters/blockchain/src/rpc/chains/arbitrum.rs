@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
-
 use nautilus_model::defi::chain::chains;
 
 use crate::rpc::{
@@ -33,12 +31,21 @@ impl ArbitrumRpcClient {
     }
 }
 
+#[async_trait::async_trait]
 impl BlockchainRpcClient for ArbitrumRpcClient {
-    fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.subscribe_live_blocks()
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        self.base_client.connect().await
     }
 
-    fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.unsubscribe_live_blocks()
+    async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.subscribe_live_blocks().await
+    }
+
+    async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.unsubscribe_live_blocks().await
+    }
+
+    async fn process_rpc_messages(&mut self) {
+        self.base_client.process_rpc_messages().await;
     }
 }

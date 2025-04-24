@@ -31,12 +31,21 @@ impl BaseRpcClient {
     }
 }
 
+#[async_trait::async_trait]
 impl BlockchainRpcClient for BaseRpcClient {
-    fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.subscribe_live_blocks()
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        self.base_client.connect().await
     }
 
-    fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.unsubscribe_live_blocks()
+    async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.subscribe_live_blocks().await
+    }
+
+    async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.unsubscribe_live_blocks().await
+    }
+
+    async fn process_rpc_messages(&mut self) {
+        self.base_client.process_rpc_messages().await;
     }
 }

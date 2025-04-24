@@ -13,13 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::rpc::error::BlockchainRpcClientError;
+use enum_dispatch::enum_dispatch;
+
+use crate::rpc::{
+    chains::{
+        arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
+        polygon::PolygonRpclient,
+    },
+    error::BlockchainRpcClientError,
+};
 
 pub mod chains;
 pub mod core;
 pub mod error;
 
+#[enum_dispatch(BlockchainRpcClient)]
+pub enum BlockchainRpcClientAny {
+    Ethereum(EthereumRpcClient),
+    Polygon(PolygonRpclient),
+    Base(BaseRpcClient),
+    Arbitrum(ArbitrumRpcClient),
+}
+
+#[async_trait::async_trait]
+#[enum_dispatch]
 pub trait BlockchainRpcClient {
-    fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
-    fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
+    async fn connect(&mut self) -> anyhow::Result<()>;
+    async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
+    async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
+    async fn process_rpc_messages(&mut self);
 }

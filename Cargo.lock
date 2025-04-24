@@ -3122,7 +3122,9 @@ name = "nautilus-blockchain"
 version = "0.47.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "dotenvy",
+ "enum_dispatch",
  "futures-util",
  "log",
  "nautilus-common",

@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod config;
-pub mod data;
-pub mod rpc;
+#[derive(Debug, Clone)]
+pub struct BlockchainAdapterConfig {
+    pub wss_rpc_url: String,
+}
+
+impl BlockchainAdapterConfig {
+    pub fn new(wss_rpc_url: String) -> Self {
+        Self { wss_rpc_url }
+    }
+}
