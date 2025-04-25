@@ -315,7 +315,7 @@ cdef class SubscribeOrderBook(SubscribeData):
         bint only_deltas = True,
         dict[str, object] params: dict | None = None,
     ) -> None:
-        Condition.positive_int(interval_ms, "interval_ms")
+        Condition.not_negative_int(interval_ms, "interval_ms")
         super().__init__(
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
             client_id,

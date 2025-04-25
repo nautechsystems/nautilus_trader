@@ -39,6 +39,7 @@ from nautilus_trader.model.data cimport IndexPriceUpdate
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.greeks cimport GreeksCalculator
@@ -95,6 +96,7 @@ cdef class Actor(Component):
     cpdef void on_instrument_close(self, InstrumentClose data)
     cpdef void on_instrument(self, Instrument instrument)
     cpdef void on_order_book_deltas(self, deltas)
+    cpdef void on_order_book_depth(self, depth)
     cpdef void on_order_book(self, OrderBook order_book)
     cpdef void on_quote_tick(self, QuoteTick tick)
     cpdef void on_trade_tick(self, TradeTick tick)
@@ -145,6 +147,16 @@ cdef class Actor(Component):
     cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_order_book_deltas(
+        self,
+        InstrumentId instrument_id,
+        BookType book_type=*,
+        int depth=*,
+        ClientId client_id=*,
+        bint managed=*,
+        bint pyo3_conversion=*,
+        dict[str, object] params=*,
+    )
+    cpdef void subscribe_order_book_depth(
         self,
         InstrumentId instrument_id,
         BookType book_type=*,
@@ -283,6 +295,7 @@ cdef class Actor(Component):
     cpdef void handle_instruments(self, list instruments)
     cpdef void handle_order_book(self, OrderBook order_book)
     cpdef void handle_order_book_deltas(self, deltas)
+    cpdef void handle_order_book_depth(self, OrderBookDepth10 depth)
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_quote_ticks(self, list ticks)
     cpdef void handle_trade_tick(self, TradeTick tick)

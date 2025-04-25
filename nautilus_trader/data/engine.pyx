@@ -758,6 +758,8 @@ cdef class DataEngine(Component):
         elif isinstance(command, SubscribeOrderBook):
             if command.data_type.type == OrderBookDelta:
                 self._handle_subscribe_order_book_deltas(client, command)
+            elif command.data_type.type == OrderBookDepth10:
+                self._handle_subscribe_order_book_depth(client, command)
             else:
                 self._handle_subscribe_order_book_snapshots(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
@@ -829,6 +831,14 @@ cdef class DataEngine(Component):
             return
 
         self._setup_order_book(client, command)
+
+    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command):
+        Condition.not_none(client, "client")
+        Condition.not_none(command.instrument_id, "instrument_id")
+        Condition.not_none(command.params, "params")
+
+        self._setup_order_book(client, command)
+
 
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")
