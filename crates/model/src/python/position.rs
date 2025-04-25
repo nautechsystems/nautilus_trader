@@ -26,8 +26,8 @@ use crate::{
     enums::{OrderSide, PositionSide},
     events::OrderFilled,
     identifiers::{
-        ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
+        Venue, VenueOrderId,
     },
     position::Position,
     python::instruments::pyobject_to_instrument_any,
@@ -80,6 +80,12 @@ impl Position {
     #[pyo3(name = "id")]
     fn py_id(&self) -> PositionId {
         self.id
+    }
+
+    #[getter]
+    #[pyo3(name = "account_id")]
+    fn py_account_id(&self) -> AccountId {
+        self.account_id
     }
 
     #[getter]
@@ -188,6 +194,12 @@ impl Position {
     #[pyo3(name = "ts_opened")]
     fn py_ts_opened(&self) -> u64 {
         self.ts_opened.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_last")]
+    fn py_ts_last(&self) -> u64 {
+        self.ts_last.into()
     }
 
     #[getter]

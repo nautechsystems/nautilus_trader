@@ -13,24 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use bytes::Bytes;
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
-    identifiers::TraderId,
-    python::{
-        account::account_any_to_pyobject, instruments::instrument_any_to_pyobject,
-        orders::order_any_to_pyobject,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
     },
+    orders::Order,
+    position::Position,
+    python::{
+        account::{account_any_to_pyobject, pyobject_to_account_any},
+        instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
+        orders::{order_any_to_pyobject, pyobject_to_order_any},
+    },
+    types::Currency,
 };
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict},
 };
+use ustr::Ustr;
 
 use crate::redis::{cache::RedisCacheDatabase, queries::DatabaseQueries};
 
@@ -138,6 +147,140 @@ impl RedisCacheDatabase {
         }
     }
 
+    #[pyo3(name = "load")]
+    fn py_load(&mut self) -> PyResult<HashMap<String, Vec<u8>>> {
+        let result: Result<HashMap<String, Vec<u8>>, anyhow::Error> =
+            get_runtime().block_on(async {
+                let result = self.load().await?;
+                Ok(result.into_iter().map(|(k, v)| (k, v.to_vec())).collect())
+            });
+        result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_currency")]
+    fn py_load_currency(&self, code: &str) -> PyResult<Option<Currency>> {
+        let result = get_runtime().block_on(async {
+            DatabaseQueries::load_currency(
+                &self.con,
+                self.get_trader_key(),
+                &Ustr::from(code),
+                self.get_encoding(),
+            )
+            .await
+        });
+        result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_account")]
+    fn py_load_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_account(
+                &self.con,
+                self.get_trader_key(),
+                &account_id,
+                self.get_encoding(),
+            )
+            .await;
+
+            match result {
+                Ok(Some(account)) => {
+                    let py_object = account_any_to_pyobject(py, account)?;
+                    Ok(Some(py_object))
+                }
+                Ok(None) => Ok(None),
+                Err(e) => Err(to_pyruntime_err(e)),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_order")]
+    fn py_load_order(
+        &self,
+        py: Python,
+        client_order_id: ClientOrderId,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_order(
+                &self.con,
+                self.get_trader_key(),
+                &client_order_id,
+                self.get_encoding(),
+            )
+            .await;
+
+            match result {
+                Ok(Some(order)) => {
+                    let py_object = order_any_to_pyobject(py, order)?;
+                    Ok(Some(py_object))
+                }
+                Ok(None) => Ok(None),
+                Err(e) => Err(to_pyruntime_err(e)),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_instrument")]
+    fn py_load_instrument(
+        &self,
+        py: Python,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_instrument(
+                &self.con,
+                self.get_trader_key(),
+                &instrument_id,
+                self.get_encoding(),
+            )
+            .await;
+
+            match result {
+                Ok(Some(instrument)) => {
+                    let py_object = instrument_any_to_pyobject(py, instrument)?;
+                    Ok(Some(py_object))
+                }
+                Ok(None) => Ok(None),
+                Err(e) => Err(to_pyruntime_err(e)),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_position")]
+    fn py_load_position(&self, position_id: PositionId) -> PyResult<Option<Position>> {
+        get_runtime()
+            .block_on(async {
+                DatabaseQueries::load_position(
+                    &self.con,
+                    self.get_trader_key(),
+                    &position_id,
+                    self.get_encoding(),
+                )
+                .await
+            })
+            .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_strategy")]
+    fn py_load_strategy(&self, strategy_id: &str) -> PyResult<HashMap<String, Vec<u8>>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_strategy(
+                &self.con,
+                self.get_trader_key(),
+                &StrategyId::new(strategy_id),
+                self.get_encoding(),
+            )
+            .await
+            .map_err(to_pyruntime_err)
+            .map(|map| map.into_iter().map(|(k, v)| (k, v.to_vec())).collect())
+        })
+    }
+
+    #[pyo3(name = "delete_strategy")]
+    fn py_delete_strategy(&mut self, strategy_id: &str) -> PyResult<()> {
+        self.delete_strategy(&StrategyId::new(strategy_id))
+            .map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "read")]
     fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
         let result = get_runtime().block_on(async { self.read(key).await });
@@ -165,11 +308,69 @@ impl RedisCacheDatabase {
         self.update(key, Some(payload)).map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "update_strategy")]
+    fn py_update_strategy(&mut self, id: &str, strategy: HashMap<String, Vec<u8>>) -> PyResult<()> {
+        let strategy_map: HashMap<String, Bytes> = strategy
+            .into_iter()
+            .map(|(k, v)| (k, Bytes::from(v)))
+            .collect();
+        self.update_strategy(id, strategy_map)
+            .map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "delete")]
     #[pyo3(signature = (key, payload=None))]
     fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
         let payload: Option<Vec<Bytes>> =
             payload.map(|vec| vec.into_iter().map(Bytes::from).collect());
         self.delete(key, payload).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add")]
+    fn py_add(&mut self, key: String, value: Vec<u8>) -> PyResult<()> {
+        self.add(key, Bytes::from(value)).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_currency")]
+    fn py_add_currency(&mut self, currency: Currency) -> PyResult<()> {
+        self.add_currency(&currency).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_instrument")]
+    fn py_add_instrument(&mut self, py: Python, instrument: PyObject) -> PyResult<()> {
+        let instrument_any = pyobject_to_instrument_any(py, instrument)?;
+        self.add_instrument(&instrument_any).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_account")]
+    fn py_add_account(&mut self, py: Python, account: PyObject) -> PyResult<()> {
+        let account_any = pyobject_to_account_any(py, account)?;
+        self.add_account(&account_any).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_order")]
+    #[pyo3(signature = (order, _position_id=None,client_id=None))]
+    fn py_add_order(
+        &mut self,
+        py: Python,
+        order: PyObject,
+        _position_id: Option<PositionId>,
+        client_id: Option<ClientId>,
+    ) -> PyResult<()> {
+        let order_any = pyobject_to_order_any(py, order)?;
+        self.add_order(&order_any, client_id)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_position")]
+    fn py_add_position(&mut self, position: Position) -> PyResult<()> {
+        self.add_position(&position).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "update_order")]
+    fn py_update_order(&mut self, py: Python, order: PyObject) -> PyResult<()> {
+        let order_any = pyobject_to_order_any(py, order)?;
+        self.update_order(order_any.last_event())
+            .map_err(to_pyvalue_err)
     }
 }
