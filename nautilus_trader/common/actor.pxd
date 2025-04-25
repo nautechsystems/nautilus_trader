@@ -187,6 +187,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void unsubscribe_order_book_depth(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_order_book_at_interval(self, InstrumentId instrument_id, int interval_ms=*, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)

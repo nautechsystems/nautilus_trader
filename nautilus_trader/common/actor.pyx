@@ -1987,6 +1987,48 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void unsubscribe_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+        ClientId client_id = None,
+        dict[str, object] params = None,
+    ):
+        """
+        Unsubscribe the order book depth stream for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.book.depth"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_order_book_depth,
+        )
+
+        cdef UnsubscribeOrderBook command = UnsubscribeOrderBook(
+            instrument_id=instrument_id,
+            only_deltas=True,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void unsubscribe_order_book_at_interval(
         self,
         InstrumentId instrument_id,
@@ -3295,7 +3337,7 @@ cdef class Actor(Component):
         """
         Handle the given order book depth
 
-        Passes to `on_order_book` if state is ``RUNNING``.
+        Passes to `on_order_book_depth` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -3307,7 +3349,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(depth, "order_book")
+        Condition.not_none(depth, "depth")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
