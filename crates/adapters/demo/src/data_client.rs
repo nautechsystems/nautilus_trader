@@ -8,12 +8,13 @@ use nautilus_network::http::HttpClient;
 use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
 use reqwest::Method;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
 pub struct MockDataClient {
     http_address: SocketAddr,
     http_client: HttpClient,
-    websocket_client: WebSocketClient,
+    websocket_client: Arc<WebSocketClient>,
     http_tx: tokio::sync::mpsc::UnboundedSender<DataResponse>,
 }
 
@@ -70,7 +71,7 @@ impl MockDataClient {
                 http_address,
                 http_client,
                 http_tx,
-                websocket_client,
+                websocket_client: Arc::new(websocket_client),
             },
             http_stream,
             websocket_stream,
@@ -78,12 +79,15 @@ impl MockDataClient {
     }
 
     fn get_request(&self, req: &RequestData) {
-        runtime::get_runtime().block_on(async move {
-            let response = self
-                .http_client
+        let req = req.clone();
+        let http_client = self.http_client.clone();
+        let http_tx = self.http_tx.clone();
+        let http_address = self.http_address.clone();
+        runtime::get_runtime().spawn(async move {
+            let response = http_client
                 .request(
                     Method::GET,
-                    format!("http://{}/get", self.http_address),
+                    format!("http://{}/get", http_address),
                     None,
                     None,
                     None,
@@ -96,6 +100,7 @@ impl MockDataClient {
                 .unwrap()
                 .parse::<i32>()
                 .unwrap();
+            println!("Received positive value: {}", value);
             let response = DataResponse::new(
                 req.request_id,
                 req.client_id,
@@ -105,17 +110,20 @@ impl MockDataClient {
                 UnixNanos::new(0),
                 None,
             );
-            self.http_tx.send(response).unwrap();
+            http_tx.send(response).unwrap();
         });
     }
 
     fn skip_request(&self, req: &RequestData) {
-        runtime::get_runtime().block_on(async move {
-            let response = self
-                .http_client
+        let req = req.clone();
+        let http_client = self.http_client.clone();
+        let http_tx = self.http_tx.clone();
+        let http_address = self.http_address.clone();
+        runtime::get_runtime().spawn(async move {
+            let response = http_client
                 .request(
                     Method::GET,
-                    format!("http://{}/skip", self.http_address),
+                    format!("http://{}/skip", http_address),
                     None,
                     None,
                     None,
@@ -128,6 +136,7 @@ impl MockDataClient {
                 .unwrap()
                 .parse::<i32>()
                 .unwrap();
+            println!("Received positive value: {}", value);
 
             let response = DataResponse::new(
                 req.request_id,
@@ -138,7 +147,7 @@ impl MockDataClient {
                 UnixNanos::new(0),
                 None,
             );
-            self.http_tx.send(response).unwrap();
+            http_tx.send(response).unwrap();
         });
     }
 }
@@ -162,20 +171,18 @@ impl DataClient for MockDataClient {
 
     fn subscribe(&mut self, cmd: data::SubscribeData) -> anyhow::Result<()> {
         println!("Received subscribe command");
-        runtime::get_runtime().block_on(async move {
-            self.websocket_client
-                .send_text("SKIP".to_string(), None)
-                .await;
+        let websocket_client = self.websocket_client.clone();
+        runtime::get_runtime().spawn(async move {
+            websocket_client.send_text("SKIP".to_string(), None).await;
         });
         Ok(())
     }
 
     fn unsubscribe(&mut self, cmd: data::UnsubscribeData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
-        runtime::get_runtime().block_on(async move {
-            self.websocket_client
-                .send_text("STOP".to_string(), None)
-                .await;
+        let websocket_client = self.websocket_client.clone();
+        runtime::get_runtime().spawn(async move {
+            websocket_client.send_text("STOP".to_string(), None).await;
         });
         Ok(())
     }

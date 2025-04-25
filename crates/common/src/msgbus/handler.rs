@@ -74,6 +74,9 @@ impl<T: 'static, F: Fn(&T) + 'static> MessageHandler for TypedMessageHandler<T, 
     fn handle(&self, message: &dyn Any) {
         if let Some(typed_msg) = message.downcast_ref::<T>() {
             (self.callback)(typed_msg);
+        } else {
+            // TODO: better error message
+            log::error!("Failed to downcast message")
         }
     }
 

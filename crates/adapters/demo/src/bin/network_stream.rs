@@ -10,7 +10,6 @@ use nautilus_demo::init_data_engine;
 use nautilus_demo::websocket_server::NegativeStreamServer;
 
 async fn main_logic() {
-    init_logger_for_testing(None);
     let http_address = start_positive_stream_http_server().await.unwrap();
     let websocket_server = NegativeStreamServer::setup().await;
 
@@ -31,6 +30,7 @@ async fn main_logic() {
 }
 
 pub fn main() {
+    init_logger_for_testing(None).unwrap();
     let runtime = tokio::runtime::Runtime::new().unwrap();
     runtime.block_on(main_logic());
 }

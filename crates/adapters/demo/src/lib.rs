@@ -85,7 +85,8 @@ impl LiveRunner {
                 data_response = self.data_response_stream.next() => {
                     if let Some(data_response) = data_response {
                         println!("Received data response: {:?}", data_response);
-                        nautilus_common::msgbus::response(&data_response.correlation_id, &data_response.data);
+                        let value = data_response.data.downcast_ref::<i32>().copied().unwrap();
+                        nautilus_common::msgbus::response(&data_response.correlation_id, &value);
                     }
                 }
                 message = self.message_stream.next() => {
