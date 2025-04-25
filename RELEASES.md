@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added processing of `OrderBookDepth10` for `BacktestEngine` and `OrderMatchingEngine` (#2542), thanks @limx0
+- Added `Actor.subscribe_order_book_depth(...)` subscription method (#2555), thanks @limx0
+- Added `Actor.on_order_book_depth(...)` handler method (#2555), thanks @limx0
 - Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
@@ -34,6 +36,7 @@ Released on TBD (UTC).
 - Fixed some clippy lints (#2517), thanks @twitu
 - Upgraded `databento` crate to v0.24.0
 - Upgraded `datafusion` crate to v47.0.0
+- Upgraded `redis` crate to v0.30.0
 - Upgraded `sqlx` crate to v0.8.5
 - Upgraded `pyo3` crate to v0.24.2
 
