@@ -97,6 +97,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport MarkPriceUpdate
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.greeks cimport GreeksCalculator
@@ -420,6 +421,23 @@ cdef class Actor(Component):
 
         """
         # Optionally override in subclass
+
+    cpdef void on_order_book_depth(self, depth):
+        """
+        Actions to be performed when running and receives an order book depth.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The order book depth received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         """
@@ -1340,6 +1358,69 @@ cdef class Actor(Component):
             managed=managed,
             interval_ms=1000,
             only_deltas=True,
+            client_id=client_id,
+            venue=instrument_id.venue,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+            params=params,
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_order_book_depth(
+        self,
+        InstrumentId instrument_id,
+        BookType book_type=BookType.L2_MBP,
+        int depth = 0,
+        ClientId client_id = None,
+        bint managed = True,
+        bint pyo3_conversion = False,
+        dict[str, object] params = None,
+    ):
+        """
+        Subscribe to the order book depth stream for the given instrument ID.
+
+        Once subscribed, any matching order book data published on the message bus is forwarded
+        to the `on_order_book_depth` handler.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument ID to subscribe to.
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        managed : bool, default True
+            If an order book should be managed by the data engine based on the subscribed feed.
+        pyo3_conversion : bool, default False
+            If received deltas should be converted to `nautilus_pyo3.OrderBookDepth`
+            prior to being passed to the `on_order_book_depth` handler.
+        params : dict[str, Any], optional
+            Additional parameters potentially used by a specific client.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+
+        if pyo3_conversion:
+            self._pyo3_conversion_types.add(OrderBookDepth10)
+
+        self._msgbus.subscribe(
+            topic=f"data.book.depth"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol.topic()}",
+            handler=self.handle_order_book_depth,
+        )
+
+        cdef SubscribeOrderBook command = SubscribeOrderBook(
+            instrument_id=instrument_id,
+            book_type=book_type,
+            depth=depth,
+            managed=managed,
+            interval_ms=1000,
+            only_deltas=False,
             client_id=client_id,
             venue=instrument_id.venue,
             command_id=UUID4(),
@@ -3208,6 +3289,31 @@ cdef class Actor(Component):
                 self.on_order_book_deltas(deltas)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(deltas)}", e)
+                raise
+
+    cpdef void handle_order_book_depth(self, OrderBookDepth10 depth):
+        """
+        Handle the given order book depth
+
+        Passes to `on_order_book` if state is ``RUNNING``.
+
+        Parameters
+        ----------
+        depth : OrderBookDepth10
+            The order book depth received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(depth, "order_book")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_book_depth(depth)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(depth)}", e)
                 raise
 
     cpdef void handle_order_book(self, OrderBook order_book):
