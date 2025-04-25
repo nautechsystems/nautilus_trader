@@ -1055,19 +1055,26 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
+        # Publish pending position events from snapshot to prevent recursion issues
+        cdef list to_publish = self._pending_position_events.copy()
+
+        # Clear pending events so nested calls append to a fresh list
+        self._pending_position_events.clear()
+
         cdef:
             PositionEvent pos_event
             Position position
-        for pos_event in self._pending_position_events:
+        for pos_event in to_publish:
             self._msgbus.publish_c(
                 topic=f"events.position.{pos_event.strategy_id}",
                 msg=pos_event,
             )
             if self.snapshot_positions:
                 position = self.cache.position(pos_event.position_id)
-                self._create_position_state_snapshot(position, open_only=isinstance(pos_event, PositionOpened))
-
-        self._pending_position_events.clear()
+                self._create_position_state_snapshot(
+                    position,
+                    open_only=isinstance(pos_event, PositionOpened),
+                )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
