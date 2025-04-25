@@ -52,8 +52,7 @@ impl NegativeStreamServer {
                     while let Some(Ok(msg)) = receiver.next().await {
                         if let tokio_tungstenite::tungstenite::protocol::Message::Text(txt) = msg {
                             if txt == "SKIP" {
-                                counter_clone_2
-                                    .fetch_add(5, std::sync::atomic::Ordering::SeqCst);
+                                counter_clone_2.fetch_add(5, std::sync::atomic::Ordering::SeqCst);
                             } else if txt == "STOP" {
                                 break;
                             }

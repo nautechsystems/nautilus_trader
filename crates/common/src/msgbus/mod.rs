@@ -102,7 +102,7 @@ pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     }
 }
 
-pub fn register_request_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
+pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
     if let Err(e) = get_message_bus()
         .borrow_mut()
         .register_response_handler(correlation_id, handler)

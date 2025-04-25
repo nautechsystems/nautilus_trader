@@ -1,31 +1,23 @@
-use nautilus_common::actor::Actor;
-use nautilus_common::actor::registry::get_actor_unchecked;
-use nautilus_common::messages::data::{DataResponse, RequestData};
-use nautilus_common::msgbus::handler::{
-    MessageHandler, ShareableMessageHandler, TypedMessageHandler,
-};
-use nautilus_common::msgbus::register;
+use nautilus_common::messages::data::{self, DataResponse, RequestData};
+use nautilus_common::runtime;
 use nautilus_core::UnixNanos;
+use nautilus_data::client::DataClient;
 use nautilus_model::data::DataType;
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::http::HttpClient;
 use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
 use reqwest::Method;
-use std::any::Any;
 use std::net::SocketAddr;
-use std::rc::Rc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
-use ustr::Ustr;
 
-pub struct MockNetworkDataClient {
+pub struct MockDataClient {
     http_address: SocketAddr,
     http_client: HttpClient,
-    websocket_address: SocketAddr,
     websocket_client: WebSocketClient,
     http_tx: tokio::sync::mpsc::UnboundedSender<DataResponse>,
 }
 
-impl MockNetworkDataClient {
+impl MockDataClient {
     pub async fn start(
         http_address: SocketAddr,
         websocket_address: SocketAddr,
@@ -53,7 +45,7 @@ impl MockNetworkDataClient {
         let (http_tx, http_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let config = WebSocketConfig {
-            url: websocket_address.to_string(),
+            url: format!("ws://{}", websocket_address).to_string(),
             headers: vec![],
             handler: Consumer::Rust(tx),
             heartbeat: None,
@@ -78,7 +70,6 @@ impl MockNetworkDataClient {
                 http_address,
                 http_client,
                 http_tx,
-                websocket_address,
                 websocket_client,
             },
             http_stream,
@@ -87,7 +78,7 @@ impl MockNetworkDataClient {
     }
 
     fn get_request(&self, req: &RequestData) {
-        nautilus_common::runtime::get_runtime().block_on(async move {
+        runtime::get_runtime().block_on(async move {
             let response = self
                 .http_client
                 .request(
@@ -119,7 +110,7 @@ impl MockNetworkDataClient {
     }
 
     fn skip_request(&self, req: &RequestData) {
-        nautilus_common::runtime::get_runtime().block_on(async move {
+        runtime::get_runtime().block_on(async move {
             let response = self
                 .http_client
                 .request(
@@ -150,80 +141,62 @@ impl MockNetworkDataClient {
             self.http_tx.send(response).unwrap();
         });
     }
+}
 
-    fn subscriber_skip_command(&self) {
-        nautilus_common::runtime::get_runtime().block_on(async move {
+impl DataClient for MockDataClient {
+    fn client_id(&self) -> nautilus_model::identifiers::ClientId {
+        ClientId::new("mock_data_client")
+    }
+
+    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
+        if request.data_type.type_name() == "get" {
+            println!("Received get data request");
+            self.get_request(&request);
+        } else if request.data_type.type_name() == "skip" {
+            println!("Received skip data request");
+            self.skip_request(&request);
+        }
+
+        Ok(())
+    }
+
+    fn subscribe(&mut self, cmd: data::SubscribeData) -> anyhow::Result<()> {
+        println!("Received subscribe command");
+        runtime::get_runtime().block_on(async move {
             self.websocket_client
                 .send_text("SKIP".to_string(), None)
                 .await;
         });
+        Ok(())
     }
 
-    fn subscriber_stop_command(&self) {
-        nautilus_common::runtime::get_runtime().block_on(async move {
+    fn unsubscribe(&mut self, cmd: data::UnsubscribeData) -> anyhow::Result<()> {
+        println!("Received unsubscribe command");
+        runtime::get_runtime().block_on(async move {
             self.websocket_client
                 .send_text("STOP".to_string(), None)
                 .await;
         });
+        Ok(())
     }
 
-    pub fn register_message_handlers() {
-        let handler = TypedMessageHandler::from(subscriber_skip_command_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("subscriber_skip_command", handler);
-
-        let handler = TypedMessageHandler::from(get_positive_value_request_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("get_positive_value_request", handler);
-
-        let handler = TypedMessageHandler::from(positive_value_skip_request_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("positive_value_skip_request", handler);
-
-        let handler = TypedMessageHandler::from(subscriber_stop_command_handler);
-        let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("subscriber_stop_command", handler);
-    }
-}
-
-impl Actor for MockNetworkDataClient {
-    fn id(&self) -> Ustr {
-        Ustr::from("mock_network_data_client")
+    fn venue(&self) -> Option<Venue> {
+        None
     }
 
-    fn handle(&mut self, msg: &dyn Any) {
-        todo!()
+    fn start(&self) {}
+
+    fn stop(&self) {}
+
+    fn reset(&self) {}
+
+    fn dispose(&self) {}
+
+    fn is_connected(&self) -> bool {
+        true
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
+    fn is_disconnected(&self) -> bool {
+        false
     }
-}
-
-pub fn subscriber_skip_command_handler(req: &()) {
-    println!("DataClient: Received subscriber skip command");
-    let actor_id = Ustr::from("mock_network_data_client");
-    let data_client = get_actor_unchecked::<MockNetworkDataClient>(&actor_id);
-    data_client.subscriber_skip_command();
-}
-
-pub fn subscriber_stop_command_handler(req: &()) {
-    println!("DataClient: Received subscriber stop command");
-    let actor_id = Ustr::from("mock_network_data_client");
-    let data_client = get_actor_unchecked::<MockNetworkDataClient>(&actor_id);
-    data_client.subscriber_stop_command();
-}
-
-pub fn get_positive_value_request_handler(req: &RequestData) {
-    println!("DataClient: Received get positive value request");
-    let actor_id = Ustr::from("mock_network_data_client");
-    let data_client = get_actor_unchecked::<MockNetworkDataClient>(&actor_id);
-    data_client.get_request(req);
-}
-
-pub fn positive_value_skip_request_handler(req: &RequestData) {
-    println!("DataClient: Received positive value skip request");
-    let actor_id = Ustr::from("mock_network_data_client");
-    let data_client = get_actor_unchecked::<MockNetworkDataClient>(&actor_id);
-    data_client.skip_request(req);
 }
