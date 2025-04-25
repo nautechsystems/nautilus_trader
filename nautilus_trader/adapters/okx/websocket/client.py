@@ -1004,7 +1004,7 @@ class OKXWebsocketClient:
 
         timestamp = int(self._clock.timestamp())
         message = str(timestamp) + "GET/users/self/verify"
-        digest = hmac_signature(self._api_secret, message).encode()
+        digest = bytes.fromhex(hmac_signature(self._api_secret, message))
         sign = base64.b64encode(digest).decode()
         payload = {
             "op": "login",
