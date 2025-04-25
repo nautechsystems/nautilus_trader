@@ -424,11 +424,11 @@ cdef class Actor(Component):
 
     cpdef void on_order_book_depth(self, depth):
         """
-        Actions to be performed when running and receives order book deltas.
+        Actions to be performed when running and receives an order book depth.
 
         Parameters
         ----------
-        depth : OrderBookDepth10.OrderBookDeltas
+        depth : OrderBookDepth10
             The order book depth received.
 
         Warnings
@@ -1395,8 +1395,8 @@ cdef class Actor(Component):
         managed : bool, default True
             If an order book should be managed by the data engine based on the subscribed feed.
         pyo3_conversion : bool, default False
-            If received deltas should be converted to `nautilus_pyo3.OrderBookDeltas`
-            prior to being passed to the `on_order_book_deltas` handler.
+            If received deltas should be converted to `nautilus_pyo3.OrderBookDepth`
+            prior to being passed to the `on_order_book_depth` handler.
         params : dict[str, Any], optional
             Additional parameters potentially used by a specific client.
 
