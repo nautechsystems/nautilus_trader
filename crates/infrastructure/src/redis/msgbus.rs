@@ -38,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
-use redis::*;
+use redis::{AsyncCommands, streams};
 use streams::StreamReadOptions;
 use ustr::Ustr;
 
@@ -72,7 +72,7 @@ pub struct RedisMessageBusDatabase {
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
-    type DatabaseType = RedisMessageBusDatabase;
+    type DatabaseType = Self;
 
     /// Creates a new [`RedisMessageBusDatabase`] instance.
     fn new(
@@ -94,13 +94,15 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
                 log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
-            };
+            }
         }));
 
         // Conditionally create stream task and channel if external streams configured
         let external_streams = config.external_streams.clone().unwrap_or_default();
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let (stream_rx, stream_handle) = if !external_streams.is_empty() {
+        let (stream_rx, stream_handle) = if external_streams.is_empty() {
+            (None, None)
+        } else {
             let stream_signal_clone = stream_signal.clone();
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
@@ -114,8 +116,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                     }
                 })),
             )
-        } else {
-            (None, None)
         };
 
         // Create heartbeat task
@@ -126,7 +126,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let pub_tx_clone = pub_tx.clone();
 
             Some(get_runtime().spawn(async move {
-                run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await
+                run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await;
             }))
         } else {
             None
@@ -231,13 +231,13 @@ pub async fn publish_messages(
     let autotrim_duration = config
         .autotrim_mins
         .filter(|&mins| mins > 0)
-        .map(|mins| Duration::from_secs(mins as u64 * 60));
+        .map(|mins| Duration::from_secs(u64::from(mins) * 60));
     let mut last_trim_index: HashMap<String, usize> = HashMap::new();
 
     // Buffering
     let mut buffer: VecDeque<BusMessage> = VecDeque::new();
     let mut last_drain = Instant::now();
-    let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
+    let buffer_interval = Duration::from_millis(u64::from(config.buffer_interval_ms.unwrap_or(0)));
 
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
@@ -251,21 +251,16 @@ pub async fn publish_messages(
             )
             .await?;
             last_drain = Instant::now();
-        } else {
-            match rx.recv().await {
-                Some(msg) => {
-                    if msg.topic == CLOSE_TOPIC {
-                        tracing::debug!("Received close message");
-                        drop(rx);
-                        break;
-                    }
-                    buffer.push_back(msg);
-                }
-                None => {
-                    tracing::debug!("Channel hung up");
-                    break;
-                }
+        } else if let Some(msg) = rx.recv().await {
+            if msg.topic == CLOSE_TOPIC {
+                tracing::debug!("Received close message");
+                drop(rx);
+                break;
             }
+            buffer.push_back(msg);
+        } else {
+            tracing::debug!("Channel hung up");
+            break;
         }
     }
 
@@ -302,9 +297,10 @@ async fn drain_buffer(
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
         ];
-        let stream_key = match stream_per_topic {
-            true => format!("{stream_key}:{}", &msg.topic),
-            false => stream_key.to_string(),
+        let stream_key = if stream_per_topic {
+            format!("{stream_key}:{}", &msg.topic)
+        } else {
+            stream_key.to_string()
         };
         pipe.xadd(&stream_key, "*", &items);
 
@@ -378,9 +374,9 @@ pub async fn stream_messages(
                     // Timeout occurred: no messages received
                     continue;
                 }
-                for entry in stream_bulk.iter() {
-                    for (_stream_key, stream_msgs) in entry.iter() {
-                        for stream_msg in stream_msgs.iter() {
+                for entry in &stream_bulk {
+                    for stream_msgs in entry.values() {
+                        for stream_msg in stream_msgs {
                             for (id, array) in stream_msg {
                                 last_id.clear();
                                 last_id.push_str(id);
@@ -447,7 +443,7 @@ async fn run_heartbeat(
 ) {
     tracing::debug!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
 
-    let heartbeat_interval = Duration::from_secs(heartbeat_interval_secs as u64);
+    let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
 
     let check_interval = Duration::from_millis(100);

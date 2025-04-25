@@ -28,7 +28,8 @@ pub struct PostgresConnectOptions {
 
 impl PostgresConnectOptions {
     /// Creates a new [`PostgresConnectOptions`] instance.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         host: String,
         port: u16,
         username: String,
@@ -43,6 +44,8 @@ impl PostgresConnectOptions {
             database,
         }
     }
+
+    #[must_use]
     pub fn connection_string(&self) -> String {
         format!(
             "postgres://{username}:{password}@{host}:{port}/{database}",
@@ -54,8 +57,9 @@ impl PostgresConnectOptions {
         )
     }
 
+    #[must_use]
     pub fn default_administrator() -> Self {
-        PostgresConnectOptions::new(
+        Self::new(
             String::from("localhost"),
             5432,
             String::from("postgres"),
@@ -67,7 +71,7 @@ impl PostgresConnectOptions {
 
 impl Default for PostgresConnectOptions {
     fn default() -> Self {
-        PostgresConnectOptions::new(
+        Self::new(
             String::from("localhost"),
             5432,
             String::from("nautilus"),
@@ -79,7 +83,7 @@ impl Default for PostgresConnectOptions {
 
 impl From<PostgresConnectOptions> for PgConnectOptions {
     fn from(opt: PostgresConnectOptions) -> Self {
-        PgConnectOptions::new()
+        Self::new()
             .host(opt.host.as_str())
             .port(opt.port)
             .username(opt.username.as_str())
@@ -90,6 +94,7 @@ impl From<PostgresConnectOptions> for PgConnectOptions {
 }
 
 // Gets the postgres connect options from provided arguments, environment variables or defaults
+#[must_use]
 pub fn get_postgres_connect_options(
     host: Option<String>,
     port: Option<u16>,
@@ -124,7 +129,7 @@ pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
     Ok(PgPool::connect_with(options).await?)
 }
 
-/// Scans current path with keyword nautilus_trader and build schema dir
+/// Scans current path with keyword `nautilus_trader` and build schema dir
 fn get_schema_dir() -> anyhow::Result<String> {
     std::env::var("SCHEMA_DIR").or_else(|_| {
         let nautilus_git_repo_name = "nautilus_trader";
@@ -207,7 +212,7 @@ pub async fn init_postgres(
     }
 
     // Grant connect
-    match sqlx::query(format!("GRANT CONNECT ON DATABASE {0} TO {0};", database).as_str())
+    match sqlx::query(format!("GRANT CONNECT ON DATABASE {database} TO {database};").as_str())
         .execute(pg)
         .await
     {
@@ -226,11 +231,7 @@ pub async fn init_postgres(
 
     // Grant all table privileges to the role
     match sqlx::query(
-        format!(
-            "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {};",
-            database
-        )
-        .as_str(),
+        format!("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {database};").as_str(),
     )
     .execute(pg)
     .await
@@ -252,11 +253,7 @@ pub async fn init_postgres(
 
     // Grant all function privileges to the role
     match sqlx::query(
-        format!(
-            "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {};",
-            database
-        )
-        .as_str(),
+        format!("GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO {database};").as_str(),
     )
     .execute(pg)
     .await
@@ -279,7 +276,7 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
     }
 
     // Revoke connect
-    match sqlx::query(format!("REVOKE CONNECT ON DATABASE {0} FROM {0};", database).as_str())
+    match sqlx::query(format!("REVOKE CONNECT ON DATABASE {database} FROM {database};").as_str())
         .execute(pg)
         .await
     {
@@ -288,9 +285,11 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
     }
 
     // Revoke privileges
-    match sqlx::query(format!("REVOKE ALL PRIVILEGES ON DATABASE {0} FROM {0};", database).as_str())
-        .execute(pg)
-        .await
+    match sqlx::query(
+        format!("REVOKE ALL PRIVILEGES ON DATABASE {database} FROM {database};").as_str(),
+    )
+    .execute(pg)
+    .await
     {
         Ok(_) => log::info!("Revoked all privileges from role {database}"),
         Err(e) => log::error!("Error revoking all privileges from role {database}: {e:?}"),

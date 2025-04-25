@@ -48,9 +48,8 @@ impl PostgresCacheDatabase {
         password: Option<String>,
         database: Option<String>,
     ) -> PyResult<Self> {
-        let result = get_runtime().block_on(async {
-            PostgresCacheDatabase::connect(host, port, username, password, database).await
-        });
+        let result = get_runtime()
+            .block_on(async { Self::connect(host, port, username, password, database).await });
         result.map_err(to_pyruntime_err)
     }
 

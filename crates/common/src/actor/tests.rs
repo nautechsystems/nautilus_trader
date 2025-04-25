@@ -25,11 +25,12 @@ use std::{
 
 use log::LevelFilter;
 use nautilus_core::UnixNanos;
-use nautilus_model::data::stubs::{stub_instrument_close, stub_instrument_status};
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        close::InstrumentClose,
+        stubs::{stub_instrument_close, stub_instrument_status},
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, TraderId, Venue},
