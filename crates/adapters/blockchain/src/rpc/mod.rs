@@ -21,11 +21,14 @@ use crate::rpc::{
         polygon::PolygonRpclient,
     },
     error::BlockchainRpcClientError,
+    types::BlockchainRpcMessage,
 };
 
 pub mod chains;
 pub mod core;
 pub mod error;
+pub mod types;
+pub mod utils;
 
 #[enum_dispatch(BlockchainRpcClient)]
 pub enum BlockchainRpcClientAny {
@@ -39,7 +42,7 @@ pub enum BlockchainRpcClientAny {
 #[enum_dispatch]
 pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
-    async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
-    async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError>;
-    async fn process_rpc_messages(&mut self);
+    async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError>;
 }

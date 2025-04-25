@@ -15,8 +15,17 @@
 
 use thiserror::Error;
 
+/// Represents errors that can occur when interacting with a blockchain RPC client.
 #[derive(Debug, Error)]
 pub enum BlockchainRpcClientError {
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("Parsing error: {0}")]
+    MessageParsingError(String),
+    #[error("Unsupported rpc response type of message {0}")]
+    UnsupportedRpcResponseType(String),
+    #[error("Internal Rpc client error: {0}")]
+    InternalRpcClientError(String),
+    #[error("No message received")]
+    NoMessageReceived,
 }

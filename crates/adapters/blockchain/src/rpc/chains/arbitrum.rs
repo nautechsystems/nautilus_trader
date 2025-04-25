@@ -17,6 +17,7 @@ use nautilus_model::defi::chain::chains;
 
 use crate::rpc::{
     BlockchainRpcClient, core::CoreBlockchainRpcClient, error::BlockchainRpcClientError,
+    types::BlockchainRpcMessage,
 };
 
 pub struct ArbitrumRpcClient {
@@ -37,15 +38,15 @@ impl BlockchainRpcClient for ArbitrumRpcClient {
         self.base_client.connect().await
     }
 
-    async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+    async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.base_client.subscribe_live_blocks().await
     }
 
-    async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+    async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.base_client.unsubscribe_live_blocks().await
     }
 
-    async fn process_rpc_messages(&mut self) {
-        self.base_client.process_rpc_messages().await;
+    async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError> {
+        self.base_client.next_rpc_message().await
     }
 }

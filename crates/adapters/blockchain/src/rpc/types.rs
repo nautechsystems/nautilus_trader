@@ -13,15 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Configuration for blockchain adapter connections.
+use nautilus_model::defi::block::Block;
+use serde::{Deserialize, Serialize};
+use strum::{Display, EnumString};
+
+/// Represents normalized blockchain RPC messages which was processed from the node.
 #[derive(Debug, Clone)]
-pub struct BlockchainAdapterConfig {
-    /// The WebSocket secure URL for the blockchain RPC endpoint.
-    pub wss_rpc_url: String,
+pub enum BlockchainRpcMessage {
+    Block(Block),
 }
 
-impl BlockchainAdapterConfig {
-    pub fn new(wss_rpc_url: String) -> Self {
-        Self { wss_rpc_url }
-    }
+/// Represents the types of events that can be subscribed to via the blockchain RPC interface.
+/// This enum defines the various event types that the application can subscribe to using
+/// the WebSocket-based RPC subscription
+#[derive(
+    Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
+)]
+pub enum RpcEventType {
+    NewBlock,
 }

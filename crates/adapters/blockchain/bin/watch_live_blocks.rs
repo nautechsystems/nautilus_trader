@@ -73,17 +73,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let wss_rpc_url = std::env::var("RPC_WSS_URL").expect("RPC_WSS_URL must be set");
     let blockchain_adapter_config = BlockchainAdapterConfig::new(wss_rpc_url);
-    let mut data_client = BlockchainDataClient::new(chain.clone(), &blockchain_adapter_config);
+    let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_adapter_config);
     data_client.connect().await?;
     data_client.subscribe_live_blocks().await?;
 
     // Main loop to keep the app running
     loop {
         tokio::select! {
-                _ = notify.notified() => {
-                    break;
-                }
-                _ = data_client.process_messages() => {}
+            _ = notify.notified() => break,
+            _ = data_client.process_rpc_message() => {}
         }
     }
     Ok(())

@@ -24,6 +24,7 @@ use crate::{
             polygon::PolygonRpclient,
         },
         error::BlockchainRpcClientError,
+        types::BlockchainRpcMessage,
     },
 };
 
@@ -33,7 +34,7 @@ pub struct BlockchainDataClient {
 }
 
 impl BlockchainDataClient {
-    pub fn new(chain: Chain, config: &BlockchainAdapterConfig) -> Self {
+    pub fn new(chain: Chain, config: BlockchainAdapterConfig) -> Self {
         let rpc_client = Self::initialize_rpc_client(chain.name, config.wss_rpc_url.clone());
         Self { chain, rpc_client }
     }
@@ -61,15 +62,26 @@ impl BlockchainDataClient {
         self.rpc_client.connect().await
     }
 
-    pub async fn process_messages(&mut self) {
-        self.rpc_client.process_rpc_messages().await
+    pub async fn process_rpc_message(&mut self) {
+        loop {
+            match self.rpc_client.next_rpc_message().await {
+                Ok(msg) => match msg {
+                    BlockchainRpcMessage::Block(block) => {
+                        log::info!("{}", block);
+                    }
+                },
+                Err(e) => {
+                    log::error!("Error processing rpc message: {}", e);
+                }
+            }
+        }
     }
 
-    pub async fn subscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+    pub async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.rpc_client.subscribe_live_blocks().await
     }
 
-    pub async fn unsubscribe_live_blocks(&self) -> Result<(), BlockchainRpcClientError> {
+    pub async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.rpc_client.unsubscribe_live_blocks().await
     }
 }

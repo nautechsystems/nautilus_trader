@@ -43,8 +43,10 @@ thiserror = { workspace = true }
 enum_dispatch = { workspace = true }
 async-trait = {  workspace = true }
 dotenvy = { workspace = true }
+strum = { workspace = true }
 
 [dev-dependencies]
+rstest = { workspace = true }
 
 [[bin]]
 name = "live_blocks"
