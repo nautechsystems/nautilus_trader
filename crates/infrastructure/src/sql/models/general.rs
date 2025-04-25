@@ -38,7 +38,7 @@ impl<'r> FromRow<'r, PgRow> for OrderEventOrderClientIdCombination {
             .try_get::<&str, _>("client_id")
             .map(ClientId::from)
             .unwrap();
-        Ok(OrderEventOrderClientIdCombination {
+        Ok(Self {
             client_order_id,
             client_id,
         })

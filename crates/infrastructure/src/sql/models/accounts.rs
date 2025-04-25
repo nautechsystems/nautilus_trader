@@ -47,6 +47,6 @@ impl<'r> FromRow<'r, PgRow> for AccountEventModel {
             ts_init,
             base_currency,
         );
-        Ok(AccountEventModel(account_event))
+        Ok(Self(account_event))
     }
 }

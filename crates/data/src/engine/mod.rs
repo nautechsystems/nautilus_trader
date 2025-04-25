@@ -840,7 +840,7 @@ impl DataEngine {
     fn handle_instruments(&self, instruments: &[InstrumentAny]) {
         // TODO: Improve by adding bulk update methods to cache and database
         let mut cache = self.cache.as_ref().borrow_mut();
-        for instrument in instruments.iter() {
+        for instrument in instruments {
             if let Err(e) = cache.add_instrument(instrument.clone()) {
                 log::error!("Error on cache insert: {e}");
             }

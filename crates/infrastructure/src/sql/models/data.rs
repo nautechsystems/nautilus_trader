@@ -49,7 +49,7 @@ impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
             ts_event,
             ts_init,
         );
-        Ok(QuoteTickModel(quote))
+        Ok(Self(quote))
     }
 }
 
@@ -77,7 +77,7 @@ impl<'r> FromRow<'r, PgRow> for TradeTickModel {
             ts_event,
             ts_init,
         );
-        Ok(TradeTickModel(trade))
+        Ok(Self(trade))
     }
 }
 
@@ -109,6 +109,6 @@ impl<'r> FromRow<'r, PgRow> for BarModel {
         let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
         let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
-        Ok(BarModel(bar))
+        Ok(Self(bar))
     }
 }
