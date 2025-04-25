@@ -131,7 +131,7 @@ class OKXHttpClient:
         if body == "{}" or body == "None":
             body = ""
         message = str(timestamp) + method.upper() + url_path + body
-        digest = hmac_signature(self._api_secret, message).encode()
+        digest = bytes.fromhex(hmac_signature(self._api_secret, message))
         return base64.b64encode(digest).decode()
 
     async def send_request(

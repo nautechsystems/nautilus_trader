@@ -48,6 +48,7 @@ Released on TBD (UTC).
 - Fixed the instrument class of `IndexInstrument`, changing to `SPOT` to correctly represent a spot index of underlying constituents
 - Fixed data range request `end` handling for `DataEngine`
 - Fixed unsubscribe instrument close for `DataEngine`
+- Fixed network clients authentication for OKX (#2553), thanks for reporting @S3toGreen
 - Reverted removal of rotate log file on UTC date change (#2552), thanks @twitu
 
 ### Documentation Updates
