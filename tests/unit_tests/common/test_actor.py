@@ -1589,6 +1589,74 @@ class TestActor:
         assert self.data_engine.command_count == 2
         assert len(actor.msgbus.subscriptions()) == 4  # Portfolio subscriptions only
 
+    def test_subscribe_order_book_deltas(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_order_book_deltas(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_book_deltas(AUDUSD_SIM.id)
+
+        # Act
+        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_order_book_depth10(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_book_depth(AUDUSD_SIM.id, book_type=BookType.L2_MBP, depth=10)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_order_book_depth10(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_book_depth(AUDUSD_SIM.id, book_type=BookType.L2_MBP, depth=10)
+
+        # Act
+        actor.unsubscribe_order_book_depth(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
     def test_subscribe_order_book_at_interval(self) -> None:
         # Arrange
         actor = MockActor()
@@ -1619,40 +1687,6 @@ class TestActor:
 
         # Act
         actor.unsubscribe_order_book_at_interval(AUDUSD_SIM.id)
-
-        # Assert
-        assert self.data_engine.command_count == 2
-
-    def test_subscribe_order_book_data(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        # Act
-        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
-
-        # Assert
-        assert self.data_engine.command_count == 1
-
-    def test_unsubscribe_order_book_deltas(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
-
-        # Act
-        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.command_count == 2
