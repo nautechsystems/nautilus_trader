@@ -19,7 +19,10 @@ use nautilus_core::UnixNanos;
 use serde::Deserialize;
 use ustr::Ustr;
 
-use crate::defi::hex::{deserialize_hex_number, deserialize_hex_timestamp};
+use crate::defi::{
+    chain::Chain,
+    hex::{deserialize_hex_number, deserialize_hex_timestamp},
+};
 
 /// Represent Ethereum-compatible compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Deserialize)]
@@ -43,6 +46,9 @@ pub struct Block {
     /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]
     timestamp: UnixNanos,
+    /// The blockchain that this block is part of.
+    #[serde(skip)]
+    chain: Option<Chain>,
 }
 
 impl Block {
@@ -63,7 +69,13 @@ impl Block {
             gas_used,
             gas_limit,
             timestamp,
+            chain: None,
         }
+    }
+
+    /// Sets the blockchain network (chain) associated with this block.
+    pub fn set_chain(&mut self, chain: Chain) {
+        self.chain = Some(chain);
     }
 }
 
@@ -71,7 +83,11 @@ impl Display for Block {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Block(number={}, timestamp={}, hash={})",
+            "Block({}number={}, timestamp={}, hash={})",
+            self.chain
+                .as_ref()
+                .map(|c| format!("chain={}, ", c.name))
+                .unwrap_or_default(),
             self.number,
             self.timestamp.to_rfc3339(),
             self.hash

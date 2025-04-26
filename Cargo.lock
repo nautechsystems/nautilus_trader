@@ -3118,6 +3118,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-blockchain"
+version = "0.47.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "dotenvy",
+ "enum_dispatch",
+ "futures-util",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-network",
+ "reqwest",
+ "rstest",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+]
+
+[[package]]
 name = "nautilus-cli"
 version = "0.47.0"
 dependencies = [

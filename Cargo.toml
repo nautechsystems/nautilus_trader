@@ -123,6 +123,7 @@ proptest = "1.6.0"
 rstest = "0.25.0"
 tempfile = "3.19.0"
 tracing-test = "0.2.5"
+dotenvy = "0.15.7"
 
 # build-dependencies
 cbindgen = "0.28.0"

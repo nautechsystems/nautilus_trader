@@ -1,0 +1,53 @@
+[package]
+name = "nautilus-blockchain"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+
+[lib]
+name = "nautilus_blockchain"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-model = { path = "../../model" , features = ["defi", "python"] }
+nautilus-core = { path = "../../core" }
+nautilus-network = { path = "../../network" , features = ["python"]}
+nautilus-common = { path = "../../common" }
+log = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+enum_dispatch = { workspace = true }
+async-trait = {  workspace = true }
+dotenvy = { workspace = true }
+strum = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+
+[[bin]]
+name = "live_blocks"
+path = "bin/watch_live_blocks.rs"
