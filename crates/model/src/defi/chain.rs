@@ -19,11 +19,22 @@
 use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
-use strum::Display;
+use strum::{Display, EnumString};
 
 /// Represents different blockchain networks.
 #[derive(
-    Debug, Clone, Copy, Hash, PartialOrd, PartialEq, Ord, Eq, Display, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    Hash,
+    PartialOrd,
+    PartialEq,
+    Ord,
+    Eq,
+    Display,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 pub enum Blockchain {
     Abstract,

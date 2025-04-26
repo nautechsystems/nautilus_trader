@@ -60,4 +60,4 @@ pub mod python;
 pub mod stubs;
 
 #[cfg(feature = "defi")]
-mod defi;
+pub mod defi;
