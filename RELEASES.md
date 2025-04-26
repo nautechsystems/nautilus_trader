@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
 - Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
 - Added `Transaction` primitive for blockchain domain model (#2551), thanks @filipmacek
+- Added initial blockchain adapter with live block subscription (#2557), thanks @filipmacek
 
 ### Breaking Changes
 - Removed fees from locked balance calculations for `CASH` accounts
@@ -53,6 +54,7 @@ Released on TBD (UTC).
 - Fixed data range request `end` handling for `DataEngine`
 - Fixed unsubscribe instrument close for `DataEngine`
 - Fixed network clients authentication for OKX (#2553), thanks for reporting @S3toGreen
+- Fixed account balance calculation for dYdX (#2563), thanks @davidsblom
 - Reverted removal of rotate log file on UTC date change (#2552), thanks @twitu
 
 ### Documentation Updates

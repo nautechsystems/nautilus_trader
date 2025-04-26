@@ -1,6 +1,7 @@
 [package]
 name = "nautilus-blockchain"
 readme = "README.md"
+publish = false  # Do not publish to crates.io for now
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +13,6 @@ keywords.workspace = true
 documentation.workspace = true
 repository.workspace = true
 homepage.workspace = true
-
 
 [lib]
 name = "nautilus_blockchain"
@@ -26,10 +26,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-model = { path = "../../model" , features = ["defi", "python"] }
-nautilus-core = { path = "../../core" }
-nautilus-network = { path = "../../network" , features = ["python"]}
-nautilus-common = { path = "../../common" }
+nautilus-model = { workspace = true, features = ["defi", "python"] }
+nautilus-core = { workspace = true }
+nautilus-network = { workspace = true, features = ["python"] }
+nautilus-common = { workspace = true }
+
 log = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
