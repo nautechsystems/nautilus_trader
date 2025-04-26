@@ -42,7 +42,7 @@ pub enum BlockchainRpcClientAny {
 #[enum_dispatch]
 pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
-    async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
-    async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
     async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError>;
 }

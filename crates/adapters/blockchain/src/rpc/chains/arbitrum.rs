@@ -38,12 +38,12 @@ impl BlockchainRpcClient for ArbitrumRpcClient {
         self.base_client.connect().await
     }
 
-    async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.subscribe_live_blocks().await
+    async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.subscribe_blocks().await
     }
 
-    async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.base_client.unsubscribe_live_blocks().await
+    async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+        self.base_client.unsubscribe_blocks().await
     }
 
     async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError> {

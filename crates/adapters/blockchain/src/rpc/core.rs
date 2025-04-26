@@ -235,13 +235,13 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Subscribes to real-time block updates from the blockchain node.
-    pub async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+    pub async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.subscribe_events(RpcEventType::NewBlock, String::from("newHeads"))
             .await
     }
 
     /// Cancels the subscription to real-time block updates.
-    pub async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+    pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.unsubscribe_events(String::from("newHeads")).await?;
 
         // Find and remove the subscription ID associated with the newBlock event type

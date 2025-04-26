@@ -77,11 +77,11 @@ impl BlockchainDataClient {
         }
     }
 
-    pub async fn subscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.rpc_client.subscribe_live_blocks().await
+    pub async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+        self.rpc_client.subscribe_blocks().await
     }
 
-    pub async fn unsubscribe_live_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.rpc_client.unsubscribe_live_blocks().await
+    pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
+        self.rpc_client.unsubscribe_blocks().await
     }
 }

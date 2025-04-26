@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let blockchain_adapter_config = BlockchainAdapterConfig::new(wss_rpc_url);
     let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_adapter_config);
     data_client.connect().await?;
-    data_client.subscribe_live_blocks().await?;
+    data_client.subscribe_blocks().await?;
 
     // Main loop to keep the app running
     loop {
