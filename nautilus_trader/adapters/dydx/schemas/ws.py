@@ -574,15 +574,15 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
 
         if self.subaccount is not None:
             currency = Currency.from_str(DEFAULT_CURRENCY)
-            free = Decimal(self.subaccount.freeCollateral)
-            total = Decimal(self.subaccount.equity)
-            locked = total - free
+            free = Money(float(self.subaccount.freeCollateral), currency)
+            total = Money(float(self.subaccount.equity), currency)
+            locked = Money(total - free, currency)
 
             return [
                 AccountBalance(
-                    total=Money(total, currency),
-                    locked=Money(locked, currency),
-                    free=Money(free, currency),
+                    total=total,
+                    locked=locked,
+                    free=free,
                 ),
             ]
 
