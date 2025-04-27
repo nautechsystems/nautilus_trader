@@ -89,7 +89,7 @@ impl MockDataClient {
         let req = req.clone();
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
-        let http_address = self.http_address.clone();
+        let http_address = self.http_address;
         runtime::get_runtime().spawn(async move {
             let response = http_client
                 .request(
@@ -125,7 +125,7 @@ impl MockDataClient {
         let req = req.clone();
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
-        let http_address = self.http_address.clone();
+        let http_address = self.http_address;
         runtime::get_runtime().spawn(async move {
             let response = http_client
                 .request(

@@ -88,13 +88,10 @@ impl LiveRunner {
             // TODO: push decoding logic into data client
             tokio::select! {
                 data_response = self.data_response_stream.next() => {
-                    match data_response {
-                        Some(DataResponse::Data(custom_data_response)) => {
+                    if let Some(DataResponse::Data(custom_data_response)) = data_response {
                             println!("Received custom data response: {:?}", custom_data_response);
                             let value = custom_data_response.data.downcast_ref::<i32>().copied().unwrap();
                             nautilus_common::msgbus::response(&custom_data_response.correlation_id, &value);
-                        }
-                        _ => {}
                     }
                 }
                 message = self.message_stream.next() => {
