@@ -1042,13 +1042,10 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        println!("Received message");
-        // TODO: Directly execute. Enqueueing changes order
-        // self.engine_ref.borrow_mut().enqueue(msg);
         if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
             self.engine_ref.borrow_mut().execute(cmd.clone());
         } else {
-            log::error!("Invalid message type received: {msg:?}");
+            log::error!("Expected DataCommand message for data engine command handler: {:?}", msg);
         }
     }
 
