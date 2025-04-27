@@ -3,39 +3,63 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added processing of `OrderBookDepth10` for `BacktestEngine` and `OrderMatchingEngine` (#2542), thanks @limx0
+- Added `Actor.subscribe_order_book_depth(...)` subscription method (#2555), thanks @limx0
+- Added `Actor.unsubscribe_order_book_depth(...)` subscription method
+- Added `Actor.on_order_book_depth(...)` handler method (#2555), thanks @limx0
 - Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
 - Added `Quantity::non_zero(...)` method
 - Added `Quantity::non_zero_checked(...)` method
+- Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
+- Added mark price subscription for Binance Futures (#2548), thanks @bartolootrit
 - Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
 - Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
-- Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
+- Added `Transaction` primitive for blockchain domain model (#2551), thanks @filipmacek
+- Added initial blockchain adapter with live block subscription (#2557), thanks @filipmacek
 
 ### Breaking Changes
-None
+- Removed fees from locked balance calculations for `CASH` accounts
+- Removed fees from margin calculations for `MARGIN` accounts
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
+- Simplified default locked balance and margin calculations to not include fees
 - Improved handling of time range and effective date filters for `TardisInstrumentProvider`
 - Improved reconnection robustness for Bybit private/trading channels (#2520), thanks @sunlei
 - Improved logger buffers flushing post backtest
 - Improved validations for Tardis trades data
+- Improved correctness of client registration and deregistration for `ExecutionEngine`
+- Improved build time by only compiling libraries (#2539), thanks @twitu
 - Refined `Price` and `Quantity` validations and correctness
+- Filter fill events if order is already filled for dYdX (#2547), thanks @davidsblom
 - Fixed some clippy lints (#2517), thanks @twitu
-- Upgraded `databento` crate to v0.23.0
+- Upgraded `databento` crate to v0.24.0
+- Upgraded `datafusion` crate to v47.0.0
+- Upgraded `redis` crate to v0.30.0
 - Upgraded `sqlx` crate to v0.8.5
+- Upgraded `pyo3` crate to v0.24.2
 
 ### Fixes
+- Fixed consistent ordering of execution events (#2513, #2554), thanks for reporting @stastnypremysl
+- Fixed type error when generating an elapsed time for backtests with no elapsed time
 - Fixed memory leak in `RetryManager` by simplifying the acquire-release pattern, avoiding the asynchronous context manager protocol that led to state sharing, thanks for reporting @DeevsDeevs
 - Fixed locked balance and initial margin calculations for reduce-only orders (#2505), thanks for reporting @stastnypremysl
 - Fixed purging order events from position (these needed to be purged prior to removing cache index entry), thanks @DeevsDeevs
 - Fixed `TypeError` when formatting backtest post run timestamps which were `None` (#2514), thanks for reporting @stastnypremysl
 - Fixed handling of `BetfairSequenceCompleted` as custom data
+- Fixed the instrument class of `IndexInstrument`, changing to `SPOT` to correctly represent a spot index of underlying constituents
+- Fixed data range request `end` handling for `DataEngine`
+- Fixed unsubscribe instrument close for `DataEngine`
+- Fixed network clients authentication for OKX (#2553), thanks for reporting @S3toGreen
+- Fixed account balance calculation for dYdX (#2563), thanks @davidsblom
+- Reverted removal of rotate log file on UTC date change (#2552), thanks @twitu
 
 ### Documentation Updates
-None
+- Improved environment setup guide with recommended rust analyzer settings (#2538), thanks @twitu
+- Fixed alignment with code for some `ExecutionEngine` docstrings
 
 ### Deprecations
 None

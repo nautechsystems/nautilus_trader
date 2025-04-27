@@ -23,7 +23,7 @@ use nautilus_model::data::Data;
 
 use crate::{
     clock::Clock,
-    messages::data::{DataResponse, SubscribeCommand},
+    messages::data::{CustomDataResponse, DataResponse, SubscribeCommand},
     timer::TimeEvent,
 };
 
@@ -108,7 +108,7 @@ thread_local! {
 }
 
 pub trait SendResponse {
-    fn send(&self, resp: DataResponse);
+    fn send(&self, resp: CustomDataResponse);
 }
 
 pub type DataResponseQueue = Rc<RefCell<SyncDataQueue>>;

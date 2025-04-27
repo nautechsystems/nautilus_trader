@@ -1523,7 +1523,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 0
         assert (
-            actor.msgbus.subscriptions()[5].topic
+            actor.msgbus.subscriptions()[4].topic
             == "data.NewsEvent.type=NEWS_WIRE.topic=Earthquake"
         )
 
@@ -1545,7 +1545,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 1
         assert (
-            actor.msgbus.subscriptions()[5].topic
+            actor.msgbus.subscriptions()[4].topic
             == "data.NewsEvent.type=NEWS_WIRE.topic=Earthquake"
         )
 
@@ -1567,7 +1567,7 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 0
-        assert len(actor.msgbus.subscriptions()) == 5  # Portfolio subscriptions only
+        assert len(actor.msgbus.subscriptions()) == 4  # Portfolio subscriptions only
 
     def test_unsubscribe_custom_data_with_client_id(self) -> None:
         # Arrange
@@ -1587,7 +1587,75 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 2
-        assert len(actor.msgbus.subscriptions()) == 5  # Portfolio subscriptions only
+        assert len(actor.msgbus.subscriptions()) == 4  # Portfolio subscriptions only
+
+    def test_subscribe_order_book_deltas(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_order_book_deltas(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_book_deltas(AUDUSD_SIM.id)
+
+        # Act
+        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_order_book_depth10(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_order_book_depth(AUDUSD_SIM.id, book_type=BookType.L2_MBP, depth=10)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_order_book_depth10(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.subscribe_order_book_depth(AUDUSD_SIM.id, book_type=BookType.L2_MBP, depth=10)
+
+        # Act
+        actor.unsubscribe_order_book_depth(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.command_count == 2
 
     def test_subscribe_order_book_at_interval(self) -> None:
         # Arrange
@@ -1619,40 +1687,6 @@ class TestActor:
 
         # Act
         actor.unsubscribe_order_book_at_interval(AUDUSD_SIM.id)
-
-        # Assert
-        assert self.data_engine.command_count == 2
-
-    def test_subscribe_order_book_data(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        # Act
-        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
-
-        # Assert
-        assert self.data_engine.command_count == 1
-
-    def test_unsubscribe_order_book_deltas(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
-
-        # Act
-        actor.unsubscribe_order_book_deltas(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.command_count == 2
@@ -1890,7 +1924,7 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 0
-        assert actor.msgbus.subscriptions()[5].topic == "data.SignalTest*"
+        assert actor.msgbus.subscriptions()[4].topic == "data.SignalTest*"
 
     def test_subscribe_all_signals(self) -> None:
         # Arrange
@@ -1907,7 +1941,7 @@ class TestActor:
 
         # Assert
         assert self.data_engine.command_count == 0
-        assert actor.msgbus.subscriptions()[5].topic == "data.Signal*"
+        assert actor.msgbus.subscriptions()[4].topic == "data.Signal*"
 
     def test_publish_data_persist(self) -> None:
         # Arrange

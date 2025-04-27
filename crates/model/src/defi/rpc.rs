@@ -15,9 +15,9 @@
 
 use serde::{Deserialize, de::DeserializeOwned};
 
-/// A response structure received from a JSON-RPC blockchain node endpoint.
+/// A response structure received from a WebSocket JSON-RPC blockchain node subscription.
 #[derive(Debug, Deserialize)]
-pub struct RpcNodeResponse<T>
+pub struct RpcNodeWssResponse<T>
 where
     T: DeserializeOwned,
 {
@@ -38,6 +38,21 @@ where
 {
     /// ID of the subscription associated with the RPC response.
     pub subscription: String,
+    /// Deserialized result.
+    #[serde(bound(deserialize = ""))]
+    pub result: T,
+}
+
+/// A response structure received from an HTTP JSON-RPC blockchain node request.
+#[derive(Debug, Deserialize)]
+pub struct RpcNodeHttpResponse<T>
+where
+    T: DeserializeOwned,
+{
+    /// JSON-RPC version identifier.
+    pub jsonrpc: String,
+    /// Request identifier returned by the server.
+    pub id: u64,
     /// Deserialized result.
     #[serde(bound(deserialize = ""))]
     pub result: T,

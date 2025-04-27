@@ -1,6 +1,6 @@
 # Integrations
 
-NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues
+NautilusTrader is modularly designed to work with *adapters*, enabling connectivity to trading venues
 and data providers by translating their raw APIs into a unified interface and normalized domain model.
 
 The following integrations are currently supported:
@@ -23,7 +23,7 @@ The following integrations are currently supported:
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
 
-### Status
+## Status
 
 - `building`: Under construction and likely not in a usable state.
 - `beta`: Completed to a minimally working state and in a 'beta' testing phase.
@@ -45,7 +45,7 @@ strategies, priority will be given to *standard* functionality:
 The implementation of each integration aims to meet the following criteria:
 
 - Low-level client components should match the exchange API as closely as possible.
-- The full range of an exchanges functionality (where applicable to NautilusTrader), should _eventually_ be supported.
+- The full range of an exchanges functionality (where applicable to NautilusTrader), should *eventually* be supported.
 - Exchange specific data types will be added to support the functionality and return
   types which are reasonably expected by a user.
 - Actions which are unsupported by either the exchange or NautilusTrader, will be explicitly logged as a warning or error when a user attempts to perform said action.

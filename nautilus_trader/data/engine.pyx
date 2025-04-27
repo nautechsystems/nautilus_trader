@@ -758,6 +758,8 @@ cdef class DataEngine(Component):
         elif isinstance(command, SubscribeOrderBook):
             if command.data_type.type == OrderBookDelta:
                 self._handle_subscribe_order_book_deltas(client, command)
+            elif command.data_type.type == OrderBookDepth10:
+                self._handle_subscribe_order_book_depth(client, command)
             else:
                 self._handle_subscribe_order_book_snapshots(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
@@ -829,6 +831,14 @@ cdef class DataEngine(Component):
             return
 
         self._setup_order_book(client, command)
+
+    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command):
+        Condition.not_none(client, "client")
+        Condition.not_none(command.instrument_id, "instrument_id")
+        Condition.not_none(command.params, "params")
+
+        self._setup_order_book(client, command)
+
 
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")
@@ -1311,8 +1321,9 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe for synthetic instrument `InstrumentClose` data")
             return
 
+        # Only unsubscribe if currently subscribed
         if command.instrument_id in client.subscribed_instrument_close():
-            client.subscribe_instrument_close(command)
+            client.unsubscribe_instrument_close(command)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
@@ -1441,11 +1452,11 @@ cdef class DataEngine(Component):
     def _convert_update_catalog_mode(self, update_catalog_mode: UpdateCatalogMode, catalog_write_mode: CatalogWriteMode) -> CatalogWriteMode | None:
         if update_catalog_mode is None:
             return None
-        elif update_catalog_mode is UpdateCatalogMode.MODIFY:
+        elif update_catalog_mode == UpdateCatalogMode.MODIFY:
             return catalog_write_mode
-        elif update_catalog_mode is UpdateCatalogMode.OVERWRITE:
+        elif update_catalog_mode == UpdateCatalogMode.OVERWRITE:
             return CatalogWriteMode.OVERWRITE
-        elif update_catalog_mode is UpdateCatalogMode.NEWFILE:
+        elif update_catalog_mode == UpdateCatalogMode.NEWFILE:
             return CatalogWriteMode.NEWFILE
 
     cpdef void _handle_date_range_request(
@@ -1465,7 +1476,8 @@ cdef class DataEngine(Component):
         cdef datetime used_start_catalog = min_date(start_catalog, now)
         cdef datetime used_end_catalog = min_date(end_catalog, now)
         cdef datetime used_start_request = min_date(request.start, now) if request.start is not None else time_object_to_dt(0)
-        cdef datetime used_end_request = min_date(request.end, now) if request.start is not None else now
+        # Cap request end to now, default to now if no end specified
+        cdef datetime used_end_request = min_date(request.end, now) if request.end is not None else now
 
         if used_start_request > used_end_request:
             self._log.error(f"Cannot handle request: incompatible request dates for {request}")
@@ -2014,17 +2026,21 @@ cdef class DataEngine(Component):
         if len(ticks) == 0:
             return
 
-        if type(ticks[0]) is Bar:
+        # Determine if catalog should be queried/appended (non-PREPEND means last)
+        cdef bint is_last = (update_catalog_mode != CatalogWriteMode.PREPEND)
+
+        # distinguish Bars vs other data types via isinstance to allow subclasses
+        if isinstance(ticks[0], Bar):
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=Bar,
                 bar_type=ticks[0].bar_type,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
         else:
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=type(ticks[0]),
                 instrument_id=ticks[0].instrument_id,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
 
         # We don't want to write in the catalog several times the same instrument
@@ -2032,8 +2048,8 @@ cdef class DataEngine(Component):
             return
 
         if timestamp_bound_catalog is None and len(self._catalogs) > 0:
-            # If more than one catalog exists, the first declared one is the default one
-            last_timestamp_catalog = list(self._catalogs.values())[0]
+            # If more than one catalog exists, use the first declared one as default
+            timestamp_bound_catalog = list(self._catalogs.values())[0]
 
         if timestamp_bound_catalog is not None:
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)

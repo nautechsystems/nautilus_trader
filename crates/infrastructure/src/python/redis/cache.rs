@@ -39,14 +39,14 @@ impl RedisCacheDatabase {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
         let config = serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
-        let result = get_runtime()
-            .block_on(async { RedisCacheDatabase::new(trader_id, instance_id, config).await });
+        let result =
+            get_runtime().block_on(async { Self::new(trader_id, instance_id, config).await });
         result.map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
-        self.close()
+        self.close();
     }
 
     #[pyo3(name = "flushdb")]

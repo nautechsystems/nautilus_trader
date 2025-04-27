@@ -191,14 +191,17 @@ Either pass the corresponding `api_key` and `api_secret` values to the configura
 set the following environment variables:
 
 For Bybit live clients, you can set:
+
 - `BYBIT_API_KEY`
 - `BYBIT_API_SECRET`
 
 For Bybit demo clients, you can set:
+
 - `BYBIT_DEMO_API_KEY`
 - `BYBIT_DEMO_API_SECRET`
 
 For Bybit testnet clients, you can set:
+
 - `BYBIT_TESTNET_API_KEY`
 - `BYBIT_TESTNET_API_SECRET`
 

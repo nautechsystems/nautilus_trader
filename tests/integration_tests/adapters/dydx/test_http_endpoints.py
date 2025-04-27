@@ -710,12 +710,21 @@ def test_parse_to_instrument(
     assert result.taker_fee == expected_result.taker_fee
     assert result.margin_init == expected_result.margin_init
     assert result.margin_maint == expected_result.margin_maint
+    assert result.price_precision == expected_result.price_precision
     assert result.price_increment == expected_result.price_increment
     assert result.size_increment == expected_result.size_increment
-    assert result.price_precision == expected_result.price_precision
     assert result.size_precision == expected_result.size_precision
     assert result.base_currency == expected_result.base_currency
     assert result.quote_currency == expected_result.quote_currency
     assert result.ts_event == expected_result.ts_event
     assert result.ts_init == expected_result.ts_init
     assert result.info == expected_result.info
+    assert result.raw_symbol == expected_result.raw_symbol
+    assert result.id == expected_result.id
+    assert result.is_inverse == expected_result.is_inverse
+    assert result.max_quantity == expected_result.max_quantity
+    assert result.min_quantity == expected_result.min_quantity
+    assert result.max_notional == expected_result.max_notional
+    assert result.min_notional == expected_result.min_notional
+    assert result.margin_init == expected_result.margin_init
+    assert result.margin_maint == expected_result.margin_maint

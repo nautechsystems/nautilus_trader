@@ -80,7 +80,7 @@ def get_dydx_http_client(
     is_testnet: bool = False,
 ) -> DYDXHttpClient:
     """
-    Cache and return a dYdX HTTP client with the given key and secret.
+    Cache and return a dYdX HTTP client.
 
     If a cached client with matching parameters already exists, the cached client will be returned.
 

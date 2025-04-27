@@ -121,7 +121,7 @@ def test_calculate_balance_locked_buy():
         quantity=Quantity.from_int(1_000_000),
         price=Price.from_str("0.80"),
     )
-    assert result == Money(800_032.00, USD)  # Notional + expected commission
+    assert result == Money(800_000.00, USD)  # Notional
 
 
 def test_calculate_balance_locked_sell():
@@ -132,7 +132,7 @@ def test_calculate_balance_locked_sell():
         quantity=Quantity.from_int(1_000_000),
         price=Price.from_str("0.80"),
     )
-    assert result == Money(1_000_040.00, AUD)  # Notional + expected commission
+    assert result == Money(1_000_000.00, AUD)  # Notional
 
 
 def test_calculate_balance_locked_sell_no_base_currency():
@@ -143,7 +143,7 @@ def test_calculate_balance_locked_sell_no_base_currency():
         quantity=Quantity.from_int(100),
         price=Price.from_str("1500.00"),
     )
-    assert result == Money(100.00, USD)  # Notional + expected commission
+    assert result == Money(100.00, USD)  # Notional
 
 
 def test_calculate_pnls_for_single_currency_cash_account():

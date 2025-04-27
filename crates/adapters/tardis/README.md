@@ -25,7 +25,7 @@ Contributions to the project are welcome and require the completion of a standar
 
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
 company specializing in the development of high-performance trading systems.
-For more information, visit https://nautilustrader.io.
+For more information, visit <https://nautilustrader.io>.
 
 <img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
 

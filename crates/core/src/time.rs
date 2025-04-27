@@ -232,9 +232,11 @@ impl AtomicTime {
             let next = now.max(last + 1);
             // AcqRel on success ensures this new value is published,
             // Acquire on failure reloads if we lost a CAS race.
-            match self.compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire) {
-                Ok(_) => return UnixNanos::from(next),
-                Err(_) => continue,
+            if self
+                .compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return UnixNanos::from(next);
             }
         }
     }

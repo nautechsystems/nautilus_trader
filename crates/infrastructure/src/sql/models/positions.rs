@@ -117,6 +117,6 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             ts_init,
         };
 
-        Ok(PositionSnapshotModel(snapshot))
+        Ok(Self(snapshot))
     }
 }

@@ -25,7 +25,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           python-version: "3.13"
-          free-disk-space: "false"
+          free-disk-space: "true"
 
       - name: Run pre-commit
         run: pre-commit run --all-files
@@ -83,7 +83,7 @@ jobs:
         uses: ./.github/actions/common-setup
         with:
           python-version: ${{ matrix.python-version }}
-          free-disk-space: "false"
+          free-disk-space: "true"
 
       - name: Install Nautilus CLI and run init postgres
         run: |

@@ -163,3 +163,16 @@ class TestOrderMatchingEngine:
         # Assert
         assert self.matching_engine.msgbus.sent_count == 1
         assert isinstance(messages[0], OrderFilled)
+
+    def test_process_order_book_depth_10(self) -> None:
+        # Arrange
+        depth = TestDataStubs.order_book_depth10()
+        assert self.matching_engine.best_ask_price() is None
+        assert self.matching_engine.best_bid_price() is None
+
+        # Act
+        self.matching_engine.process_order_book_depth10(depth)
+
+        # Assert
+        assert self.matching_engine.best_ask_price() == depth.asks[0].price
+        assert self.matching_engine.best_bid_price() == depth.bids[0].price

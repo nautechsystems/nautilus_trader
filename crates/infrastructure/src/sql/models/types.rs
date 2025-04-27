@@ -41,7 +41,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
             name.as_str(),
             currency_type_model.0,
         );
-        Ok(CurrencyModel(currency))
+        Ok(Self(currency))
     }
 }
 
@@ -52,7 +52,7 @@ impl<'r> FromRow<'r, PgRow> for SignalModel {
         let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
         let signal = Signal::new(name, value, ts_event, ts_init);
-        Ok(SignalModel(signal))
+        Ok(Self(signal))
     }
 }
 
@@ -70,6 +70,6 @@ impl<'r> FromRow<'r, PgRow> for CustomDataModel {
         let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
         let custom = CustomData::new(data_type, value, ts_event, ts_init);
-        Ok(CustomDataModel(custom))
+        Ok(Self(custom))
     }
 }

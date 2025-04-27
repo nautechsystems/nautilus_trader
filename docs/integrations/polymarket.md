@@ -98,6 +98,7 @@ It sets approvals for the USDC token and Conditional Token Framework (CTF) contr
 Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
+
 - Install the web3 Python package: `pip install -U web3==5.28`
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
@@ -111,7 +112,7 @@ Once you have these in place, the script will:
 
 :::note
 You can also adjust the approval amount in the script instead of using `MAX_INT`,
-with the amount specified in _fractional units_ of **USDC.e**, though this has not been tested.
+with the amount specified in *fractional units* of **USDC.e**, though this has not been tested.
 :::
 
 Ensure that your private key and public key are correctly stored in the environment variables before running the script.
@@ -132,7 +133,7 @@ python nautilus_trader/adapters/polymarket/scripts/set_allowances.py
 
 The script performs the following actions:
 
-- Connects to the Polygon network via an RPC URL (https://polygon-rpc.com/).
+- Connects to the Polygon network via an RPC URL (<https://polygon-rpc.com/>).
 - Signs and sends a transaction to approve the maximum USDC allowance for Polymarket contracts.
 - Sets approval for the CTF contract to manage Conditional Tokens on your behalf.
 - Repeats the approval process for specific addresses like the Polymarket CLOB Exchange and Neg Risk Adapter.
@@ -144,10 +145,12 @@ This allows Polymarket to interact with your funds when executing trades and ens
 To trade with Polymarket using an EOA wallet, follow these steps to generate your API keys:
 
 1. Ensure the following environment variables are set:
-  - `POLYMARKET_PK`: Your private key for signing transactions.
-  - `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
 
-2. Run the script using:
+- `POLYMARKET_PK`: Your private key for signing transactions.
+- `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
+
+1. Run the script using:
+
    ```bash
    python nautilus_trader/adapters/polymarket/scripts/create_api_key.py
    ```
@@ -169,7 +172,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 
 **Key parameters**
 
-- `private_key`: This is the private key for your external EOA wallet (_not_ the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
+- `private_key`: This is the private key for your external EOA wallet (*not* the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
 - `funder`: This refers to the **USDC.e** wallet address used for funding trades. If not provided, will source the `POLYMARKET_FUNDER` environment variable.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
@@ -183,10 +186,12 @@ We recommend using environment variables to manage your credentials.
 ## Orders
 
 The following order types are supported on Polymarket:
+
 - `MARKET` (executed as a marketable limit order)
 - `LIMIT`
 
 The following time in force options are available:
+
 - `GTC`: Good Till Cancel
 - `GTD`: Good Till Date (second granularity based on UNIX time)
 - `FOK`: Fill or Kill

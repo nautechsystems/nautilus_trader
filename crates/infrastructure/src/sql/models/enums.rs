@@ -50,9 +50,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for CurrencyTypeModel {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let currency_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let currency_type = CurrencyType::from_str(currency_type_str).map_err(|_| {
-            sqlx::Error::Decode(format!("Invalid currency type: {}", currency_type_str).into())
+            sqlx::Error::Decode(format!("Invalid currency type: {currency_type_str}").into())
         })?;
-        Ok(CurrencyTypeModel(currency_type))
+        Ok(Self(currency_type))
     }
 }
 
@@ -88,9 +88,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassModel {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let asset_class_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let asset_class = AssetClass::from_str(asset_class_str).map_err(|_| {
-            sqlx::Error::Decode(format!("Invalid asset class: {}", asset_class_str).into())
+            sqlx::Error::Decode(format!("Invalid asset class: {asset_class_str}").into())
         })?;
-        Ok(AssetClassModel(asset_class))
+        Ok(Self(asset_class))
     }
 }
 
@@ -126,10 +126,10 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypeModel {
         let trailing_offset_type =
             TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
                 sqlx::Error::Decode(
-                    format!("Invalid trailing offset type: {}", trailing_offset_type_str).into(),
+                    format!("Invalid trailing offset type: {trailing_offset_type_str}").into(),
                 )
             })?;
-        Ok(TrailingOffsetTypeModel(trailing_offset_type))
+        Ok(Self(trailing_offset_type))
     }
 }
 
@@ -161,9 +161,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSideModel {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let aggressor_side_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let aggressor_side = AggressorSide::from_str(aggressor_side_str).map_err(|_| {
-            sqlx::Error::Decode(format!("Invalid aggressor side: {}", aggressor_side_str).into())
+            sqlx::Error::Decode(format!("Invalid aggressor side: {aggressor_side_str}").into())
         })?;
-        Ok(AggressorSideModel(aggressor_side))
+        Ok(Self(aggressor_side))
     }
 }
 
@@ -196,10 +196,10 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggregationSourceModel {
         let aggregation_source =
             AggregationSource::from_str(aggregation_source_str).map_err(|_| {
                 sqlx::Error::Decode(
-                    format!("Invalid aggregation source: {}", aggregation_source_str).into(),
+                    format!("Invalid aggregation source: {aggregation_source_str}").into(),
                 )
             })?;
-        Ok(AggregationSourceModel(aggregation_source))
+        Ok(Self(aggregation_source))
     }
 }
 
@@ -244,9 +244,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BarAggregationModel {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let bar_aggregation_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let bar_aggregation = BarAggregation::from_str(bar_aggregation_str).map_err(|_| {
-            sqlx::Error::Decode(format!("Invalid bar aggregation: {}", bar_aggregation_str).into())
+            sqlx::Error::Decode(format!("Invalid bar aggregation: {bar_aggregation_str}").into())
         })?;
-        Ok(BarAggregationModel(bar_aggregation))
+        Ok(Self(bar_aggregation))
     }
 }
 
@@ -280,9 +280,9 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for PriceTypeModel {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let price_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
         let price_type = PriceType::from_str(price_type_str).map_err(|_| {
-            sqlx::Error::Decode(format!("Invalid price type: {}", price_type_str).into())
+            sqlx::Error::Decode(format!("Invalid price type: {price_type_str}").into())
         })?;
-        Ok(PriceTypeModel(price_type))
+        Ok(Self(price_type))
     }
 }
 

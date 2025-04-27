@@ -64,6 +64,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
@@ -105,6 +106,7 @@ class TestPortfolio:
         self.cache.add_instrument(AUDUSD_SIM)
         self.cache.add_instrument(GBPUSD_SIM)
         self.cache.add_instrument(BTCUSDT_BINANCE)
+        self.cache.add_instrument(BTCUSDT_PERP_BINANCE)
         self.cache.add_instrument(BTCUSD_BITMEX)
         self.cache.add_instrument(ETHUSD_BITMEX)
 
@@ -366,7 +368,7 @@ class TestPortfolio:
         self.exec_engine.process(TestEventStubs.order_accepted(order, account_id=account_id))
 
         # Assert
-        assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
+        assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50_000
 
     def test_update_orders_open_margin_account(self):
         # Arrange
@@ -454,7 +456,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_init(BINANCE) == {BTCUSDT_BINANCE.id: Money("0E-8", USDT)}
+        assert self.portfolio.margins_init(BINANCE) == {}
 
     def test_order_accept_updates_margin_init(self):
         # Arrange
@@ -494,7 +496,7 @@ class TestPortfolio:
 
         # Create a limit order
         order1 = self.order_factory.limit(
-            BTCUSDT_BINANCE.id,
+            BTCUSDT_PERP_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_str("100"),
             Price.from_str("0.5"),
@@ -512,7 +514,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_init(BINANCE)[BTCUSDT_BINANCE.id] == Money(0.1, USDT)
+        assert self.portfolio.margins_init(BINANCE)[BTCUSDT_PERP_BINANCE.id] == Money(2.5, USDT)
 
     def test_update_positions(self):
         # Arrange
@@ -662,14 +664,14 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.id,
+            BTCUSDT_PERP_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_str("10.000000"),
         )
 
         fill = TestEventStubs.order_filled(
             order=order,
-            instrument=BTCUSDT_BINANCE,
+            instrument=BTCUSDT_PERP_BINANCE,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
             position_id=PositionId("P-123456"),
@@ -677,7 +679,7 @@ class TestPortfolio:
         )
 
         last = QuoteTick(
-            instrument_id=BTCUSDT_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE.id,
             bid_price=Price.from_str("10510.00"),
             ask_price=Price.from_str("10511.00"),
             bid_size=Quantity.from_str("1.000000"),
@@ -689,7 +691,7 @@ class TestPortfolio:
         self.cache.add_quote_tick(last)
         self.portfolio.update_quote_tick(last)
 
-        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+        position = Position(instrument=BTCUSDT_PERP_BINANCE, fill=fill)
 
         # Act
         self.cache.add_position(position, OmsType.HEDGING)
@@ -698,13 +700,13 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
-        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-105.00000000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-18.900000000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
-            BTCUSDT_BINANCE.id: Money(105.00000000, USDT),
+            BTCUSDT_PERP_BINANCE.id: Money(2_625.00000000, USDT),
         }
-        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
-        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
-        assert self.portfolio.realized_pnl(BTCUSDT_BINANCE.id) == Money(-105.00000000, USDT)
+        assert self.portfolio.net_exposure(BTCUSDT_PERP_BINANCE.id) == Money(105100.00000000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_PERP_BINANCE.id) == Money(100.00000000, USDT)
+        assert self.portfolio.realized_pnl(BTCUSDT_PERP_BINANCE.id) == Money(-18.900000000, USDT)
         assert self.portfolio.net_position(order.instrument_id) == Decimal("10.00000000")
         assert self.portfolio.is_net_long(order.instrument_id)
         assert not self.portfolio.is_net_short(order.instrument_id)
@@ -748,14 +750,14 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.id,
+            BTCUSDT_PERP_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_str("10.000000"),
         )
 
         fill = TestEventStubs.order_filled(
             order=order,
-            instrument=BTCUSDT_BINANCE,
+            instrument=BTCUSDT_PERP_BINANCE,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
             position_id=PositionId("P-123456"),
@@ -763,7 +765,7 @@ class TestPortfolio:
         )
 
         last = Bar(
-            bar_type=BarType.from_str(f"{BTCUSDT_BINANCE.id}-1-MINUTE-LAST-EXTERNAL"),
+            bar_type=BarType.from_str(f"{BTCUSDT_PERP_BINANCE.id}-1-MINUTE-LAST-EXTERNAL"),
             open=Price.from_str("10510.00"),
             high=Price.from_str("10510.00"),
             low=Price.from_str("10510.00"),
@@ -775,7 +777,7 @@ class TestPortfolio:
 
         self.portfolio.update_bar(last)
 
-        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+        position = Position(instrument=BTCUSDT_PERP_BINANCE, fill=fill)
 
         # Act
         self.cache.add_position(position, OmsType.HEDGING)
@@ -784,13 +786,13 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
-        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-105.00000000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-18.90000000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
-            BTCUSDT_BINANCE.id: Money(105.00000000, USDT),
+            BTCUSDT_PERP_BINANCE.id: Money(2_625.00000000, USDT),
         }
-        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
-        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
-        assert self.portfolio.realized_pnl(BTCUSDT_BINANCE.id) == Money(-105.00000000, USDT)
+        assert self.portfolio.net_exposure(BTCUSDT_PERP_BINANCE.id) == Money(105100.00000000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_PERP_BINANCE.id) == Money(100.00000000, USDT)
+        assert self.portfolio.realized_pnl(BTCUSDT_PERP_BINANCE.id) == Money(-18.90000000, USDT)
         assert self.portfolio.net_position(order.instrument_id) == Decimal("10.00000000")
         assert self.portfolio.is_net_long(order.instrument_id)
         assert not self.portfolio.is_net_short(order.instrument_id)
@@ -834,14 +836,14 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         order = self.order_factory.market(
-            BTCUSDT_BINANCE.id,
+            BTCUSDT_PERP_BINANCE.id,
             OrderSide.SELL,
             Quantity.from_str("0.515"),
         )
 
         fill = TestEventStubs.order_filled(
             order=order,
-            instrument=BTCUSDT_BINANCE,
+            instrument=BTCUSDT_PERP_BINANCE,
             strategy_id=StrategyId("S-001"),
             account_id=account_id,
             position_id=PositionId("P-123456"),
@@ -849,7 +851,7 @@ class TestPortfolio:
         )
 
         last = QuoteTick(
-            instrument_id=BTCUSDT_BINANCE.id,
+            instrument_id=BTCUSDT_PERP_BINANCE.id,
             bid_price=Price.from_str("15510.15"),
             ask_price=Price.from_str("15510.25"),
             bid_size=Quantity.from_str("12.62"),
@@ -861,7 +863,7 @@ class TestPortfolio:
         self.cache.add_quote_tick(last)
         self.portfolio.update_quote_tick(last)
 
-        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+        position = Position(instrument=BTCUSDT_PERP_BINANCE, fill=fill)
 
         # Act
         self.cache.add_position(position, OmsType.HEDGING)
@@ -870,12 +872,12 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(7987.77875000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(-262.77875000, USDT)}
-        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-7.72500000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-1.3905000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
-            BTCUSDT_BINANCE.id: Money(7.72500000, USDT),
+            BTCUSDT_PERP_BINANCE.id: Money(193.12500000, USDT),
         }
-        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(7987.77875000, USDT)
-        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(-262.77875000, USDT)
+        assert self.portfolio.net_exposure(BTCUSDT_PERP_BINANCE.id) == Money(7987.77875000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_PERP_BINANCE.id) == Money(-262.77875000, USDT)
         assert self.portfolio.net_position(order.instrument_id) == Decimal("-0.515000")
         assert not self.portfolio.is_net_long(order.instrument_id)
         assert self.portfolio.is_net_short(order.instrument_id)
@@ -961,7 +963,7 @@ class TestPortfolio:
 
         # Assert
         assert self.portfolio.net_exposures(BITMEX) == {ETH: Money(26.59220848, ETH)}
-        assert self.portfolio.margins_maint(BITMEX) == {ETHUSD_BITMEX.id: Money(0.20608962, ETH)}
+        assert self.portfolio.margins_maint(BITMEX) == {ETHUSD_BITMEX.id: Money(0.18614546, ETH)}
         assert self.portfolio.net_exposure(ETHUSD_BITMEX.id) == Money(26.59220848, ETH)
         assert self.portfolio.unrealized_pnl(ETHUSD_BITMEX.id) == Money(0.00000000, ETH)
 
@@ -1340,8 +1342,8 @@ class TestPortfolio:
         assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(10816.00, USD)}
         assert self.portfolio.realized_pnls(SIM) == {USD: Money(-4.00, USD)}
         assert self.portfolio.margins_maint(SIM) == {
-            AUDUSD_SIM.id: Money(3002.00, USD),
-            GBPUSD_SIM.id: Money(3002.00, USD),
+            AUDUSD_SIM.id: Money(3000.00, USD),
+            GBPUSD_SIM.id: Money(3000.00, USD),
         }
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(80501.00, USD)
         assert self.portfolio.net_exposure(GBPUSD_SIM.id) == Money(130315.00, USD)
@@ -1442,7 +1444,7 @@ class TestPortfolio:
         assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(-9749.50, USD)}
         assert self.portfolio.realized_pnls(SIM) == {USD: Money(-3.00, USD)}
         assert self.portfolio.total_pnls(SIM) == {USD: Money(-9752.50, USD)}
-        assert self.portfolio.margins_maint(SIM) == {AUDUSD_SIM.id: Money(1501.00, USD)}
+        assert self.portfolio.margins_maint(SIM) == {AUDUSD_SIM.id: Money(1500.00, USD)}
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(40250.50, USD)
         assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(-3.00, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-9749.50, USD)

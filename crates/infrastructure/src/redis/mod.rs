@@ -24,7 +24,7 @@ use std::time::Duration;
 use nautilus_common::msgbus::database::{DatabaseConfig, MessageBusConfig};
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
-use redis::*;
+use redis::RedisError;
 use semver::Version;
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
@@ -51,11 +51,12 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
 }
 
 /// Parse a Redis connection url from the given database config.
+#[must_use]
 pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     let host = config.host.unwrap_or("127.0.0.1".to_string());
     let port = config.port.unwrap_or(6379);
-    let username = config.username.unwrap_or("".to_string());
-    let password = config.password.unwrap_or("".to_string());
+    let username = config.username.unwrap_or_default();
+    let password = config.password.unwrap_or_default();
     let use_ssl = config.ssl;
 
     let redacted_password = if password.len() > 4 {
@@ -65,13 +66,13 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     };
 
     let auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{}:{}@", username, password)
+        format!("{username}:{password}@")
     } else {
         String::new()
     };
 
     let redacted_auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{}:{}@", username, redacted_password)
+        format!("{username}:{redacted_password}@")
     } else {
         String::new()
     };
@@ -113,8 +114,8 @@ pub async fn create_redis_connection(
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     tracing::debug!("Connecting to {redacted_url}");
 
-    let connection_timeout = Duration::from_secs(config.connection_timeout as u64);
-    let response_timeout = Duration::from_secs(config.response_timeout as u64);
+    let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
+    let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
     let number_of_retries = config.number_of_retries;
     let exponent_base = config.exponent_base;
     let factor = config.factor;
@@ -159,6 +160,7 @@ pub async fn flush_redis(
 }
 
 /// Parse the stream key from the given identifiers and config.
+#[must_use]
 pub fn get_stream_key(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -206,7 +208,7 @@ pub async fn get_redis_version(
 }
 
 fn parse_redis_version(version_str: &str) -> anyhow::Result<Version> {
-    let mut components = version_str.split('.').map(|s| s.parse::<u64>());
+    let mut components = version_str.split('.').map(str::parse::<u64>);
 
     let major = components.next().unwrap_or(Ok(0))?;
     let minor = components.next().unwrap_or(Ok(0))?;

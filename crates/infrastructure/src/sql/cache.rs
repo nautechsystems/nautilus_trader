@@ -94,9 +94,9 @@ impl PostgresCacheDatabase {
 
         // Spawn a task to handle messages
         let handle = tokio::spawn(async move {
-            PostgresCacheDatabase::process_commands(rx, pg_connect_options.clone().into()).await;
+            Self::process_commands(rx, pg_connect_options.clone().into()).await;
         });
-        Ok(PostgresCacheDatabase { pool, tx, handle })
+        Ok(Self { pool, tx, handle })
     }
 
     async fn process_commands(
@@ -119,20 +119,15 @@ impl PostgresCacheDatabase {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
                 drain_buffer(&pool, &mut buffer).await;
                 last_drain = Instant::now();
-            } else {
-                match rx.recv().await {
-                    Some(msg) => {
-                        tracing::debug!("Received {msg:?}");
-                        match msg {
-                            DatabaseQuery::Close => break,
-                            _ => buffer.push_back(msg),
-                        }
-                    }
-                    None => {
-                        tracing::debug!("Command channel closed");
-                        break;
-                    }
+            } else if let Some(msg) = rx.recv().await {
+                tracing::debug!("Received {msg:?}");
+                match msg {
+                    DatabaseQuery::Close => break,
+                    _ => buffer.push_back(msg),
                 }
+            } else {
+                tracing::debug!("Command channel closed");
+                break;
             }
         }
 
