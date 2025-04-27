@@ -1,4 +1,5 @@
-use nautilus_common::messages::data::{self, DataResponse, RequestData};
+use futures::{Stream, StreamExt};
+use nautilus_common::messages::data::{self, CustomDataResponse, DataResponse, RequestData};
 use nautilus_common::runtime;
 use nautilus_core::UnixNanos;
 use nautilus_data::client::DataClient;
@@ -8,8 +9,10 @@ use nautilus_network::http::HttpClient;
 use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
 use reqwest::Method;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+use tokio_tungstenite::tungstenite::Message;
 
 pub struct MockDataClient {
     http_address: SocketAddr,
@@ -24,8 +27,8 @@ impl MockDataClient {
         websocket_address: SocketAddr,
     ) -> (
         Self,
-        tokio_stream::wrappers::UnboundedReceiverStream<DataResponse>,
-        tokio_stream::wrappers::ReceiverStream<tokio_tungstenite::tungstenite::Message>,
+        Pin<Box<dyn Stream<Item = DataResponse>>>,
+        Pin<Box<dyn Stream<Item = i32>>>,
     ) {
         // Create HTTP client with default settings
         let http_client = HttpClient::new(
@@ -64,7 +67,11 @@ impl MockDataClient {
             .unwrap();
 
         let http_stream = UnboundedReceiverStream::new(http_rx);
-        let websocket_stream = ReceiverStream::new(rx);
+
+        let websocket_stream = ReceiverStream::new(rx).map(|message| match message {
+            Message::Text(text) => text.parse::<i32>().unwrap(),
+            _ => unreachable!("Expected Message::Text"),
+        });
 
         (
             Self {
@@ -73,8 +80,8 @@ impl MockDataClient {
                 http_tx,
                 websocket_client: Arc::new(websocket_client),
             },
-            http_stream,
-            websocket_stream,
+            Box::pin(http_stream),
+            Box::pin(websocket_stream),
         )
     }
 
@@ -101,7 +108,7 @@ impl MockDataClient {
                 .parse::<i32>()
                 .unwrap();
             println!("Received positive value: {}", value);
-            let response = DataResponse::new(
+            let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
                 Venue::new("http positive stream"),
@@ -109,7 +116,7 @@ impl MockDataClient {
                 value,
                 UnixNanos::new(0),
                 None,
-            );
+            ));
             http_tx.send(response).unwrap();
         });
     }
@@ -138,7 +145,7 @@ impl MockDataClient {
                 .unwrap();
             println!("Received positive value: {}", value);
 
-            let response = DataResponse::new(
+            let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
                 Venue::new("http positive stream"),
@@ -146,7 +153,7 @@ impl MockDataClient {
                 value,
                 UnixNanos::new(0),
                 None,
-            );
+            ));
             http_tx.send(response).unwrap();
         });
     }
@@ -169,7 +176,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn subscribe(&mut self, cmd: data::SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: data::SubscribeData) -> anyhow::Result<()> {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
@@ -178,7 +185,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, cmd: data::UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: data::UnsubscribeData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {

@@ -59,7 +59,7 @@ impl Actor for BigBrainActor {
         Ustr::from("big_brain_actor")
     }
 
-    fn handle(&mut self, msg: &dyn Any) {
+    fn handle(&mut self, _msg: &dyn Any) {
         todo!()
     }
 
