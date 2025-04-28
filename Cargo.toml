@@ -63,6 +63,7 @@ nautilus-testkit = { path = "crates/testkit", version = "0.47.0" }
 nautilus-trading = { path = "crates/trading", version = "0.47.0" }
 
 # Adapters
+nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.47.0" }
 nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.47.0" }
 nautilus-databento = { path = "crates/adapters/databento", version = "0.47.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.47.0" }
