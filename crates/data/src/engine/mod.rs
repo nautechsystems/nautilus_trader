@@ -1028,10 +1028,7 @@ impl MessageHandler for SubscriptionCommandHandler {
         if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
             self.engine_ref.borrow_mut().execute(cmd.clone());
         } else {
-            log::error!(
-                "Expected DataCommand message for data engine command handler: {:?}",
-                msg
-            );
+            log::error!("Expected DataCommand message for data engine command handler: {msg:?}");
         }
     }
 

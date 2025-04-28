@@ -1,8 +1,7 @@
-use futures::SinkExt;
-use futures::StreamExt;
 use std::net::SocketAddr;
-use tokio::task;
-use tokio::time::Duration;
+
+use futures::{SinkExt, StreamExt};
+use tokio::{task, time::Duration};
 
 pub struct NegativeStreamServer {
     task: tokio::task::JoinHandle<()>,
@@ -26,7 +25,7 @@ impl NegativeStreamServer {
             // Create a counter for negative values
             let counter = std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0));
             let counter_clone = counter.clone();
-            let counter_clone_2 = counter.clone();
+            let counter_clone_2 = counter;
 
             // Task to send negative numbers every second
             let sender_task = task::spawn(async move {
@@ -37,7 +36,7 @@ impl NegativeStreamServer {
                     );
 
                     if let Err(err) = sender.send(message).await {
-                        eprintln!("Error sending message: {}", err);
+                        eprintln!("Error sending message: {err}");
                         break;
                     }
 
@@ -64,8 +63,8 @@ impl NegativeStreamServer {
 
         Self {
             task,
-            address,
             port,
+            address,
         }
     }
 }

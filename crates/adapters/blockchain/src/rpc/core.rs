@@ -53,6 +53,7 @@ pub struct CoreBlockchainRpcClient {
 }
 
 impl CoreBlockchainRpcClient {
+    #[must_use]
     pub fn new(chain: Chain, wss_rpc_url: String) -> Self {
         Self {
             chain,
@@ -195,22 +196,17 @@ impl CoreBlockchainRpcClient {
                                             Err(e) => {
                                                 Err(BlockchainRpcClientError::MessageParsingError(
                                                     format!(
-                                                        "Error parsing rpc response to block with error {}",
-                                                        e
+                                                        "Error parsing rpc response to block with error {e}"
                                                     ),
                                                 ))
                                             }
                                         };
                                     }
                                 }
-                            } else {
-                                return Err(BlockchainRpcClientError::InternalRpcClientError(
-                                    format!(
-                                        "Event type not found for defined subscription id {}",
-                                        subscription_id
-                                    ),
-                                ));
                             }
+                            return Err(BlockchainRpcClientError::InternalRpcClientError(format!(
+                                "Event type not found for defined subscription id {subscription_id}"
+                            )));
                         }
                         return Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
                             json.to_string(),

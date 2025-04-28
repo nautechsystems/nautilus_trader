@@ -34,8 +34,9 @@ pub struct BlockchainDataClient {
 }
 
 impl BlockchainDataClient {
+    #[must_use]
     pub fn new(chain: Chain, config: BlockchainAdapterConfig) -> Self {
-        let rpc_client = Self::initialize_rpc_client(chain.name, config.wss_rpc_url.clone());
+        let rpc_client = Self::initialize_rpc_client(chain.name, config.wss_rpc_url);
         Self { chain, rpc_client }
     }
 
@@ -54,7 +55,7 @@ impl BlockchainDataClient {
             Blockchain::Arbitrum => {
                 BlockchainRpcClientAny::Arbitrum(ArbitrumRpcClient::new(wss_rpc_url))
             }
-            _ => panic!("Unsupported blockchain {} for RPC connection", blockchain),
+            _ => panic!("Unsupported blockchain {blockchain} for RPC connection"),
         }
     }
 
@@ -67,11 +68,11 @@ impl BlockchainDataClient {
             match self.rpc_client.next_rpc_message().await {
                 Ok(msg) => match msg {
                     BlockchainRpcMessage::Block(block) => {
-                        log::info!("{}", block);
+                        log::info!("{block}");
                     }
                 },
                 Err(e) => {
-                    log::error!("Error processing rpc message: {}", e);
+                    log::error!("Error processing rpc message: {e}");
                 }
             }
         }

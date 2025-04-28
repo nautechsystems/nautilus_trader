@@ -1,16 +1,21 @@
+use std::{net::SocketAddr, pin::Pin, sync::Arc};
+
 use futures::{Stream, StreamExt};
-use nautilus_common::messages::data::{self, CustomDataResponse, DataResponse, RequestData};
-use nautilus_common::runtime;
+use nautilus_common::{
+    messages::data::{self, CustomDataResponse, DataResponse, RequestData},
+    runtime,
+};
 use nautilus_core::UnixNanos;
 use nautilus_data::client::DataClient;
-use nautilus_model::data::DataType;
-use nautilus_model::identifiers::{ClientId, Venue};
-use nautilus_network::http::HttpClient;
-use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
+use nautilus_model::{
+    data::DataType,
+    identifiers::{ClientId, Venue},
+};
+use nautilus_network::{
+    http::HttpClient,
+    websocket::{Consumer, WebSocketClient, WebSocketConfig},
+};
 use reqwest::Method;
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::sync::Arc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 use tokio_tungstenite::tungstenite::Message;
 
@@ -39,17 +44,14 @@ impl MockDataClient {
             Some(5),                          // 30 second timeout
         );
 
-        println!(
-            "Started mock data client with HTTP endpoint: {:?}",
-            http_address
-        );
-        println!("WebSocket endpoint: {:?}", websocket_address);
+        println!("Started mock data client with HTTP endpoint: {http_address:?}");
+        println!("WebSocket endpoint: {websocket_address:?}");
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
         let (http_tx, http_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let config = WebSocketConfig {
-            url: format!("ws://{}", websocket_address).to_string(),
+            url: format!("ws://{websocket_address}"),
             headers: vec![],
             handler: Consumer::Rust(tx),
             heartbeat: None,
@@ -94,7 +96,7 @@ impl MockDataClient {
             let response = http_client
                 .request(
                     Method::GET,
-                    format!("http://{}/get", http_address),
+                    format!("http://{http_address}/get"),
                     None,
                     None,
                     None,
@@ -107,7 +109,7 @@ impl MockDataClient {
                 .unwrap()
                 .parse::<i32>()
                 .unwrap();
-            println!("Received positive value: {}", value);
+            println!("Received positive value: {value}");
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
@@ -130,7 +132,7 @@ impl MockDataClient {
             let response = http_client
                 .request(
                     Method::GET,
-                    format!("http://{}/skip", http_address),
+                    format!("http://{http_address}/skip"),
                     None,
                     None,
                     None,
@@ -143,7 +145,7 @@ impl MockDataClient {
                 .unwrap()
                 .parse::<i32>()
                 .unwrap();
-            println!("Received positive value: {}", value);
+            println!("Received positive value: {value}");
 
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
