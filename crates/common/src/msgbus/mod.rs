@@ -102,6 +102,15 @@ pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     }
 }
 
+pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
+    if let Err(e) = get_message_bus()
+        .borrow_mut()
+        .register_response_handler(correlation_id, handler)
+    {
+        log::error!("Failed to register request handler: {e}");
+    }
+}
+
 /// Publishes the `message` to the `topic`.
 pub fn publish(topic: &Ustr, message: &dyn Any) {
     log::trace!("Publishing topic '{topic}' {message:?}");
