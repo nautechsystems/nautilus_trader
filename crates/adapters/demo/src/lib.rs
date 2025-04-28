@@ -3,7 +3,6 @@
 #![allow(unused_imports)]
 
 use std::{cell::RefCell, net::SocketAddr, pin::Pin, rc::Rc};
-use tokio_stream::StreamExt;
 
 use data_client::MockDataClient;
 use futures::{Stream, stream::SelectAll};
@@ -21,6 +20,7 @@ use nautilus_data::{
     engine::{DataEngine, SubscriptionCommandHandler},
 };
 use nautilus_model::identifiers::Venue;
+use tokio_stream::StreamExt;
 use ustr::Ustr;
 
 pub mod big_brain_actor;
@@ -56,7 +56,7 @@ pub async fn init_data_engine(
     let engine = Rc::new(RefCell::new(engine));
     let handler = SubscriptionCommandHandler {
         id: Ustr::from("data_engine_handler"),
-        engine_ref: engine.clone(),
+        engine_ref: engine,
     };
 
     let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
@@ -89,7 +89,7 @@ impl LiveRunner {
             tokio::select! {
                 data_response = self.data_response_stream.next() => {
                     if let Some(DataResponse::Data(custom_data_response)) = data_response {
-                            println!("Received custom data response: {:?}", custom_data_response);
+                            println!("Received custom data response: {custom_data_response:?}");
                             let value = custom_data_response.data.downcast_ref::<i32>().copied().unwrap();
                             nautilus_common::msgbus::response(&custom_data_response.correlation_id, &value);
                     }

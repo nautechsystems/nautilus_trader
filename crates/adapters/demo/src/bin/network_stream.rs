@@ -1,13 +1,10 @@
-use std::cell::UnsafeCell;
-use std::rc::Rc;
+use std::{cell::UnsafeCell, rc::Rc};
 
-use nautilus_common::actor::registry::register_actor;
-use nautilus_common::testing::init_logger_for_testing;
-use nautilus_demo::LiveRunner;
-use nautilus_demo::big_brain_actor::BigBrainActor;
-use nautilus_demo::http_server::start_positive_stream_http_server;
-use nautilus_demo::init_data_engine;
-use nautilus_demo::websocket_server::NegativeStreamServer;
+use nautilus_common::{actor::registry::register_actor, testing::init_logger_for_testing};
+use nautilus_demo::{
+    LiveRunner, big_brain_actor::BigBrainActor, http_server::start_positive_stream_http_server,
+    init_data_engine, websocket_server::NegativeStreamServer,
+};
 
 async fn main_logic() {
     let http_address = start_positive_stream_http_server().await.unwrap();

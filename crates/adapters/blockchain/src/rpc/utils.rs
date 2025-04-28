@@ -18,6 +18,7 @@
 /// ```json
 /// { "id": 1, "jsonrpc": "2.0", "result": "0x9cef478923ff08bf67fde6c64013158d"}
 /// ```
+#[must_use]
 pub fn is_subscription_confirmation_response(json: &serde_json::Value) -> bool {
     json.get("id").is_some() && json.get("result").is_some()
 }
@@ -32,12 +33,14 @@ pub fn is_subscription_confirmation_response(json: &serde_json::Value) -> bool {
 ///    }
 /// }
 /// ```
+#[must_use]
 pub fn is_subscription_event(json: &serde_json::Value) -> bool {
     json.get("method")
         .is_some_and(|value| value.as_str() == Some("eth_subscription"))
 }
 
 /// Extracts the subscription ID from a blockchain RPC subscription event notification.
+#[must_use]
 pub fn extract_rpc_subscription_id(json: &serde_json::Value) -> Option<&str> {
     json.get("params")
         .and_then(|params| params.get("subscription"))

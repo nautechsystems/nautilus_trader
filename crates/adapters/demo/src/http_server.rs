@@ -36,7 +36,7 @@ fn create_positive_stream_router() -> Router {
 
     // Clone the counter for the handler
     let counter_clone = counter.clone();
-    let counter_clone_2 = counter.clone();
+    let counter_clone_2 = counter;
 
     Router::new()
         .route(
@@ -44,7 +44,7 @@ fn create_positive_stream_router() -> Router {
             get(async move || {
                 // Increment the counter and return the new value
                 let value = counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                format!("{}", value)
+                format!("{value}")
             }),
         )
         .route(
@@ -52,7 +52,7 @@ fn create_positive_stream_router() -> Router {
             get(async move || {
                 // Increment the counter and return the new value
                 let value = counter_clone_2.fetch_add(5, std::sync::atomic::Ordering::SeqCst);
-                format!("{}", value)
+                format!("{value}")
             }),
         )
 }

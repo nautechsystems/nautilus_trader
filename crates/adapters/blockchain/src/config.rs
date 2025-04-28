@@ -21,7 +21,8 @@ pub struct BlockchainAdapterConfig {
 }
 
 impl BlockchainAdapterConfig {
-    pub fn new(wss_rpc_url: String) -> Self {
+    #[must_use]
+    pub const fn new(wss_rpc_url: String) -> Self {
         Self { wss_rpc_url }
     }
 }

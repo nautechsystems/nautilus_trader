@@ -1,18 +1,18 @@
-use nautilus_common::actor::Actor;
-use nautilus_common::actor::registry::get_actor_unchecked;
-use nautilus_common::messages::data::{
-    DataCommand, RequestCommand, RequestData, SubscribeCommand, SubscribeData, UnsubscribeCommand,
-    UnsubscribeData,
+use std::{any::Any, rc::Rc};
+
+use nautilus_common::{
+    actor::{Actor, registry::get_actor_unchecked},
+    messages::data::{
+        DataCommand, RequestCommand, RequestData, SubscribeCommand, SubscribeData,
+        UnsubscribeCommand, UnsubscribeData,
+    },
+    msgbus::{
+        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
+        register, register_response_handler, send,
+    },
 };
-use nautilus_common::msgbus::handler::TypedMessageHandler;
-use nautilus_common::msgbus::handler::{MessageHandler, ShareableMessageHandler};
-use nautilus_common::msgbus::send;
-use nautilus_common::msgbus::{register, register_response_handler};
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::data::DataType;
-use nautilus_model::identifiers::ClientId;
-use std::any::Any;
-use std::rc::Rc;
+use nautilus_model::{data::DataType, identifiers::ClientId};
 use ustr::Ustr;
 
 /// Big brain actor receives positive and negative streams of numbers
@@ -40,7 +40,8 @@ impl Default for BigBrainActor {
 }
 
 impl BigBrainActor {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             pos_val: 0,
             neg_val: 0,
