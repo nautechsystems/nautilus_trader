@@ -387,6 +387,11 @@ impl LogWriter for FileWriter {
             Ok(()) => {}
             Err(e) => tracing::error!("Error flushing file: {e:?}"),
         }
+
+        match self.buf.get_ref().sync_all() {
+            Ok(()) => {}
+            Err(e) => tracing::error!("Error syncing file: {e:?}"),
+        }
     }
 
     fn enabled(&self, line: &LogLine) -> bool {
