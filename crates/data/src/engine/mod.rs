@@ -42,7 +42,7 @@ mod tests;
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     rc::Rc,
 };
@@ -109,7 +109,6 @@ pub struct DataEngine {
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
     msgbus_priority: u8,
-    command_queue: VecDeque<DataCommand>,
     config: DataEngineConfig,
 }
 
@@ -136,7 +135,6 @@ impl DataEngine {
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
-            command_queue: VecDeque::new(),
             config: config.unwrap_or_default(),
         }
     }
@@ -331,21 +329,6 @@ impl DataEngine {
 
         self.clients.shift_remove(client_id);
         log::info!("Deregistered client {client_id}");
-    }
-
-    pub fn run(&mut self) {
-        let commands: Vec<_> = self.command_queue.drain(..).collect();
-        for cmd in commands {
-            self.execute(cmd);
-        }
-    }
-
-    pub fn enqueue(&mut self, cmd: &dyn Any) {
-        if let Some(cmd) = cmd.downcast_ref::<DataCommand>() {
-            self.command_queue.push_back(cmd.clone());
-        } else {
-            log::error!("Invalid message type received: {cmd:?}");
-        }
     }
 
     pub fn execute(&mut self, cmd: DataCommand) {
