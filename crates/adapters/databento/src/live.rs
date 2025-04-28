@@ -450,7 +450,7 @@ fn handle_instrument_def_msg(
         instrument_id_map,
     );
 
-    decode_instrument_def_msg(msg, instrument_id, ts_init)
+    decode_instrument_def_msg(msg, instrument_id, Some(ts_init))
 }
 
 fn handle_status_msg(
@@ -470,7 +470,7 @@ fn handle_status_msg(
         instrument_id_map,
     );
 
-    decode_status_msg(msg, instrument_id, ts_init)
+    decode_status_msg(msg, instrument_id, Some(ts_init))
 }
 
 fn handle_imbalance_msg(
@@ -492,7 +492,7 @@ fn handle_imbalance_msg(
 
     let price_precision = 2; // Hard-coded for now
 
-    decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
+    decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
 
 fn handle_statistics_msg(
@@ -514,7 +514,7 @@ fn handle_statistics_msg(
 
     let price_precision = 2; // Hard-coded for now
 
-    decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
+    decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
 
 fn handle_record(
