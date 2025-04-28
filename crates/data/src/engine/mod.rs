@@ -1030,6 +1030,7 @@ impl DataEngine {
     }
 }
 
+// TODO: Rename to Data command handler
 pub struct SubscriptionCommandHandler {
     pub id: Ustr,
     pub engine_ref: Rc<RefCell<DataEngine>>,
@@ -1041,7 +1042,14 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        self.engine_ref.borrow_mut().enqueue(msg);
+        if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
+            self.engine_ref.borrow_mut().execute(cmd.clone());
+        } else {
+            log::error!(
+                "Expected DataCommand message for data engine command handler: {:?}",
+                msg
+            );
+        }
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -18,7 +18,12 @@
 //! This module provides a trait and implementations for handling messages
 //! in a type-safe manner, enabling both typed and untyped message processing.
 
-use std::{any::Any, fmt::Debug, marker::PhantomData, rc::Rc};
+use std::{
+    any::{Any, type_name},
+    fmt::Debug,
+    marker::PhantomData,
+    rc::Rc,
+};
 
 use ustr::Ustr;
 
@@ -74,6 +79,8 @@ impl<T: 'static, F: Fn(&T) + 'static> MessageHandler for TypedMessageHandler<T, 
     fn handle(&self, message: &dyn Any) {
         if let Some(typed_msg) = message.downcast_ref::<T>() {
             (self.callback)(typed_msg);
+        } else {
+            log::error!("Expected message of type {}", type_name::<T>());
         }
     }
 

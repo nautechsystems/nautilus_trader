@@ -3323,6 +3323,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-demo"
+version = "0.47.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "axum",
+ "chrono",
+ "criterion",
+ "csv",
+ "derive_builder",
+ "flate2",
+ "futures",
+ "futures-util",
+ "heck 0.5.0",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-data",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-serialization",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "reqwest",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.12",
+ "thousands",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test",
+ "urlencoding",
+ "ustr",
+ "uuid",
+]
+
+[[package]]
 name = "nautilus-execution"
 version = "0.47.0"
 dependencies = [
