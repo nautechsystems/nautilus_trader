@@ -139,7 +139,6 @@ fn test_execute_subscribe_custom_data(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Data(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -159,7 +158,6 @@ fn test_execute_subscribe_custom_data(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Data(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -200,7 +198,6 @@ fn test_execute_subscribe_book_deltas(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -220,7 +217,6 @@ fn test_execute_subscribe_book_deltas(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -262,7 +258,6 @@ fn test_execute_subscribe_book_snapshots(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -282,7 +277,6 @@ fn test_execute_subscribe_book_snapshots(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -320,7 +314,6 @@ fn test_execute_subscribe_instrument(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -340,7 +333,6 @@ fn test_execute_subscribe_instrument(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Instrument(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -378,7 +370,6 @@ fn test_execute_subscribe_quotes(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -398,7 +389,6 @@ fn test_execute_subscribe_quotes(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -436,7 +426,6 @@ fn test_execute_subscribe_trades(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -456,7 +445,6 @@ fn test_execute_subscribe_trades(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -502,7 +490,6 @@ fn test_execute_subscribe_bars(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 
@@ -517,7 +504,6 @@ fn test_execute_subscribe_bars(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Bars(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert_eq!(audusd_sim.id(), bar_type.instrument_id());
     assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
@@ -551,7 +537,6 @@ fn test_execute_subscribe_mark_prices(
     let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -571,7 +556,6 @@ fn test_execute_subscribe_mark_prices(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
@@ -609,7 +593,6 @@ fn test_execute_subscribe_index_prices(
     let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         data_engine
@@ -629,7 +612,6 @@ fn test_execute_subscribe_index_prices(
     let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::IndexPrices(cmd));
 
     msgbus::send(&endpoint, &cmd as &dyn Any);
-    data_engine.borrow_mut().run();
 
     assert!(
         !data_engine
