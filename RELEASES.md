@@ -33,6 +33,8 @@ Released on TBD (UTC).
 - Improved validations for Tardis trades data
 - Improved correctness of client registration and deregistration for `ExecutionEngine`
 - Improved build time by only compiling libraries (#2539), thanks @twitu
+- Improved logging flush (#2568), thanks @faysou
+- Improved `clear_log_file` to happen for each kernel initialization (#2569), thanks @faysou
 - Refined `Price` and `Quantity` validations and correctness
 - Filter fill events if order is already filled for dYdX (#2547), thanks @davidsblom
 - Fixed some clippy lints (#2517), thanks @twitu
@@ -55,6 +57,8 @@ Released on TBD (UTC).
 - Fixed unsubscribe instrument close for `DataEngine`
 - Fixed network clients authentication for OKX (#2553), thanks for reporting @S3toGreen
 - Fixed account balance calculation for dYdX (#2563), thanks @davidsblom
+- Fixed `ts_init` for databento historical data (#2566), thanks @faysou
+- Fixed `RequestInstrument` in `query_catalog` (#2567), thanks @faysou
 - Reverted removal of rotate log file on UTC date change (#2552), thanks @twitu
 
 ### Documentation Updates
