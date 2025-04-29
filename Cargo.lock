@@ -801,9 +801,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -1804,9 +1804,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.33.0"
+version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb5b53fb884733274834c76ca177b00c6a015f3208a0eda5a0957cc205e0e6cf"
+checksum = "047ef55364f9cc157fd9a80f686aef22acf6816506a7e80e6a8aaef341c56b2d"
 dependencies = [
  "async-compression",
  "csv",
@@ -1824,9 +1824,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.33.0"
+version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05bf67b018b2a8ed6af8b1613c99714e78e6aaeeb52ba178210c0a7c66f6d845"
+checksum = "bade313e019d412ce2b5700b17812050c8cbeb8f6878d3b1ea5bb30943f52bdb"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
