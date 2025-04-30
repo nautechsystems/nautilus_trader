@@ -45,7 +45,9 @@ use nautilus_model::{
 use ustr::Ustr;
 use uuid::Uuid;
 
-use super::{Actor, indicators::Indicators, registry::get_actor_unchecked};
+#[cfg(feature = "indicators")]
+use super::indicators::Indicators;
+use super::{Actor, registry::get_actor_unchecked};
 use crate::{
     cache::Cache,
     clock::Clock,
