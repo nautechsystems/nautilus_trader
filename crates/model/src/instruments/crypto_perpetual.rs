@@ -102,7 +102,7 @@ impl CryptoPerpetual {
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -143,7 +143,7 @@ impl CryptoPerpetual {
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             base_currency,
             quote_currency,
@@ -173,7 +173,7 @@ impl CryptoPerpetual {
     /// Creates a new [`CryptoPerpetual`] instance
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -199,7 +199,7 @@ impl CryptoPerpetual {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             base_currency,
             quote_currency,

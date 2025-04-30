@@ -1833,7 +1833,7 @@ class AccountState:
 class BettingInstrument:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         event_type_id: int,
         event_type_name: str,
@@ -1946,7 +1946,7 @@ class BettingInstrument:
 class BinaryOption:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         currency: Currency,
@@ -2026,7 +2026,7 @@ class BinaryOption:
 class CryptoFuture:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -2105,7 +2105,7 @@ class CryptoFuture:
 class CryptoOption:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -2188,7 +2188,7 @@ class CryptoOption:
 class CryptoPerpetual:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -2267,7 +2267,7 @@ class CryptoPerpetual:
 class CurrencyPair:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -2336,7 +2336,7 @@ class CurrencyPair:
 class Equity:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         currency: Currency,
         price_precision: int,
@@ -2401,7 +2401,7 @@ class Equity:
 class FuturesContract:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2484,7 +2484,7 @@ class FuturesContract:
 class FuturesSpread:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2572,7 +2572,7 @@ class FuturesSpread:
 class OptionContract:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2663,7 +2663,7 @@ class OptionContract:
 class OptionSpread:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,

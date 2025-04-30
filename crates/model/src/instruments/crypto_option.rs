@@ -109,7 +109,7 @@ impl CryptoOption {
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -155,7 +155,7 @@ impl CryptoOption {
         }
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             underlying,
             quote_currency,
@@ -189,7 +189,7 @@ impl CryptoOption {
     /// Creates a new [`CryptoOption`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -218,7 +218,7 @@ impl CryptoOption {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             underlying,
             quote_currency,
