@@ -18,9 +18,11 @@ use std::{
     str,
 };
 
+#[cfg(feature = "python")]
 use pyo3::{Bound, Python, ffi};
 use ustr::Ustr;
 
+#[cfg(feature = "python")]
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
@@ -154,6 +156,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "python")]
     #[cfg_attr(miri, ignore)]
     #[rstest]
     fn test_pystr_to_string() {
@@ -164,6 +167,7 @@ mod tests {
         assert_eq!(result, "test string1");
     }
 
+    #[cfg(feature = "python")]
     #[rstest]
     #[should_panic]
     fn test_pystr_to_string_with_null_ptr() {
