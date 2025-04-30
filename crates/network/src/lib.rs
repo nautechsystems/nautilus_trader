@@ -36,7 +36,6 @@ pub mod backoff;
 pub mod fix;
 pub mod http;
 pub mod mode;
-pub mod ratelimiter;
 pub mod socket;
 pub mod websocket;
 
@@ -44,3 +43,5 @@ mod tls;
 
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "python")] // TODO: Untangle python feature
+pub mod ratelimiter;
