@@ -57,7 +57,6 @@ implied-vol = { version = "1.0.1", features = ["normal-distribution"] }
 tabled = "0.19.0"
 
 [dev-dependencies]
-nautilus-databento = { workspace = true }
 nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 float-cmp = { workspace = true }
