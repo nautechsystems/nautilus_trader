@@ -209,7 +209,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "half",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "num",
 ]
 
@@ -465,9 +465,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
+checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
 dependencies = [
  "axum-core",
  "bytes",
@@ -2320,9 +2320,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+checksum = "84b26c544d002229e640969970a2e74021aadf6e2f96372b9c58eff97de08eb3"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -2335,7 +2335,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -2703,7 +2703,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "serde",
 ]
 
@@ -3085,7 +3085,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3098,7 +3098,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3119,7 +3119,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3144,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3160,7 +3160,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase-intx"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3199,7 +3199,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3236,7 +3236,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -3260,7 +3260,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -3279,7 +3279,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3296,7 +3296,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "ahash 0.8.11",
  "anyhow",
@@ -3324,7 +3324,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-demo"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3353,7 +3353,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3380,7 +3380,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -3392,7 +3392,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -3424,7 +3424,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3448,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3514,7 +3514,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3548,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "criterion",
  "log",
@@ -3566,7 +3566,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "nautilus-coinbase-intx",
  "nautilus-common",
@@ -3588,7 +3588,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "criterion",
  "log",
@@ -3606,7 +3606,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3625,7 +3625,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -3641,7 +3641,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -3680,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3699,7 +3699,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.47.0"
+version = "0.48.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -4050,7 +4050,7 @@ dependencies = [
  "flate2",
  "futures",
  "half",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "lz4_flex",
  "num",
  "num-bigint",
@@ -5224,9 +5224,9 @@ checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
 
 [[package]]
 name = "sha2"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -5395,7 +5395,7 @@ dependencies = [
  "futures-intrusive",
  "futures-io",
  "futures-util",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "hashlink",
  "indexmap",
  "log",
@@ -5658,9 +5658,9 @@ dependencies = [
 
 [[package]]
 name = "synstructure"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
+checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6513,18 +6513,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "0.26.9"
+version = "0.26.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "180d2741b6115c3d906577e6533ad89472d48d96df00270fccb78233073d77f7"
+checksum = "c99403924bc5f23afefc319b8ac67ed0e50669f6e52a413314cccb1fdbc93ba0"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.9"
+version = "0.26.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29aad86cec885cafd03e8305fd727c418e970a521322c91688414d5b8efba16b"
+checksum = "37493cadf42a2a939ed404698ded7fb378bf301b5011f973361779a3a74f8c93"
 dependencies = [
  "rustls-pki-types",
 ]

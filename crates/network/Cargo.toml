@@ -55,7 +55,7 @@ nonzero_ext = "0.3.0"
 rustls = { version = "0.23.26", features = ["ring"] }
 rustls-pemfile = "2.2.0"
 tokio-rustls = "0.26.2"
-webpki-roots = "0.26.8"
+webpki-roots = "0.26.10"
 
 [dev-dependencies]
 nautilus-common = { path = "../common" }
