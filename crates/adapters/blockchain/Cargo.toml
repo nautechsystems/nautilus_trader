@@ -28,7 +28,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-core = { workspace = true }
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
 nautilus-common = { workspace = true }
 
 anyhow = { workspace = true }
@@ -52,3 +52,4 @@ rstest = { workspace = true }
 [[bin]]
 name = "live_blocks"
 path = "bin/watch_live_blocks.rs"
+required-features = ["python"]  # TODO: Untangle python feature

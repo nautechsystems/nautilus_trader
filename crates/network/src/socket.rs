@@ -39,6 +39,7 @@ use std::{
 
 use bytes::Bytes;
 use nautilus_cryptography::providers::install_cryptographic_provider;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
@@ -73,6 +74,7 @@ pub struct SocketConfig {
     pub mode: Mode,
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
+    #[cfg(feature = "python")]
     /// The optional Python function to handle incoming messages.
     pub py_handler: Option<Arc<PyObject>>,
     /// The optional heartbeat with period and beat message.
@@ -144,6 +146,7 @@ impl SocketClientInner {
             mode,
             heartbeat,
             suffix,
+            #[cfg(feature = "python")]
             py_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -168,6 +171,7 @@ impl SocketClientInner {
             connection_mode.clone(),
             reader,
             handler.clone(),
+            #[cfg(feature = "python")]
             py_handler.clone(),
             suffix.clone(),
         ));
@@ -245,6 +249,7 @@ impl SocketClientInner {
                 mode,
                 heartbeat: _,
                 suffix,
+                #[cfg(feature = "python")]
                 py_handler,
                 reconnect_timeout_ms: _,
                 reconnect_delay_initial_ms: _,
@@ -278,6 +283,7 @@ impl SocketClientInner {
                 self.connection_mode.clone(),
                 reader,
                 self.handler.clone(),
+                #[cfg(feature = "python")]
                 py_handler.clone(),
                 suffix.clone(),
             ));
@@ -314,7 +320,7 @@ impl SocketClientInner {
         connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
         handler: Option<Arc<TcpMessageHandler>>,
-        py_handler: Option<Arc<PyObject>>,
+        #[cfg(feature = "python")] py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
@@ -359,6 +365,7 @@ impl SocketClientInner {
                                     handler(&data);
                                 }
 
+                                #[cfg(feature = "python")]
                                 if let Some(py_handler) = &py_handler {
                                     if let Err(e) = Python::with_gil(|py| {
                                         py_handler.call1(py, (data.as_slice(),))
@@ -539,9 +546,9 @@ impl SocketClient {
     pub async fn connect(
         config: SocketConfig,
         handler: Option<Arc<TcpMessageHandler>>,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_connection: Option<PyObject>,
+        #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> anyhow::Result<Self> {
         let inner = SocketClientInner::connect_url(config, handler).await?;
         let writer_tx = inner.writer_tx.clone();
@@ -550,10 +557,13 @@ impl SocketClient {
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
+            #[cfg(feature = "python")]
             post_reconnection,
+            #[cfg(feature = "python")]
             post_disconnection,
         );
 
+        #[cfg(feature = "python")]
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
                 Ok(_) => tracing::debug!("Called `post_connection` handler"),
@@ -705,8 +715,8 @@ impl SocketClient {
     fn spawn_controller_task(
         mut inner: SocketClientInner,
         connection_mode: Arc<AtomicU8>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
             tracing::debug!("Started task 'controller'");
@@ -745,6 +755,7 @@ impl SocketClient {
 
                     tracing::debug!("Closed");
 
+                    #[cfg(feature = "python")]
                     if let Some(ref handler) = post_disconnection {
                         Python::with_gil(|py| match handler.call0(py) {
                             Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
@@ -762,6 +773,7 @@ impl SocketClient {
                             tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
 
+                            #[cfg(feature = "python")]
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => {
@@ -797,6 +809,7 @@ impl SocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(feature = "python")]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::ffi::CString;

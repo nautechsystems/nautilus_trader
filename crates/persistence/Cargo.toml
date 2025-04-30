@@ -39,7 +39,6 @@ python = [
 high-precision = [
   "nautilus-serialization/high-precision",
   "nautilus-model/high-precision",
-  "nautilus-testkit/high-precision",
 ]
 
 [package.metadata.docs.rs]
@@ -50,7 +49,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-common = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-serialization = { workspace = true, features = ["python"]}
+nautilus-serialization = { workspace = true, features = ["python"] }
 
 futures = { workspace = true }
 heck = { workspace = true }

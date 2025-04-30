@@ -161,8 +161,9 @@ impl CoinbaseIntxFixClient {
             url: self.endpoint.clone(),
             mode: Mode::Tls,
             suffix: vec![FIX_DELIMITER],
+            #[cfg(feature = "python")]
             py_handler: None, // Using handler from arg (TODO: refactor this config pattern)
-            heartbeat: None,  // Using FIX heartbeats
+            heartbeat: None, // Using FIX heartbeats
             reconnect_timeout_ms: Some(10000),
             reconnect_delay_initial_ms: Some(5000),
             reconnect_delay_max_ms: Some(30000),
