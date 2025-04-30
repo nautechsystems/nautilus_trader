@@ -52,4 +52,3 @@ rstest = { workspace = true }
 [[bin]]
 name = "live_blocks"
 path = "bin/watch_live_blocks.rs"
-required-features = ["python"]  # TODO: Untangle python feature
