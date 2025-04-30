@@ -24,7 +24,6 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
-  "nautilus-serialization/extension-module",
   "nautilus-network/extension-module",
   "nautilus-common/extension-module",
   "nautilus-data/extension-module",
@@ -36,7 +35,6 @@ python = [
   "nautilus-model/python",
   "nautilus-network/python",
   "nautilus-common/python",
-  "nautilus-serialization/python",
   "nautilus-data/python",
 ]
 
@@ -45,45 +43,34 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-network = { workspace = true }
+nautilus-network = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
-nautilus-serialization = { workspace = true }
 nautilus-data = { workspace = true }
 
 anyhow = { workspace = true }
-arrow = { workspace = true }
-chrono = { workspace = true }
-derive_builder = { workspace = true }
-futures-util = { workspace = true }
-heck = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
-rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-strum = { workspace = true }
-thiserror = { workspace = true }
-thousands = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-csv = "1.3.1"
-flate2 = "1.1.1"
-urlencoding = "2.1.3"
 futures.workspace = true
 axum.workspace = true
-tokio-stream = "0.1.17"
 log.workspace = true
+tokio-stream = "0.1.17"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
+
+[[bin]]
+name = "network_stream"
+path = "bin/network_stream.rs"
+required-features = ["python"]
