@@ -3463,7 +3463,6 @@ dependencies = [
  "indexmap",
  "log",
  "nautilus-core",
- "nautilus-testkit",
  "pyo3",
  "rstest",
  "rust_decimal",
