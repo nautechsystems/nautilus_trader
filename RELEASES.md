@@ -1,19 +1,19 @@
 # NautilusTrader 1.217.0 Beta
 
-Released on TBD (UTC).
+Released on 30th April 2025 (UTC).
 
 ### Enhancements
 - Added processing of `OrderBookDepth10` for `BacktestEngine` and `OrderMatchingEngine` (#2542), thanks @limx0
 - Added `Actor.subscribe_order_book_depth(...)` subscription method (#2555), thanks @limx0
 - Added `Actor.unsubscribe_order_book_depth(...)` subscription method
 - Added `Actor.on_order_book_depth(...)` handler method (#2555), thanks @limx0
-- Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 - Added `UnixNanos::max()` convenience method for the maximum valid value
 - Added `available_offset` filter parameter for `TardisInstrumentProvider`
 - Added `NAUTILUS_WORKER_THREADS` environment variable for common tokio runtime builder
 - Added `Quantity::non_zero(...)` method
 - Added `Quantity::non_zero_checked(...)` method
 - Added `round_down` param for `Instrument.make_qty(...)` that is `False` by default to maintain current behavior
+- Added WebSocket batch order operations for Bybit (#2521), thanks @sunlei
 - Added mark price subscription for Binance Futures (#2548), thanks @bartolootrit
 - Added `Chain` struct to represent blockchain network (#2526), thanks @filipmacek
 - Added `Block` primitive for blockchain domain model (#2535), thanks @filipmacek
