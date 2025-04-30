@@ -14,15 +14,17 @@ There are a variety of [built-in portfolio statistics](https://github.com/nautec
 which are used to analyse a trading portfolios performance for both backtests and live trading.
 
 The statistics are generally categorized as follows.
+
 - PnLs based statistics (per currency)
 - Returns based statistics
 - Positions based statistics
 - Orders based statistics
 
 It's also possible to call a traders `PortfolioAnalyzer` and calculate statistics at any arbitrary
-time, including _during_ a backtest, or live trading session.
+time, including *during* a backtest, or live trading session.
 
 ## Custom Statistics
+
 Custom portfolio statistics can be defined by inheriting from the `PortfolioStatistic`
 base class, and implementing any of the `calculate_` methods.
 
@@ -64,6 +66,7 @@ The expectation is that you would then return ``None``, NaN or a reasonable defa
 :::
 
 ## Backtest Analysis
+
 Following a backtest run a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
 statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet
 under the `Portfolio Performance` heading, grouped as.

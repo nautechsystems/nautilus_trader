@@ -29,7 +29,7 @@ impl BusMessage {
     #[getter]
     #[pyo3(name = "topic")]
     fn py_close(&mut self) -> String {
-        self.topic.clone()
+        self.topic.to_string()
     }
 
     #[getter]
@@ -129,7 +129,6 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     #[staticmethod]
     pub fn py_deregister(endpoint: &str) {
-        // Removes entry if it exists for endpoint
-        deregister(&Ustr::from(endpoint));
+        deregister(endpoint);
     }
 }

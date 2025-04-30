@@ -756,7 +756,7 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1_011_166.89,
+            990_569.89,
             USD,
         )
 
@@ -792,6 +792,6 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1_011_166.89,
+            990_569.89,
             USD,
         )

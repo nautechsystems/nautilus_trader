@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
 
@@ -25,6 +25,15 @@ pub struct PositionIdGenerator {
     clock: Rc<RefCell<dyn Clock>>,
     trader_id: TraderId,
     counts: HashMap<StrategyId, usize>,
+}
+
+impl Debug for PositionIdGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(PositionIdGenerator))
+            .field("trader_id", &self.trader_id)
+            .field("counts", &self.counts)
+            .finish()
+    }
 }
 
 impl PositionIdGenerator {

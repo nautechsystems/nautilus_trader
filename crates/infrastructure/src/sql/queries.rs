@@ -89,8 +89,8 @@ impl DatabaseQueries {
             "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
         )
             .bind(currency.code.as_str())
-            .bind(currency.precision as i32)
-            .bind(currency.iso4217 as i32)
+            .bind(i32::from(currency.precision))
+            .bind(i32::from(currency.iso4217))
             .bind(currency.name.as_str())
             .bind(CurrencyTypeModel(currency.currency_type))
             .execute(pool)
@@ -152,8 +152,8 @@ impl DatabaseQueries {
             .bind(instrument.strike_price().map(|x| x.to_string()))
             .bind(instrument.activation_ns().map(|x| x.to_string()))
             .bind(instrument.expiration_ns().map(|x| x.to_string()))
-            .bind(instrument.price_precision() as i32)
-            .bind(instrument.size_precision() as i32)
+            .bind(i32::from(instrument.price_precision()))
+            .bind(i32::from(instrument.size_precision()))
             .bind(instrument.price_increment().to_string())
             .bind(instrument.size_increment().to_string())
             .bind(instrument.maker_fee().to_string())
@@ -205,65 +205,63 @@ impl DatabaseQueries {
         client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
         if updated {
-            let exists =
-                DatabaseQueries::check_if_order_initialized_exists(pool, order.client_order_id())
-                    .await
-                    .unwrap();
-            if !exists {
-                panic!(
-                    "OrderInitialized event does not exist for order: {}",
-                    order.client_order_id()
-                );
-            }
+            let exists = Self::check_if_order_initialized_exists(pool, order.client_order_id())
+                .await
+                .unwrap();
+            assert!(
+                exists,
+                "OrderInitialized event does not exist for order: {}",
+                order.client_order_id()
+            );
         }
         match order.last_event().clone() {
             OrderEventAny::Accepted(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::CancelRejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Canceled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Denied(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Emulated(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Expired(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Filled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Initialized(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::ModifyRejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::PendingCancel(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::PendingUpdate(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Rejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Released(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Submitted(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Updated(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Triggered(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
+                Self::add_order_event(pool, Box::new(event), client_id).await
             }
         }
     }
@@ -369,7 +367,7 @@ impl DatabaseQueries {
             .bind(snapshot.liquidity_side.map(|x| x.to_string()))
             .bind(snapshot.avg_px)
             .bind(snapshot.slippage)
-            .bind(snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>())
+            .bind(snapshot.commissions.iter().map(std::string::ToString::to_string).collect::<Vec<String>>())
             .bind(snapshot.status.to_string())
             .bind(snapshot.is_post_only)
             .bind(snapshot.is_reduce_only)
@@ -379,12 +377,12 @@ impl DatabaseQueries {
             .bind(snapshot.trigger_instrument_id.map(|x| x.to_string()))
             .bind(snapshot.contingency_type.map(|x| x.to_string()))
             .bind(snapshot.order_list_id.map(|x| x.to_string()))
-            .bind(snapshot.linked_order_ids.map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()))
+            .bind(snapshot.linked_order_ids.map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
             .bind(snapshot.parent_order_id.map(|x| x.to_string()))
             .bind(snapshot.exec_algorithm_id.map(|x| x.to_string()))
             .bind(snapshot.exec_algorithm_params.map(|x| serde_json::to_value(x).unwrap()))
             .bind(snapshot.exec_spawn_id.map(|x| x.to_string()))
-            .bind(snapshot.tags.map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()))
+            .bind(snapshot.tags.map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
             .bind(snapshot.init_id.to_string())
             .bind(snapshot.ts_init.to_string())
             .bind(snapshot.ts_last.to_string())
@@ -468,7 +466,7 @@ impl DatabaseQueries {
             .bind(snapshot.realized_return)
             .bind(snapshot.realized_pnl.map(|x| x.to_string()))
             .bind(snapshot.unrealized_pnl.map(|x| x.to_string()))
-            .bind(snapshot.commissions.iter().map(|x| x.to_string()).collect::<Vec<String>>())
+            .bind(snapshot.commissions.iter().map(std::string::ToString::to_string).collect::<Vec<String>>())
             .bind(snapshot.duration_ns.map(|x| x.to_string()))
             .bind(snapshot.ts_opened.to_string())
             .bind(snapshot.ts_closed.map(|x| x.to_string()))
@@ -615,7 +613,7 @@ impl DatabaseQueries {
             .bind(order_event.trigger_instrument_id().map(|x| x.to_string()))
             .bind(order_event.contingency_type().map(|x| x.to_string()))
             .bind(order_event.order_list_id().map(|x| x.to_string()))
-            .bind(order_event.linked_order_ids().map(|x| x.iter().map(|x| x.to_string()).collect::<Vec<String>>()))
+            .bind(order_event.linked_order_ids().map(|x| x.iter().map(std::string::ToString::to_string).collect::<Vec<String>>()))
             .bind(order_event.parent_order_id().map(|x| x.to_string()))
             .bind(order_event.exec_algorithm_id().map(|x| x.to_string()))
             .bind(order_event.exec_spawn_id().map(|x| x.to_string()))
@@ -651,7 +649,7 @@ impl DatabaseQueries {
         pool: &PgPool,
         client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let order_events = DatabaseQueries::load_order_events(pool, client_order_id).await;
+        let order_events = Self::load_order_events(pool, client_order_id).await;
 
         match order_events {
             Ok(order_events) => {
@@ -681,7 +679,7 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
         for id in client_order_ids {
-            let order = DatabaseQueries::load_order(pool, &id).await.unwrap();
+            let order = Self::load_order(pool, &id).await.unwrap();
             match order {
                 Some(order) => {
                     orders.push(order);
@@ -701,12 +699,14 @@ impl DatabaseQueries {
         account: Box<dyn Account>,
     ) -> anyhow::Result<()> {
         if updated {
-            let exists = DatabaseQueries::check_if_account_event_exists(pool, account.id())
+            let exists = Self::check_if_account_event_exists(pool, account.id())
                 .await
                 .unwrap();
-            if !exists {
-                panic!("Account event does not exist for account: {}", account.id());
-            }
+            assert!(
+                exists,
+                "Account event does not exist for account: {}",
+                account.id()
+            );
         }
 
         let mut transaction = pool.begin().await?;
@@ -772,7 +772,7 @@ impl DatabaseQueries {
         pool: &PgPool,
         account_id: &AccountId,
     ) -> anyhow::Result<Option<AccountAny>> {
-        let account_events = DatabaseQueries::load_account_events(pool, account_id).await;
+        let account_events = Self::load_account_events(pool, account_id).await;
         match account_events {
             Ok(account_events) => {
                 if account_events.is_empty() {
@@ -801,7 +801,7 @@ impl DatabaseQueries {
         })
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in account_ids {
-            let account = DatabaseQueries::load_account(pool, &id).await.unwrap();
+            let account = Self::load_account(pool, &id).await.unwrap();
             match account {
                 Some(account) => {
                     accounts.push(account);
@@ -896,7 +896,7 @@ impl DatabaseQueries {
     }
 
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
-        println!("Adding bar: {:?}", bar);
+        println!("Adding bar: {bar:?}");
         sqlx::query(r#"
             INSERT INTO "bar" (
                 instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at

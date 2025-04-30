@@ -45,7 +45,7 @@ pub struct BacktestDataClient {
 }
 
 impl BacktestDataClient {
-    pub fn new(client_id: ClientId, venue: Venue, cache: Rc<RefCell<Cache>>) -> Self {
+    pub const fn new(client_id: ClientId, venue: Venue, cache: Rc<RefCell<Cache>>) -> Self {
         Self {
             client_id,
             venue,

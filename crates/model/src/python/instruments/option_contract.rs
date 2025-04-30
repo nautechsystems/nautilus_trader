@@ -36,9 +36,9 @@ use crate::{
 impl OptionContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None))]
+    #[pyo3(signature = (instrument_id, raw_symbol, asset_class, underlying, option_kind, strike_price, currency, activation_ns, expiration_ns, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init,  max_quantity=None, min_quantity=None, max_price=None, min_price=None, margin_init=None, margin_maint=None, maker_fee=None, taker_fee=None, exchange=None))]
     fn py_new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
@@ -64,7 +64,7 @@ impl OptionContract {
         exchange: Option<String>,
     ) -> PyResult<Self> {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             asset_class,
             exchange.map(|x| Ustr::from(&x)),

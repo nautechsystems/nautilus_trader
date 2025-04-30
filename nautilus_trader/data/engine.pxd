@@ -164,6 +164,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_instruments(self, MarketDataClient client, SubscribeInstruments command)
     cpdef void _handle_subscribe_instrument(self, MarketDataClient client, SubscribeInstrument command)
     cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, SubscribeOrderBook command)
+    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _setup_order_book(self, MarketDataClient client, SubscribeOrderBook command)
     cpdef void _create_new_book(self, InstrumentId instrument_id, BookType book_type)

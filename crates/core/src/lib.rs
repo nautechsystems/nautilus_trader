@@ -33,6 +33,14 @@
 #![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]
+#![allow(
+    clippy::inline_always,
+    clippy::needless_continue,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::redundant_pattern_matching,
+    clippy::option_if_let_else
+)]
 
 pub mod consts;
 pub mod correctness;

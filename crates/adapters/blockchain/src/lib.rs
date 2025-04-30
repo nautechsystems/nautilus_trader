@@ -13,16 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// TODO: TBD if we need this trait
-
-// This is a simplified interface - we'll need to implement an actual executor later
-pub trait ActorExecutor: Send + Sync {
-    fn queue_for_executor(&self, task: Box<dyn FnOnce() + Send>) -> String;
-    fn run_in_executor(&self, task: Box<dyn FnOnce() + Send>) -> String;
-    fn queued_task_ids(&self) -> Vec<String>;
-    fn active_task_ids(&self) -> Vec<String>;
-    fn has_queued_tasks(&self) -> bool;
-    fn has_active_tasks(&self) -> bool;
-    fn cancel_task(&self, task_id: &str);
-    fn cancel_all_tasks(&self);
-}
+pub mod config;
+pub mod data;
+pub mod rpc;

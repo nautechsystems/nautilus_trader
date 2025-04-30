@@ -1,0 +1,76 @@
+[package]
+name = "nautilus-demo"
+readme = "README.md"
+publish = false  # Do not publish. Demo only.
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "nautilus_demo"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "nautilus-common/extension-module",
+  "nautilus-data/extension-module",
+]
+python = [
+  "pyo3",
+  "pyo3-async-runtimes",
+  "nautilus-core/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-common/python",
+  "nautilus-data/python",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-network = { workspace = true, features = ["python"] }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-data = { workspace = true }
+
+anyhow = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+ustr = { workspace = true }
+uuid = { workspace = true }
+futures.workspace = true
+axum.workspace = true
+log.workspace = true
+tokio-stream = "0.1.17"
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true }
+criterion = { workspace = true }
+rstest = { workspace = true }
+tracing-test = { workspace = true }
+
+[[bin]]
+name = "network_stream"
+path = "bin/network_stream.rs"
+required-features = ["python"]

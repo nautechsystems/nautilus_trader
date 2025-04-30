@@ -26,8 +26,9 @@ use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
     msgbus::{
-        BusMessage, CLOSE_TOPIC,
+        BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        switchboard::CLOSE_TOPIC,
     },
     runtime::get_runtime,
 };
@@ -37,8 +38,9 @@ use nautilus_core::{
 };
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
-use redis::*;
+use redis::{AsyncCommands, streams};
 use streams::StreamReadOptions;
+use ustr::Ustr;
 
 use super::{REDIS_MINID, REDIS_XTRIM, await_handle};
 use crate::redis::{create_redis_connection, get_stream_key};
@@ -70,7 +72,7 @@ pub struct RedisMessageBusDatabase {
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
-    type DatabaseType = RedisMessageBusDatabase;
+    type DatabaseType = Self;
 
     /// Creates a new [`RedisMessageBusDatabase`] instance.
     fn new(
@@ -92,13 +94,15 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
                 log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
-            };
+            }
         }));
 
         // Conditionally create stream task and channel if external streams configured
         let external_streams = config.external_streams.clone().unwrap_or_default();
         let stream_signal = Arc::new(AtomicBool::new(false));
-        let (stream_rx, stream_handle) = if !external_streams.is_empty() {
+        let (stream_rx, stream_handle) = if external_streams.is_empty() {
+            (None, None)
+        } else {
             let stream_signal_clone = stream_signal.clone();
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
@@ -112,8 +116,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                     }
                 })),
             )
-        } else {
-            (None, None)
         };
 
         // Create heartbeat task
@@ -124,7 +126,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let pub_tx_clone = pub_tx.clone();
 
             Some(get_runtime().spawn(async move {
-                run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await
+                run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await;
             }))
         } else {
             None
@@ -149,8 +151,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     }
 
     /// Publishes a message with the given `topic` and `payload`.
-    fn publish(&self, topic: String, payload: Bytes) {
-        let msg = BusMessage { topic, payload };
+    fn publish(&self, topic: Ustr, payload: Bytes) {
+        let msg = BusMessage::new(topic, payload);
         if let Err(e) = self.pub_tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }
@@ -164,10 +166,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         self.heartbeat_signal.store(true, Ordering::Relaxed);
 
         if !self.pub_tx.is_closed() {
-            let msg = BusMessage {
-                topic: CLOSE_TOPIC.to_string(),
-                payload: Bytes::new(), // Empty
-            };
+            let msg = BusMessage::new_close();
+
             if let Err(e) = self.pub_tx.send(msg) {
                 log::error!("Failed to send close message: {e:?}");
             }
@@ -231,13 +231,13 @@ pub async fn publish_messages(
     let autotrim_duration = config
         .autotrim_mins
         .filter(|&mins| mins > 0)
-        .map(|mins| Duration::from_secs(mins as u64 * 60));
+        .map(|mins| Duration::from_secs(u64::from(mins) * 60));
     let mut last_trim_index: HashMap<String, usize> = HashMap::new();
 
     // Buffering
     let mut buffer: VecDeque<BusMessage> = VecDeque::new();
     let mut last_drain = Instant::now();
-    let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
+    let buffer_interval = Duration::from_millis(u64::from(config.buffer_interval_ms.unwrap_or(0)));
 
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
@@ -251,21 +251,16 @@ pub async fn publish_messages(
             )
             .await?;
             last_drain = Instant::now();
-        } else {
-            match rx.recv().await {
-                Some(msg) => {
-                    if msg.topic == CLOSE_TOPIC {
-                        tracing::debug!("Received close message");
-                        drop(rx);
-                        break;
-                    }
-                    buffer.push_back(msg);
-                }
-                None => {
-                    tracing::debug!("Channel hung up");
-                    break;
-                }
+        } else if let Some(msg) = rx.recv().await {
+            if msg.topic == CLOSE_TOPIC {
+                tracing::debug!("Received close message");
+                drop(rx);
+                break;
             }
+            buffer.push_back(msg);
+        } else {
+            tracing::debug!("Channel hung up");
+            break;
         }
     }
 
@@ -302,9 +297,10 @@ async fn drain_buffer(
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
         ];
-        let stream_key = match stream_per_topic {
-            true => format!("{stream_key}:{}", &msg.topic),
-            false => stream_key.to_string(),
+        let stream_key = if stream_per_topic {
+            format!("{stream_key}:{}", &msg.topic)
+        } else {
+            stream_key.to_string()
         };
         pipe.xadd(&stream_key, "*", &items);
 
@@ -378,9 +374,9 @@ pub async fn stream_messages(
                     // Timeout occurred: no messages received
                     continue;
                 }
-                for entry in stream_bulk.iter() {
-                    for (_stream_key, stream_msgs) in entry.iter() {
-                        for stream_msg in stream_msgs.iter() {
+                for entry in &stream_bulk {
+                    for stream_msgs in entry.values() {
+                        for stream_msg in stream_msgs {
                             for (id, array) in stream_msg {
                                 last_id.clear();
                                 last_id.push_str(id);
@@ -434,7 +430,7 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
             }
         };
 
-        Ok(BusMessage { topic, payload })
+        Ok(BusMessage::with_str_topic(topic, payload))
     } else {
         anyhow::bail!("Invalid stream message format: {stream_msg:?}")
     }
@@ -447,7 +443,7 @@ async fn run_heartbeat(
 ) {
     tracing::debug!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
 
-    let heartbeat_interval = Duration::from_secs(heartbeat_interval_secs as u64);
+    let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
 
     let check_interval = Duration::from_millis(100);
@@ -478,10 +474,8 @@ async fn run_heartbeat(
 }
 
 fn create_heartbeat_msg() -> BusMessage {
-    BusMessage {
-        topic: HEARTBEAT_TOPIC.to_string(),
-        payload: Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes()),
-    }
+    let payload = Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes());
+    BusMessage::with_str_topic(HEARTBEAT_TOPIC, payload)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -758,10 +752,7 @@ mod serial_tests {
         });
 
         // Send a test message
-        let msg = BusMessage {
-            topic: "test_topic".to_string(),
-            payload: Bytes::from("test_payload"),
-        };
+        let msg = BusMessage::with_str_topic("test_topic", Bytes::from("test_payload"));
         tx.send(msg).unwrap();
 
         // Wait until the message is published to Redis
@@ -789,10 +780,7 @@ mod serial_tests {
         assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
 
         // Stop publishing task
-        let msg = BusMessage {
-            topic: CLOSE_TOPIC.to_string(),
-            payload: Bytes::new(), // Empty
-        };
+        let msg = BusMessage::new_close();
         tx.send(msg).unwrap();
 
         // Shutdown and cleanup

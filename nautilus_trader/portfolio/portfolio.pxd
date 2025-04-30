@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.manager cimport AccountsManager
 from nautilus_trader.cache.cache cimport Cache
@@ -25,6 +27,7 @@ from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue
@@ -74,6 +77,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
+    cdef AccountState _update_position(self, InstrumentId instrument_id, AccountId account_id, uint64_t ts_event)
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_instrument_id(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)

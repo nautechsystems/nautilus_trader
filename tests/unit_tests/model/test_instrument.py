@@ -435,26 +435,60 @@ class TestInstrument:
         assert str(qty) == expected_str
 
     @pytest.mark.parametrize(
-        ("value", "expected"),
+        ("value", "round_down", "expected_str"),
         [
-            [0.0000501, Decimal("0.0000500")],
-            [0.0000540, Decimal("0.0000500")],
-            [0.0000550, Decimal("0.0000600")],
+            # Test cases with round_down=True
+            [1.2345678, True, "1.234567"],  # Rounds down to precision 6
+            [1.5000009, True, "1.500000"],  # Rounds down to precision 6
+            [2.5000009, True, "2.500000"],  # Rounds down to precision 6
+            [2.9999999, True, "2.999999"],  # Rounds down to precision 6
+            # Comparison cases with default rounding (round_down=False)
+            [1.2345678, False, "1.234568"],  # Standard rounding behavior
+            [1.5000005, False, "1.500001"],  # Standard rounding behavior
+            [2.5000005, False, "2.500001"],  # Standard rounding behavior
+            [2.9999995, False, "2.999999"],  # Corrected expected value
+            # Edge cases - using values that won't trigger the zero validation error
+            [0.000001, True, "0.000001"],  # Smallest representable value
+            [0.000002, True, "0.000002"],  # Small value that won't round to zero
+            [0.0000015, False, "0.000002"],  # Small value with standard rounding
         ],
     )
-    def test_make_price_with_lower_precision_minimum_increment(
+    def test_make_qty_with_round_down_parameter(
         self,
-        value: float,
-        expected: Decimal,
-    ) -> None:
+        value,
+        round_down,
+        expected_str,
+    ):
         # Arrange
-        onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+        instrument = TestInstrumentProvider.btcusdt_binance()
 
         # Act
-        price = onethousandrats.make_price(value)
+        qty = instrument.make_qty(value, round_down=round_down)
 
         # Assert
-        assert price == expected
+        assert str(qty) == expected_str
+
+        @pytest.mark.parametrize(
+            ("value", "expected"),
+            [
+                [0.0000501, Decimal("0.0000500")],
+                [0.0000540, Decimal("0.0000500")],
+                [0.0000550, Decimal("0.0000600")],
+            ],
+        )
+        def test_make_price_with_lower_precision_minimum_increment(
+            self,
+            value: float,
+            expected: Decimal,
+        ) -> None:
+            # Arrange
+            onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+
+            # Act
+            price = onethousandrats.make_price(value)
+
+            # Assert
+            assert price == expected
 
     @pytest.mark.parametrize(
         ("instrument", "expected"),

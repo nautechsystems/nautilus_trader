@@ -37,7 +37,7 @@ Initially, you will be given a "Delayed" App key (data delayed 1-180 seconds), l
 After setting up a funded Betfair account, you will need to obtain your App key.
 You can do this through the [Accounts API Demo Tool](https://apps.betfair.com/visualisers/api-ng-account-operations/). Follow these steps:
 
-1. Log in to your Betfair account. With your browser's developer tools open, inspect the initial POST request to https://identitysso.betfair.com.au/api/login, and find the `ssoid` in the response headers (set in the cookie).
+1. Log in to your Betfair account. With your browser's developer tools open, inspect the initial POST request to <https://identitysso.betfair.com.au/api/login>, and find the `ssoid` in the response headers (set in the cookie).
 2. Open the Betfair API tool and enter your `ssoid` into the Session Token (ssoid) field.
 3. In the left-hand navigation, select `getDeveloperAppKeys`, then click the Execute button at the bottom to retrieve your App key.
 
@@ -50,6 +50,7 @@ See also the [Betfair Getting Started - Application Keys](https://betfair-develo
 There are two options for supplying your credentials to the Betfair clients.
 Either pass the corresponding values to the config dictionaries, or
 set the following environment variables:
+
 - `BETFAIR_USERNAME`
 - `BETFAIR_PASSWORD`
 - `BETFAIR_APP_KEY`

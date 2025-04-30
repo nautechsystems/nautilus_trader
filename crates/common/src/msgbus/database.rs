@@ -17,6 +17,7 @@ use bytes::Bytes;
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::enums::SerializationEncoding;
 
@@ -149,7 +150,7 @@ pub trait MessageBusDatabaseAdapter {
         config: MessageBusConfig,
     ) -> anyhow::Result<Self::DatabaseType>;
     fn is_closed(&self) -> bool;
-    fn publish(&self, topic: String, payload: Bytes);
+    fn publish(&self, topic: Ustr, payload: Bytes);
     fn close(&mut self);
 }
 

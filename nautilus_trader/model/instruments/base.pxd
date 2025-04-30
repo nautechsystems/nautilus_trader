@@ -35,6 +35,7 @@ cdef class Instrument(Data):
     cdef TickScheme _tick_scheme
     cdef uint8_t _min_price_increment_precision
     cdef uint8_t _min_size_increment_precision
+    cdef double _increment_pow10
 
     cdef readonly InstrumentId id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
@@ -103,7 +104,7 @@ cdef class Instrument(Data):
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef list next_bid_prices(self, double value, int num_ticks=*)
     cpdef list next_ask_prices(self, double value, int num_ticks=*)
-    cpdef Quantity make_qty(self, value)
+    cpdef Quantity make_qty(self, value, bint round_down=*)
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
     cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)
 

@@ -22,7 +22,7 @@ use std::{
 use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
-    messages::data::{DataCommand, DataResponse, SubscribeCommand},
+    messages::data::{CustomDataResponse, DataCommand, SubscribeCommand},
     runner::{DataEvent, DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
     runtime::get_runtime,
 };
@@ -103,7 +103,7 @@ pub trait Runner {
 }
 
 pub trait SendResponse {
-    fn send(&self, resp: DataResponse);
+    fn send(&self, resp: CustomDataResponse);
 }
 
 pub type DataResponseQueue = Rc<RefCell<SyncDataQueue>>;
@@ -179,6 +179,7 @@ mod tests {
             "hola",
             alert_time,
             Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
+            None,
         );
 
         // runner pulling from event

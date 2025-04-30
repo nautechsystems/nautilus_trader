@@ -426,6 +426,9 @@ cdef extern from "../includes/common.h":
     void logging_log_sysinfo(const char *component_ptr);
 
     # Flushes global logger buffers of any records.
+    void logger_flush();
+
+    # Flushes global logger buffers of any records and then drops the logger.
     void logger_drop(LogGuard_API log_guard);
 
     # # Safety

@@ -285,18 +285,14 @@ cdef class CashAccount(Account):
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
-        # Add expected commission
-        locked = notional
-        locked += notional * instrument.taker_fee * Decimal(2)
-
         # Handle inverse
         if instrument.is_inverse and not use_quote_for_inverse:
-            return Money(locked, base_currency)
+            return Money(notional, base_currency)
 
         if side == OrderSide.BUY:
-            return Money(locked, quote_currency)
+            return Money(notional, quote_currency)
         elif side == OrderSide.SELL:
-            return Money(locked, base_currency)
+            return Money(notional, base_currency)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 

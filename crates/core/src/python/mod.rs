@@ -17,6 +17,7 @@
 
 pub mod casing;
 pub mod datetime;
+pub mod enums;
 pub mod serialization;
 pub mod uuid;
 pub mod version;
@@ -86,13 +87,11 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 }
 
 #[pyfunction]
-fn is_pycapsule(obj: PyObject) -> PyResult<bool> {
-    let result = unsafe {
+fn is_pycapsule(obj: PyObject) -> bool {
+    unsafe {
         // PyCapsule_CheckExact checks if the object is exactly a PyCapsule
         pyo3::ffi::PyCapsule_CheckExact(obj.as_ptr()) != 0
-    };
-
-    Ok(result)
+    }
 }
 
 /// Loaded as nautilus_pyo3.core

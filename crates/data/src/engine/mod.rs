@@ -42,10 +42,9 @@ mod tests;
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     rc::Rc,
-    sync::Arc,
 };
 
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
@@ -110,7 +109,6 @@ pub struct DataEngine {
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
     msgbus_priority: u8,
-    command_queue: VecDeque<DataCommand>,
     config: DataEngineConfig,
 }
 
@@ -137,7 +135,6 @@ impl DataEngine {
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
-            command_queue: VecDeque::new(),
             config: config.unwrap_or_default(),
         }
     }
@@ -334,21 +331,6 @@ impl DataEngine {
         log::info!("Deregistered client {client_id}");
     }
 
-    pub fn run(&mut self) {
-        let commands: Vec<_> = self.command_queue.drain(..).collect();
-        for cmd in commands {
-            self.execute(cmd);
-        }
-    }
-
-    pub fn enqueue(&mut self, cmd: &dyn Any) {
-        if let Some(cmd) = cmd.downcast_ref::<DataCommand>() {
-            self.command_queue.push_back(cmd.clone());
-        } else {
-            log::error!("Invalid message type received: {cmd:?}");
-        }
-    }
-
     pub fn execute(&mut self, cmd: DataCommand) {
         let result = match cmd {
             DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
@@ -449,32 +431,17 @@ impl DataEngine {
         }
     }
 
-    // TODO: Upgrade to response message handling
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
-        match resp.data_type.type_name() {
-            stringify!(InstrumentAny) => {
-                let instruments = Arc::downcast::<Vec<InstrumentAny>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_instruments(instruments);
+        match &resp {
+            DataResponse::Instruments(resp) => {
+                self.handle_instruments(&resp.data);
             }
-            stringify!(QuoteTick) => {
-                let quotes = Arc::downcast::<Vec<QuoteTick>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_quotes(quotes);
-            }
-            stringify!(TradeTick) => {
-                let trades = Arc::downcast::<Vec<TradeTick>>(resp.data.clone())
-                    .expect("Invalid response data");
-                self.handle_trades(trades);
-            }
-            stringify!(Bar) => {
-                let bars =
-                    Arc::downcast::<Vec<Bar>>(resp.data.clone()).expect("Invalid response data");
-                self.handle_bars(bars);
-            }
-            type_name => log::error!("Cannot handle request, type {type_name} is unrecognized"),
+            DataResponse::Quotes(resp) => self.handle_quotes(&resp.data),
+            DataResponse::Trades(resp) => self.handle_trades(&resp.data),
+            DataResponse::Bars(resp) => self.handle_bars(&resp.data),
+            _ => todo!(),
         }
 
         get_message_bus().borrow().send_response(resp);
@@ -853,30 +820,30 @@ impl DataEngine {
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
-    fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
+    fn handle_instruments(&self, instruments: &[InstrumentAny]) {
         // TODO: Improve by adding bulk update methods to cache and database
         let mut cache = self.cache.as_ref().borrow_mut();
-        for instrument in instruments.iter() {
+        for instrument in instruments {
             if let Err(e) = cache.add_instrument(instrument.clone()) {
                 log::error!("Error on cache insert: {e}");
             }
         }
     }
 
-    fn handle_quotes(&self, quotes: Arc<Vec<QuoteTick>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(&quotes) {
+    fn handle_quotes(&self, quotes: &[QuoteTick]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(quotes) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
-    fn handle_trades(&self, trades: Arc<Vec<TradeTick>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(&trades) {
+    fn handle_trades(&self, trades: &[TradeTick]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
-    fn handle_bars(&self, bars: Arc<Vec<Bar>>) {
-        if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(&bars) {
+    fn handle_bars(&self, bars: &[Bar]) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
             log::error!("Error on cache insert: {e}");
         }
     }
@@ -1046,6 +1013,7 @@ impl DataEngine {
     }
 }
 
+// TODO: Rename to Data command handler
 pub struct SubscriptionCommandHandler {
     pub id: Ustr,
     pub engine_ref: Rc<RefCell<DataEngine>>,
@@ -1057,7 +1025,11 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 
     fn handle(&self, msg: &dyn Any) {
-        self.engine_ref.borrow_mut().enqueue(msg);
+        if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
+            self.engine_ref.borrow_mut().execute(cmd.clone());
+        } else {
+            log::error!("Expected DataCommand message for data engine command handler: {msg:?}");
+        }
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -13,19 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use futures_util::StreamExt;
 use nautilus_coinbase_intx::{
     http::client::CoinbaseIntxHttpClient, websocket::client::CoinbaseIntxWebSocketClient,
 };
-use nautilus_model::{
-    identifiers::InstrumentId,
-    instruments::{Instrument, InstrumentAny},
-};
+use nautilus_model::identifiers::InstrumentId;
 use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
-use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,12 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = CoinbaseIntxHttpClient::from_env().unwrap();
 
     // Cache instruments first (required for correct websocket message parsing)
-    let resp = client.request_instruments().await?;
-    let mut instruments: HashMap<Ustr, InstrumentAny> = HashMap::new();
-    for inst in resp {
-        instruments.insert(inst.raw_symbol().inner(), inst);
-    }
-
+    let instruments = client.request_instruments().await?;
     let mut client = CoinbaseIntxWebSocketClient::default();
     client.connect(instruments).await?;
 

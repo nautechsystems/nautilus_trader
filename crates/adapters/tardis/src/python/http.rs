@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
-use chrono::DateTime;
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, enums::parse_enum, to_pyruntime_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
 use pyo3::prelude::*;
@@ -43,7 +40,7 @@ impl TardisHttpClient {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(name = "instruments")]
-    #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, effective=None, ts_init=None))]
+    #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, available_offset=None, effective=None, ts_init=None))]
     fn py_instruments<'py>(
         &self,
         exchange: String,
@@ -55,11 +52,12 @@ impl TardisHttpClient {
         active: Option<bool>,
         start: Option<u64>,
         end: Option<u64>,
+        available_offset: Option<u64>,
         effective: Option<u64>,
         ts_init: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let exchange = Exchange::from_str(&exchange).map_err(to_pyvalue_err)?;
+        let exchange: Exchange = parse_enum(&exchange, stringify!(exchange))?;
 
         let filter = InstrumentFilterBuilder::default()
             .base_currency(base_currency)
@@ -67,8 +65,10 @@ impl TardisHttpClient {
             .instrument_type(instrument_type)
             .contract_type(contract_type)
             .active(active)
-            .available_since(start.map(|x| DateTime::from_timestamp_nanos(x as i64)))
-            .available_to(end.map(|x| DateTime::from_timestamp_nanos(x as i64)))
+            // NOTE: The Tardis instruments metadata API does not function correctly when using
+            // the `availableSince` and `availableTo` params.
+            // .available_since(start.map(|x| DateTime::from_timestamp_nanos(x as i64)))
+            // .available_to(end.map(|x| DateTime::from_timestamp_nanos(x as i64)))
             .build()
             .unwrap(); // SAFETY: Safe since all fields are Option
 
@@ -80,6 +80,9 @@ impl TardisHttpClient {
                     exchange,
                     symbol.as_deref(),
                     Some(&filter),
+                    start.map(UnixNanos::from),
+                    end.map(UnixNanos::from),
+                    available_offset.map(UnixNanos::from),
                     effective.map(UnixNanos::from),
                     ts_init.map(UnixNanos::from),
                 )

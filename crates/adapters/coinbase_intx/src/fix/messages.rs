@@ -167,7 +167,7 @@ impl FixMessage {
 
     /// Gets a field from the message.
     pub fn get_field(&self, tag: u32) -> Option<&str> {
-        self.fields.get(&tag).map(|s| s.as_str())
+        self.fields.get(&tag).map(std::string::String::as_str)
     }
 
     /// Adds a field to the message.
@@ -247,7 +247,7 @@ impl FixMessage {
         buffer.extend_from_slice(&body_buffer);
 
         // Calculate checksum
-        let checksum: u32 = buffer.iter().map(|&b| b as u32).sum::<u32>() % 256;
+        let checksum: u32 = buffer.iter().map(|&b| u32::from(b)).sum::<u32>() % 256;
         buffer.extend_from_slice(format!("{}={:03}", fix_tag::CHECKSUM, checksum).as_bytes());
         buffer.push(FIX_DELIMITER);
 

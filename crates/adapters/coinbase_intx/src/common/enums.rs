@@ -67,8 +67,8 @@ pub enum CoinbaseIntxSide {
 impl From<OrderSide> for CoinbaseIntxSide {
     fn from(value: OrderSide) -> Self {
         match value {
-            OrderSide::Buy => CoinbaseIntxSide::Buy,
-            OrderSide::Sell => CoinbaseIntxSide::Sell,
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
             _ => panic!("Invalid `OrderSide`"),
         }
     }
@@ -77,8 +77,8 @@ impl From<OrderSide> for CoinbaseIntxSide {
 impl From<AggressorSide> for CoinbaseIntxSide {
     fn from(value: AggressorSide) -> Self {
         match value {
-            AggressorSide::Buyer => CoinbaseIntxSide::Buy,
-            AggressorSide::Seller => CoinbaseIntxSide::Sell,
+            AggressorSide::Buyer => Self::Buy,
+            AggressorSide::Seller => Self::Sell,
             _ => panic!("Invalid `AggressorSide`"),
         }
     }
@@ -87,8 +87,8 @@ impl From<AggressorSide> for CoinbaseIntxSide {
 impl From<CoinbaseIntxSide> for OrderSide {
     fn from(value: CoinbaseIntxSide) -> Self {
         match value {
-            CoinbaseIntxSide::Buy => OrderSide::Buy,
-            CoinbaseIntxSide::Sell => OrderSide::Sell,
+            CoinbaseIntxSide::Buy => Self::Buy,
+            CoinbaseIntxSide::Sell => Self::Sell,
         }
     }
 }
@@ -96,8 +96,8 @@ impl From<CoinbaseIntxSide> for OrderSide {
 impl From<CoinbaseIntxSide> for AggressorSide {
     fn from(value: CoinbaseIntxSide) -> Self {
         match value {
-            CoinbaseIntxSide::Buy => AggressorSide::Buyer,
-            CoinbaseIntxSide::Sell => AggressorSide::Seller,
+            CoinbaseIntxSide::Buy => Self::Buyer,
+            CoinbaseIntxSide::Sell => Self::Seller,
         }
     }
 }
@@ -118,11 +118,11 @@ pub enum CoinbaseIntxOrderType {
 impl From<CoinbaseIntxOrderType> for OrderType {
     fn from(value: CoinbaseIntxOrderType) -> Self {
         match value {
-            CoinbaseIntxOrderType::Limit => OrderType::Limit,
-            CoinbaseIntxOrderType::Market => OrderType::Market,
-            CoinbaseIntxOrderType::StopLimit => OrderType::StopLimit,
-            CoinbaseIntxOrderType::Stop => OrderType::StopMarket,
-            CoinbaseIntxOrderType::TakeProfitStopLoss => OrderType::MarketIfTouched,
+            CoinbaseIntxOrderType::Limit => Self::Limit,
+            CoinbaseIntxOrderType::Market => Self::Market,
+            CoinbaseIntxOrderType::StopLimit => Self::StopLimit,
+            CoinbaseIntxOrderType::Stop => Self::StopMarket,
+            CoinbaseIntxOrderType::TakeProfitStopLoss => Self::MarketIfTouched,
         }
     }
 }
@@ -130,11 +130,11 @@ impl From<CoinbaseIntxOrderType> for OrderType {
 impl From<OrderType> for CoinbaseIntxOrderType {
     fn from(value: OrderType) -> Self {
         match value {
-            OrderType::Limit => CoinbaseIntxOrderType::Limit,
-            OrderType::Market => CoinbaseIntxOrderType::Market,
-            OrderType::StopLimit => CoinbaseIntxOrderType::StopLimit,
-            OrderType::StopMarket => CoinbaseIntxOrderType::Stop,
-            OrderType::MarketIfTouched => CoinbaseIntxOrderType::TakeProfitStopLoss,
+            OrderType::Limit => Self::Limit,
+            OrderType::Market => Self::Market,
+            OrderType::StopLimit => Self::StopLimit,
+            OrderType::StopMarket => Self::Stop,
+            OrderType::MarketIfTouched => Self::TakeProfitStopLoss,
             _ => panic!("Invalid `OrderType` cannot be represented on Coinbase International"),
         }
     }
@@ -176,10 +176,10 @@ pub enum CoinbaseIntxTimeInForce {
 impl From<TimeInForce> for CoinbaseIntxTimeInForce {
     fn from(time_in_force: TimeInForce) -> Self {
         match time_in_force {
-            TimeInForce::Gtc => CoinbaseIntxTimeInForce::Gtc,
-            TimeInForce::Ioc => CoinbaseIntxTimeInForce::Ioc,
-            TimeInForce::Fok => CoinbaseIntxTimeInForce::Fok,
-            TimeInForce::Gtd => CoinbaseIntxTimeInForce::Gtt,
+            TimeInForce::Gtc => Self::Gtc,
+            TimeInForce::Ioc => Self::Ioc,
+            TimeInForce::Fok => Self::Fok,
+            TimeInForce::Gtd => Self::Gtt,
             _ => panic!("Invalid `TimeInForce` cannot be represented on Coinbase International"),
         }
     }
@@ -188,10 +188,10 @@ impl From<TimeInForce> for CoinbaseIntxTimeInForce {
 impl From<CoinbaseIntxTimeInForce> for TimeInForce {
     fn from(coinbase_tif: CoinbaseIntxTimeInForce) -> Self {
         match coinbase_tif {
-            CoinbaseIntxTimeInForce::Gtc => TimeInForce::Gtc,
-            CoinbaseIntxTimeInForce::Ioc => TimeInForce::Ioc,
-            CoinbaseIntxTimeInForce::Fok => TimeInForce::Fok,
-            CoinbaseIntxTimeInForce::Gtt => TimeInForce::Gtd,
+            CoinbaseIntxTimeInForce::Gtc => Self::Gtc,
+            CoinbaseIntxTimeInForce::Ioc => Self::Ioc,
+            CoinbaseIntxTimeInForce::Fok => Self::Fok,
+            CoinbaseIntxTimeInForce::Gtt => Self::Gtd,
         }
     }
 }

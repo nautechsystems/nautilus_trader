@@ -43,6 +43,7 @@ use crate::{
 /// dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
 /// having to manually access the underlying instance.
 #[repr(C)]
+#[derive(Debug)]
 #[allow(non_camel_case_types)]
 pub struct SyntheticInstrument_API(Box<SyntheticInstrument>);
 
@@ -129,7 +130,7 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
         .map(std::string::ToString::to_string)
         .collect::<Vec<String>>();
 
-    string_vec_to_bytes(components_vec)
+    string_vec_to_bytes(&components_vec)
 }
 
 #[unsafe(no_mangle)]

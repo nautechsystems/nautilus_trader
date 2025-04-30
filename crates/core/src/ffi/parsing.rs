@@ -53,8 +53,8 @@ pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
 }
 
 #[must_use]
-pub fn string_vec_to_bytes(strings: Vec<String>) -> *const c_char {
-    let json_string = serde_json::to_string(&strings).unwrap();
+pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
+    let json_string = serde_json::to_string(strings).unwrap();
     let c_string = CString::new(json_string).unwrap();
     c_string.into_raw()
 }
@@ -204,7 +204,7 @@ mod tests {
             .map(String::from)
             .collect::<Vec<String>>();
 
-        let ptr = string_vec_to_bytes(strings.clone());
+        let ptr = string_vec_to_bytes(&strings);
 
         let result = unsafe { bytes_to_string_vec(ptr) };
         assert_eq!(result, strings);
@@ -213,7 +213,7 @@ mod tests {
     #[rstest]
     fn test_string_vec_to_bytes_empty() {
         let strings = Vec::new();
-        let ptr = string_vec_to_bytes(strings.clone());
+        let ptr = string_vec_to_bytes(&strings);
 
         let result = unsafe { bytes_to_string_vec(ptr) };
         assert_eq!(result, strings);

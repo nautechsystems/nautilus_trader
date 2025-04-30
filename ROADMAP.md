@@ -20,31 +20,31 @@ performance, reliability, usability, and comprehensive documentation for traders
 1. **Port core to Rust**
 
    **Goal**: Leverage Rust's performance and safety features to improve reliability, performance and scalability.
-     - Rewrite performance-critical components in Rust (replacing existing Cython modules).
-     - Ensure interoperability between Rust and Python layers using PyO3.
-     - Benchmark performance improvements throughout the transition.
+   - Rewrite performance-critical components in Rust (replacing existing Cython modules).
+   - Ensure interoperability between Rust and Python layers using PyO3.
+   - Benchmark performance improvements throughout the transition.
 
 2. **Improve Documentation and Tutorials**
 
     **Goal**: Lower the learning curve for new users and empower developers with clear, comprehensive guides:
-    - Fill gaps in user and developer documentation by adding missing sections.
-    - Add additional tutorials and examples.
+   - Fill gaps in user and developer documentation by adding missing sections.
+   - Add additional tutorials and examples.
 
 3. **Improve Code Ergonomics**
 
     **Goal**: Simplify the development experience for users and contributors:
-    - Enhance type annotations and support for Python import resolution.
-    - Standardize naming conventions and refine APIs for greater intuitiveness.
-    - Streamline configuration and setup processes to minimize friction.
-    - Refactor modules and namespaces to improve readability and maintainability.
+   - Enhance type annotations and support for Python import resolution.
+   - Standardize naming conventions and refine APIs for greater intuitiveness.
+   - Streamline configuration and setup processes to minimize friction.
+   - Refactor modules and namespaces to improve readability and maintainability.
 
 ## Additional Enhancements
 
 As we progress on the top priorities, we also plan to focus on the following enhancements:
 
-  - Expand integrations with adapters to support trading venues and data providers.
-  - Enhance the backtesting engine with additional features.
-  - Enhance order book execution dynamics with additional features, including user order interactions, persistent book changes, and expanded microstructure simulations.
+- Expand integrations with adapters to support trading venues and data providers.
+- Enhance the backtesting engine with additional features.
+- Enhance order book execution dynamics with additional features, including user order interactions, persistent book changes, and expanded microstructure simulations.
 
 ## NautilusTrader v2.0 and Beyond
 

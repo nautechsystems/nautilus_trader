@@ -109,7 +109,7 @@ pub struct DatabaseCommand {
 impl DatabaseCommand {
     /// Creates a new [`DatabaseCommand`] instance.
     #[must_use]
-    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Bytes>>) -> Self {
+    pub const fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Bytes>>) -> Self {
         Self {
             op_type,
             key: Some(key),
@@ -119,7 +119,7 @@ impl DatabaseCommand {
 
     /// Initialize a `Close` database command, this is meant to close the database cache channel.
     #[must_use]
-    pub fn close() -> Self {
+    pub const fn close() -> Self {
         Self {
             op_type: DatabaseOperation::Close,
             key: None,
@@ -148,7 +148,7 @@ impl RedisCacheDatabase {
         trader_id: TraderId,
         instance_id: UUID4,
         config: CacheConfig,
-    ) -> anyhow::Result<RedisCacheDatabase> {
+    ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
         let db_config = config
@@ -167,20 +167,22 @@ impl RedisCacheDatabase {
             }
         });
 
-        Ok(RedisCacheDatabase {
-            trader_id,
-            trader_key,
+        Ok(Self {
             con,
-            tx,
-            handle,
+            trader_id,
             encoding,
+            handle,
+            trader_key,
+            tx,
         })
     }
 
-    pub fn get_encoding(&self) -> SerializationEncoding {
+    #[must_use]
+    pub const fn get_encoding(&self) -> SerializationEncoding {
         self.encoding
     }
 
+    #[must_use]
     pub fn get_trader_key(&self) -> &str {
         &self.trader_key
     }
@@ -189,7 +191,7 @@ impl RedisCacheDatabase {
         log::debug!("Closing");
 
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
-            log::debug!("Error sending close command: {e:?}")
+            log::debug!("Error sending close command: {e:?}");
         }
 
         log::debug!("Awaiting task '{CACHE_WRITE}'");
@@ -224,7 +226,7 @@ impl RedisCacheDatabase {
     pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
@@ -232,7 +234,7 @@ impl RedisCacheDatabase {
     pub fn update(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
@@ -240,7 +242,7 @@ impl RedisCacheDatabase {
     pub fn delete(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
-            Ok(_) => Ok(()),
+            Ok(()) => Ok(()),
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
@@ -269,20 +271,15 @@ async fn process_commands(
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(&mut con, &trader_key, &mut buffer).await;
             last_drain = Instant::now();
-        } else {
-            match rx.recv().await {
-                Some(cmd) => {
-                    tracing::debug!("Received {cmd:?}");
-                    if let DatabaseOperation::Close = cmd.op_type {
-                        break;
-                    }
-                    buffer.push_back(cmd)
-                }
-                None => {
-                    tracing::debug!("Command channel closed");
-                    break;
-                }
+        } else if let Some(cmd) = rx.recv().await {
+            tracing::debug!("Received {cmd:?}");
+            if matches!(cmd.op_type, DatabaseOperation::Close) {
+                break;
             }
+            buffer.push_back(cmd);
+        } else {
+            tracing::debug!("Command channel closed");
+            break;
         }
     }
 
@@ -304,12 +301,11 @@ async fn drain_buffer(
     pipe.atomic();
 
     for msg in buffer.drain(..) {
-        let key = match msg.key {
-            Some(key) => key,
-            None => {
-                log::error!("Null key found for message: {msg:?}");
-                continue;
-            }
+        let key = if let Some(key) = msg.key {
+            key
+        } else {
+            log::error!("Null key found for message: {msg:?}");
+            continue;
         };
         let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
@@ -338,7 +334,7 @@ async fn drain_buffer(
                     }
                 } else {
                     tracing::error!("Null `payload` for `update`");
-                };
+                }
             }
             DatabaseOperation::Delete => {
                 // `payload` can be `None` for a delete operation

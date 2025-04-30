@@ -39,7 +39,6 @@ python = [
 high-precision = [
   "nautilus-serialization/high-precision",
   "nautilus-model/high-precision",
-  "nautilus-testkit/high-precision",
 ]
 
 [package.metadata.docs.rs]
@@ -50,7 +49,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-common = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
-nautilus-serialization = { workspace = true, features = ["python"]}
+nautilus-serialization = { workspace = true, features = ["python"] }
 
 futures = { workspace = true }
 heck = { workspace = true }
@@ -64,24 +63,23 @@ anyhow = { workspace = true }
 parquet = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "46.0.1", default-features = false, features = [
-  "compression",
+datafusion = { version = "47.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
 ] }
-object_store = "0.11.2"  # Keep in line with datafusion
+object_store = "0.12.0"
 walkdir = "2.5.0"
 
 [dev-dependencies]
-nautilus-testkit = { path = "../testkit" }
+nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
+pretty_assertions = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
-pretty_assertions = "1.4.1"
 [target.'cfg(target_os = "linux")'.dependencies]
 procfs = "0.17.0"
 

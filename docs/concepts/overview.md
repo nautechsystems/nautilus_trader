@@ -68,9 +68,11 @@ the default `backtest` and `live` system implementations in their respectively n
 be built using the sandbox adapter.
 
 :::note
+
 - All examples will utilize these default system implementations.
 - We consider trading strategies to be subcomponents of end-to-end trading systems, these systems
 include the application and infrastructure layers.
+
 :::
 
 ## Distributed

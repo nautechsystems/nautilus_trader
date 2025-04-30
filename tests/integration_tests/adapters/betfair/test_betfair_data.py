@@ -23,7 +23,6 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
-from nautilus_trader.adapters.betfair.data_types import BetfairSequenceCompleted
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -181,7 +180,7 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
         ["BettingInstrument"] * 7
         + ["InstrumentStatus"] * 7
         + ["OrderBookDeltas"] * 7
-        + ["BetfairSequenceCompleted"]
+        + ["CustomData"]
     )
     assert result == expected
 
@@ -225,7 +224,7 @@ def test_market_update(data_client, mock_data_engine_process):
 def test_market_update_md(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_UPDATE_md())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["BettingInstrument"] * 2 + ["InstrumentStatus"] * 2 + ["BetfairSequenceCompleted"]
+    expected = ["BettingInstrument"] * 2 + ["InstrumentStatus"] * 2 + ["CustomData"]
     assert result == expected
 
 
@@ -237,7 +236,7 @@ def test_market_update_live_image(data_client, mock_data_engine_process):
         + ["TradeTick"] * 13
         + ["OrderBookDeltas"]
         + ["TradeTick"] * 17
-        + ["BetfairSequenceCompleted"]
+        + ["CustomData"]
     )
     assert result == expected
 
@@ -245,7 +244,7 @@ def test_market_update_live_image(data_client, mock_data_engine_process):
 def test_market_update_live_update(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_live_UPDATE())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["TradeTick", "OrderBookDeltas", "BetfairSequenceCompleted"]
+    expected = ["TradeTick", "OrderBookDeltas", "CustomData"]
     assert result == expected
 
 
@@ -271,12 +270,11 @@ def test_market_bsp(data_client, mock_data_engine_process):
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
     result = Counter([type(args).__name__ for args in mock_call_args])
     expected = {
-        "BetfairSequenceCompleted": 2,
         "BettingInstrument": 9,
         "TradeTick": 95,
         "OrderBookDeltas": 11,
         "InstrumentStatus": 9,
-        "CustomData": 38,
+        "CustomData": 40,
         "InstrumentClose": 1,
     }
     assert dict(result) == expected
@@ -313,7 +311,7 @@ def test_orderbook_updates(data_client, parser):
     for raw_update in BetfairStreaming.market_updates():
         line = stream_decode(raw_update)
         for update in parser.parse(mcm=line):
-            if isinstance(update, BetfairSequenceCompleted):
+            if isinstance(update, CustomData):
                 continue
             if len(order_books) > 1 and update.instrument_id != list(order_books)[1]:
                 continue
@@ -355,7 +353,7 @@ def test_instrument_opening_events(data_client, parser):
     assert messages[2].action == MarketStatusAction.PRE_OPEN
     assert isinstance(messages[3], InstrumentStatus)
     assert messages[3].action == MarketStatusAction.PRE_OPEN
-    assert isinstance(messages[4], BetfairSequenceCompleted)
+    assert isinstance(messages[4], CustomData)
 
 
 def test_instrument_in_play_events(data_client, parser):
@@ -424,7 +422,7 @@ def test_instrument_closing_events(data_client, parser):
     assert close2.close_price == 0.0
     assert close2.close_type == InstrumentCloseType.CONTRACT_EXPIRED
 
-    assert isinstance(completed, BetfairSequenceCompleted)
+    assert isinstance(completed, CustomData)
 
 
 def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
@@ -490,7 +488,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
     # Act, Assert
     for update in BetfairDataProvider.market_updates():
         for message in parser.parse(update):
-            if isinstance(message, BetfairSequenceCompleted | BettingInstrument | CustomData):
+            if isinstance(message, BettingInstrument | CustomData):
                 continue
             if message.instrument_id not in books:
                 books[message.instrument_id] = create_betfair_order_book(

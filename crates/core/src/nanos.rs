@@ -72,6 +72,12 @@ impl UnixNanos {
         Self(value)
     }
 
+    /// Creates a new [`UnixNanos`] instance with the maximum valid value.
+    #[must_use]
+    pub const fn max() -> Self {
+        Self(u64::MAX)
+    }
+
     /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
@@ -390,6 +396,12 @@ mod tests {
         let nanos = UnixNanos::new(123);
         assert_eq!(nanos.as_u64(), 123);
         assert_eq!(nanos.as_i64(), 123);
+    }
+
+    #[rstest]
+    fn test_max() {
+        let nanos = UnixNanos::max();
+        assert_eq!(nanos.as_u64(), u64::MAX);
     }
 
     #[rstest]

@@ -52,47 +52,47 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let kind = row.get::<String, _>("kind");
         if kind == "BETTING" {
-            Ok(InstrumentAnyModel(InstrumentAny::Betting(
+            Ok(Self(InstrumentAny::Betting(
                 BettingInstrumentModel::from_row(row).unwrap().0,
             )))
         } else if kind == "BINARY_OPTION" {
-            Ok(InstrumentAnyModel(InstrumentAny::BinaryOption(
+            Ok(Self(InstrumentAny::BinaryOption(
                 BinaryOptionModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_FUTURE" {
-            Ok(InstrumentAnyModel(InstrumentAny::CryptoFuture(
+            Ok(Self(InstrumentAny::CryptoFuture(
                 CryptoFutureModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_OPTION" {
-            Ok(InstrumentAnyModel(InstrumentAny::CryptoOption(
+            Ok(Self(InstrumentAny::CryptoOption(
                 CryptoOptionModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_PERPETUAL" {
-            Ok(InstrumentAnyModel(InstrumentAny::CryptoPerpetual(
+            Ok(Self(InstrumentAny::CryptoPerpetual(
                 CryptoPerpetualModel::from_row(row).unwrap().0,
             )))
         } else if kind == "CURRENCY_PAIR" {
-            Ok(InstrumentAnyModel(InstrumentAny::CurrencyPair(
+            Ok(Self(InstrumentAny::CurrencyPair(
                 CurrencyPairModel::from_row(row).unwrap().0,
             )))
         } else if kind == "EQUITY" {
-            Ok(InstrumentAnyModel(InstrumentAny::Equity(
+            Ok(Self(InstrumentAny::Equity(
                 EquityModel::from_row(row).unwrap().0,
             )))
         } else if kind == "FUTURES_CONTRACT" {
-            Ok(InstrumentAnyModel(InstrumentAny::FuturesContract(
+            Ok(Self(InstrumentAny::FuturesContract(
                 FuturesContractModel::from_row(row).unwrap().0,
             )))
         } else if kind == "FUTURES_SPREAD" {
-            Ok(InstrumentAnyModel(InstrumentAny::FuturesSpread(
+            Ok(Self(InstrumentAny::FuturesSpread(
                 FuturesSpreadModel::from_row(row).unwrap().0,
             )))
         } else if kind == "OPTION_CONTRACT" {
-            Ok(InstrumentAnyModel(InstrumentAny::OptionContract(
+            Ok(Self(InstrumentAny::OptionContract(
                 OptionContractModel::from_row(row).unwrap().0,
             )))
         } else if kind == "OPTION_SPREAD" {
-            Ok(InstrumentAnyModel(InstrumentAny::OptionSpread(
+            Ok(Self(InstrumentAny::OptionSpread(
                 OptionSpreadModel::from_row(row).unwrap().0,
             )))
         } else {
@@ -231,7 +231,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             ts_event,
             ts_init,
         );
-        Ok(BettingInstrumentModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -332,7 +332,7 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             ts_event,
             ts_init,
         );
-        Ok(BinaryOptionModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -435,7 +435,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             ts_event,
             ts_init,
         );
-        Ok(CryptoFutureModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -542,7 +542,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
             ts_event,
             ts_init,
         );
-        Ok(CryptoOptionModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -640,7 +640,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             ts_event,
             ts_init,
         );
-        Ok(CryptoPerpetualModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -728,7 +728,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             ts_event,
             ts_init,
         );
-        Ok(CurrencyPairModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -799,7 +799,7 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             ts_event,
             ts_init,
         );
-        Ok(EquityModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -890,7 +890,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             ts_event,
             ts_init,
         );
-        Ok(FuturesContractModel(inst))
+        Ok(Self(inst))
     }
 }
 
@@ -996,7 +996,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
             ts_event,
             ts_init,
         );
-        Ok(OptionContractModel(inst))
+        Ok(Self(inst))
     }
 }
 

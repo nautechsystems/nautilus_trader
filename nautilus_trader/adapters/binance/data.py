@@ -60,6 +60,7 @@ from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeData
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstruments
+from nautilus_trader.data.messages import SubscribeMarkPrices
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
@@ -431,6 +432,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             f"OrderBook snapshot rebuild for {instrument_id} completed",
             LogColor.BLUE,
         )
+
+    async def _subscribe_mark_prices(self, command: SubscribeMarkPrices) -> None:
+        await self._ws_client.subscribe_mark_price(command.instrument_id.symbol.value, speed=1000)
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         await self._ws_client.subscribe_book_ticker(command.instrument_id.symbol.value)
@@ -922,7 +926,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     f"Unrecognized websocket message type: {wrapper.stream}",
                 )
         except Exception as e:
-            self._log.exception("Error handling websocket message {raw!r}", e)
+            self._log.exception(f"Error handling websocket message {raw!r}", e)
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)

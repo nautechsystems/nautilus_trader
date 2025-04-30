@@ -29,9 +29,11 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class IndexInstrument(Instrument):
     """
-    Represents a generic index instrument.
+    Represents a **spot index** instrument (also known as a **cash index**).
 
-    This instrument is *typically* not tradable.
+    A spot index is calculated from its underlying constituents.
+    It is **not directly tradable**. To gain exposure you would typically use
+    index futures, ETFs, or CFDs.
 
     Parameters
     ----------
@@ -90,7 +92,7 @@ cdef class IndexInstrument(Instrument):
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
             asset_class=AssetClass.INDEX,
-            instrument_class=InstrumentClass.FUTURE,
+            instrument_class=InstrumentClass.SPOT,
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,

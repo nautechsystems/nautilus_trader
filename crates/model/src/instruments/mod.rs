@@ -127,8 +127,16 @@ pub trait Instrument: 'static + Send {
     }
 
     /// Creates a new `Quantity` from the given `value` with the correct size precision for the instrument.
-    fn make_qty(&self, value: f64) -> Quantity {
-        Quantity::new(value, self.size_precision())
+    fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
+        if round_down.unwrap_or(false) {
+            // Round down to the nearest valid increment
+            let increment = 10f64.powi(-i32::from(self.size_precision()));
+            let rounded_value = (value / increment).floor() * increment;
+            Quantity::new(rounded_value, self.size_precision())
+        } else {
+            // Use standard rounding behavior (banker's rounding)
+            Quantity::new(value, self.size_precision())
+        }
     }
 
     /// Calculates the notional value from the given parameters.
@@ -178,3 +186,114 @@ pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
     InstrumentClass::Option,
     InstrumentClass::OptionSpread,
 ];
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::instruments::{CurrencyPair, Instrument, stubs::*};
+
+    #[rstest]
+    fn test_make_qty_standard_rounding(currency_pair_btcusdt: CurrencyPair) {
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(1.5, None).to_string(),
+            "1.500000"
+        ); // 1.5 -> 1.500000
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(2.5, None).to_string(),
+            "2.500000"
+        ); // 2.5 -> 2.500000 (banker's rounds to even)
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(1.2345678, None).to_string(),
+            "1.234568"
+        ); // 1.2345678 -> 1.234568 (rounds to precision)
+    }
+
+    #[rstest]
+    fn test_make_qty_round_down(currency_pair_btcusdt: CurrencyPair) {
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(1.5, Some(true)).to_string(),
+            "1.500000"
+        ); // 1.5 -> 1.500000
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(2.5, Some(true)).to_string(),
+            "2.500000"
+        ); // 2.5 -> 2.500000
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(1.2345678, Some(true))
+                .to_string(),
+            "1.234567"
+        ); // 1.2345678 -> 1.234567 (rounds down)
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(1.9999999, Some(true))
+                .to_string(),
+            "1.999999"
+        ); // 1.9999999 -> 1.999999 (rounds down)
+    }
+
+    #[rstest]
+    fn test_make_qty_boundary_cases(currency_pair_btcusdt: CurrencyPair) {
+        // The instrument has size_precision=6, so increment = 0.000001
+        let increment = 0.000001;
+
+        // Testing behavior near increment boundaries
+        let value_just_above = 1.0 + (increment * 1.1);
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(value_just_above, Some(true))
+                .to_string(),
+            "1.000001"
+        ); // Should round down to 1.000001
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(value_just_above, None)
+                .to_string(),
+            "1.000001"
+        ); // Standard rounding should be 1.000001
+
+        // Test with a value that should differ between round modes
+        let value_half_increment = 1.0000015;
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(value_half_increment, Some(true))
+                .to_string(),
+            "1.000001"
+        ); // Should round down to 1.000001
+        assert_eq!(
+            currency_pair_btcusdt
+                .make_qty(value_half_increment, None)
+                .to_string(),
+            "1.000002"
+        ); // Standard rounding should be 1.000002
+    }
+
+    #[rstest]
+    fn test_make_qty_zero_value(currency_pair_btcusdt: CurrencyPair) {
+        // Zero should remain zero with both rounding methods
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(0.0, None).to_string(),
+            "0.000000"
+        );
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(0.0, Some(true)).to_string(),
+            "0.000000"
+        );
+    }
+
+    #[rstest]
+    fn test_make_qty_different_precision(currency_pair_ethusdt: CurrencyPair) {
+        // ethusdt has size_precision=5
+        assert_eq!(
+            currency_pair_ethusdt.make_qty(1.2345678, None).to_string(),
+            "1.23457"
+        ); // 1.2345678 -> 1.23457 (standard rounding)
+        assert_eq!(
+            currency_pair_ethusdt
+                .make_qty(1.2345678, Some(true))
+                .to_string(),
+            "1.23456"
+        ); // 1.2345678 -> 1.23456 (rounds down)
+    }
+}

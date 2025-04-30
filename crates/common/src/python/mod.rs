@@ -39,8 +39,8 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::signal::Signal>()?;
     m.add_class::<crate::python::clock::TestClock_Py>()?;
     m.add_class::<crate::python::clock::LiveClock_Py>()?;
-    m.add_class::<crate::msgbus::MessageBus>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
+    m.add_class::<crate::msgbus::MessageBus>()?;
     m.add_class::<crate::msgbus::listener::MessageBusListener>()?;
     m.add_class::<crate::python::handler::PythonMessageHandler>()?;
     m.add_class::<crate::enums::ComponentState>()?;
@@ -53,6 +53,7 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::logging::writer::FileWriterConfig>()?;
     m.add_function(wrap_pyfunction!(logging::py_init_tracing, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_init_logging, m)?)?;
+    m.add_function(wrap_pyfunction!(logging::py_logger_flush, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_logger_log, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_log_header, m)?)?;
     m.add_function(wrap_pyfunction!(logging::py_log_sysinfo, m)?)?;

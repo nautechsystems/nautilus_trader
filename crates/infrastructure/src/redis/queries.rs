@@ -177,12 +177,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let currency_code = match key.as_str().rsplit(':').next() {
-                        Some(code) => Ustr::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
+                        Ustr::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
@@ -342,12 +341,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let account_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => AccountId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let account_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        AccountId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_account(&con, trader_key, &account_id, encoding).await {
@@ -389,12 +387,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let client_order_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => ClientOrderId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let client_order_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        ClientOrderId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
@@ -436,12 +433,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let position_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => PositionId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let position_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        PositionId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {

@@ -64,6 +64,8 @@ from nautilus_trader.adapters.bybit.endpoints.trade.set_trading_stop import Bybi
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchCancelOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitBatchPlaceOrderResponse
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -79,7 +81,7 @@ if TYPE_CHECKING:
     from nautilus_trader.adapters.bybit.schemas.account.set_margin_mode import BybitSetMarginModeResponse
     from nautilus_trader.adapters.bybit.schemas.account.switch_mode import BybitSwitchModeResponse
     from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
-    from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
+    from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrderResponse
     from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
     from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
     from nautilus_trader.adapters.bybit.schemas.order import BybitSetTradingStopResponse
@@ -409,7 +411,7 @@ class BybitAccountHttpAPI:
         client_order_id: str | None = None,
         venue_order_id: str | None = None,
         order_filter: str | None = None,
-    ) -> BybitCancelOrder:
+    ) -> BybitCancelOrderResponse:
         response = await self._endpoint_cancel_order.post(
             BybitCancelOrderPostParams(
                 category=product_type,
@@ -419,7 +421,7 @@ class BybitAccountHttpAPI:
                 orderFilter=order_filter,
             ),
         )
-        return response.result
+        return response
 
     async def cancel_all_orders(
         self,
@@ -438,24 +440,24 @@ class BybitAccountHttpAPI:
         self,
         product_type: BybitProductType,
         submit_orders: list[BybitBatchPlaceOrder],
-    ) -> list[Any]:
+    ) -> BybitBatchPlaceOrderResponse:
         response = await self._endpoint_batch_place_order.post(
             BybitBatchPlaceOrderPostParams(
                 category=product_type,
                 request=submit_orders,
             ),
         )
-        return response.result.list
+        return response
 
     async def batch_cancel_orders(
         self,
         product_type: BybitProductType,
         cancel_orders: list[BybitBatchCancelOrder],
-    ) -> list[Any]:
+    ) -> BybitBatchCancelOrderResponse:
         response = await self._endpoint_batch_cancel_order.post(
             BybitBatchCancelOrderPostParams(
                 category=product_type,
                 request=cancel_orders,
             ),
         )
-        return response.result.list
+        return response

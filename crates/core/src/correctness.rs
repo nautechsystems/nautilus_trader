@@ -124,7 +124,6 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
 /// - If `s` contains one or more non-ASCII characters.
 #[inline(always)]
 pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
-    let s = s.as_ref();
     if let Some(s) = s {
         check_valid_string(s, param)?;
     }
@@ -152,8 +151,8 @@ pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> any
 /// Returns an error if the validation check fails.
 #[inline(always)]
 pub fn check_equal<T: PartialEq + Debug + Display>(
-    lhs: T,
-    rhs: T,
+    lhs: &T,
+    rhs: &T,
     lhs_param: &str,
     rhs_param: &str,
 ) -> anyhow::Result<()> {
@@ -658,7 +657,7 @@ mod tests {
         #[case] rhs_param: &str,
         #[case] expected: bool,
     ) {
-        let result = check_equal(lhs, rhs, lhs_param, rhs_param).is_ok();
+        let result = check_equal(&lhs, &rhs, lhs_param, rhs_param).is_ok();
         assert_eq!(result, expected);
     }
 

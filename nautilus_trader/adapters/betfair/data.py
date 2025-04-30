@@ -33,8 +33,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.data import Data
 from nautilus_trader.data.messages import SubscribeInstrument
 from nautilus_trader.data.messages import SubscribeInstrumentClose
 from nautilus_trader.data.messages import SubscribeInstruments
@@ -292,7 +290,7 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self._parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data=}")
-            PyCondition.type(data, Data, "data")
+
             if isinstance(data, BettingInstrument):
                 self._on_instrument(data)
             else:

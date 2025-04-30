@@ -111,6 +111,7 @@ pub trait Clock {
 /// A static test clock.
 ///
 /// Stores the current timestamp internally which can be advanced.
+#[derive(Debug)]
 pub struct TestClock {
     time: AtomicTime,
     // use btree map to ensure stable ordering when scanning for timers
@@ -437,6 +438,7 @@ impl Clock for TestClock {
 /// A real-time clock which uses system time.
 ///
 /// Timestamps are guaranteed to be unique and monotonically increasing.
+#[derive(Debug)]
 pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
@@ -737,6 +739,7 @@ impl Clock for LiveClock {
 }
 
 // Helper struct to stream events from the heap
+#[derive(Debug)]
 pub struct TimeEventStream {
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
 }
@@ -943,7 +946,7 @@ mod tests {
     fn test_allow_past_parameter_false(mut test_clock: TestClock) {
         test_clock.set_time(UnixNanos::from(2000));
         let current_time = test_clock.timestamp_ns();
-        let past_time = (current_time - 1000).into();
+        let past_time = current_time - 1000;
 
         // With allow_past=false, should fail for past times
         let result = test_clock.set_time_alert_ns("past_timer", past_time, None, Some(false));
@@ -961,8 +964,8 @@ mod tests {
     fn test_invalid_stop_time_validation(mut test_clock: TestClock) {
         test_clock.set_time(UnixNanos::from(2000));
         let current_time = test_clock.timestamp_ns();
-        let start_time = (current_time + 1000).into();
-        let stop_time = (current_time + 500).into(); // Stop time before start time
+        let start_time = current_time + 1000;
+        let stop_time = current_time + 500; // Stop time before start time
 
         // Should fail because stop_time < start_time
         let result = test_clock.set_timer_ns(

@@ -69,6 +69,9 @@ async fn main() {
             Exchange::Bitmex,
             Some("XBTUSD"),
             Some(&filter),
+            None,
+            None,
+            None,
             Some(effective),
             None,
         )

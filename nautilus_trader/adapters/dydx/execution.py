@@ -88,6 +88,7 @@ from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
@@ -290,7 +291,9 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay_secs=config.retry_delay or 1.0,
+            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
+            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            backoff_factor=2,
             logger=self._log,
             exc_types=(DYDXError, DYDXGRPCError, AioRpcError),
             retry_check=should_retry,
@@ -1019,22 +1022,23 @@ class DYDXExecutionClient(LiveExecutionClient):
             else Money(Decimal(0), instrument.quote_currency)
         )
 
-        self.generate_order_filled(
-            strategy_id=order.strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            venue_position_id=None,
-            trade_id=TradeId(fill_msg.id),
-            order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
-            order_type=order.order_type,
-            last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
-            last_px=Price(Decimal(fill_msg.price), instrument.price_precision),
-            quote_currency=instrument.quote_currency,
-            commission=commission,
-            liquidity_side=self._enum_parser.parse_dydx_liquidity_side(fill_msg.liquidity),
-            ts_event=dt_to_unix_nanos(fill_msg.createdAt),
-        )
+        if order.status != OrderStatus.FILLED:
+            self.generate_order_filled(
+                strategy_id=order.strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                venue_position_id=None,
+                trade_id=TradeId(fill_msg.id),
+                order_side=self._enum_parser.parse_dydx_order_side(fill_msg.side),
+                order_type=order.order_type,
+                last_qty=Quantity(Decimal(fill_msg.size), instrument.size_precision),
+                last_px=Price(Decimal(fill_msg.price), instrument.price_precision),
+                quote_currency=instrument.quote_currency,
+                commission=commission,
+                liquidity_side=self._enum_parser.parse_dydx_liquidity_side(fill_msg.liquidity),
+                ts_event=dt_to_unix_nanos(fill_msg.createdAt),
+            )
 
     def _get_order_builder(self, instrument: Instrument) -> OrderBuilder:
         """
@@ -1255,7 +1259,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="place_order",
                 details=[order.client_order_id],
@@ -1271,6 +1276,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_single(order=command.order)
@@ -1395,7 +1402,8 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         # Execute batch cancel
         if order_batch_list:
-            async with self._retry_manager_pool as retry_manager:
+            retry_manager = await self._retry_manager_pool.acquire()
+            try:
                 await retry_manager.run(
                     name="batch_cancel_orders",
                     details=[order.client_order_id for order in orders],
@@ -1418,6 +1426,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                             reason=retry_manager.message,
                             ts_event=self._clock.timestamp_ns(),
                         )
+            finally:
+                await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_order_single(
         self,
@@ -1523,7 +1533,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        async with self._retry_manager_pool as retry_manager:
+        retry_manager = await self._retry_manager_pool.acquire()
+        try:
             await retry_manager.run(
                 name="cancel_order",
                 details=[order.client_order_id, order.venue_order_id],
@@ -1543,3 +1554,5 @@ class DYDXExecutionClient(LiveExecutionClient):
                     reason=retry_manager.message,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        finally:
+            await self._retry_manager_pool.release(retry_manager)

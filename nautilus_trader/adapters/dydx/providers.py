@@ -17,6 +17,7 @@ Instrument provider for the dYdX venue.
 """
 
 from decimal import Decimal
+from typing import Any
 
 from grpc.aio._call import AioRpcError
 from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
@@ -75,7 +76,7 @@ class DYDXInstrumentProvider(InstrumentProvider):
 
         self._log_warnings = config.log_warnings if config else True
 
-    async def load_all_async(self, filters: dict | None = None) -> None:
+    async def load_all_async(self, filters: dict[str, Any] | None = None) -> None:
         """
         Load all instruments asynchronously, optionally applying filters.
         """
@@ -149,18 +150,19 @@ class DYDXInstrumentProvider(InstrumentProvider):
             except AioRpcError as e:
                 self._log.error(f"Failed to get the user fee tier: {e}. Set fees to zero.")
 
+        ts_init = self._clock.timestamp_ns()
+
         for market in markets.markets.values():
             try:
                 base_currency = market.parse_base_currency()
                 quote_currency = market.parse_quote_currency()
-                ts_event = self._clock.timestamp_ns()
-                ts_init = self._clock.timestamp_ns()
+
                 instrument = market.parse_to_instrument(
                     base_currency=base_currency,
                     quote_currency=quote_currency,
                     maker_fee=maker_fee,
                     taker_fee=taker_fee,
-                    ts_event=ts_event,
+                    ts_event=ts_init,
                     ts_init=ts_init,
                 )
                 self.add_currency(base_currency)
@@ -168,4 +170,4 @@ class DYDXInstrumentProvider(InstrumentProvider):
                 self.add(instrument)
             except ValueError as e:
                 if self._log_warnings:
-                    self._log.warning(f"Unable to parse linear instrument {market.ticker}: {e}")
+                    self._log.warning(f"Unable to parse instrument {market.ticker}: {e}")

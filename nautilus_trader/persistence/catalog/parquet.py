@@ -268,6 +268,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ------
         ValueError
             If data of the same type is not monotonically increasing (or non-decreasing) based on `ts_init`.
+            If the basename_template does not contain {i}.
 
         """
 
@@ -288,6 +289,10 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         def obj_to_type(obj: Data) -> type:
             return type(obj) if not isinstance(obj, CustomData) else obj.data.__class__
+
+        if "{i}" not in basename_template:
+            msg = "{i} must be in the basename_template," + f" found `{basename_template}`"
+            raise ValueError(msg)
 
         name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
 
@@ -385,10 +390,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         empty_file = parquet_file
         i = 0
 
-        while Path(empty_file).exists():
-            i += 1
-            name = basename_template.format(i=i)
-            empty_file = f"{path}/{name}.parquet"
+        # Do not list the directory when overwriting existing files
+        if mode != CatalogWriteMode.OVERWRITE:
+            # Use the fsspec filesystem to check for existing files. Force a
+            # refresh of the cache to ensure we see the latest state of the filesystem.
+            while fs.exists(empty_file, refresh=True):
+                i += 1
+                name = basename_template.format(i=i)
+                empty_file = f"{path}/{name}.parquet"
 
         if i > 1 and mode != CatalogWriteMode.NEWFILE:
             print(
@@ -399,19 +408,24 @@ class ParquetDataCatalog(BaseDataCatalog):
             parquet_file = empty_file
 
         # following solution from https://stackoverflow.com/a/70817689
-        if (
-            mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND]
-            and Path(parquet_file).exists()
+        if mode in [CatalogWriteMode.APPEND, CatalogWriteMode.PREPEND] and fs.exists(
+            parquet_file,
+            refresh=True,
         ):
-            existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
+            existing_table = pq.read_table(
+                source=parquet_file,
+                filesystem=fs,
+                pre_buffer=False,
+                memory_map=True,
+            )
             table = table.cast(existing_table.schema)
 
             if mode == CatalogWriteMode.APPEND:
                 combined_table = pa.concat_tables([existing_table, table])
-                pq.write_table(combined_table, where=parquet_file)
+                pq.write_table(combined_table, filesystem=fs, where=parquet_file)
             elif mode == CatalogWriteMode.PREPEND:
                 combined_table = pa.concat_tables([table, existing_table])
-                pq.write_table(combined_table, where=parquet_file)
+                pq.write_table(combined_table, filesystem=fs, where=parquet_file)
         else:
             pq.write_table(
                 table,

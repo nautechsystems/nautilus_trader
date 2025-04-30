@@ -56,6 +56,7 @@ from nautilus_trader.common.component cimport LogGuard
 from nautilus_trader.common.component cimport TestClock
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.component cimport TimeEventHandler
+from nautilus_trader.common.component cimport flush_logger
 from nautilus_trader.common.component cimport get_component_clocks
 from nautilus_trader.common.component cimport log_level_from_str
 from nautilus_trader.common.component cimport log_sysinfo
@@ -66,6 +67,7 @@ from nautilus_trader.common.component cimport set_logging_clock_static_time
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport format_optional_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
@@ -89,6 +91,7 @@ from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.functions cimport book_type_to_str
@@ -994,6 +997,11 @@ cdef class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_flush()
+        else:
+            flush_logger()
+
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
 
@@ -1027,6 +1035,11 @@ cdef class BacktestEngine:
 
         self._log_post_run()
 
+        if LOGGING_PYO3:
+            nautilus_pyo3.logger_flush()
+        else:
+            flush_logger()
+
     def get_result(self):
         """
         Return the backtest result from the last run.
@@ -1041,6 +1054,11 @@ cdef class BacktestEngine:
         for currency in self.kernel.portfolio.analyzer.currencies:
             stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
+        if self._backtest_start is not None and self._backtest_end is not None:
+            elapsed_time = (self._backtest_end - self._backtest_start).total_seconds()
+        else:
+            elapsed_time = 0
+
         return BacktestResult(
             trader_id=self._kernel.trader_id.value,
             machine_id=self._kernel.machine_id,
@@ -1051,7 +1069,7 @@ cdef class BacktestEngine:
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
             backtest_start=maybe_dt_to_unix_nanos(self._backtest_start),
             backtest_end=maybe_dt_to_unix_nanos(self._backtest_end),
-            elapsed_time=(self._backtest_end - self._backtest_start).total_seconds(),
+            elapsed_time=elapsed_time,
             iterations=self._index,
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
@@ -1197,6 +1215,9 @@ cdef class BacktestEngine:
                 elif isinstance(data, OrderBookDeltas):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_order_book_deltas(data)
+                elif isinstance(data, OrderBookDepth10):
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_depth10(data)
                 elif isinstance(data, QuoteTick):
                     exchange = self._venues[data.instrument_id.venue]
                     exchange.process_quote_tick(data)
@@ -1384,10 +1405,10 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Batch start:    {format_iso8601(start)}")
-        self._log.info(f"Batch end:      {format_iso8601(end)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Batch start:    {format_optional_iso8601(start)}")
+        self._log.info(f"Batch end:      {format_optional_iso8601(end)}")
         self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
@@ -1408,11 +1429,11 @@ cdef class BacktestEngine:
         self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
-        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
-        self._log.info(f"Run finished:   {format_iso8601(self._run_finished)}")
+        self._log.info(f"Run started:    {format_optional_iso8601(self._run_started)}")
+        self._log.info(f"Run finished:   {format_optional_iso8601(self._run_finished)}")
         self._log.info(f"Elapsed time:   {elapsed_time}")
-        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
+        self._log.info(f"Backtest start: {format_optional_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_optional_iso8601(self._backtest_end)}")
         self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:_}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")

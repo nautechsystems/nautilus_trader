@@ -119,7 +119,8 @@ pub fn parse_notional(value: &str, currency: Currency) -> anyhow::Result<Option<
     })
 }
 
-pub fn parse_aggressor_side(side: &Option<CoinbaseIntxSide>) -> AggressorSide {
+#[must_use]
+pub const fn parse_aggressor_side(side: &Option<CoinbaseIntxSide>) -> AggressorSide {
     match side {
         Some(CoinbaseIntxSide::Buy) => nautilus_model::enums::AggressorSide::Buyer,
         Some(CoinbaseIntxSide::Sell) => nautilus_model::enums::AggressorSide::Seller,
@@ -127,7 +128,8 @@ pub fn parse_aggressor_side(side: &Option<CoinbaseIntxSide>) -> AggressorSide {
     }
 }
 
-pub fn parse_execution_type(liquidity: &Option<CoinbaseIntxExecType>) -> LiquiditySide {
+#[must_use]
+pub const fn parse_execution_type(liquidity: &Option<CoinbaseIntxExecType>) -> LiquiditySide {
     match liquidity {
         Some(CoinbaseIntxExecType::Maker) => nautilus_model::enums::LiquiditySide::Maker,
         Some(CoinbaseIntxExecType::Taker) => nautilus_model::enums::LiquiditySide::Taker,
@@ -135,7 +137,8 @@ pub fn parse_execution_type(liquidity: &Option<CoinbaseIntxExecType>) -> Liquidi
     }
 }
 
-pub fn parse_position_side(current_qty: Option<f64>) -> PositionSide {
+#[must_use]
+pub const fn parse_position_side(current_qty: Option<f64>) -> PositionSide {
     match current_qty {
         Some(qty) if qty.is_sign_positive() => PositionSide::Long,
         Some(qty) if qty.is_sign_negative() => PositionSide::Short,
@@ -143,7 +146,8 @@ pub fn parse_position_side(current_qty: Option<f64>) -> PositionSide {
     }
 }
 
-pub fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSide {
+#[must_use]
+pub const fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSide {
     match order_side {
         Some(CoinbaseIntxSide::Buy) => OrderSide::Buy,
         Some(CoinbaseIntxSide::Sell) => OrderSide::Sell,
