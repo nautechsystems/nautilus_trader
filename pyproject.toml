@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.217.0"
+version = "1.218.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [
     {name = "Nautech Systems", email = "info@nautechsystems.io"},
@@ -45,7 +45,7 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-    "setuptools>=78",
+    "setuptools>=80",
     "poetry-core>=2.0.1",
     "numpy>=1.26.4",
     "cython==3.1.0b1",

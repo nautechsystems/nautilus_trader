@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.47.0"
+version = "0.48.0"
 edition = "2024"
 rust-version = "1.86.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -40,33 +40,33 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 homepage = "https://nautilustrader.io"
 
 [workspace.dependencies]
-nautilus-analysis = { path = "crates/analysis", version = "0.47.0" }
-nautilus-backtest = { path = "crates/backtest", version = "0.47.0" }
-nautilus-cli = { path = "crates/cli", version = "0.47.0" }
-nautilus-common = { path = "crates/common", version = "0.47.0" }
-nautilus-core = { path = "crates/core", version = "0.47.0" }
-nautilus-cryptography = { path = "crates/cryptography", version = "0.47.0" }
-nautilus-data = { path = "crates/data", version = "0.47.0" }
-nautilus-execution = { path = "crates/execution", version = "0.47.0" }
-nautilus-indicators = { path = "crates/indicators", version = "0.47.0" }
-nautilus-infrastructure = { path = "crates/infrastructure", version = "0.47.0" }
-nautilus-live = { path = "crates/live", version = "0.47.0" }
-nautilus-model = { path = "crates/model", version = "0.47.0" }
-nautilus-network = { path = "crates/network", version = "0.47.0" }
-nautilus-persistence = { path = "crates/persistence", version = "0.47.0" }
-nautilus-portfolio = { path = "crates/portfolio", version = "0.47.0" }
-nautilus-pyo3 = { path = "crates/pyo3", version = "0.47.0" }
-nautilus-risk = { path = "crates/risk", version = "0.47.0" }
-nautilus-serialization = { path = "crates/serialization", version = "0.47.0" }
-nautilus-system = { path = "crates/system", version = "0.47.0" }
-nautilus-testkit = { path = "crates/testkit", version = "0.47.0" }
-nautilus-trading = { path = "crates/trading", version = "0.47.0" }
+nautilus-analysis = { path = "crates/analysis", version = "0.48.0" }
+nautilus-backtest = { path = "crates/backtest", version = "0.48.0" }
+nautilus-cli = { path = "crates/cli", version = "0.48.0" }
+nautilus-common = { path = "crates/common", version = "0.48.0" }
+nautilus-core = { path = "crates/core", version = "0.48.0" }
+nautilus-cryptography = { path = "crates/cryptography", version = "0.48.0" }
+nautilus-data = { path = "crates/data", version = "0.48.0" }
+nautilus-execution = { path = "crates/execution", version = "0.48.0" }
+nautilus-indicators = { path = "crates/indicators", version = "0.48.0" }
+nautilus-infrastructure = { path = "crates/infrastructure", version = "0.48.0" }
+nautilus-live = { path = "crates/live", version = "0.48.0" }
+nautilus-model = { path = "crates/model", version = "0.48.0" }
+nautilus-network = { path = "crates/network", version = "0.48.0" }
+nautilus-persistence = { path = "crates/persistence", version = "0.48.0" }
+nautilus-portfolio = { path = "crates/portfolio", version = "0.48.0" }
+nautilus-pyo3 = { path = "crates/pyo3", version = "0.48.0" }
+nautilus-risk = { path = "crates/risk", version = "0.48.0" }
+nautilus-serialization = { path = "crates/serialization", version = "0.48.0" }
+nautilus-system = { path = "crates/system", version = "0.48.0" }
+nautilus-testkit = { path = "crates/testkit", version = "0.48.0" }
+nautilus-trading = { path = "crates/trading", version = "0.48.0" }
 
 # Adapters
-nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.47.0" }
-nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.47.0" }
-nautilus-databento = { path = "crates/adapters/databento", version = "0.47.0" }
-nautilus-tardis = { path = "crates/adapters/tardis", version = "0.47.0" }
+nautilus-blockchain = { path = "crates/adapters/blockchain", version = "0.48.0" }
+nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.48.0" }
+nautilus-databento = { path = "crates/adapters/databento", version = "0.48.0" }
+nautilus-tardis = { path = "crates/adapters/tardis", version = "0.48.0" }
 
 ahash = "0.8.11"
 anyhow = "1.0.98"
@@ -115,7 +115,7 @@ ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 
 # dev-dependencies
-axum = "0.8.3"
+axum = "0.8.4"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
