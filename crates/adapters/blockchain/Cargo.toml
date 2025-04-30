@@ -26,9 +26,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-model = { workspace = true, features = ["defi", "python"] }
+nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-core = { workspace = true }
-nautilus-network = { workspace = true, features = ["python"] }
+nautilus-network = { workspace = true }
 nautilus-common = { workspace = true }
 
 anyhow = { workspace = true }
@@ -49,6 +49,6 @@ tracing = { workspace = true }
 [dev-dependencies]
 rstest = { workspace = true }
 
-# [[bin]]  # TODO: Temporarily comment to repair docker build (linking issue)
-# name = "live_blocks"
-# path = "bin/watch_live_blocks.rs"
+[[bin]]
+name = "live_blocks"
+path = "bin/watch_live_blocks.rs"
