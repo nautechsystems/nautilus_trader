@@ -101,7 +101,7 @@ impl FuturesContract {
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         exchange: Option<Ustr>,
@@ -137,7 +137,7 @@ impl FuturesContract {
         check_positive_quantity(lot_size, stringify!(lot_size))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             asset_class,
             exchange,
@@ -167,7 +167,7 @@ impl FuturesContract {
     /// Creates a new [`FuturesContract`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         exchange: Option<Ustr>,
@@ -191,7 +191,7 @@ impl FuturesContract {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             asset_class,
             exchange,

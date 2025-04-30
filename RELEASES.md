@@ -23,6 +23,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed fees from locked balance calculations for `CASH` accounts
 - Removed fees from margin calculations for `MARGIN` accounts
+- Renamed `id` constructor parameter to `instrument_id` across all PyO3 instruments, aligning with equivalent Cython instrument constructors
 
 ### Internal Improvements
 - Implemented exponential backoff and jitter for the `RetryManager` (#2518), thanks @davidsblom
