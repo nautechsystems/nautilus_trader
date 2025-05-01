@@ -10,6 +10,7 @@ None
 
 ### Internal Improvements
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
+- Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
 
 ### Fixes
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
