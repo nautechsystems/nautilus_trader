@@ -90,10 +90,10 @@ harness = false
 
 [[bin]]
 name = "to_json"
-path = "src/bin/to_json.rs"
+path = "bin/to_json.rs"
 required-features = ["python"]
 
 [[bin]]
 name = "to_parquet"
-path = "src/bin/to_parquet.rs"
+path = "bin/to_parquet.rs"
 required-features = ["python"]
