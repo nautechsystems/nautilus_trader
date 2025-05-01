@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 
 ### Documentation Updates
 None

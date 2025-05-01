@@ -2006,6 +2006,7 @@ cdef class OrderMatchingEngine:
             order.order_type == OrderType.MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_MARKET
         )
         ):
             # Exhausted simulated book volume (continue aggressive filling into next level)
