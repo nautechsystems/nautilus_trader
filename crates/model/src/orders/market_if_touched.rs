@@ -465,27 +465,35 @@ impl Order for MarketIfTouchedOrder {
     fn is_triggered(&self) -> Option<bool> {
         Some(self.is_triggered)
     }
+
     fn set_position_id(&mut self, position_id: Option<PositionId>) {
-        self.position_id = position_id
+        self.position_id = position_id;
     }
+
     fn set_quantity(&mut self, quantity: Quantity) {
-        self.quantity = quantity
+        self.quantity = quantity;
     }
+
     fn set_leaves_qty(&mut self, leaves_qty: Quantity) {
-        self.leaves_qty = leaves_qty
+        self.leaves_qty = leaves_qty;
     }
+
     fn set_emulation_trigger(&mut self, emulation_trigger: Option<TriggerType>) {
-        self.emulation_trigger = emulation_trigger
+        self.emulation_trigger = emulation_trigger;
     }
+
     fn set_is_quote_quantity(&mut self, is_quote_quantity: bool) {
-        self.is_quote_quantity = is_quote_quantity
+        self.is_quote_quantity = is_quote_quantity;
     }
+
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
         self.liquidity_side = Some(liquidity_side)
     }
+
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         self.core.would_reduce_only(side, position_qty)
     }
+
     fn previous_status(&self) -> Option<OrderStatus> {
         self.core.previous_status
     }
