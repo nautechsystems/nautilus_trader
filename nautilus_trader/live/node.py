@@ -288,8 +288,10 @@ class TradingNode:
 
         """
         msg = self.kernel.msgbus_serializer.deserialize(bus_msg.payload)
+
         if not self.kernel.msgbus.is_streaming_type(type(msg)):
             return  # Type has not been registered for message streaming
+
         self.kernel.msgbus.publish(bus_msg.topic, msg, external_pub=False)
 
     async def run_async(self) -> None:
@@ -378,8 +380,10 @@ class TradingNode:
             timeout = self.kernel.clock.utc_now() + timedelta(
                 seconds=self._config.timeout_disconnection,
             )
+
             while self.kernel.is_running():
                 time.sleep(0.1)
+
                 if self.kernel.clock.utc_now() >= timeout:
                     self.kernel.logger.warning(
                         f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop"

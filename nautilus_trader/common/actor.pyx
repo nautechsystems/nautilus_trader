@@ -661,7 +661,7 @@ cdef class Actor(Component):
         self.clock = self._clock
         self.log = self._log
 
-        self.greeks = GreeksCalculator(msgbus, cache, self.clock, self.log)
+        self.greeks = GreeksCalculator(msgbus, cache, self.clock)
 
     cpdef void register_executor(
         self,
