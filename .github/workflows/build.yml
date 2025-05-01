@@ -347,8 +347,10 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Publish wheels
+      - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
+        with:
+          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -362,6 +364,7 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+      - tag-release
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     env:
@@ -381,8 +384,10 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Publish wheels
+      - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
+        with:
+          cleanup-local-dist: "true"
 
       - name: Fetch and delete artifacts for current run
         shell: bash
@@ -396,6 +401,7 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+      - tag-release
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/master'
     env:
@@ -415,8 +421,54 @@ jobs:
         # https://github.com/actions/checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Publish wheels
+      - name: Get uv version
+        shell: bash
+        run: |
+          echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182
+        with:
+          version: ${{ env.UV_VERSION }}
+
+      - name: Publish wheels to Cloudflare R2
         uses: ./.github/actions/publish-wheels
+        with:
+          cleanup-local-dist: "false"
+
+      - name: List local wheels
+        run: ls -1 dist/*.whl
+
+      - name: Upload wheels to GitHub release
+        run: |
+          find dist -type f -name "*.whl" | while read wheel; do
+            echo "Uploading $wheel to release"
+            asset_name=$(basename "$wheel")
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$wheel" \
+              "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
+          done
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
+
+      - name: Clean up local dist directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh dist/ || echo "No dist directory found"
+          rm -rf dist/* 2>/dev/null || true
+          echo "Cleanup completed"
+
+      - name: Fetch and delete artifacts for current run
+        shell: bash
+        run: |
+          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   tag-release:
     needs:
@@ -536,68 +588,3 @@ jobs:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: uv publish
-
-  publish-release:
-    needs: [tag-release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
-        with:
-          egress-policy: audit
-
-      - name: Checkout repository
-        # https://github.com/actions/checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Download built wheels
-        # https://github.com/actions/download-artifact
-        uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
-        with:
-          path: dist/
-          pattern: "*.whl"
-
-      - name: List wheels to be published
-        run: ls -la dist/
-
-      - name: Set up Python
-        # https://github.com/actions/setup-python
-        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # 5.4.0
-        with:
-          python-version: "3.13"
-
-      - name: Get uv version from uv-version
-        shell: bash
-        run: |
-          echo "UV_VERSION=$(cat uv-version)" >> $GITHUB_ENV
-
-      - name: Install uv
-        # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # 5.4.1
-        with:
-          version: ${{ env.UV_VERSION }}
-
-      - name: Upload wheels to GitHub release
-        run: |
-          find dist -type f -name "*.whl" | while read wheel; do
-            echo "Uploading $wheel to release"
-            asset_name=$(basename "$wheel")
-            curl \
-              -X POST \
-              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$wheel" \
-              "${{ needs.tag-release.outputs.upload_url }}?name=$asset_name"
-          done
-
-      - name: Publish to PyPI
-        env:
-          UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
-
-      - name: Fetch and delete artifacts for current run
-        shell: bash
-        run: |
-          bash ./scripts/ci/publish-wheels-delete-artifacts.sh
