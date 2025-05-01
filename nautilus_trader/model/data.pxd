@@ -31,6 +31,7 @@ from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
+from nautilus_trader.core.rust.model cimport MarkPriceUpdate_t
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport OrderBookDepth10_t
@@ -463,14 +464,7 @@ cdef class TradeTick(Data):
 
 
 cdef class MarkPriceUpdate(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly Price value
-    """The mark price.\n\n:returns: `Price`"""
-    cdef readonly uint64_t ts_event
-    """UNIX timestamp (nanoseconds) when the update occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    cdef MarkPriceUpdate_t _mem
 
     cdef str to_str(self)
 
