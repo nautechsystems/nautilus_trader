@@ -9,7 +9,7 @@ None
 None
 
 ### Internal Improvements
-None
+- Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
 
 ### Fixes
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
