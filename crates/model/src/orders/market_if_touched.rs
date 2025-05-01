@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore};
+use super::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -436,27 +436,28 @@ impl Order for MarketIfTouchedOrder {
         self.trade_ids.iter().collect()
     }
 
-    fn apply(&mut self, event: OrderEventAny) -> Result<(), super::OrderError> {
-        if let OrderEventAny::Updated(ref ev) = event {
-            self.update(ev);
-        }
-        let was_filled = matches!(event, OrderEventAny::Filled(_));
+    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        if let OrderEventAny::Updated(ref event) = event {
+            self.update(event);
+        };
+        let is_order_filled = matches!(event, OrderEventAny::Filled(_));
+
         self.core.apply(event)?;
-        if was_filled {
+
+        if is_order_filled {
             self.core.set_slippage(self.trigger_price);
-        }
+        };
+
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        assert!(
-            event.price.is_none(),
-            "{}",
-            super::OrderError::InvalidOrderEvent
-        );
-        if let Some(tp) = event.trigger_price {
-            self.trigger_price = tp;
+        assert!(event.price.is_none(), "{}", OrderError::InvalidOrderEvent);
+
+        if let Some(trigger_price) = event.trigger_price {
+            self.trigger_price = trigger_price;
         }
+
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity - self.filled_qty;
     }
