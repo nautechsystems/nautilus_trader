@@ -10,6 +10,7 @@ None
 
 ### Internal Improvements
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
+- Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
 
 ### Fixes
