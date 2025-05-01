@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import heapq
 import pickle
 from decimal import Decimal
 
@@ -84,6 +85,10 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.data.messages cimport DataCommand
+from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeData
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport CustomData
@@ -143,8 +148,9 @@ cdef class BacktestEngine:
         self._has_book_data: set[InstrumentId] = set()
         self._data: list[Data] = []
         self._data_len: uint64_t = 0
-        self._index: uint64_t = 0
         self._iteration: uint64_t = 0
+        self._last_ns : uint64_t = 0
+        self._end_ns : uint64_t = 0
 
         # Timing
         self._run_started: pd.Timestamp | None = None
@@ -158,6 +164,12 @@ cdef class BacktestEngine:
         self._log = Logger(type(self).__name__)
 
         self._data_engine: DataEngine = self._kernel.data_engine
+
+        # Set up data iterator
+        self._data_requests: dict[str, RequestData] = {}
+        self._backtest_subscription_names = set()
+        self._data_iterator = BacktestDataIterator(empty_data_callback=self._handle_empty_data)
+        self._kernel.msgbus.register(endpoint="BacktestEngine.execute", handler=self._handle_data_command)
 
     def __del__(self) -> None:
         if self._accumulator._0 != NULL:
@@ -510,14 +522,14 @@ cdef class BacktestEngine:
             default_leverage=default_leverage,
             leverages=leverages or {},
             modules=modules,
-            portfolio=self.kernel.portfolio,
-            msgbus=self.kernel.msgbus,
-            cache=self.kernel.cache,
+            portfolio=self._kernel.portfolio,
+            msgbus=self._kernel.msgbus,
+            cache=self._kernel.cache,
             fill_model=fill_model,
             fee_model=fee_model,
             latency_model=latency_model,
             book_type=book_type,
-            clock=self.kernel.clock,
+            clock=self._kernel.clock,
             frozen_account=frozen_account,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
@@ -536,15 +548,17 @@ cdef class BacktestEngine:
         # Create execution client for exchange
         exec_client = BacktestExecClient(
             exchange=exchange,
-            msgbus=self.kernel.msgbus,
-            cache=self.kernel.cache,
-            clock=self.kernel.clock,
+            msgbus=self._kernel.msgbus,
+            cache=self._kernel.cache,
+            clock=self._kernel.clock,
             routing=routing,
             frozen_account=frozen_account,
         )
 
         exchange.register_client(exec_client)
-        self.kernel.exec_engine.register_client(exec_client)
+        self._kernel.exec_engine.register_client(exec_client)
+
+        self._add_market_data_client_if_not_exists(venue)
 
         self._log.info(f"Added {exchange}")
 
@@ -612,7 +626,7 @@ cdef class BacktestEngine:
         self._add_market_data_client_if_not_exists(instrument.id.venue)
 
         # Add data
-        self.kernel.data_engine.process(instrument)  # Adds to cache
+        self._kernel.data_engine.process(instrument)  # Adds to cache
         self._venues[instrument.id.venue].add_instrument(instrument)
 
         self._log.info(f"Added {instrument.id} Instrument")
@@ -678,7 +692,7 @@ cdef class BacktestEngine:
 
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
-                    first.instrument_id in self.kernel.cache.instrument_ids(),
+                    first.instrument_id in self._kernel.cache.instrument_ids(),
                     f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
                 )
@@ -688,7 +702,7 @@ cdef class BacktestEngine:
                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
             elif isinstance(first, Bar):
                 Condition.is_true(
-                    first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
+                    first.bar_type.instrument_id in self._kernel.cache.instrument_ids(),
                     f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
                 )
@@ -717,9 +731,85 @@ cdef class BacktestEngine:
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
+        self._data_iterator.add_data("backtest_data", self._data)
+
+        for data_point in data:
+            data_type = type(data_point)
+
+            if data_type is Bar:
+                self._backtest_subscription_names.add(f"{data_point.bar_type}")
+            elif data_type in (QuoteTick, TradeTick):
+                self._backtest_subscription_names.add(f"{data_type.__name__}.{data_point.instrument_id}")
+
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
+
+    cpdef void _handle_data_command(self, DataCommand command):
+        if command.data_type.type not in [Bar, QuoteTick, TradeTick]:
+            return
+
+        if isinstance(command, SubscribeData):
+            self._handle_subscribe(<SubscribeData>command)
+        elif isinstance(command, UnsubscribeData):
+            self._handle_unsubscribe(<UnsubscribeData>command)
+
+    cpdef void _handle_subscribe(self, SubscribeData command):
+        cdef object duration_seconds = command.params.get("duration_seconds")
+
+        if duration_seconds:
+            assert duration_seconds > 0
+
+        cdef uint64_t start_time = self._last_ns
+        cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
+
+        cdef RequestData request = command.to_request(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), self._handle_data_response)
+        cdef str subscription_name = request.params["subscription_name"]
+
+        if subscription_name in self._data_requests or subscription_name in self._backtest_subscription_names:
+            return
+
+        self._log.debug(f"_handle_subscribe {duration_seconds=}")
+        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        self._data_requests[subscription_name] = request
+        self._kernel._msgbus.request(endpoint="DataEngine.request", request=request)
+
+    cpdef void _handle_data_response(self, DataResponse response):
+        cdef list data = response.data
+        cdef str subscription_name = response.params["subscription_name"]
+
+        if not data:
+            self._log.debug(f"Removing backtest data for {subscription_name}")
+            self._data_iterator.remove_data(subscription_name)
+            return
+
+        self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
+
+        cdef bint append_data = response.params.get("append_data", True)
+        self._data_iterator.add_data(subscription_name, data, append_data)
+
+    cpdef void _handle_unsubscribe(self, UnsubscribeData command):
+        cdef str subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}" if command.data_type.type != Bar else f"{command.bar_type}"
+        self._log.debug(f"Unsubscribing {subscription_name}")
+        self._data_iterator.remove_data(subscription_name)
+        self._data_requests.pop(subscription_name, None)
+
+    cpdef void _handle_empty_data(self, str subscription_name, uint64_t last_ts_init):
+        if subscription_name == "backtest_data":
+            return
+
+        cdef RequestData request = self._data_requests[subscription_name]
+        cdef uint64_t start_time = last_ts_init + 1 # to avoid duplicate data
+
+        if start_time > self._end_ns:
+            return
+
+        cdef object duration_seconds = request.params.get("duration_seconds")
+        cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
+
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time))
+        self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     def dump_pickled_data(self) -> bytes:
         """
@@ -767,7 +857,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_actor(actor)
+        self._kernel.trader.add_actor(actor)
 
     def add_actors(self, actors: list[Actor]) -> None:
         """
@@ -780,7 +870,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_actors(actors)
+        self._kernel.trader.add_actors(actors)
 
     def add_strategy(self, strategy: Strategy) -> None:
         """
@@ -793,7 +883,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_strategy(strategy)
+        self._kernel.trader.add_strategy(strategy)
 
     def add_strategies(self, strategies: list[Strategy]) -> None:
         """
@@ -806,7 +896,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_strategies(strategies)
+        self._kernel.trader.add_strategies(strategies)
 
     def add_exec_algorithm(self, exec_algorithm: ExecAlgorithm) -> None:
         """
@@ -819,7 +909,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_exec_algorithm(exec_algorithm)
+        self._kernel.trader.add_exec_algorithm(exec_algorithm)
 
     def add_exec_algorithms(self, exec_algorithms: list[ExecAlgorithm]) -> None:
         """
@@ -832,7 +922,7 @@ cdef class BacktestEngine:
 
         """
         # Checked inside trader
-        self.kernel.trader.add_exec_algorithms(exec_algorithms)
+        self._kernel.trader.add_exec_algorithms(exec_algorithms)
 
     def reset(self) -> None:
         """
@@ -846,35 +936,35 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting")
 
-        if self.kernel.trader.is_running:
+        if self._kernel.trader.is_running:
             # End current backtest run
             self.end()
 
         # Reset DataEngine
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
+        if self._kernel.data_engine.is_running:
+            self._kernel.data_engine.stop()
 
-        self.kernel.data_engine.reset()
+        self._kernel.data_engine.reset()
 
         # Reset ExecEngine
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
+        if self._kernel.exec_engine.is_running:
+            self._kernel.exec_engine.stop()
 
-        self.kernel.exec_engine.reset()
+        self._kernel.exec_engine.reset()
 
         # Reset RiskEngine
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
+        if self._kernel.risk_engine.is_running:
+            self._kernel.risk_engine.stop()
 
-        self.kernel.risk_engine.reset()
+        self._kernel.risk_engine.reset()
 
         # Reset Emulator
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
+        if self._kernel.emulator.is_running:
+            self._kernel.emulator.stop()
 
-        self.kernel.emulator.reset()
+        self._kernel.emulator.reset()
 
-        self.kernel.trader.reset()
+        self._kernel.trader.reset()
 
         for exchange in self._venues.values():
             exchange.reset()
@@ -885,7 +975,12 @@ cdef class BacktestEngine:
 
         # Reset timing
         self._iteration = 0
-        self._index = 0
+
+        for data_name in self._data_iterator.all_data():
+            if data_name != "backtest_data":
+                self._data_iterator.remove_data(data_name)
+
+        self._data_iterator.reset()
         self._run_started = None
         self._run_finished = None
         self._backtest_start = None
@@ -904,7 +999,7 @@ cdef class BacktestEngine:
         self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
-        self._index = 0
+        self._data_iterator = BacktestDataIterator(empty_data_callback=self._handle_empty_data)
 
     def clear_actors(self) -> None:
         """
@@ -936,7 +1031,7 @@ cdef class BacktestEngine:
 
         """
         self.clear_data()
-        self.kernel.dispose()
+        self._kernel.dispose()
 
     def run(
         self,
@@ -997,35 +1092,30 @@ cdef class BacktestEngine:
         Only required if you have previously been running with streaming.
 
         """
-        if LOGGING_PYO3:
-            nautilus_pyo3.logger_flush()
-        else:
-            flush_logger()
+        if self._kernel.trader.is_running:
+            self._kernel.trader.stop()
 
-        if self.kernel.trader.is_running:
-            self.kernel.trader.stop()
+        if self._kernel.data_engine.is_running:
+            self._kernel.data_engine.stop()
 
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
+        if self._kernel.risk_engine.is_running:
+            self._kernel.risk_engine.stop()
 
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
+        if self._kernel.exec_engine.is_running:
+            self._kernel.exec_engine.stop()
 
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
+        if self._kernel.emulator.is_running:
+            self._kernel.emulator.stop()
 
         try:
             # Process remaining messages
             for exchange in self._venues.values():
-                exchange.process(self.kernel.clock.timestamp_ns())
+                exchange.process(self._kernel.clock.timestamp_ns())
         except AccountError:
             pass
 
         self._run_finished = pd.Timestamp.utcnow()
-        self._backtest_end = self.kernel.clock.utc_now()
+        self._backtest_end = self._kernel.clock.utc_now()
 
         # Change logger clock back to real-time for consistent time stamping
         set_logging_clock_realtime_mode()
@@ -1051,13 +1141,8 @@ cdef class BacktestEngine:
         """
         stats_pnls: dict[str, dict[str, float]] = {}
 
-        for currency in self.kernel.portfolio.analyzer.currencies:
-            stats_pnls[currency.code] = self.kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
-
-        if self._backtest_start is not None and self._backtest_end is not None:
-            elapsed_time = (self._backtest_end - self._backtest_start).total_seconds()
-        else:
-            elapsed_time = 0
+        for currency in self._kernel.portfolio.analyzer.currencies:
+            stats_pnls[currency.code] = self._kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
         return BacktestResult(
             trader_id=self._kernel.trader_id.value,
@@ -1069,8 +1154,8 @@ cdef class BacktestEngine:
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
             backtest_start=maybe_dt_to_unix_nanos(self._backtest_start),
             backtest_end=maybe_dt_to_unix_nanos(self._backtest_end),
-            elapsed_time=elapsed_time,
-            iterations=self._index,
+            elapsed_time=(self._backtest_end - self._backtest_start).total_seconds(),
+            iterations=self._iteration,
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
             total_positions=self._kernel.cache.positions_total_count(),
@@ -1109,6 +1194,7 @@ cdef class BacktestEngine:
         # Time range check and set
         if start is None:
             # Set `start` to start of data
+            Condition.not_empty(self._data, "data")
             start_ns = self._data[0].ts_init
             start = unix_nanos_to_dt(start_ns)
         else:
@@ -1117,6 +1203,7 @@ cdef class BacktestEngine:
 
         if end is None:
             # Set `end` to end of data
+            Condition.not_empty(self._data, "data")
             end_ns = self._data[-1].ts_init
             end = unix_nanos_to_dt(end_ns)
         else:
@@ -1124,9 +1211,10 @@ cdef class BacktestEngine:
             end_ns = end.value
 
         Condition.is_true(start_ns <= end_ns, "start was > end")
-        Condition.not_empty(self._data, "data")
+        self._end_ns = end_ns
 
         # Set clocks
+        self._last_ns = start_ns
         cdef TestClock clock
 
         for clock in get_component_clocks(self._instance_id):
@@ -1179,20 +1267,20 @@ cdef class BacktestEngine:
 
         self._log_run(start, end)
 
-        # Set data stream length
-        self._data_len = len(self._data)
-
         # Set starting index
         cdef uint64_t i
-        for i in range(self._data_len):
-            if start_ns <= self._data[i].ts_init:
-                self._index = i
-                break
+        self._data_len = len(self._data)
+
+        if self._data_len > 0:
+            for i in range(self._data_len):
+                if start_ns <= self._data[i].ts_init:
+                    self._data_iterator.set_index("backtest_data", i)
+                    break
 
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
-        cdef uint64_t last_ns = 0
+        self._last_ns = 0
         cdef uint64_t raw_handlers_count = 0
-        cdef Data data = self._next()
+        cdef Data data = self._data_iterator.next()
         cdef CVec raw_handlers
         try:
             while data is not None:
@@ -1200,8 +1288,9 @@ cdef class BacktestEngine:
                     # End of backtest
                     break
 
-                if data.ts_init > last_ns:
+                if data.ts_init > self._last_ns:
                     # Advance clocks to the next data time
+                    self._last_ns = data.ts_init
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
 
@@ -1240,14 +1329,13 @@ cdef class BacktestEngine:
                 for exchange in self._venues.values():
                     exchange.process(data.ts_init)
 
-                last_ns = data.ts_init
-                data = self._next()
+                data = self._data_iterator.next()
 
-                if data is None or data.ts_init > last_ns:
+                if data is None or data.ts_init > self._last_ns:
                     # Finally process the time events
                     self._process_raw_time_event_handlers(
                         raw_handlers,
-                        last_ns,
+                        self._last_ns,
                         only_now=True,
                     )
 
@@ -1266,24 +1354,17 @@ cdef class BacktestEngine:
 
         # Process remaining messages
         for exchange in self._venues.values():
-            exchange.process(self.kernel.clock.timestamp_ns())
+            exchange.process(self._kernel.clock.timestamp_ns())
 
         # Process remaining time events
         if raw_handlers_count > 0:
             self._process_raw_time_event_handlers(
                 raw_handlers,
-                last_ns,
+                self._last_ns,
                 only_now=True,
-                asof_now=True,
+                as_of_now=True,
             )
             vec_time_event_handlers_drop(raw_handlers)
-
-    cdef Data _next(self):
-        cdef uint64_t cursor = self._index
-        self._index += 1
-
-        if cursor < self._data_len:
-            return self._data[cursor]
 
     cdef CVec _advance_time(self, uint64_t ts_now):
         cdef list[TestClock] clocks = get_component_clocks(self._instance_id)
@@ -1323,7 +1404,7 @@ cdef class BacktestEngine:
         CVec raw_handler_vec,
         uint64_t ts_now,
         bint only_now,
-        bint asof_now = False,
+        bint as_of_now = False,
     ):
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef:
@@ -1345,7 +1426,7 @@ cdef class BacktestEngine:
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             ts_event_init = raw_handler.event.ts_init
 
-            if should_skip_time_event(ts_event_init, ts_now, only_now, asof_now):
+            if should_skip_time_event(ts_event_init, ts_now, only_now, as_of_now):
                 continue  # Do not process event
 
             # Set all clocks to event timestamp
@@ -1566,3 +1647,183 @@ cdef class BacktestEngine:
                 clock=self._kernel.clock,
             )
             self._kernel.data_engine.register_client(client)
+
+
+cdef class BacktestDataIterator:
+    def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None):
+        self._empty_data_callback = empty_data_callback
+        self._log = Logger(type(self).__name__)
+
+        self._data = {} # key=data_priority, value=data_list
+        self._data_name = {} # key=data_priority, value=data_name
+        self._data_priority = {} # key=data_name, value=data_priority
+        self._data_len = {} # key=data_priority, value=len(data_list)
+        self._data_index = {} # key=data_priority, value=current index of data_list
+
+        self._heap = []
+        self._next_data_priority = 0
+        self._reset_single_data()
+
+    cpdef void _reset_single_data(self):
+        self._single_data = []
+        self._single_data_name = ""
+        self._single_data_priority = 0
+        self._single_data_len = 0
+        self._single_data_index = 0
+        self._is_single_data = False
+
+    cpdef void add_data(self, str data_name, list data_list, bint append_data=True):
+        if len(data_list) == 0:
+            return
+
+        cdef int data_priority
+
+        if data_name in self._data_priority:
+            data_priority = self._data_priority[data_name]
+            self.remove_data(data_name)
+        else:
+            # heapq is a min priority data so lower number means higher priority
+            data_priority = (1 if append_data else -1) * self._next_data_priority
+            self._next_data_priority += 1
+
+        if self._is_single_data:
+            self._deactivate_single_data()
+
+        self._data[data_priority] = data_list
+        self._data_name[data_priority] = data_name
+        self._data_priority[data_name] = data_priority
+        self._data_len[data_priority] = len(data_list)
+        self._data_index[data_priority] = 0
+        self._push_data(data_priority, 0)
+
+        if len(self._data) == 1:
+            self._activate_single_data()
+            return
+
+    cpdef void remove_data(self, str data_name):
+        if data_name not in self._data_priority:
+            return
+
+        cdef int data_priority = self._data_priority[data_name]
+        del self._data[data_priority]
+        del self._data_name[data_priority]
+        del self._data_priority[data_name]
+        del self._data_len[data_priority]
+        del self._data_index[data_priority]
+
+        if len(self._data) == 1:
+            self._activate_single_data()
+            return
+
+        if len(self._data) == 0:
+            self._reset_single_data()
+            return
+
+        # rebuild heap excluding data_priority
+        self._heap = [item for item in self._heap if item[1] != data_priority]
+        heapq.heapify(self._heap)
+
+    cpdef void _activate_single_data(self):
+        assert len(self._data) == 1
+
+        cdef str single_data_name = list(self._data_name.values())[0]
+        self._single_data_name = single_data_name
+        self._single_data_priority = self._data_priority[self._single_data_name]
+        self._single_data = self._data[self._single_data_priority]
+        self._single_data_len = self._data_len[self._single_data_priority]
+        self._single_data_index = self._data_index[self._single_data_priority]
+        self._heap = []
+        self._is_single_data = True
+
+    cpdef void _deactivate_single_data(self):
+        assert len(self._heap) == 0
+
+        if self._single_data_index < self._single_data_len:
+            self._data_index[self._single_data_priority] = self._single_data_index
+            self._push_data(self._single_data_priority, self._single_data_index)
+
+        self._reset_single_data()
+
+    cpdef Data next(self):
+        cdef uint64_t ts_init
+        cdef int data_priority
+        cdef int cursor
+        cdef Data object_to_return
+
+        if not self._is_single_data:
+            if not self._heap:
+                return None
+
+            ts_init, data_priority, cursor = heapq.heappop(self._heap)
+            object_to_return = self._data[data_priority][cursor]
+
+            self._data_index[data_priority] += 1
+            self._push_data(data_priority, self._data_index[data_priority])
+
+            return object_to_return
+
+        cursor = self._single_data_index
+        self._single_data_index += 1
+
+        if cursor < self._single_data_len:
+            return  self._single_data[cursor]
+
+    cpdef void _push_data(self, int data_priority, int data_index):
+        cdef uint64_t ts_init
+
+        if data_index < self._data_len[data_priority]:
+            ts_init = self._data[data_priority][data_index].ts_init
+            heapq.heappush(self._heap, (ts_init, data_priority, data_index))
+        else:
+            if self._empty_data_callback is not None:
+                self._empty_data_callback(self._data_name[data_priority], self._data[data_priority][-1].ts_init)
+
+    cpdef void reset(self):
+        for data_priority in self._data_index:
+            self._data_index[data_priority] = 0
+
+        self._reset_heap()
+
+        if len(self._data) == 1:
+            self._activate_single_data()
+            return
+
+    cpdef void _reset_heap(self):
+        if len(self._data) == 1:
+            self._activate_single_data()
+            return
+
+        self._heap = []
+
+        for data_priority, index in self._data_index.items():
+            self._push_data(data_priority, index)
+
+    cpdef void set_index(self, str data_name, int index):
+        if data_name not in self._data_priority:
+            return
+
+        cdef int data_priority = self._data_priority[data_name]
+        self._data_index[data_priority] = index
+        self._reset_heap()
+
+    cpdef bint is_done(self):
+        return (self._is_single_data and self._single_data_index >= self._single_data_len) or not self._heap
+
+    cpdef dict all_data(self):
+        # we assume dicts are ordered by order of insertion
+        return {data_name:data for data_name, data in zip(self._data_name.values(), self._data.values())}
+
+    cpdef list data(self, str data_name):
+        return self._data[self._data_priority[data_name]]
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        cdef Data element
+        element = self.next()
+
+        if element is None:
+            raise StopIteration
+
+        return element

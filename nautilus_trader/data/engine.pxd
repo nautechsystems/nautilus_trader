@@ -204,7 +204,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_trade_ticks(self, DataClient client, RequestTradeTicks request)
     cpdef void _handle_request_bars(self, DataClient client, RequestBars request)
     cpdef void _handle_request_data(self, DataClient client, RequestData request)
-    cpdef void _query_catalog(self, RequestData request)
+    cpdef void query_catalog(self, RequestData request)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
