@@ -1650,7 +1650,7 @@ cdef class BacktestEngine:
 
 
 cdef class BacktestDataIterator:
-    def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None):
+    def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None) -> None:
         self._empty_data_callback = empty_data_callback
         self._log = Logger(type(self).__name__)
 

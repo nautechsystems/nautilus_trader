@@ -100,14 +100,14 @@ cdef inline bint should_skip_time_event(
 cdef class BacktestDataIterator:
     cdef object _empty_data_callback
     cdef Logger _log
-    cdef dict _data  # dict[str, list[Data]]
-    cdef dict _data_name  # dict[str, str]
-    cdef dict _data_priority  # dict[str, str]
-    cdef dict _data_len  # dict[str, int]
-    cdef dict _data_index  # dict[str, int]
-    cdef list _heap  # list[(uint64_t, str, int)]
+    cdef dict[str, list[Data]] _data
+    cdef dict[str, str] _data_name
+    cdef dict[str, str] _data_priority
+    cdef dict[str, int] _data_len
+    cdef dict[str, int] _data_index
+    cdef list[tuple[uint64_t, str, int]] _heap
     cdef int _next_data_priority
-    cdef list _single_data  # list[Data]
+    cdef list[Data] _single_data
     cdef str _single_data_name
     cdef int _single_data_priority
     cdef int _single_data_len

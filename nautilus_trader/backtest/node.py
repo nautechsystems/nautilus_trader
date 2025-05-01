@@ -201,20 +201,19 @@ class BacktestNode:
         """
         for config in self._configs:
             try:
-                if (
-                    config.id not in self._engines
-                ):  # Only create an engine if one doesn't already exist for this config
-                    self._create_engine(
-                        run_config_id=config.id,
-                        config=config.engine,
-                        venue_configs=config.venues,
-                        data_configs=config.data,
-                    )
+                if config.id in self._engines:
+                    # Only create an engine if one doesn't already exist for this config
+                    continue
+
+                self._create_engine(
+                    run_config_id=config.id,
+                    config=config.engine,
+                    venue_configs=config.venues,
+                    data_configs=config.data,
+                )
             except Exception as e:
-                self.log_backtest_exception(
-                    e,
-                    config,
-                )  # Log any exceptions without halting the build process
+                # Log any exceptions without halting the build process
+                self.log_backtest_exception(e, config)
 
     def _create_engine(
         self,

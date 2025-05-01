@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 
 ### Breaking Changes
 None
