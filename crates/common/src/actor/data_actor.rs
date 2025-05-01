@@ -519,12 +519,12 @@ pub trait DataActor: Actor {
     fn handle_data_response(&mut self, response: &CustomDataResponse) {
         log_received(&response);
 
-        if let Some(data) = response.data.downcast_ref::<Vec<&dyn Any>>() {
-            for d in data {
-                self.handle_historical_data(d);
+        if let Some(list) = response.data.downcast_ref::<Vec<&dyn Any>>() {
+            for item in list {
+                self.handle_historical_data(item);
             }
-        } else if let Some(data) = response.data.downcast_ref::<&dyn Any>() {
-            self.handle_historical_data(data);
+        } else {
+            self.handle_historical_data(response.data.as_ref());
         }
     }
 

@@ -125,12 +125,13 @@ impl MockDataClient {
                 .parse::<i32>()
                 .unwrap();
             println!("Received positive value: {value}");
+
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
                 Venue::new("http positive stream"),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));
@@ -167,7 +168,7 @@ impl MockDataClient {
                 req.client_id,
                 Venue::new("http positive stream"),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));

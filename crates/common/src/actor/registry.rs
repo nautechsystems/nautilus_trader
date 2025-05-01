@@ -80,3 +80,10 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> &mut T {
     let actor = get_actor(id).unwrap_or_else(|| panic!("Actor for {id} not found"));
     unsafe { &mut *(actor.get() as *mut _ as *mut T) }
 }
+
+// Clears the global actor registry (for test isolation).
+#[cfg(test)]
+pub fn clear_actor_registry() {
+    // SAFETY: Clearing registry actors; tests should run single-threaded for actor registry
+    get_actor_registry().actors.borrow_mut().clear();
+}
