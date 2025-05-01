@@ -1338,6 +1338,11 @@ impl CustomDataResponse {
             params,
         }
     }
+
+    /// Converts the response to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 #[derive(Clone, Debug)]
