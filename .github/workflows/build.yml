@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [develop]
 
-# Cancel older runs on the same branch / PR as soon as a new one starts
-concurrency:
-  # One group per workflow file and per branch/PR number
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   pre-commit:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
