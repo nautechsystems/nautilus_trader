@@ -620,7 +620,7 @@ mod serial_tests {
         // Shutdown and cleanup
         rx.close();
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -673,7 +673,7 @@ mod serial_tests {
 
         // Shutdown and cleanup
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -728,7 +728,7 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]

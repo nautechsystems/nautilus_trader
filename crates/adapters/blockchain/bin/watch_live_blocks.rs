@@ -63,10 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Blockchain::Base => chains::BASE.clone(),
                     Blockchain::Arbitrum => chains::ARBITRUM.clone(),
                     Blockchain::Polygon => chains::POLYGON.clone(),
-                    _ => panic!("Invalid chain {}", chain_str),
+                    _ => panic!("Invalid chain {chain_str}"),
                 }
             } else {
-                panic!("Invalid chain {}", chain_str);
+                panic!("Invalid chain {chain_str}");
             }
         }
         Err(_) => chains::ETHEREUM.clone(), // default
@@ -80,8 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Main loop to keep the app running
     loop {
         tokio::select! {
-            _ = notify.notified() => break,
-            _ = data_client.process_rpc_message() => {}
+            () = notify.notified() => break,
+            () = data_client.process_rpc_message() => {}
         }
     }
     Ok(())
