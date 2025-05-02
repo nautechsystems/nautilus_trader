@@ -3789,6 +3789,7 @@ class NautilusDataType(Enum):
     QuoteTick = 3
     TradeTick = 4
     Bar = 5
+    MarkPriceUpdate = 6
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 10_000) -> None: ...

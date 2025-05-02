@@ -49,6 +49,7 @@ from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -561,6 +562,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             QuoteTick,
             TradeTick,
             Bar,
+            MarkPriceUpdate,
         ):
             data = self.query_rust(
                 data_cls=data_cls,
@@ -699,6 +701,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             return NautilusDataType.TradeTick
         elif data_cls == Bar:
             return NautilusDataType.Bar
+        elif data_cls == MarkPriceUpdate:
+            return NautilusDataType.MarkPriceUpdate
         else:
             raise RuntimeError(f"unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
 

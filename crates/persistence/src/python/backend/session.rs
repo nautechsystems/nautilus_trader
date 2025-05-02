@@ -17,7 +17,9 @@ use nautilus_core::{
     ffi::cvec::CVec,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
-use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
+use nautilus_model::data::{
+    Bar, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
@@ -32,6 +34,7 @@ pub enum NautilusDataType {
     QuoteTick = 3,
     TradeTick = 4,
     Bar = 5,
+    MarkPriceUpdate = 6,
 }
 
 #[pymethods]
@@ -81,6 +84,9 @@ impl DataBackendSession {
                 .map_err(to_pyruntime_err),
             NautilusDataType::Bar => slf
                 .add_file::<Bar>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::MarkPriceUpdate => slf
+                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query)
                 .map_err(to_pyruntime_err),
         }
     }
