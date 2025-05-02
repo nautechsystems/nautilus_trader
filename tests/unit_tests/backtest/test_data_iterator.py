@@ -13,74 +13,106 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.backtest.engine import BacktestDataIterator
 from nautilus_trader.test_kit.stubs.data import MyData
 
 
 class TestBacktestDataIterator:
-    def test_backtest_data_iterator(self):
+    def test_iterate_multiple_streams_sorted(self):
+        """
+        Test multiple streams; iterate and assert items are merged in non-decreasing
+        ts_init order.
+        """
         # Arrange
-
-        data_iterator = BacktestDataIterator()
-
+        it = BacktestDataIterator()
         data_len = 5
-        data_0 = [MyData(0, ts_init=3 * k) for k in range(data_len)]
-        data_1 = [MyData(0, ts_init=3 * k + 1) for k in range(data_len)]
-        data_2 = [MyData(0, ts_init=3 * k + 2) for k in range(data_len)]
+        data0 = [MyData(0, ts_init=3 * k) for k in range(data_len)]
+        data1 = [MyData(1, ts_init=3 * k + 1) for k in range(data_len)]
+        data2 = [MyData(2, ts_init=3 * k + 2) for k in range(data_len)]
+        it.add_data("d0", data0)
+        it.add_data("d1", data1)
+        it.add_data("d2", data2)
 
-        # Act - Add data
-        data_iterator.add_data("base", data_0)
-        data_iterator.add_data("extra_1", data_1)
-        data_iterator.add_data("extra_2", data_2)
+        # Act
+        merged = list(it)
 
-        # Assert - Iterate through data
-        data_result = list(data_iterator)
-        assert len(data_result) == 15  # 5 items from each of the 3 data sources
+        # Assert
+        assert len(merged) == 15
+        assert all(merged[i].ts_init <= merged[i + 1].ts_init for i in range(len(merged) - 1))
 
-        # Verify the data is sorted by ts_init
-        for i in range(len(data_result) - 1):
-            assert data_result[i].ts_init <= data_result[i + 1].ts_init
+    def test_reset_reiterates_same_sequence(self):
+        """
+        Test by consuming some data, reset, and assert the full sequence repeats.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        data = [MyData(i, ts_init=i) for i in range(4)]
+        it.add_data("seq", data)
 
-        # Act - Reset and iterate again
-        data_iterator.reset()
-        data_result_2 = list(data_iterator)
+        # Act
+        first_pass = [x.ts_init for x in it]
+        it.reset()
+        second_pass = [x.ts_init for x in it]
 
-        # Assert - Same results after reset
-        assert len(data_result_2) == 15
-        assert [x.ts_init for x in data_result] == [x.ts_init for x in data_result_2]
+        # Assert
+        assert first_pass == second_pass == [0, 1, 2, 3]
 
-        # Act - Test all_data method
-        all_data = data_iterator.all_data()
+    def test_all_data_returns_mapping(self):
+        """
+        Test that all_data returns a name-to-list mapping for all streams.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        lst = [MyData(0, ts_init=0)]
+        it.add_data("only", lst)
 
-        # Assert - Check all_data returns correct data
-        assert len(all_data) == 3
-        assert "base" in all_data
-        assert "extra_1" in all_data
-        assert "extra_2" in all_data
-        assert all_data["base"] == data_0
-        assert all_data["extra_1"] == data_1
-        assert all_data["extra_2"] == data_2
+        # Act
+        mapping = it.all_data()
 
-        # Act - Test remove_data
-        data_iterator.remove_data("extra_1")
-        data_iterator.reset()
-        data_result_3 = list(data_iterator)
+        # Assert
+        assert list(mapping.keys()) == ["only"]
+        assert mapping["only"] is lst
 
-        # Assert - Correct data after removal
-        assert len(data_result_3) == 10  # 5 items from each of the 2 remaining data sources
+    def test_remove_stream_effect(self):
+        """
+        Test removing one stream affects iteration length accordingly.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        a = [MyData(0, ts_init=0)]
+        b = [MyData(1, ts_init=1)]
+        it.add_data("a", a)
+        it.add_data("b", b)
 
-        # Act - Remove all data
-        data_iterator.remove_data("base")
-        data_iterator.remove_data("extra_2")
-        data_iterator.reset()
-        data_result_4 = list(data_iterator)
+        # Act & Assert before removal
+        assert len(list(it)) == 2
 
-        # Assert - No data left
-        assert len(data_result_4) == 0
+        it.reset()
+        it.remove_data("a")
+
+        # Act & Assert after removal
+        assert [x.value for x in it] == [1]
+
+    def test_remove_all_streams_yields_empty(self):
+        """
+        Test removing all streams yields no data on iteration.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        it.add_data("x", [MyData(0, ts_init=0)])
+        it.add_data("y", [MyData(1, ts_init=1)])
+
+        # Act: remove both
+        it.remove_data("x")
+        it.remove_data("y")
+
+        # Assert
+        assert list(it) == []
 
     def test_backtest_data_iterator_callback(self):
         # Arrange
-
         callback_data = []
 
         def empty_data_callback(data_name, last_ts_init):
@@ -92,7 +124,7 @@ class TestBacktestDataIterator:
         data_0 = [MyData(0, ts_init=k) for k in range(3)]  # 0, 1, 2
         data_1 = [MyData(0, ts_init=k) for k in range(5)]  # 0, 1, 2, 3, 4
 
-        # Act - Add data
+        # Act
         data_iterator.add_data("short", data_0)
         data_iterator.add_data("long", data_1)
 
@@ -107,3 +139,132 @@ class TestBacktestDataIterator:
         data_names = [item[0] for item in callback_data]
         assert "short" in data_names
         assert "long" in data_names
+
+    def test_single_data_mode_and_no_callback(self):
+        """
+        Test single-stream mode should yield data in order without invoking the empty-
+        data callback.
+        """
+        # Arrange
+        callback_data = []
+
+        def cb(name, ts):
+            callback_data.append((name, ts))
+
+        it = BacktestDataIterator(empty_data_callback=cb)
+        data = [MyData(v, ts_init=v) for v in [1, 2, 3]]
+        it.add_data("single", data)
+
+        # Act: consume all items
+        first = next(it).value
+        second = next(it).value
+        third = next(it).value
+        with pytest.raises(StopIteration):
+            next(it)
+
+        # Reset and re-consume
+        it.reset()
+        values = [x.value for x in it]
+
+        # Assert
+        assert (first, second, third) == (1, 2, 3)
+        assert callback_data == []
+        assert it.is_done()
+
+        assert values == [1, 2, 3]
+        assert it.is_done()
+
+    def test_append_data_priority_changes_order(self):
+        """
+        Test two streams with identical ts_init: default append_data=True yields FIFO,
+        append_data=False yields reversed insertion priority.
+        """
+        # Arrange
+        data_a = [MyData(0, ts_init=100)]
+        data_b = [MyData(1, ts_init=100)]
+
+        # Act
+        it1 = BacktestDataIterator()
+        it1.add_data("a", data_a)
+        it1.add_data("b", data_b)
+        order1 = [x.value for x in it1]
+
+        it2 = BacktestDataIterator()
+        it2.add_data("a", data_a)
+        it2.add_data("b", data_b, append_data=False)
+        order2 = [x.value for x in it2]
+
+        # Assert
+        assert order1 == [0, 1]
+        assert order2 == [1, 0]
+
+    def test_set_index_and_data_accessor_and_is_done_empty(self):
+        """
+        Test is_done on empty iterator, data() accessor, and set_index restart.
+        """
+        # Arrange: empty iterator
+        it = BacktestDataIterator()
+
+        # Initially done and empty
+        assert it.is_done()
+        assert list(it) == []
+
+        # Removing non-existent stream should be no-op
+        it.remove_data("nope")
+
+        # Add a data stream
+        data = [MyData(10, ts_init=10), MyData(20, ts_init=20), MyData(30, ts_init=30)]
+        it.add_data("stream", data)
+
+        assert it.data("stream") is data
+
+        with pytest.raises(KeyError):
+            it.data("unknown")
+
+        # Consume first element and reset index
+        first = next(it).value
+        it.set_index("stream", 0)
+        remaining = [x.value for x in it]
+
+        # Assert: correct restart and done state
+        assert first == 10
+        assert remaining == [10, 20, 30]
+        assert it.is_done()
+
+    def test_all_data_order_and_add_empty_list(self):
+        """
+        Test that all_data preserves insertion order and ignores empty streams.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        it.add_data("first", [MyData(1, ts_init=1)])
+        it.add_data("second", [MyData(2, ts_init=2)])
+
+        # Act
+        keys_before = list(it.all_data().keys())
+        it.add_data("empty", [])
+        keys_after = list(it.all_data().keys())
+
+        # Assert: empty list did not alter keys
+        assert keys_before == ["first", "second"]
+        assert keys_after == ["first", "second"]
+
+    def test_readding_data_replaces_old(self):
+        """
+        Test adding a stream under an existing name replaces its data.
+        """
+        # Arrange
+        it = BacktestDataIterator()
+        data1 = [MyData(1, ts_init=1), MyData(2, ts_init=2)]
+        it.add_data("X", data1)
+
+        # Act: initial iteration yields old data
+        assert [x.value for x in it] == [1, 2]
+
+        # new data under same name
+        data2 = [MyData(3, ts_init=3)]
+        it.add_data("X", data2)
+        it.reset()
+
+        # Assert: iteration yields only new data
+        assert [x.value for x in it] == [3]
