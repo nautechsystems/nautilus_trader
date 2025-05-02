@@ -116,6 +116,7 @@ cdef class BacktestDataIterator:
 
     cpdef void _reset_single_data(self)
     cpdef void add_data(self, str data_name, list data_list, bint append_data=*)
+    cdef void _add_data(self, str data_name, list data_list, bint append_data=*)
     cpdef void remove_data(self, str data_name)
     cpdef void _activate_single_data(self)
     cpdef void _deactivate_single_data(self)
