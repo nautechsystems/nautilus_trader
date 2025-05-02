@@ -1085,6 +1085,7 @@ class TestSimulatedExchange:
         assert trailing_stop.status == OrderStatus.FILLED
         assert trailing_stop.event_count == 4
         assert trailing_stop.events[-1].last_px == Price.from_str("15.000")
+        assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
         assert trailing_stop.avg_px == Decimal("15")
 
     def test_trailing_stop_market_order_sell_fill(
@@ -1126,6 +1127,7 @@ class TestSimulatedExchange:
         assert trailing_stop.status == OrderStatus.FILLED
         assert trailing_stop.event_count == 4
         assert trailing_stop.events[-1].last_px == Price.from_str("12.000")
+        assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
         assert trailing_stop.avg_px == Decimal("12")
 
     def test_trailing_stop_market_order_buy_fill_when_quanity_exceeds_top_level(
@@ -1168,6 +1170,8 @@ class TestSimulatedExchange:
         assert trailing_stop.event_count == 5
         assert trailing_stop.events[-2].last_px == Price.from_str("15.000")
         assert trailing_stop.events[-1].last_px == Price.from_str("15.001")  # <-- Slipped one tick
+        assert trailing_stop.events[-2].last_qty == Quantity.from_int(100_000)
+        assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
 
     def test_trailing_stop_market_order_sell_fill_when_quanity_exceeds_top_level(
         self,
@@ -1209,3 +1213,5 @@ class TestSimulatedExchange:
         assert trailing_stop.event_count == 5
         assert trailing_stop.events[-2].last_px == Price.from_str("12.000")
         assert trailing_stop.events[-1].last_px == Price.from_str("11.999")  # <-- Slipped one tick
+        assert trailing_stop.events[-2].last_qty == Quantity.from_int(100_000)
+        assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
