@@ -2050,18 +2050,6 @@ const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10
 
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
 
-struct MarkPriceUpdate_t mark_price_update_new(struct InstrumentId_t instrument_id,
-                                               struct Price_t value,
-                                               uint64_t ts_event,
-                                               uint64_t ts_init);
-
-uint8_t mark_price_update_eq(const struct MarkPriceUpdate_t *lhs,
-                             const struct MarkPriceUpdate_t *rhs);
-
-uint64_t mark_price_update_hash(const struct MarkPriceUpdate_t *value);
-
-const char *mark_price_update_to_cstr(const struct MarkPriceUpdate_t *value);
-
 struct BookOrder_t book_order_new(enum OrderSide order_side,
                                   struct Price_t price,
                                   struct Quantity_t size,
@@ -2084,6 +2072,18 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
  * Returns a [`BookOrder`] debug string as a C string pointer.
  */
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
+
+struct MarkPriceUpdate_t mark_price_update_new(struct InstrumentId_t instrument_id,
+                                               struct Price_t value,
+                                               uint64_t ts_event,
+                                               uint64_t ts_init);
+
+uint8_t mark_price_update_eq(const struct MarkPriceUpdate_t *lhs,
+                             const struct MarkPriceUpdate_t *rhs);
+
+uint64_t mark_price_update_hash(const struct MarkPriceUpdate_t *value);
+
+const char *mark_price_update_to_cstr(const struct MarkPriceUpdate_t *value);
 
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   struct Price_t bid_price,
