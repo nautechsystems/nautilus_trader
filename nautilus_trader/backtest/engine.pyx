@@ -1078,7 +1078,7 @@ cdef class BacktestEngine:
             If the `start` is >= the `end` datetime.
 
         """
-        self._run(start, end, run_config_id)
+        self._run(start, end, run_config_id, streaming)
 
         if not streaming:
             self.end()
@@ -1168,6 +1168,7 @@ cdef class BacktestEngine:
         start: datetime | str | int | None = None,
         end: datetime | str | int | None = None,
         run_config_id: str | None = None,
+        bint streaming = False,
     ):
         # Validate data
         cdef:
@@ -1347,6 +1348,10 @@ cdef class BacktestEngine:
         except AccountError as e:
             set_backtest_force_stop(True)
             self._log.error(f"Stopping backtest from {e}")
+            if streaming:
+                # Reraise exception to interrupt batch streaming
+                raise
+
         # ---------------------------------------------------------------------#
 
         if FORCE_STOP:
