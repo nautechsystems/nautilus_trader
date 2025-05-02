@@ -87,11 +87,16 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Fixture Setup
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
+            exec_engine=ExecEngineConfig(
+                snapshot_orders=True,
+                snapshot_positions=True,
+                snapshot_positions_interval_secs=10,
+            ),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("SIM")
+
         interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
@@ -211,6 +216,11 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Fixture Setup
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
+            exec_engine=ExecEngineConfig(
+                snapshot_orders=True,
+                snapshot_positions=True,
+                snapshot_positions_interval_secs=10,
+            ),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
@@ -409,7 +419,6 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         config = BacktestEngineConfig(
             run_analysis=False,
             logging=LoggingConfig(bypass_logging=True),
-            exec_engine=ExecEngineConfig(),
             risk_engine=RiskEngineConfig(bypass=True),
         )
         self.engine = BacktestEngine(
@@ -515,6 +524,11 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Fixture Setup
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
+            exec_engine=ExecEngineConfig(
+                snapshot_orders=True,
+                snapshot_positions=True,
+                snapshot_positions_interval_secs=10,
+            ),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
@@ -597,6 +611,11 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Fixture Setup
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
+            exec_engine=ExecEngineConfig(
+                snapshot_orders=True,
+                snapshot_positions=True,
+                snapshot_positions_interval_secs=10,
+            ),
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
