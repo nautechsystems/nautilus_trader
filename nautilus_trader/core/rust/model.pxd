@@ -1202,17 +1202,6 @@ cdef extern from "../includes/model.h":
 
     const uint32_t *orderbook_depth10_ask_counts_array(const OrderBookDepth10_t *depth);
 
-    MarkPriceUpdate_t mark_price_update_new(InstrumentId_t instrument_id,
-                                            Price_t value,
-                                            uint64_t ts_event,
-                                            uint64_t ts_init);
-
-    uint8_t mark_price_update_eq(const MarkPriceUpdate_t *lhs, const MarkPriceUpdate_t *rhs);
-
-    uint64_t mark_price_update_hash(const MarkPriceUpdate_t *value);
-
-    const char *mark_price_update_to_cstr(const MarkPriceUpdate_t *value);
-
     BookOrder_t book_order_new(OrderSide order_side,
                                Price_t price,
                                Quantity_t size,
@@ -1231,6 +1220,17 @@ cdef extern from "../includes/model.h":
 
     # Returns a [`BookOrder`] debug string as a C string pointer.
     const char *book_order_debug_to_cstr(const BookOrder_t *order);
+
+    MarkPriceUpdate_t mark_price_update_new(InstrumentId_t instrument_id,
+                                            Price_t value,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
+
+    uint8_t mark_price_update_eq(const MarkPriceUpdate_t *lhs, const MarkPriceUpdate_t *rhs);
+
+    uint64_t mark_price_update_hash(const MarkPriceUpdate_t *value);
+
+    const char *mark_price_update_to_cstr(const MarkPriceUpdate_t *value);
 
     QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
                                Price_t bid_price,
