@@ -1678,6 +1678,10 @@ cdef class BacktestDataIterator:
         self._is_single_data = False
 
     cpdef void add_data(self, str data_name, list data_list, bint append_data=True):
+        # closures inside cpdef functions not yet supported
+        self._add_data(data_name, data_list, append_data)
+
+    cdef void _add_data(self, str data_name, list data_list, bint append_data=True):
         if len(data_list) == 0:
             return
 
@@ -1687,23 +1691,24 @@ cdef class BacktestDataIterator:
             data_priority = self._data_priority[data_name]
             self.remove_data(data_name)
         else:
-            # heapq is a min priority data so lower number means higher priority
+            # heapq is a min priority queue so lower number means higher priority
             data_priority = (1 if append_data else -1) * self._next_data_priority
             self._next_data_priority += 1
 
         if self._is_single_data:
             self._deactivate_single_data()
 
-        self._data[data_priority] = data_list
+        self._data[data_priority] = sorted(data_list, key=lambda data: data.ts_init)
         self._data_name[data_priority] = data_name
         self._data_priority[data_name] = data_priority
         self._data_len[data_priority] = len(data_list)
         self._data_index[data_priority] = 0
-        self._push_data(data_priority, 0)
 
         if len(self._data) == 1:
             self._activate_single_data()
             return
+
+        self._push_data(data_priority, 0)
 
     cpdef void remove_data(self, str data_name):
         if data_name not in self._data_priority:
@@ -1767,11 +1772,17 @@ cdef class BacktestDataIterator:
 
             return object_to_return
 
-        cursor = self._single_data_index
+        if self._single_data_index >= self._single_data_len:
+            return None
+
+        object_to_return = self._single_data[self._single_data_index]
         self._single_data_index += 1
 
-        if cursor < self._single_data_len:
-            return  self._single_data[cursor]
+        if self._single_data_index >= self._single_data_len:
+            if self._empty_data_callback is not None:
+                self._empty_data_callback(self._single_data_name, self._single_data[-1].ts_init)
+
+        return object_to_return
 
     cpdef void _push_data(self, int data_priority, int data_index):
         cdef uint64_t ts_init
@@ -1812,11 +1823,14 @@ cdef class BacktestDataIterator:
         self._reset_heap()
 
     cpdef bint is_done(self):
-        return (self._is_single_data and self._single_data_index >= self._single_data_len) or not self._heap
+        if self._is_single_data:
+            return self._single_data_index >= self._single_data_len
+        else:
+            return not self._heap
 
     cpdef dict all_data(self):
         # we assume dicts are ordered by order of insertion
-        return {data_name:data for data_name, data in zip(self._data_name.values(), self._data.values())}
+        return {data_name:self._data[data_priority] for data_priority, data_name in self._data_name.items()}
 
     cpdef list data(self, str data_name):
         return self._data[self._data_priority[data_name]]
