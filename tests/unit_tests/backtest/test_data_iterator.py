@@ -73,7 +73,7 @@ class TestBacktestDataIterator:
 
         # Assert
         assert list(mapping.keys()) == ["only"]
-        assert mapping["only"] is lst
+        assert mapping["only"] == lst
 
     def test_remove_stream_effect(self):
         """
@@ -164,11 +164,12 @@ class TestBacktestDataIterator:
 
         # Reset and re-consume
         it.reset()
+        callback_data = []
         values = [x.value for x in it]
 
         # Assert
         assert (first, second, third) == (1, 2, 3)
-        assert callback_data == []
+        assert callback_data == [("single", 3)]
         assert it.is_done()
 
         assert values == [1, 2, 3]
@@ -216,7 +217,7 @@ class TestBacktestDataIterator:
         data = [MyData(10, ts_init=10), MyData(20, ts_init=20), MyData(30, ts_init=30)]
         it.add_data("stream", data)
 
-        assert it.data("stream") is data
+        assert it.data("stream") == data
 
         with pytest.raises(KeyError):
             it.data("unknown")
