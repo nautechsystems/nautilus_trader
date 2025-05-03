@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
+- Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
 
 ### Breaking Changes
 None
