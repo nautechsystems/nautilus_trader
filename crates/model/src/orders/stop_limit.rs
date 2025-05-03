@@ -64,6 +64,10 @@ pub struct StopLimitOrder {
 
 impl StopLimitOrder {
     /// Creates a new [`StopLimitOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the order is invalid.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
