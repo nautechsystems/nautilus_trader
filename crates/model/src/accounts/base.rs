@@ -158,6 +158,9 @@ impl BaseAccount {
         self.events.push(event);
     }
 
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub fn base_calculate_balance_locked(
         &mut self,
         instrument: InstrumentAny,
@@ -190,6 +193,9 @@ impl BaseAccount {
         }
     }
 
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub fn base_calculate_pnls(
         &self,
         instrument: InstrumentAny,
@@ -232,6 +238,9 @@ impl BaseAccount {
         Ok(pnls.into_values().collect())
     }
 
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub fn base_calculate_commission(
         &self,
         instrument: InstrumentAny,

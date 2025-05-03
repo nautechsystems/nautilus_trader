@@ -35,7 +35,7 @@ pub struct Symbol(Ustr);
 impl Symbol {
     /// Creates a new [`Symbol`] instance with correctness checking.
     ///
-    /// # Error
+    /// # Errors
     ///
     /// Returns an error if `value` is not a valid string.
     ///

@@ -82,6 +82,9 @@ impl Transaction {
 }
 
 /// Custom deserializer function to convert a hex chain ID string to a Chain.
+/// # Errors
+///
+/// Returns an error if parsing the hex string fails or the chain ID is unknown.
 pub fn deserialize_chain<'de, D>(deserializer: D) -> Result<Chain, D::Error>
 where
     D: Deserializer<'de>,

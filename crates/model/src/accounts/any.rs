@@ -86,6 +86,9 @@ impl AccountAny {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if `events` is empty.
     pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");
@@ -99,6 +102,9 @@ impl AccountAny {
         Ok(account)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if calculating P&Ls fails for the underlying account.
     pub fn calculate_pnls(
         &self,
         instrument: InstrumentAny,
@@ -111,6 +117,9 @@ impl AccountAny {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if calculating commission fails for the underlying account.
     pub fn calculate_commission(
         &self,
         instrument: InstrumentAny,
