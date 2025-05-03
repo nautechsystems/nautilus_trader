@@ -118,6 +118,7 @@ impl StopMarketOrder {
             exec_spawn_id,
             tags,
         );
+
         Self {
             core: OrderCore::new(init_order),
             trigger_price,

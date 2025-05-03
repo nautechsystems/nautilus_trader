@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -532,7 +532,7 @@ impl OrderTestBuilder {
                     self.get_init_id(),
                     self.get_ts_init(),
                 )
-                .unwrap(),
+                .expect(FAILED),
             ),
             OrderType::StopMarket => OrderAny::StopMarket(StopMarketOrder::new(
                 self.get_trader_id(),

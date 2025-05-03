@@ -133,6 +133,7 @@ impl MarketOrder {
             time_in_force == TimeInForce::Gtd,
             "GTD not supported for Market orders",
         )?;
+
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,
