@@ -43,5 +43,5 @@ mod tls;
 
 #[cfg(feature = "python")]
 pub mod python;
-#[cfg(feature = "python")] // TODO: Untangle python feature
+
 pub mod ratelimiter;

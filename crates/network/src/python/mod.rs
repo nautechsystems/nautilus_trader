@@ -25,12 +25,65 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use pyo3::{PyTypeCheck, prelude::*};
+use std::num::NonZeroU32;
 
-use crate::python::{
-    http::{HttpError, HttpTimeoutError},
-    websocket::WebSocketClientError,
+use pyo3::{PyTypeCheck, exceptions::PyException, prelude::*};
+
+use crate::{
+    python::{
+        http::{HttpError, HttpTimeoutError},
+        websocket::WebSocketClientError,
+    },
+    ratelimiter::quota::Quota,
 };
+
+#[pymethods]
+impl Quota {
+    /// Construct a quota for a number of requests per second.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the max burst capacity is 0
+    #[staticmethod]
+    pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
+        match NonZeroU32::new(max_burst) {
+            Some(max_burst) => Ok(Self::per_second(max_burst)),
+            None => Err(PyErr::new::<PyException, _>(
+                "Max burst capacity should be a non-zero integer",
+            )),
+        }
+    }
+
+    /// Construct a quota for a number of requests per minute.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the max burst capacity is 0
+    #[staticmethod]
+    pub fn rate_per_minute(max_burst: u32) -> PyResult<Self> {
+        match NonZeroU32::new(max_burst) {
+            Some(max_burst) => Ok(Self::per_minute(max_burst)),
+            None => Err(PyErr::new::<PyException, _>(
+                "Max burst capacity should be a non-zero integer",
+            )),
+        }
+    }
+
+    /// Construct a quota for a number of requests per hour.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the max burst capacity is 0
+    #[staticmethod]
+    pub fn rate_per_hour(max_burst: u32) -> PyResult<Self> {
+        match NonZeroU32::new(max_burst) {
+            Some(max_burst) => Ok(Self::per_hour(max_burst)),
+            None => Err(PyErr::new::<PyException, _>(
+                "Max burst capacity should be a non-zero integer",
+            )),
+        }
+    }
+}
 
 /// Loaded as nautilus_pyo3.network
 ///
