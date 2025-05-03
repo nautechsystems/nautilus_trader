@@ -364,7 +364,6 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
-      - tag-release
     if: >
       github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     env:
