@@ -425,6 +425,10 @@ impl MessageBus {
     }
 
     /// Close the message bus which will close the sender channel and join the thread.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
@@ -468,6 +472,11 @@ impl MessageBus {
         matching_subs
     }
 
+    /// Register a response handler for a specific correlation ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a handler is already registered for the given correlation ID.
     pub fn register_response_handler(
         &mut self,
         correlation_id: &UUID4,

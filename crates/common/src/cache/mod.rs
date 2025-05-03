@@ -15,6 +15,9 @@
 
 //! A common in-memory `Cache` for market and execution related data.
 
+// Allow missing error docs for a large number of cache methods for now.
+#![allow(clippy::missing_errors_doc)]
+
 pub mod config;
 pub mod database;
 
@@ -137,6 +140,10 @@ impl Cache {
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Clears the current general cache and loads the general objects from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading general cache data fails.
     pub fn cache_general(&mut self) -> anyhow::Result<()> {
         self.general = match &mut self.database {
             Some(db) => db.load()?,
@@ -151,6 +158,10 @@ impl Cache {
     }
 
     /// Loads all caches (currencies, instruments, synthetics, accounts, orders, positions) from the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading all cache data fails.
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
         let cache_map = match &self.database {
             Some(db) => db.load_all().await?,
@@ -167,6 +178,10 @@ impl Cache {
     }
 
     /// Clears the current currencies cache and loads currencies from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading currencies cache fails.
     pub async fn cache_currencies(&mut self) -> anyhow::Result<()> {
         self.currencies = match &mut self.database {
             Some(db) => db.load_currencies().await?,
@@ -178,6 +193,10 @@ impl Cache {
     }
 
     /// Clears the current instruments cache and loads instruments from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading instruments cache fails.
     pub async fn cache_instruments(&mut self) -> anyhow::Result<()> {
         self.instruments = match &mut self.database {
             Some(db) => db.load_instruments().await?,
@@ -190,6 +209,10 @@ impl Cache {
 
     /// Clears the current synthetic instruments cache and loads synthetic instruments from the cache
     /// database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading synthetic instruments cache fails.
     pub async fn cache_synthetics(&mut self) -> anyhow::Result<()> {
         self.synthetics = match &mut self.database {
             Some(db) => db.load_synthetics().await?,
@@ -204,6 +227,10 @@ impl Cache {
     }
 
     /// Clears the current accounts cache and loads accounts from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading accounts cache fails.
     pub async fn cache_accounts(&mut self) -> anyhow::Result<()> {
         self.accounts = match &mut self.database {
             Some(db) => db.load_accounts().await?,
@@ -218,6 +245,10 @@ impl Cache {
     }
 
     /// Clears the current orders cache and loads orders from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading orders cache fails.
     pub async fn cache_orders(&mut self) -> anyhow::Result<()> {
         self.orders = match &mut self.database {
             Some(db) => db.load_orders().await?,
@@ -229,6 +260,10 @@ impl Cache {
     }
 
     /// Clears the current positions cache and loads positions from the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading positions cache fails.
     pub async fn cache_positions(&mut self) -> anyhow::Result<()> {
         self.positions = match &mut self.database {
             Some(db) => db.load_positions().await?,

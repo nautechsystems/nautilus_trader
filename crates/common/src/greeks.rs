@@ -64,6 +64,9 @@ impl GreeksCalculator {
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
     #[allow(clippy::too_many_arguments)]
+    /// # Errors
+    ///
+    /// Returns an error if the instrument definition is not found or greeks calculation fails.
     pub fn instrument_greeks(
         &self,
         instrument_id: InstrumentId,
@@ -395,6 +398,9 @@ impl GreeksCalculator {
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
     #[allow(clippy::too_many_arguments)]
+    /// # Errors
+    ///
+    /// Returns an error if any underlying greeks calculation fails.
     pub fn portfolio_greeks(
         &self,
         underlyings: Option<Vec<String>>,
