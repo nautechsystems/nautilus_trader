@@ -67,7 +67,9 @@ impl StopLimitOrder {
     ///
     /// # Errors
     ///
-    /// Returns an error if the order is invalid.
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -164,6 +166,11 @@ impl StopLimitOrder {
         })
     }
 
+    /// Creates a new [`StopLimitOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if any order validation fails (see [`StopLimitOrder::new_checked`]).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -609,7 +616,7 @@ mod tests {
     };
 
     #[rstest]
-    fn buy_breakout_ok(_audusd_sim: CurrencyPair) {
+    fn test_initialize(_audusd_sim: CurrencyPair) {
         // ---------------------------------------------------------------------
         let order = OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(_audusd_sim.id)
@@ -636,7 +643,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
+    fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -650,7 +657,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn display_qty_zero_err(audusd_sim: CurrencyPair) {
+    fn test_display_qty_zero_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -664,7 +671,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn display_qty_negative_err(audusd_sim: CurrencyPair) {
+    fn test_display_qty_negative_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -678,7 +685,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn limit_price_zero_err(audusd_sim: CurrencyPair) {
+    fn test_limit_price_zero_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -691,7 +698,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn limit_price_negative_err(audusd_sim: CurrencyPair) {
+    fn test_limit_price_negative_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -704,7 +711,7 @@ mod tests {
 
     #[rstest]
     #[should_panic]
-    fn gtd_without_expire_time_err(audusd_sim: CurrencyPair) {
+    fn test_gtd_without_expire_time_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
