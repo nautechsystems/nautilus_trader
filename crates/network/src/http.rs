@@ -24,7 +24,6 @@ use reqwest::{
     header::{HeaderMap, HeaderName},
 };
 
-#[cfg(feature = "python")]
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
 /// Represents a HTTP status code.
@@ -199,7 +198,6 @@ pub struct HttpClient {
     /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,
     /// The rate limiter to control the request rate.
-    #[cfg(feature = "python")]
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
 }
 
@@ -209,8 +207,8 @@ impl HttpClient {
     pub fn new(
         headers: HashMap<String, String>,
         header_keys: Vec<String>,
-        #[cfg(feature = "python")] keyed_quotas: Vec<(String, Quota)>,
-        #[cfg(feature = "python")] default_quota: Option<Quota>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
         timeout_secs: Option<u64>,
     ) -> Self {
         // Build default headers
@@ -235,12 +233,10 @@ impl HttpClient {
             header_keys: Arc::new(header_keys),
         };
 
-        #[cfg(feature = "python")]
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Self {
             client,
-            #[cfg(feature = "python")]
             rate_limiter,
         }
     }
@@ -269,13 +265,10 @@ impl HttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
-        #[cfg(feature = "python")] keys: Option<Vec<String>>,
+        keys: Option<Vec<String>>,
     ) -> Result<HttpResponse, HttpClientError> {
-        #[cfg(feature = "python")]
-        {
-            let rate_limiter = self.rate_limiter.clone();
-            rate_limiter.await_keys_ready(keys).await;
-        }
+        let rate_limiter = self.rate_limiter.clone();
+        rate_limiter.await_keys_ready(keys).await;
 
         self.client
             .send_request(method, url, headers, body, timeout_secs)
