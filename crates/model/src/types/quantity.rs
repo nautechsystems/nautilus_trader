@@ -516,7 +516,7 @@ impl<'de> Deserialize<'de> for Quantity {
 /// Returns an error if the quantity is not positive.
 pub fn check_positive_quantity(value: Quantity, param: &str) -> anyhow::Result<()> {
     if !value.is_positive() {
-        anyhow::bail!("{FAILED}: invalid `Quantity` for '{param}' not positive, was {value}")
+        anyhow::bail!("invalid `Quantity` for '{param}' not positive, was {value}")
     }
     Ok(())
 }
@@ -535,7 +535,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: invalid `Quantity` for 'qty' not positive, was 0")]
+    #[should_panic(expected = "invalid `Quantity` for 'qty' not positive, was 0")]
     fn test_check_quantity_positive() {
         let qty = Quantity::new(0.0, 0);
         check_positive_quantity(qty, "qty").unwrap();

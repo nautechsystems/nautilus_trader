@@ -127,6 +127,7 @@ impl TrailingStopLimitOrder {
             exec_spawn_id,
             tags,
         );
+
         Self {
             core: OrderCore::new(init_order),
             price,

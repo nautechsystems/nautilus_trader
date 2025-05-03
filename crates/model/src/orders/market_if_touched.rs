@@ -87,18 +87,18 @@ impl MarketIfTouchedOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        check_positive_quantity(quantity, "quantity")?;
-        check_positive_price(trigger_price, "trigger_price")?;
+        check_positive_quantity(quantity, stringify!(quantity))?;
+        check_positive_price(trigger_price, stringify!(trigger_price))?;
 
         if let Some(disp) = display_qty {
-            check_positive_quantity(disp, "display_qty")?;
+            check_positive_quantity(disp, stringify!(display_qty))?;
             check_predicate_false(disp > quantity, "`display_qty` may not exceed `quantity`")?;
         }
 
         if time_in_force == TimeInForce::Gtd {
             check_predicate_false(
-                expire_time.unwrap_or_default() == 0,
-                "Condition failed: `expire_time` is required for `GTD` order",
+                expire_time.unwrap_or_default().is_zero(),
+                "`expire_time` is required for `GTD` order",
             )?;
         }
 
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`display_qty` may not exceed `quantity`")]
+    #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
     fn display_qty_gt_quantity(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)

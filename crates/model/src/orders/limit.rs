@@ -19,7 +19,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_false};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -90,15 +90,12 @@ impl LimitOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
+
         if time_in_force == TimeInForce::Gtd {
-            if expire_time.is_none() {
-                anyhow::bail!("Condition failed: `expire_time` is required for `GTD` order")
-            }
-            if let Some(time) = expire_time {
-                if time == 0 {
-                    anyhow::bail!("`expire_time` for `GTD` Limit order should be higher then 0")
-                }
-            }
+            check_predicate_false(
+                expire_time.unwrap_or_default().is_zero(),
+                "`expire_time` is required for `GTD` order",
+            )?;
         }
 
         let init_order = OrderInitialized::new(
