@@ -53,8 +53,11 @@ use tokio_tungstenite::{
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
-use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
-use crate::{backoff::ExponentialBackoff, mode::ConnectionMode};
+use crate::{
+    backoff::ExponentialBackoff,
+    mode::ConnectionMode,
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+};
 
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
