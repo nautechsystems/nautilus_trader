@@ -1144,6 +1144,11 @@ cdef class BacktestEngine:
         for currency in self._kernel.portfolio.analyzer.currencies:
             stats_pnls[currency.code] = self._kernel.portfolio.analyzer.get_performance_stats_pnls(currency)
 
+        if self._backtest_start is not None and self._backtest_end is not None:
+            elapsed_time = (self._backtest_end - self._backtest_start).total_seconds()
+        else:
+            elapsed_time = 0
+
         return BacktestResult(
             trader_id=self._kernel.trader_id.value,
             machine_id=self._kernel.machine_id,
@@ -1154,7 +1159,7 @@ cdef class BacktestEngine:
             run_finished=maybe_dt_to_unix_nanos(self.run_finished),
             backtest_start=maybe_dt_to_unix_nanos(self._backtest_start),
             backtest_end=maybe_dt_to_unix_nanos(self._backtest_end),
-            elapsed_time=(self._backtest_end - self._backtest_start).total_seconds(),
+            elapsed_time=elapsed_time,
             iterations=self._iteration,
             total_events=self._kernel.exec_engine.event_count,
             total_orders=self._kernel.cache.orders_total_count(),
