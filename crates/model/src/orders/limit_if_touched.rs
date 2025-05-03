@@ -72,71 +72,6 @@ impl LimitIfTouchedOrder {
     /// Returns an error if:
     /// - The `quantity` is not positive.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        quantity: Quantity,
-        price: Price,
-        trigger_price: Price,
-        trigger_type: TriggerType,
-        time_in_force: TimeInForce,
-        expire_time: Option<UnixNanos>,
-        post_only: bool,
-        reduce_only: bool,
-        quote_quantity: bool,
-        display_qty: Option<Quantity>,
-        emulation_trigger: Option<TriggerType>,
-        trigger_instrument_id: Option<InstrumentId>,
-        contingency_type: Option<ContingencyType>,
-        order_list_id: Option<OrderListId>,
-        linked_order_ids: Option<Vec<ClientOrderId>>,
-        parent_order_id: Option<ClientOrderId>,
-        exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
-        exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Vec<Ustr>>,
-        init_id: UUID4,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            order_side,
-            quantity,
-            price,
-            trigger_price,
-            trigger_type,
-            time_in_force,
-            expire_time,
-            post_only,
-            reduce_only,
-            quote_quantity,
-            display_qty,
-            emulation_trigger,
-            trigger_instrument_id,
-            contingency_type,
-            order_list_id,
-            linked_order_ids,
-            parent_order_id,
-            exec_algorithm_id,
-            exec_algorithm_params,
-            exec_spawn_id,
-            tags,
-            init_id,
-            ts_init,
-        )
-        .expect(FAILED)
-    }
-
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -240,6 +175,73 @@ impl LimitIfTouchedOrder {
             ts_triggered: None,
             core: OrderCore::new(init_order),
         })
+    }
+
+    /// Creates a new [`LimitIfTouchedOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if any order validation fails (see [`LimitIfTouchedOrder::new_checked`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type,
+            time_in_force,
+            expire_time,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 }
 
@@ -609,7 +611,7 @@ mod tests {
     };
 
     #[rstest]
-    fn ok(audusd_sim: CurrencyPair) {
+    fn test_ok(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -624,7 +626,7 @@ mod tests {
     #[should_panic(
         expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
     )]
-    fn quantity_zero(audusd_sim: CurrencyPair) {
+    fn test_quantity_zero(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -637,7 +639,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
-    fn gtd_without_expire(audusd_sim: CurrencyPair) {
+    fn test_gtd_without_expire(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -651,7 +653,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "BUY Limit-If-Touched must have `trigger_price` <= `price`")]
-    fn buy_trigger_gt_price(audusd_sim: CurrencyPair) {
+    fn test_buy_trigger_gt_price(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -664,7 +666,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "SELL Limit-If-Touched must have `trigger_price` >= `price`")]
-    fn sell_trigger_lt_price(audusd_sim: CurrencyPair) {
+    fn test_sell_trigger_lt_price(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Sell)

@@ -59,9 +59,12 @@ pub struct MarketIfTouchedOrder {
 
 impl MarketIfTouchedOrder {
     /// Creates a new [`MarketIfTouchedOrder`] instance.
+    ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails.
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -153,6 +156,11 @@ impl MarketIfTouchedOrder {
         })
     }
 
+    /// Creates a new [`MarketIfTouchedOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if any order validation fails (see [`MarketIfTouchedOrder::new_checked`]).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -555,7 +563,7 @@ mod tests {
     };
 
     #[rstest]
-    fn ok(audusd_sim: CurrencyPair) {
+    fn test_ok(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -569,7 +577,7 @@ mod tests {
     #[should_panic(
         expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
     )]
-    fn quantity_zero(audusd_sim: CurrencyPair) {
+    fn test_quantity_zero(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -581,7 +589,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
-    fn gtd_without_expire(audusd_sim: CurrencyPair) {
+    fn test_gtd_without_expire(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -594,7 +602,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
-    fn display_qty_gt_quantity(audusd_sim: CurrencyPair) {
+    fn test_display_qty_gt_quantity(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
