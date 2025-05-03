@@ -13,9 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A common in-memory `Cache` for market and execution related data.
+//! In-memory cache for market and execution data, with optional persistent backing.
+//!
+//! Provides methods to load, query, and update cached data such as instruments, orders, and prices.
 
-// Allow missing error docs for a large number of cache methods for now.
+// Allow missing error documentation for now
 #![allow(clippy::missing_errors_doc)]
 
 pub mod config;
@@ -99,8 +101,11 @@ impl Default for Cache {
 }
 
 impl Cache {
-    /// Creates a new [`Cache`] instance.
+    /// Creates a new [`Cache`] instance with optional configuration and database adapter.
     #[must_use]
+    /// # Note
+    ///
+    /// Uses provided `CacheConfig` or defaults, and optional `CacheDatabaseAdapter` for persistence.
     pub fn new(
         config: Option<CacheConfig>,
         database: Option<Box<dyn CacheDatabaseAdapter>>,
@@ -139,7 +144,7 @@ impl Cache {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
-    /// Clears the current general cache and loads the general objects from the cache database.
+    /// Clears and reloads general entries from the database into the cache.
     ///
     /// # Errors
     ///
@@ -157,7 +162,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Loads all caches (currencies, instruments, synthetics, accounts, orders, positions) from the database.
+    /// Loads all core caches (currencies, instruments, accounts, orders, positions) from the database.
     ///
     /// # Errors
     ///
@@ -177,7 +182,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current currencies cache and loads currencies from the cache database.
+    /// Clears and reloads the currency cache from the database.
     ///
     /// # Errors
     ///
@@ -192,7 +197,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current instruments cache and loads instruments from the cache database.
+    /// Clears and reloads the instrument cache from the database.
     ///
     /// # Errors
     ///
@@ -207,8 +212,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current synthetic instruments cache and loads synthetic instruments from the cache
-    /// database.
+    /// Clears and reloads the synthetic instrument cache from the database.
     ///
     /// # Errors
     ///
@@ -226,7 +230,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current accounts cache and loads accounts from the cache database.
+    /// Clears and reloads the account cache from the database.
     ///
     /// # Errors
     ///
@@ -244,7 +248,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current orders cache and loads orders from the cache database.
+    /// Clears and reloads the order cache from the database.
     ///
     /// # Errors
     ///
@@ -259,7 +263,7 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current positions cache and loads positions from the cache database.
+    /// Clears and reloads the position cache from the database.
     ///
     /// # Errors
     ///
@@ -1076,10 +1080,13 @@ impl Cache {
         }
     }
 
-    /// Adds a general object `value` (as bytes) to the cache at the given `key`.
+    /// Adds a raw bytes entry to the cache under the given key.
     ///
-    /// The cache is agnostic to what the bytes actually represent (and how it may be serialized),
-    /// which provides maximum flexibility.
+    /// The cache stores only raw bytes; interpretation is the caller's responsibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the entry to the backing database fails.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
         check_valid_string(key, stringify!(key)).expect(FAILED);
         check_predicate_false(value.is_empty(), stringify!(value)).expect(FAILED);
@@ -1093,7 +1100,11 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given order `book` to the cache.
+    /// Adds an `OrderBook` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the order book to the backing database fails.
     pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
         log::debug!("Adding `OrderBook` {}", book.instrument_id);
 
@@ -1107,7 +1118,11 @@ impl Cache {
         Ok(())
     }
 
-    /// Adds the given `own_book` to the cache.
+    /// Adds an `OwnOrderBook` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the own order book fails.
     pub fn add_own_order_book(&mut self, own_book: OwnOrderBook) -> anyhow::Result<()> {
         log::debug!("Adding `OwnOrderBook` {}", own_book.instrument_id);
 

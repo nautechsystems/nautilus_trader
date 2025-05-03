@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
+#![allow(clippy::missing_errors_doc)]
 
 use std::{
     any::{Any, TypeId},
