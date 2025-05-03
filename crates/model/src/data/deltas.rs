@@ -67,6 +67,9 @@ impl OrderBookDeltas {
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
+    /// # Errors
+    ///
+    /// Returns an error if `deltas` is empty.
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

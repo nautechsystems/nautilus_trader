@@ -90,6 +90,9 @@ impl TradeId {
     /// - If `value` exceeds 36 bytes and does not end with a null byte.
     /// - If `value` is exactly 37 bytes but the last byte is not null.
     /// - If `value` contains non-ASCII characters.
+    /// # Errors
+    ///
+    /// Returns an error if `value` is empty, contains non-ASCII characters, or exceeds max length.
     pub fn from_bytes(value: &[u8]) -> anyhow::Result<Self> {
         check_slice_not_empty(value, "value")?;
 

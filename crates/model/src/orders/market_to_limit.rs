@@ -55,6 +55,9 @@ pub struct MarketToLimitOrder {
 
 impl MarketToLimitOrder {
     /// Creates a new [`MarketToLimitOrder`] instance.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,

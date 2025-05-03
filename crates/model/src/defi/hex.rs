@@ -17,6 +17,9 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 
 /// Custom deserializer function for hex numbers.
+/// # Errors
+///
+/// Returns an error if parsing the hex string to a number fails.
 pub fn deserialize_hex_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -28,6 +31,9 @@ where
 }
 
 /// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
+/// # Errors
+///
+/// Returns an error if parsing the hex string to a timestamp fails.
 pub fn deserialize_hex_timestamp<'de, D>(deserializer: D) -> Result<UnixNanos, D::Error>
 where
     D: Deserializer<'de>,

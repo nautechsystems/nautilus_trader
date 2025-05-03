@@ -59,6 +59,9 @@ pub struct MarketIfTouchedOrder {
 
 impl MarketIfTouchedOrder {
     /// Creates a new [`MarketIfTouchedOrder`] instance.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
