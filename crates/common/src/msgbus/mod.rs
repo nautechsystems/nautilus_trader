@@ -428,7 +428,7 @@ impl MessageBus {
     ///
     /// # Errors
     ///
-    /// This function never returns an error.
+    /// This function never returns an error (TBD).
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())

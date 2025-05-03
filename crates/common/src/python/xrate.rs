@@ -22,6 +22,15 @@ use ustr::Ustr;
 
 use crate::xrate::get_exchange_rate;
 
+/// Calculates the exchange rate between two currencies using provided bid and ask quotes.
+///
+/// # Errors
+///
+/// This function returns an error if:
+/// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
+/// - `quotes_bid` or `quotes_ask` is empty.
+/// - `quotes_bid` and `quotes_ask` lengths are not equal.
+/// - The bid or ask side of a pair is missing.
 #[pyfunction]
 #[pyo3(name = "get_exchange_rate")]
 #[pyo3(signature = (from_currency, to_currency, price_type, quotes_bid, quotes_ask))]
