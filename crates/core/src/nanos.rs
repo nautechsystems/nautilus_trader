@@ -78,6 +78,12 @@ impl UnixNanos {
         Self(u64::MAX)
     }
 
+    /// Returns `true` if the value of this instance is zero.
+    #[must_use]
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
@@ -402,6 +408,12 @@ mod tests {
     fn test_max() {
         let nanos = UnixNanos::max();
         assert_eq!(nanos.as_u64(), u64::MAX);
+    }
+
+    #[rstest]
+    fn test_is_zero() {
+        assert!(UnixNanos::default().is_zero());
+        assert!(!UnixNanos::max().is_zero());
     }
 
     #[rstest]
