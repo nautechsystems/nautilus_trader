@@ -152,16 +152,28 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed when the actor state is saved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if saving the actor state fails.
     fn on_save(&self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
         Ok(HashMap::new())
     }
 
     /// Actions to be performed when the actor state is loaded.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading the actor state fails.
     fn on_load(&mut self, state: HashMap<String, Vec<u8>>) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if starting the actor fails.
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_start` handler was called when not overridden, \
@@ -172,6 +184,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stopping the actor fails.
     fn on_stop(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_stop` handler was called when not overridden, \
@@ -182,6 +198,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on resume.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resuming the actor fails.
     fn on_resume(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_resume` handler was called when not overridden, \
@@ -192,6 +212,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on reset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resetting the actor fails.
     fn on_reset(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_reset` handler was called when not overridden, \
@@ -202,117 +226,209 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on dispose.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disposing the actor fails.
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on degrade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if degrading the actor fails.
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on fault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if faulting the actor fails.
     fn on_fault(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the event fails.
     fn on_event(&mut self, event: &dyn Any) -> anyhow::Result<()> {
         // TODO: Implement `Event` enum?
         Ok(())
     }
 
-    /// Actions to be performanced when receiving a time event.
+    /// Actions to be performed when receiving a time event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the time event fails.
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving custom data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the data fails.
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the signal fails.
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument fails.
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the book deltas fails.
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an order book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the book fails.
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a quote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the quote fails.
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a trade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the trade fails.
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a bar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the bar fails.
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a mark price update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the mark price update fails.
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an index price update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the index price update fails.
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument status update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument status update fails.
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument close update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument close update fails.
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical data fails.
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical quotes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical quotes fails.
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical trades fails.
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical bars.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical bars fails.
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical mark prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical mark prices fails.
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical index prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical index prices fails.
     fn on_historical_index_prices(
         &mut self,
         index_prices: &[IndexPriceUpdate],

@@ -72,6 +72,10 @@ impl MessageBusListener {
     }
 
     /// Gets the stream receiver for this instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream receiver has already been taken.
     pub fn get_stream_receiver(
         &mut self,
     ) -> anyhow::Result<tokio::sync::mpsc::UnboundedReceiver<BusMessage>> {

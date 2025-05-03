@@ -77,6 +77,10 @@ pub trait Clock {
 
     /// Set a `Timer` to alert at a particular time. Optional
     /// callback gets used to handle generated events.
+    /// # Errors
+    ///
+    /// Returns an error if `name` is invalid, `alert_time_ns` is non-positive when not allowed,
+    /// or any predicate check fails.
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -88,6 +92,10 @@ pub trait Clock {
     /// Set a `Timer` to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
+    /// # Errors
+    ///
+    /// Returns an error if `name` is invalid, `interval_ns` is not positive,
+    /// or if any predicate check fails.
     fn set_timer_ns(
         &mut self,
         name: &str,

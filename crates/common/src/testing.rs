@@ -30,6 +30,9 @@ use crate::logging::{
     writer::FileWriterConfig,
 };
 
+/// # Errors
+///
+/// Returns an error if initializing the logger fails.
 pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow::Result<LogGuard> {
     let mut config = LoggerConfig::default();
     config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);

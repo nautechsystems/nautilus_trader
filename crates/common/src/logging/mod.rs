@@ -137,6 +137,15 @@ pub fn init_tracing() -> anyhow::Result<()> {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+/// Initialize logging.
+///
+/// Logging should be used for Python and sync Rust logic which is most of
+/// the components in the `nautilus_trader` package.
+/// Logging can be configured via the `NAUTILUS_LOG` environment variable.
+///
+/// # Errors
+///
+/// Returns an error if the logging subsystem fails to initialize.
 pub fn init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
