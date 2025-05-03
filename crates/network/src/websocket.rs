@@ -53,7 +53,6 @@ use tokio_tungstenite::{
     tungstenite::{Error, Message, client::IntoClientRequest, http::HeaderValue},
 };
 
-#[cfg(feature = "python")]
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 use crate::{backoff::ExponentialBackoff, mode::ConnectionMode};
 
@@ -583,7 +582,6 @@ pub struct WebSocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
-    #[cfg(feature = "python")]
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
 }
 
@@ -596,8 +594,8 @@ impl WebSocketClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn connect_stream(
         config: WebSocketConfig,
-        #[cfg(feature = "python")] keyed_quotas: Vec<(String, Quota)>,
-        #[cfg(feature = "python")] default_quota: Option<Quota>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
         post_reconnect: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<(MessageReader, Self), Error> {
         install_cryptographic_provider();
@@ -607,7 +605,6 @@ impl WebSocketClient {
 
         let connection_mode = inner.connection_mode.clone();
 
-        #[cfg(feature = "python")]
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         let writer_tx = inner.writer_tx.clone();
@@ -631,7 +628,6 @@ impl WebSocketClient {
                 controller_task,
                 connection_mode,
                 writer_tx,
-                #[cfg(feature = "python")]
                 rate_limiter,
             },
         ))
@@ -650,8 +646,8 @@ impl WebSocketClient {
         #[cfg(feature = "python")] post_connection: Option<PyObject>,
         #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
         #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
-        #[cfg(feature = "python")] keyed_quotas: Vec<(String, Quota)>,
-        #[cfg(feature = "python")] default_quota: Option<Quota>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config.clone()).await?;
@@ -668,7 +664,6 @@ impl WebSocketClient {
             post_disconnection, // TODO: Deprecated
         );
 
-        #[cfg(feature = "python")]
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         #[cfg(feature = "python")]
@@ -683,7 +678,6 @@ impl WebSocketClient {
             controller_task,
             connection_mode,
             writer_tx,
-            #[cfg(feature = "python")]
             rate_limiter,
         })
     }
@@ -773,7 +767,6 @@ impl WebSocketClient {
     /// Sends the given text `data` to the server.
     #[allow(unused_variables)]
     pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) {
-        #[cfg(feature = "python")]
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
@@ -792,7 +785,6 @@ impl WebSocketClient {
     /// Sends the given bytes `data` to the server.
     #[allow(unused_variables)]
     pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) {
-        #[cfg(feature = "python")]
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
@@ -925,6 +917,7 @@ impl WebSocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
