@@ -11,9 +11,11 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
 - Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
 - Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
+- Improved validations for `StopLimitOrder` in Rust (#2593), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
