@@ -1242,6 +1242,49 @@ class TestSimulatedExchangeMarginAccount:
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 
+    def test_process_limit_order_with_multiple_fills(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            _USDJPY_SIM.make_price(90.010),
+            post_only=False,  # <-- Can be liquidity TAKER
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.filled_qty == Quantity.from_int(100_000)
+        assert order.leaves_qty == Quantity.from_int(900_000)
+        assert order.last_event.last_px == _USDJPY_SIM.make_price(90.005)  # <-- Fills at ask
+        assert order.avg_px == 90.005  # <-- fills at ask
+        assert order.liquidity_side == LiquiditySide.TAKER
+
+        tick = TestDataStubs.quote_tick(
+            instrument=_USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.filled_qty == Quantity.from_int(200_000)
+        assert order.leaves_qty == Quantity.from_int(800_000)
+        assert order.last_event.last_px == _USDJPY_SIM.make_price(90.010)  # <-- Fills at limit px
+        assert order.liquidity_side == LiquiditySide.MAKER
+
     def test_submit_limit_order_fills_at_correct_price(self) -> None:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
@@ -1275,6 +1318,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.MAKER
         assert order.avg_px == 90.000  # <-- Fills at limit price
 
     def test_submit_limit_order_fills_at_most_book_volume(self) -> None:
@@ -1303,6 +1347,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert order.filled_qty == 1_000_000
 
     def test_submit_market_if_touched_order_then_fills(self) -> None:
@@ -1337,6 +1382,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert order.filled_qty == 10_000
 
     @pytest.mark.parametrize(
@@ -1394,6 +1440,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert order.filled_qty == 10_000
 
     @pytest.mark.parametrize(
@@ -1431,6 +1478,7 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order)
         self.exchange.process(0)
         assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert order.filled_qty == 10_000
 
         # Quantity is refreshed -> Ensure we don't trade the entire amount
@@ -2029,6 +2077,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
+        assert order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE
         assert len(self.exchange.get_open_orders()) == 1  # Order still open
         assert order.price == Price.from_str("90.001")  # Did not update
 
@@ -2059,6 +2108,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.ACCEPTED
+        assert order.liquidity_side == LiquiditySide.NO_LIQUIDITY_SIDE
         assert len(self.exchange.get_open_orders()) == 1  # Order still open
         assert order.price == Price.from_str("90.001")  # Did not update
 
@@ -2089,6 +2139,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
         assert order.avg_px == 90.005
 
@@ -2374,6 +2425,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
         assert order.is_triggered
         assert len(self.exchange.get_open_orders()) == 0
         assert order.price == Price.from_str("90.010")
