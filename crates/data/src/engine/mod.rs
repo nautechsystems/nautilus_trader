@@ -28,11 +28,6 @@
 //! Alternative implementations can be written on top of the generic engine - which
 //! just need to override the `execute`, `process`, `send` and `receive` methods.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_assignments)]
-
 pub mod book;
 pub mod config;
 mod handlers;
@@ -43,11 +38,11 @@ mod tests;
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet},
     num::NonZeroUsize,
     rc::Rc,
 };
 
+use ahash::{AHashMap, AHashSet};
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
@@ -70,7 +65,7 @@ use nautilus_common::{
     timer::TimeEventCallback,
 };
 use nautilus_core::{
-    correctness::{FAILED, check_key_in_index_map, check_key_not_in_index_map},
+    correctness::{FAILED, check_key_in_map, check_key_not_in_map},
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, millis_to_nanos},
 };
 use nautilus_model::{
@@ -85,6 +80,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
 };
+use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use ustr::Ustr;
 
 use crate::{
@@ -101,16 +97,17 @@ pub struct DataEngine {
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
-    external_clients: HashSet<ClientId>,
+    external_clients: AHashSet<ClientId>,
+    catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
-    book_intervals: HashMap<NonZeroUsize, HashSet<InstrumentId>>,
-    book_updaters: HashMap<InstrumentId, Rc<BookUpdater>>,
-    book_snapshotters: HashMap<InstrumentId, Rc<BookSnapshotter>>,
-    bar_aggregators: HashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
-    bar_aggregator_handlers: HashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
-    synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    buffered_deltas_map: HashMap<InstrumentId, OrderBookDeltas>,
+    book_intervals: AHashMap<NonZeroUsize, AHashSet<InstrumentId>>,
+    book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
+    book_snapshotters: AHashMap<InstrumentId, Rc<BookSnapshotter>>,
+    bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
+    bar_aggregator_handlers: AHashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
+    _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
     msgbus_priority: u8,
     config: DataEngineConfig,
 }
@@ -128,16 +125,17 @@ impl DataEngine {
             cache,
             clients: IndexMap::new(),
             default_client: None,
-            external_clients: HashSet::new(),
+            external_clients: AHashSet::new(),
+            catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
-            book_intervals: HashMap::new(),
-            book_updaters: HashMap::new(),
-            book_snapshotters: HashMap::new(),
-            bar_aggregators: HashMap::new(),
-            bar_aggregator_handlers: HashMap::new(),
-            synthetic_quote_feeds: HashMap::new(),
-            synthetic_trade_feeds: HashMap::new(),
-            buffered_deltas_map: HashMap::new(),
+            book_intervals: AHashMap::new(),
+            book_updaters: AHashMap::new(),
+            book_snapshotters: AHashMap::new(),
+            bar_aggregators: AHashMap::new(),
+            bar_aggregator_handlers: AHashMap::new(),
+            _synthetic_quote_feeds: AHashMap::new(),
+            _synthetic_trade_feeds: AHashMap::new(),
+            buffered_deltas_map: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             config: config.unwrap_or_default(),
         }
@@ -149,9 +147,52 @@ impl DataEngine {
         self.cache.borrow()
     }
 
-    // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
+    /// Registers the catalog with the engine.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a catalog with the same `name` has already been registered.
+    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
+        let name = Ustr::from(&name.unwrap_or("catalog_0".to_string()));
 
-    /// Registers the given data `client` with the engine as the default routing client.
+        check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
+
+        self.catalogs.insert(name, catalog);
+        log::info!("Registered catalog <{name}>");
+    }
+
+    /// Registers a new [`DataClientAdapter`]
+    ///
+    /// # Panics
+    ///
+    /// Panics if a client with the same client ID has already been registered.
+    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
+        let client_id = client.client_id();
+
+        check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
+
+        if let Some(routing) = routing {
+            self.routing_map.insert(routing, client.client_id());
+            log::info!("Set client {client_id} routing for {routing}");
+        }
+
+        self.clients.insert(client_id, client);
+        log::info!("Registered client {client_id}");
+    }
+
+    /// Deregisters a [`DataClientAdapter`]
+    ///
+    /// # Panics
+    ///
+    /// Panics if a client with the same client ID has not been registered.
+    pub fn deregister_client(&mut self, client_id: &ClientId) {
+        check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
+
+        self.clients.shift_remove(client_id);
+        log::info!("Deregistered client {client_id}");
+    }
+
+    /// Registers the data `client` with the engine as the default routing client.
     ///
     /// When a specific venue routing cannot be found, this client will receive messages.
     ///
@@ -160,8 +201,10 @@ impl DataEngine {
     /// Any existing default routing client will be overwritten.
     /// TODO: change this to suit message bus behaviour
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
-        log::info!("Registered default client {}", client.client_id());
+        let client_id = client.client_id();
+
         self.default_client = Some(client);
+        log::info!("Registered default client {client_id}");
     }
 
     pub fn start(self) {
@@ -208,7 +251,7 @@ impl DataEngine {
 
     fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
     where
-        F: Fn(&DataClientAdapter) -> &HashSet<T>,
+        F: Fn(&DataClientAdapter) -> &AHashSet<T>,
         T: Clone,
     {
         let mut subs = Vec::new();
@@ -301,38 +344,6 @@ impl DataEngine {
 
     pub fn on_stop(self) {
         todo!()
-    }
-
-    /// Registers a new [`DataClientAdapter`]
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If a client with the same client ID has already been registered.
-    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
-        check_key_not_in_index_map(&client.client_id, &self.clients, "client_id", "clients")
-            .expect(FAILED);
-
-        if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id());
-            log::info!("Set client {} routing for {routing}", client.client_id());
-        }
-
-        log::info!("Registered client {}", client.client_id());
-        self.clients.insert(client.client_id, client);
-    }
-
-    /// Deregisters a [`DataClientAdapter`]
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If a client with the same client ID has not been registered.
-    pub fn deregister_client(&mut self, client_id: &ClientId) {
-        check_key_in_index_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
-
-        self.clients.shift_remove(client_id);
-        log::info!("Deregistered client {client_id}");
     }
 
     pub fn execute(&mut self, cmd: &DataCommand) {
@@ -640,13 +651,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        self.setup_order_book(
-            &cmd.instrument_id,
-            cmd.book_type,
-            cmd.depth,
-            true,
-            cmd.managed,
-        )?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
     }
@@ -656,13 +661,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
-        self.setup_order_book(
-            &cmd.instrument_id,
-            cmd.book_type,
-            cmd.depth, // TODO
-            false,
-            cmd.managed,
-        )?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
 
         Ok(())
     }
@@ -719,7 +718,7 @@ impl DataEngine {
             }
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, cmd.depth, false, true)?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
 
         Ok(())
     }
@@ -890,7 +889,6 @@ impl DataEngine {
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
-        depth: Option<NonZeroUsize>,
         only_deltas: bool,
         managed: bool,
     ) -> anyhow::Result<()> {

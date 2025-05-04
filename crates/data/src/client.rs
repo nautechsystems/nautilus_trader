@@ -21,13 +21,13 @@
 
 use std::{
     cell::RefCell,
-    collections::HashSet,
     fmt::Debug,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
 
+use ahash::AHashSet;
 use indexmap::IndexMap;
 use nautilus_common::{
     clock::Clock,
@@ -193,19 +193,19 @@ pub struct DataClientAdapter {
     pub venue: Venue,
     pub handles_book_deltas: bool,
     pub handles_book_snapshots: bool,
-    pub subscriptions_generic: HashSet<DataType>,
-    pub subscriptions_book_deltas: HashSet<InstrumentId>,
-    pub subscriptions_book_depth10: HashSet<InstrumentId>,
-    pub subscriptions_book_snapshots: HashSet<InstrumentId>,
-    pub subscriptions_quotes: HashSet<InstrumentId>,
-    pub subscriptions_trades: HashSet<InstrumentId>,
-    pub subscriptions_bars: HashSet<BarType>,
-    pub subscriptions_instrument_status: HashSet<InstrumentId>,
-    pub subscriptions_instrument_close: HashSet<InstrumentId>,
-    pub subscriptions_instrument: HashSet<InstrumentId>,
-    pub subscriptions_instrument_venue: HashSet<Venue>,
-    pub subscriptions_mark_prices: HashSet<InstrumentId>,
-    pub subscriptions_index_prices: HashSet<InstrumentId>,
+    pub subscriptions_generic: AHashSet<DataType>,
+    pub subscriptions_book_deltas: AHashSet<InstrumentId>,
+    pub subscriptions_book_depth10: AHashSet<InstrumentId>,
+    pub subscriptions_book_snapshots: AHashSet<InstrumentId>,
+    pub subscriptions_quotes: AHashSet<InstrumentId>,
+    pub subscriptions_trades: AHashSet<InstrumentId>,
+    pub subscriptions_bars: AHashSet<BarType>,
+    pub subscriptions_instrument_status: AHashSet<InstrumentId>,
+    pub subscriptions_instrument_close: AHashSet<InstrumentId>,
+    pub subscriptions_instrument: AHashSet<InstrumentId>,
+    pub subscriptions_instrument_venue: AHashSet<Venue>,
+    pub subscriptions_mark_prices: AHashSet<InstrumentId>,
+    pub subscriptions_index_prices: AHashSet<InstrumentId>,
 }
 
 impl Deref for DataClientAdapter {
@@ -282,19 +282,19 @@ impl DataClientAdapter {
             venue,
             handles_book_deltas: handles_order_book_deltas,
             handles_book_snapshots: handles_order_book_snapshots,
-            subscriptions_generic: HashSet::new(),
-            subscriptions_book_deltas: HashSet::new(),
-            subscriptions_book_depth10: HashSet::new(),
-            subscriptions_book_snapshots: HashSet::new(),
-            subscriptions_quotes: HashSet::new(),
-            subscriptions_trades: HashSet::new(),
-            subscriptions_mark_prices: HashSet::new(),
-            subscriptions_index_prices: HashSet::new(),
-            subscriptions_bars: HashSet::new(),
-            subscriptions_instrument_status: HashSet::new(),
-            subscriptions_instrument_close: HashSet::new(),
-            subscriptions_instrument: HashSet::new(),
-            subscriptions_instrument_venue: HashSet::new(),
+            subscriptions_generic: AHashSet::new(),
+            subscriptions_book_deltas: AHashSet::new(),
+            subscriptions_book_depth10: AHashSet::new(),
+            subscriptions_book_snapshots: AHashSet::new(),
+            subscriptions_quotes: AHashSet::new(),
+            subscriptions_trades: AHashSet::new(),
+            subscriptions_mark_prices: AHashSet::new(),
+            subscriptions_index_prices: AHashSet::new(),
+            subscriptions_bars: AHashSet::new(),
+            subscriptions_instrument_status: AHashSet::new(),
+            subscriptions_instrument_close: AHashSet::new(),
+            subscriptions_instrument: AHashSet::new(),
+            subscriptions_instrument_venue: AHashSet::new(),
         }
     }
 

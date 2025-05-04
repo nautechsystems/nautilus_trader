@@ -3238,6 +3238,7 @@ dependencies = [
 name = "nautilus-core"
 version = "0.48.0"
 dependencies = [
+ "ahash 0.8.11",
  "anyhow",
  "bytes",
  "cbindgen",
@@ -3281,6 +3282,7 @@ dependencies = [
 name = "nautilus-data"
 version = "0.48.0"
 dependencies = [
+ "ahash 0.8.11",
  "anyhow",
  "chrono",
  "criterion",
@@ -3289,6 +3291,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "nautilus-persistence",
  "pyo3",
  "rstest",
  "ustr",

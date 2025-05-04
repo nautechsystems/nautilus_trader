@@ -116,7 +116,7 @@ impl BookSnapshotter {
         }
     }
 
-    pub fn snapshot(&self, event: TimeEvent) {
+    pub fn snapshot(&self, _event: TimeEvent) {
         let cache = self.cache.borrow();
 
         if self.snap_info.is_composite {

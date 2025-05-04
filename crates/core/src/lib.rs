@@ -35,6 +35,7 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 
+pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
