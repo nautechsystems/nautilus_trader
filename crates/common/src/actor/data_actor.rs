@@ -636,12 +636,8 @@ pub trait DataActor: Actor {
     fn handle_data_response(&mut self, response: &CustomDataResponse) {
         log_received(&response);
 
-        if let Some(list) = response.data.downcast_ref::<Vec<&dyn Any>>() {
-            for item in list {
-                self.handle_historical_data(item);
-            }
-        } else {
-            self.handle_historical_data(response.data.as_ref());
+        if let Err(e) = self.on_historical_data(response.data.as_ref()) {
+            log_error(&e);
         }
     }
 
