@@ -16,7 +16,12 @@
 //! Core parsing functions.
 
 /// Returns the decimal precision inferred from the given string.
+///
+/// # Panics
+///
+/// Panics if the input string is not a valid decimal or scientific notation format.
 #[must_use]
+#[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
 pub fn precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
@@ -27,6 +32,7 @@ pub fn precision_from_str(s: &str) -> u8 {
 
     // Check for decimal precision
     if let Some((_, decimal_part)) = s.split_once('.') {
+        // Safe to truncate length to u8 for reasonable decimal strings
         decimal_part.len() as u8
     } else {
         0
@@ -35,7 +41,10 @@ pub fn precision_from_str(s: &str) -> u8 {
 
 /// Returns the minimum increment precision inferred from the given string,
 /// ignoring trailing zeros.
+/// Returns the minimum increment precision inferred from the given string,
+/// ignoring trailing zeros.
 #[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 
