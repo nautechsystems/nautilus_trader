@@ -26,7 +26,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Display},
-    hash::Hash,
+    hash::{BuildHasher, Hash},
 };
 
 use indexmap::IndexMap;
@@ -374,7 +374,7 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_empty<K, V, S: ::std::hash::BuildHasher>(
+pub fn check_map_empty<K, V, S: BuildHasher>(
     map: &HashMap<K, V, S>,
     param: &str,
 ) -> anyhow::Result<()> {
@@ -394,7 +394,7 @@ pub fn check_map_empty<K, V, S: ::std::hash::BuildHasher>(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_not_empty<K, V, S: ::std::hash::BuildHasher>(
+pub fn check_map_not_empty<K, V, S: BuildHasher>(
     map: &HashMap<K, V, S>,
     param: &str,
 ) -> anyhow::Result<()> {
@@ -414,7 +414,7 @@ pub fn check_map_not_empty<K, V, S: ::std::hash::BuildHasher>(
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_not_in_map<K, V, S: ::std::hash::BuildHasher>(
+pub fn check_key_not_in_map<K, V, S: BuildHasher>(
     key: &K,
     map: &HashMap<K, V, S>,
     key_name: &str,
@@ -440,7 +440,7 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_in_map<K, V, S: ::std::hash::BuildHasher>(
+pub fn check_key_in_map<K, V, S: BuildHasher>(
     key: &K,
     map: &HashMap<K, V, S>,
     key_name: &str,
@@ -518,7 +518,7 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_not_in_set<V, S: ::std::hash::BuildHasher>(
+pub fn check_member_not_in_set<V, S: BuildHasher>(
     member: &V,
     set: &HashSet<V, S>,
     member_name: &str,
@@ -542,7 +542,7 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_in_set<V, S: ::std::hash::BuildHasher>(
+pub fn check_member_in_set<V, S: BuildHasher>(
     member: &V,
     set: &HashSet<V, S>,
     member_name: &str,
