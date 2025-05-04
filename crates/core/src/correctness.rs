@@ -374,7 +374,10 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+pub fn check_map_empty<K, V, S: ::std::hash::BuildHasher>(
+    map: &HashMap<K, V, S>,
+    param: &str,
+) -> anyhow::Result<()> {
     if !map.is_empty() {
         anyhow::bail!(
             "the '{param}' map `&<{}, {}>` was not empty",
@@ -391,7 +394,10 @@ pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+pub fn check_map_not_empty<K, V, S: ::std::hash::BuildHasher>(
+    map: &HashMap<K, V, S>,
+    param: &str,
+) -> anyhow::Result<()> {
     if map.is_empty() {
         anyhow::bail!(
             "the '{param}' map `&<{}, {}>` was empty",
@@ -408,9 +414,9 @@ pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Re
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_not_in_map<K, V>(
+pub fn check_key_not_in_map<K, V, S: ::std::hash::BuildHasher>(
     key: &K,
-    map: &HashMap<K, V>,
+    map: &HashMap<K, V, S>,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
@@ -434,9 +440,9 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_in_map<K, V>(
+pub fn check_key_in_map<K, V, S: ::std::hash::BuildHasher>(
     key: &K,
-    map: &HashMap<K, V>,
+    map: &HashMap<K, V, S>,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
@@ -512,9 +518,9 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_not_in_set<V>(
+pub fn check_member_not_in_set<V, S: ::std::hash::BuildHasher>(
     member: &V,
-    set: &HashSet<V>,
+    set: &HashSet<V, S>,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>
@@ -536,9 +542,9 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_in_set<V>(
+pub fn check_member_in_set<V, S: ::std::hash::BuildHasher>(
     member: &V,
-    set: &HashSet<V>,
+    set: &HashSet<V, S>,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>

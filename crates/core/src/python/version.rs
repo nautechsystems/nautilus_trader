@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(clippy::missing_panics_doc, clippy::manual_let_else)]
 use pyo3::{prelude::*, types::PyTuple};
 
 #[must_use]

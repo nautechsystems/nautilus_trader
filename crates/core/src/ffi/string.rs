@@ -123,7 +123,11 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     }
 }
 
-/// Create a C string pointer to newly allocated memory from a [&str].
+/// Create a C string pointer to newly allocated memory from a [`&str`].
+///
+/// # Panics
+///
+/// Panics if the input string contains interior null bytes.
 #[must_use]
 pub fn str_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
@@ -169,7 +173,7 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_pystr_to_string_with_null_ptr() {
         // Create a null Python object pointer
         let ptr: *mut ffi::PyObject = std::ptr::null_mut();
@@ -198,7 +202,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_cstr_to_vec_with_null_ptr() {
         // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();

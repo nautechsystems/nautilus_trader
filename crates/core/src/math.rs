@@ -41,6 +41,11 @@ pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: 
         + y2 * (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1))
 }
 
+/// Performs quadratic interpolation for the point `x` given vectors of abscissas `xs` and ordinates `ys`.
+///
+/// # Panics
+///
+/// Panics if `xs.len() < 3` or `xs.len() != ys.len()`.
 #[must_use]
 pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     let n_elem = xs.len();

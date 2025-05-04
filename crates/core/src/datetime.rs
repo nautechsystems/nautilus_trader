@@ -14,6 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Common data and time functions.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+
+use std::convert::TryFrom;
 
 use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Utc, Weekday};
 
@@ -41,33 +48,49 @@ pub const WEEKDAYS: [Weekday; 5] = [
 ];
 
 /// Converts seconds to nanoseconds (ns).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
-    (secs * NANOSECONDS_IN_SECOND as f64) as u64
+    let nanos = secs * NANOSECONDS_IN_SECOND as f64;
+    // Clamp to non-negative and truncate fractional part
+    nanos.max(0.0).trunc() as u64
 }
 
 /// Converts seconds to milliseconds (ms).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
-    (secs * MILLISECONDS_IN_SECOND as f64) as u64
+    let millis = secs * MILLISECONDS_IN_SECOND as f64;
+    // Clamp to non-negative and truncate fractional part
+    millis.max(0.0).trunc() as u64
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
-    (millis * NANOSECONDS_IN_MILLISECOND as f64) as u64
+    let nanos = millis * NANOSECONDS_IN_MILLISECOND as f64;
+    // Clamp to non-negative and truncate fractional part
+    nanos.max(0.0).trunc() as u64
 }
 
 /// Converts microseconds (μs) to nanoseconds (ns).
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
-    (micros * NANOSECONDS_IN_MICROSECOND as f64) as u64
+    let nanos = micros * NANOSECONDS_IN_MICROSECOND as f64;
+    // Clamp to non-negative and truncate fractional part
+    nanos.max(0.0).trunc() as u64
 }
 
 /// Converts nanoseconds (ns) to seconds.
+#[allow(clippy::cast_precision_loss)]
 #[unsafe(no_mangle)]
 pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
-    nanos as f64 / NANOSECONDS_IN_SECOND as f64
+    let seconds = nanos / NANOSECONDS_IN_SECOND;
+    let rem_nanos = nanos % NANOSECONDS_IN_SECOND;
+    // Convert using integer division and fractional part to minimize precision loss
+    (seconds as f64) + (rem_nanos as f64) / (NANOSECONDS_IN_SECOND as f64)
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
@@ -129,12 +152,14 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
         .and_hms_nano_opt(0, 0, 0, 0)
         .ok_or_else(|| anyhow::anyhow!("Failed `and_hms_nano_opt`"))?;
 
-    Ok(UnixNanos::from(
-        unix_timestamp_ns
-            .and_utc()
-            .timestamp_nanos_opt()
-            .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))? as u64,
-    ))
+    // Convert timestamp nanos safely from i64 to u64
+    let raw_ns = unix_timestamp_ns
+        .and_utc()
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))?;
+    let ns_u64 =
+        u64::try_from(raw_ns).map_err(|_| anyhow::anyhow!("Negative timestamp: {}", raw_ns))?;
+    Ok(UnixNanos::from(ns_u64))
 }
 
 /// Check whether the given UNIX nanoseconds timestamp is within the last 24 hours.
@@ -146,7 +171,10 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
     let timestamp_ns = timestamp_ns.as_u64();
     let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
     let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
-    let timestamp = DateTime::from_timestamp(seconds as i64, nanoseconds)
+    // Convert seconds to i64 safely
+    let secs_i64 = i64::try_from(seconds)
+        .map_err(|_| anyhow::anyhow!("Timestamp seconds overflow: {}", seconds))?;
+    let timestamp = DateTime::from_timestamp(secs_i64, nanoseconds)
         .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
@@ -154,6 +182,10 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
 }
 
 /// Subtract `n` months from a chrono `DateTime<Utc>`.
+///
+/// # Panics
+///
+/// Panics if `checked_sub_months` returns `None` for the given `datetime` and `n`.
 #[must_use]
 pub fn subtract_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
     datetime
@@ -162,6 +194,10 @@ pub fn subtract_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
 }
 
 /// Add `n` months to a chrono `DateTime<Utc>`.
+///
+/// # Panics
+///
+/// Panics if `checked_add_months` returns `None` for the given `datetime` and `n`.
 #[must_use]
 pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
     datetime
@@ -170,6 +206,10 @@ pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
 }
 
 /// Subtract `n` months from a given UNIX nanoseconds timestamp.
+///
+/// # Panics
+///
+/// Panics if the resulting timestamp is out of range (i.e., `timestamp_nanos_opt` returns `None`).
 #[must_use]
 pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
     let datetime = unix_nanos.to_datetime_utc();
@@ -180,6 +220,10 @@ pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
 }
 
 /// Add `n` months to a given UNIX nanoseconds timestamp.
+///
+/// # Panics
+///
+/// Panics if the resulting timestamp is out of range (i.e., `timestamp_nanos_opt` returns `None`).
 #[must_use]
 pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
     let date = unix_nanos.to_datetime_utc();
@@ -194,7 +238,6 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
 pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
     // E.g., for February, check leap year logic
     match month {
-        1 => 31,
         2 => {
             if is_leap_year(year) {
                 29
@@ -202,17 +245,8 @@ pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
                 28
             }
         }
-        3 => 31,
-        4 => 30,
-        5 => 31,
-        6 => 30,
-        7 => 31,
-        8 => 31,
-        9 => 30,
-        10 => 31,
-        11 => 30,
-        12 => 31,
-        _ => 31, // fallback
+        4 | 6 | 9 | 11 => 30,
+        _ => 31, // fallback for January, March, May, July, August, October, December, and invalid months
     }
 }
 
@@ -226,6 +260,7 @@ pub const fn is_leap_year(year: i32) -> bool {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
     use rstest::rstest;

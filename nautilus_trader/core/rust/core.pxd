@@ -77,8 +77,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
-    # This function panics:
-    # - If `ptr` is null.
+    # This function panics if `ptr` is null.
     uint8_t precision_from_cstr(const char *ptr);
 
     # Return the minimum price increment decimal precision inferred from the given C string.
@@ -89,8 +88,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
-    # This function panics:
-    # - If `ptr` is null.
+    # This function panics if `ptr` is null.
     uint8_t min_increment_precision_from_cstr(const char *ptr);
 
     # Drops the C string memory at the pointer.
