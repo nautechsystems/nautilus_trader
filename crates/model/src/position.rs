@@ -86,10 +86,10 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - The instrument ID does not match the fill’s instrument_id.
-    /// - The fill’s order_side is `NoOrderSide`.
-    /// - The fill’s position_id is `None`.
+    /// This function panics:
+    /// - If the instrument ID does not match the fill’s instrument_id.
+    /// - If the fill’s order_side is `NoOrderSide`.
+    /// - If the fill’s position_id is `None`.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
         assert_eq!(instrument.id(), fill.instrument_id);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);

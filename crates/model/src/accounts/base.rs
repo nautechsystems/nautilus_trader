@@ -64,6 +64,11 @@ impl BaseAccount {
         }
     }
 
+    /// Returns a reference to the `AccountBalance` for the specified currency, or `None` if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `currency` is `None` and `self.base_currency` is `None`.
     #[must_use]
     pub fn base_balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
         let currency = currency
@@ -72,6 +77,11 @@ impl BaseAccount {
         self.balances.get(&currency)
     }
 
+    /// Returns the total `Money` balance for the specified currency, or `None` if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `currency` is `None` and `self.base_currency` is `None`.
     #[must_use]
     pub fn base_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
@@ -89,6 +99,11 @@ impl BaseAccount {
             .collect()
     }
 
+    /// Returns the free `Money` balance for the specified currency, or `None` if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `currency` is `None` and `self.base_currency` is `None`.
     #[must_use]
     pub fn base_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
@@ -106,6 +121,11 @@ impl BaseAccount {
             .collect()
     }
 
+    /// Returns the locked `Money` balance for the specified currency, or `None` if absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `currency` is `None` and `self.base_currency` is `None`.
     #[must_use]
     pub fn base_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         let currency = currency
@@ -128,6 +148,11 @@ impl BaseAccount {
         self.events.last().cloned()
     }
 
+    /// Updates the account balances with the provided list of `AccountBalance` instances.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any updated `AccountBalance` has a total less than zero.
     pub fn update_balances(&mut self, balances: Vec<AccountBalance>) {
         for balance in balances {
             // clone real balance without reference
@@ -158,9 +183,15 @@ impl BaseAccount {
         self.events.push(event);
     }
 
+    /// Calculates the amount of balance to lock for a new order based on the given side, quantity, and price.
+    ///
     /// # Errors
     ///
-    /// This function never returns an error.
+    /// This function never returns an error (TBD).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `side` is not [`OrderSide::Buy`] or [`OrderSide::Sell`].
     pub fn base_calculate_balance_locked(
         &mut self,
         instrument: InstrumentAny,
@@ -193,9 +224,15 @@ impl BaseAccount {
         }
     }
 
+    /// Calculates profit and loss amounts for a filled order.
+    ///
     /// # Errors
     ///
-    /// This function never returns an error.
+    /// This function never returns an error (TBD).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fill.order_side` is neither [`OrderSide::Buy`] nor [`OrderSide::Sell`].
     pub fn base_calculate_pnls(
         &self,
         instrument: InstrumentAny,
@@ -238,9 +275,15 @@ impl BaseAccount {
         Ok(pnls.into_values().collect())
     }
 
+    /// Calculates commission fees for a filled order.
+    ///
     /// # Errors
     ///
-    /// This function never returns an error.
+    /// This function never returns an error (TBD).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `liquidity_side` is `LiquiditySide::NoLiquiditySide` or otherwise invalid.
     pub fn base_calculate_commission(
         &self,
         instrument: InstrumentAny,

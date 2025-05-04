@@ -2933,7 +2933,7 @@ impl Cache {
     ///
     /// # Panics
     ///
-    /// This function panics if `xrate` is not positive.
+    /// Panics if `xrate` is not positive.
     pub fn set_mark_xrate(&mut self, from_currency: Currency, to_currency: Currency, xrate: f64) {
         assert!(xrate > 0.0, "xrate was zero");
         self.mark_xrates.insert((from_currency, to_currency), xrate);
