@@ -703,7 +703,7 @@ mod tests {
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30300"))
-            .price(Price::from("-1")) // <-- bad
+            .price(Price::from("-1"))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
