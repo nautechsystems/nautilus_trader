@@ -16,7 +16,10 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_true},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -35,7 +38,7 @@ use crate::{
     orders::OrderError,
     types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
-use nautilus_core::correctness::{FAILED, check_predicate_true};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
