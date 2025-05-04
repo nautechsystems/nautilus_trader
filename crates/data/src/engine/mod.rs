@@ -35,6 +35,7 @@
 
 pub mod book;
 pub mod config;
+mod handlers;
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +50,7 @@ use std::{
 
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
+use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -104,7 +106,11 @@ pub struct DataEngine {
     book_intervals: HashMap<NonZeroUsize, HashSet<InstrumentId>>,
     book_updaters: HashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: HashMap<InstrumentId, Rc<BookSnapshotter>>,
-    bar_aggregators: HashMap<BarType, Box<dyn BarAggregator>>,
+    // Internal bar aggregators keyed by their BarType
+    // Internal bar aggregators keyed by their BarType
+    bar_aggregators: HashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
+    // Subscriptions for each bar aggregator: (topic, handler)
+    bar_aggregator_handlers: HashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
@@ -131,6 +137,7 @@ impl DataEngine {
             book_updaters: HashMap::new(),
             book_snapshotters: HashMap::new(),
             bar_aggregators: HashMap::new(),
+            bar_aggregator_handlers: HashMap::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
@@ -344,6 +351,7 @@ impl DataEngine {
     }
 
     pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+        // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
             SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
@@ -352,6 +360,14 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_subscribe_command(cmd.clone());
         } else {
@@ -374,6 +390,14 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe_command(cmd.clone());
         } else {
@@ -389,6 +413,12 @@ impl DataEngine {
 
     /// Sends a [`RequestCommand`] to an endpoint that must be a data client implementation.
     pub fn execute_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        // Skip requests for external clients
+        if let Some(cid) = req.client_id() {
+            if self.external_clients.contains(cid) {
+                return Ok(());
+            }
+        }
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {
             match req {
                 RequestCommand::Data(req) => client.request_data(req),
@@ -771,8 +801,17 @@ impl DataEngine {
         Ok(())
     }
 
-    const fn unsubscribe_bars(&mut self, command: &UnsubscribeBars) -> anyhow::Result<()> {
-        // TODO: Handle aggregators
+    /// Unsubscribe internal bar aggregator for the given bar type.
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        // If we have an internal aggregator for this bar type, stop and remove it
+        let bar_type = cmd.bar_type;
+        if self.bar_aggregators.contains_key(&bar_type.standard()) {
+            if let Err(err) = self.stop_bar_aggregator(bar_type) {
+                log::error!("Error stopping bar aggregator for {bar_type}: {err}");
+            }
+            self.bar_aggregators.remove(&bar_type.standard());
+            log::debug!("Removed bar aggregator for {bar_type}");
+        }
         Ok(())
     }
 
@@ -954,6 +993,7 @@ impl DataEngine {
     }
 
     fn start_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+        // Get the instrument for this bar type
         let instrument = {
             let cache = self.cache.borrow();
             cache
@@ -967,17 +1007,50 @@ impl DataEngine {
                 .clone()
         };
 
-        let aggregator = if let Some(aggregator) = self.bar_aggregators.get_mut(&bar_type) {
-            aggregator
+        // Use standard form of bar type as key
+        let bar_key = bar_type.standard();
+
+        // Create or retrieve aggregator in Rc<RefCell>
+        let aggregator = if let Some(rc) = self.bar_aggregators.get(&bar_key) {
+            rc.clone()
         } else {
-            let aggregator = self.create_bar_aggregator(&instrument, bar_type);
-            self.bar_aggregators.insert(bar_type, aggregator);
-            self.bar_aggregators.get_mut(&bar_type).unwrap()
+            let agg = self.create_bar_aggregator(&instrument, bar_type);
+            let rc = Rc::new(RefCell::new(agg));
+            self.bar_aggregators.insert(bar_key, rc.clone());
+            rc
         };
 
-        // TODO: Subscribe to data
+        // Subscribe to underlying data topics
+        let mut handlers = Vec::new();
 
-        aggregator.set_is_running(true);
+        if bar_type.is_composite() {
+            let topic = switchboard::get_bars_topic(bar_type.composite());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarBarHandler::new(aggregator.clone(), bar_key)));
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+            handlers.push((topic, handler));
+        } else if bar_type.spec().price_type == PriceType::Last {
+            let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarTradeHandler::new(aggregator.clone(), bar_key)));
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+            handlers.push((topic, handler));
+        } else {
+            let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarQuoteHandler::new(aggregator.clone(), bar_key)));
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+            handlers.push((topic, handler));
+        }
+
+        self.bar_aggregator_handlers.insert(bar_key, handlers);
+        aggregator.borrow_mut().set_is_running(true);
 
         Ok(())
     }
@@ -990,23 +1063,16 @@ impl DataEngine {
                 anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
             })?;
 
-        // TODO: If its a `TimeBarAggregator` then call `.stop()`
-        // if let Some(aggregator) = (aggregator as &dyn BarAggregator)
-        //     .as_any()
-        //     .downcast_ref::<TimeBarAggregator<_, _>>()
-        // {
-        //     aggregator.stop();
-        // };
+        aggregator.borrow_mut().stop();
 
-        if bar_type.is_composite() {
-            let composite_bar_type = bar_type.composite();
-            // TODO: Unsubscribe the `aggregator.handle_bar`
-        } else if bar_type.spec().price_type == PriceType::Last {
-            // TODO: Unsubscribe `aggregator.handle_trade_tick`
-            todo!()
-        } else {
-            // TODO: Unsubscribe `aggregator.handle_quote_tick`
-            todo!()
+        // Unsubscribe any registered message handlers
+        let bar_key = bar_type.standard();
+        if let Some(subs) = self.bar_aggregator_handlers.remove(&bar_key) {
+            for (topic, handler) in subs {
+                if msgbus::is_subscribed(topic, handler.clone()) {
+                    msgbus::unsubscribe(topic, handler);
+                }
+            }
         }
 
         Ok(())

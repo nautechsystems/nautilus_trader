@@ -15,7 +15,7 @@
 
 //! Bar aggregation machinery.
 
-use std::{cell::RefCell, ops::Add, rc::Rc};
+use std::{any::Any, cell::RefCell, ops::Add, rc::Rc};
 
 use chrono::TimeDelta;
 use nautilus_common::{
@@ -36,7 +36,7 @@ use nautilus_model::{
     types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
-pub trait BarAggregator {
+pub trait BarAggregator: Any {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
@@ -72,7 +72,21 @@ pub trait BarAggregator {
     fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos);
     fn stop_batch_update(&mut self);
     fn await_partial(&self) -> bool;
+    /// Set the initial values for a partially completed bar.
     fn set_partial(&mut self, partial_bar: Bar);
+    /// Stop the aggregator, e.g., cancel timers. Default is no-op.
+    fn stop(&mut self) {}
+}
+
+impl dyn BarAggregator {
+    /// Returns a reference to this aggregator as `Any` for downcasting.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+    /// Returns a mutable reference to this aggregator as `Any` for downcasting.
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Provides a generic bar builder for aggregation.
@@ -405,7 +419,7 @@ where
 
 impl<H> BarAggregator for TickBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -522,7 +536,7 @@ where
 
 impl<H> BarAggregator for VolumeBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -663,7 +677,7 @@ where
 
 impl<H> BarAggregator for ValueBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -1066,6 +1080,10 @@ where
 
     fn await_partial(&self) -> bool {
         self.core.await_partial()
+    }
+    /// Stop time-based aggregator by cancelling its timer.
+    fn stop(&mut self) {
+        TimeBarAggregator::<H>::stop(self);
     }
 
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
