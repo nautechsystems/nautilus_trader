@@ -16,6 +16,7 @@ None
 - Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
 - Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
 - Improved validations for `StopLimitOrder` in Rust (#2593), thanks @nicolad
+- Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
