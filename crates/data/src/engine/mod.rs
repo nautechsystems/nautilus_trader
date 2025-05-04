@@ -110,7 +110,7 @@ pub struct DataEngine {
     bar_aggregator_handlers: HashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
+    buffered_deltas_map: HashMap<InstrumentId, OrderBookDeltas>,
     msgbus_priority: u8,
     config: DataEngineConfig,
 }
@@ -492,22 +492,22 @@ impl DataEngine {
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
         let deltas = if self.config.buffer_deltas {
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .entry(delta.instrument_id)
-                .or_default();
-            buffer_deltas.push(delta);
+            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
+                buffered_deltas.deltas.push(delta);
+            } else {
+                let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
+                self.buffered_deltas_map
+                    .insert(delta.instrument_id, buffered_deltas);
+            }
 
             if !RecordFlag::F_LAST.matches(delta.flags) {
                 return; // Not the last delta for event
             }
 
             // SAFETY: We know the deltas exists already
-            let deltas = self
-                .buffered_deltas_map
+            self.buffered_deltas_map
                 .remove(&delta.instrument_id)
-                .unwrap();
-            OrderBookDeltas::new(delta.instrument_id, deltas)
+                .unwrap()
         } else {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
@@ -518,17 +518,20 @@ impl DataEngine {
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
         let deltas = if self.config.buffer_deltas {
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .entry(deltas.instrument_id)
-                .or_default();
-            buffer_deltas.extend(deltas.deltas);
-
             let mut is_last_delta = false;
-            for delta in buffer_deltas.iter_mut() {
+            for delta in deltas.deltas.iter() {
                 if RecordFlag::F_LAST.matches(delta.flags) {
                     is_last_delta = true;
+                    break;
                 }
+            }
+
+            let instrument_id = deltas.instrument_id;
+
+            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
+                buffered_deltas.deltas.extend(deltas.deltas);
+            } else {
+                self.buffered_deltas_map.insert(instrument_id, deltas);
             }
 
             if !is_last_delta {
@@ -536,11 +539,7 @@ impl DataEngine {
             }
 
             // SAFETY: We know the deltas exists already
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .remove(&deltas.instrument_id)
-                .unwrap();
-            OrderBookDeltas::new(deltas.instrument_id, buffer_deltas)
+            self.buffered_deltas_map.remove(&instrument_id).unwrap()
         } else {
             deltas
         };
