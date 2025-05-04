@@ -119,7 +119,7 @@ const char *unix_nanos_to_iso8601_millis_cstr(uint64_t timestamp_ns);
  *
  * # Panics
  *
- * This function panics if `ptr` is null.
+ * Panics if `ptr` is null.
  */
 uint8_t precision_from_cstr(const char *ptr);
 
@@ -132,7 +132,7 @@ uint8_t precision_from_cstr(const char *ptr);
  *
  * # Panics
  *
- * This function panics if `ptr` is null.
+ * Panics if `ptr` is null.
  */
 uint8_t min_increment_precision_from_cstr(const char *ptr);
 

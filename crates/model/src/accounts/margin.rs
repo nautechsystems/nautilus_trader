@@ -126,6 +126,11 @@ impl MarginAccount {
         self.recalculate_balance(margin_init.currency);
     }
 
+    /// Returns the initial margin amount for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no margin balance exists for the given `instrument_id`.
     #[must_use]
     pub fn initial_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
@@ -160,6 +165,11 @@ impl MarginAccount {
         self.recalculate_balance(margin_maintenance.currency);
     }
 
+    /// Returns the maintenance margin amount for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no margin balance exists for the given `instrument_id`.
     #[must_use]
     pub fn maintenance_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
@@ -220,6 +230,13 @@ impl MarginAccount {
         }
     }
 
+    /// Recalculates the account balance for the specified currency based on current margins.
+    ///
+    /// # Panics
+    ///
+    /// The function panics:
+    /// - If no starting balance exists for the given `currency`.
+    /// - If total free margin would be negative.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => balance,

@@ -797,7 +797,7 @@ impl DataActorCore {
     ///
     /// # Panics
     ///
-    /// This function panics if a trader ID has already been set.
+    /// Panics if a trader ID has already been set.
     pub(crate) fn set_trader_id(&mut self, trader_id: TraderId) {
         if let Some(existing_trader_id) = self.trader_id {
             panic!("trader_id {existing_trader_id} already set");
