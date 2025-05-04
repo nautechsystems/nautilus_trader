@@ -17,7 +17,9 @@ use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
 use nautilus_common::{
-    messages::data::{self, CustomDataResponse, DataResponse, RequestData},
+    messages::data::{
+        self, CustomDataResponse, DataResponse, RequestData, SubscribeData, UnsubscribeData,
+    },
     runtime,
 };
 use nautilus_core::UnixNanos;
@@ -182,19 +184,19 @@ impl DataClient for MockDataClient {
         ClientId::new("mock_data_client")
     }
 
-    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
         if request.data_type.type_name() == "get" {
             println!("Received get data request");
-            self.get_request(&request);
+            self.get_request(request);
         } else if request.data_type.type_name() == "skip" {
             println!("Received skip data request");
-            self.skip_request(&request);
+            self.skip_request(request);
         }
 
         Ok(())
     }
 
-    fn subscribe(&mut self, _cmd: data::SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: &SubscribeData) -> anyhow::Result<()> {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
@@ -203,7 +205,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, _cmd: data::UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {

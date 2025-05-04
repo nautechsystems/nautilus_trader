@@ -65,123 +65,123 @@ pub trait DataClient {
     // fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
     // fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
-    fn subscribe(&mut self, cmd: SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_book_snapshots(&mut self, cmd: SubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
     fn subscribe_instrument_status(
         &mut self,
-        cmd: SubscribeInstrumentStatus,
+        cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
-    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe(&mut self, cmd: UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_instruments(&mut self, cmd: UnsubscribeInstruments) -> anyhow::Result<()> {
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_instrument(&mut self, cmd: UnsubscribeInstrument) -> anyhow::Result<()> {
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_book_deltas(&mut self, cmd: UnsubscribeBookDeltas) -> anyhow::Result<()> {
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_book_depth10(&mut self, cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_book_snapshots(&mut self, cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_quotes(&mut self, cmd: UnsubscribeQuotes) -> anyhow::Result<()> {
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_trades(&mut self, cmd: UnsubscribeTrades) -> anyhow::Result<()> {
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_mark_prices(&mut self, cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_index_prices(&mut self, cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
-    fn unsubscribe_bars(&mut self, cmd: UnsubscribeBars) -> anyhow::Result<()> {
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
     fn unsubscribe_instrument_status(
         &mut self,
-        cmd: UnsubscribeInstrumentStatus,
+        cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
     fn unsubscribe_instrument_close(
         &mut self,
-        cmd: UnsubscribeInstrumentClose,
+        cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn request_data(&self, request: RequestData) -> anyhow::Result<()>;
+    fn request_data(&self, request: &RequestData) -> anyhow::Result<()>;
 
     /// Requests instruments data from the data provider.
-    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Requests instrument data from the data provider.
-    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Requests a book snapshot from the data provider.
-    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Requests quotes data from the data provider.
-    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Requests trades data from the data provider.
-    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Requests bars data from the data provider.
-    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -298,20 +298,9 @@ impl DataClientAdapter {
         }
     }
 
-    /// TODO: Decide whether to use mut references for subscription commands
-    pub fn through_execute(&self, command: SubscribeCommand) {}
-
-    // // TODO: Deprecated
-    // pub fn execute(&mut self, command: SubscribeCommand) {
-    //     match command.action {
-    //         Action::Subscribe => self.execute_subscribe_command(command),
-    //         Action::Unsubscribe => self.execute_unsubscribe_command(command),
-    //     }
-    // }
-
     #[inline]
-    pub fn execute_subscribe_command(&mut self, cmd: SubscribeCommand) {
-        let result = match cmd.clone() {
+    pub fn execute_subscribe_command(&mut self, cmd: &SubscribeCommand) {
+        let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
@@ -333,8 +322,8 @@ impl DataClientAdapter {
     }
 
     #[inline]
-    pub fn execute_unsubscribe_command(&mut self, cmd: UnsubscribeCommand) {
-        let result = match cmd.clone() {
+    pub fn execute_unsubscribe_command(&mut self, cmd: &UnsubscribeCommand) {
+        let result = match cmd {
             UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
             UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
@@ -355,7 +344,7 @@ impl DataClientAdapter {
         }
     }
 
-    fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
         if !self.subscriptions_instrument_venue.contains(&cmd.venue) {
             self.subscriptions_instrument_venue.insert(cmd.venue);
             self.client.subscribe_instruments(cmd)?;
@@ -364,7 +353,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, cmd: UnsubscribeInstruments) -> anyhow::Result<()> {
+    fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         if self.subscriptions_instrument_venue.contains(&cmd.venue) {
             self.subscriptions_instrument_venue.remove(&cmd.venue);
             self.client.unsubscribe_instruments(cmd)?;
@@ -373,7 +362,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         if !self.subscriptions_instrument.contains(&cmd.instrument_id) {
             self.subscriptions_instrument.insert(cmd.instrument_id);
             self.client.subscribe_instrument(cmd)?;
@@ -382,7 +371,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, cmd: UnsubscribeInstrument) -> anyhow::Result<()> {
+    fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         if self.subscriptions_instrument.contains(&cmd.instrument_id) {
             self.subscriptions_instrument.remove(&cmd.instrument_id);
             self.client.unsubscribe_instrument(cmd)?;
@@ -391,7 +380,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         if !self.subscriptions_book_deltas.contains(&cmd.instrument_id) {
             self.subscriptions_book_deltas.insert(cmd.instrument_id);
             self.client.subscribe_book_deltas(cmd)?;
@@ -400,7 +389,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, cmd: UnsubscribeBookDeltas) -> anyhow::Result<()> {
+    fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         if self.subscriptions_book_deltas.contains(&cmd.instrument_id) {
             self.subscriptions_book_deltas.remove(&cmd.instrument_id);
             self.client.unsubscribe_book_deltas(cmd)?;
@@ -409,7 +398,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         if !self.subscriptions_book_depth10.contains(&cmd.instrument_id) {
             self.subscriptions_book_depth10.insert(cmd.instrument_id);
             self.client.subscribe_book_depth10(cmd)?;
@@ -418,7 +407,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         if self.subscriptions_book_depth10.contains(&cmd.instrument_id) {
             self.subscriptions_book_depth10.remove(&cmd.instrument_id);
             self.client.unsubscribe_book_depth10(cmd)?;
@@ -427,7 +416,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, cmd: SubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         if !self
             .subscriptions_book_snapshots
             .contains(&cmd.instrument_id)
@@ -439,7 +428,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_snapshots(&mut self, cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn unsubscribe_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         if self
             .subscriptions_book_snapshots
             .contains(&cmd.instrument_id)
@@ -451,7 +440,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         if !self.subscriptions_quotes.contains(&cmd.instrument_id) {
             self.subscriptions_quotes.insert(cmd.instrument_id);
             self.client.subscribe_quotes(cmd)?;
@@ -459,7 +448,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_quotes(&mut self, cmd: UnsubscribeQuotes) -> anyhow::Result<()> {
+    fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         if self.subscriptions_quotes.contains(&cmd.instrument_id) {
             self.subscriptions_quotes.remove(&cmd.instrument_id);
             self.client.unsubscribe_quotes(cmd)?;
@@ -467,7 +456,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         if !self.subscriptions_trades.contains(&cmd.instrument_id) {
             self.subscriptions_trades.insert(cmd.instrument_id);
             self.client.subscribe_trades(cmd)?;
@@ -475,7 +464,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, cmd: UnsubscribeTrades) -> anyhow::Result<()> {
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         if self.subscriptions_trades.contains(&cmd.instrument_id) {
             self.subscriptions_trades.remove(&cmd.instrument_id);
             self.client.unsubscribe_trades(cmd)?;
@@ -483,7 +472,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         if !self.subscriptions_mark_prices.contains(&cmd.instrument_id) {
             self.subscriptions_mark_prices.insert(cmd.instrument_id);
             self.client.subscribe_mark_prices(cmd)?;
@@ -491,7 +480,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         if self.subscriptions_mark_prices.contains(&cmd.instrument_id) {
             self.subscriptions_mark_prices.remove(&cmd.instrument_id);
             self.client.unsubscribe_mark_prices(cmd)?;
@@ -499,7 +488,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         if !self.subscriptions_index_prices.contains(&cmd.instrument_id) {
             self.subscriptions_index_prices.insert(cmd.instrument_id);
             self.client.subscribe_index_prices(cmd)?;
@@ -507,7 +496,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         if self.subscriptions_index_prices.contains(&cmd.instrument_id) {
             self.subscriptions_index_prices.remove(&cmd.instrument_id);
             self.client.unsubscribe_index_prices(cmd)?;
@@ -515,7 +504,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         if !self.subscriptions_bars.contains(&cmd.bar_type) {
             self.subscriptions_bars.insert(cmd.bar_type);
             self.client.subscribe_bars(cmd)?;
@@ -523,7 +512,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, cmd: UnsubscribeBars) -> anyhow::Result<()> {
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         if self.subscriptions_bars.contains(&cmd.bar_type) {
             self.subscriptions_bars.remove(&cmd.bar_type);
             self.client.unsubscribe_bars(cmd)?;
@@ -531,7 +520,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    pub fn subscribe(&mut self, cmd: SubscribeData) -> anyhow::Result<()> {
+    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         if !self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.insert(cmd.data_type.clone());
             self.client.subscribe(cmd)?;
@@ -539,7 +528,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    pub fn unsubscribe(&mut self, cmd: UnsubscribeData) -> anyhow::Result<()> {
+    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         if self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.remove(&cmd.data_type);
             self.client.unsubscribe(cmd)?;
@@ -549,27 +538,27 @@ impl DataClientAdapter {
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
-    pub fn request_data(&self, req: RequestData) -> anyhow::Result<()> {
+    pub fn request_data(&self, req: &RequestData) -> anyhow::Result<()> {
         self.client.request_data(req)
     }
 
-    pub fn request_instrument(&self, req: RequestInstrument) -> anyhow::Result<()> {
+    pub fn request_instrument(&self, req: &RequestInstrument) -> anyhow::Result<()> {
         self.client.request_instrument(req)
     }
 
-    pub fn request_instruments(&self, req: RequestInstruments) -> anyhow::Result<()> {
+    pub fn request_instruments(&self, req: &RequestInstruments) -> anyhow::Result<()> {
         self.client.request_instruments(req)
     }
 
-    pub fn request_quotes(&self, req: RequestQuotes) -> anyhow::Result<()> {
+    pub fn request_quotes(&self, req: &RequestQuotes) -> anyhow::Result<()> {
         self.client.request_quotes(req)
     }
 
-    pub fn request_trades(&self, req: RequestTrades) -> anyhow::Result<()> {
+    pub fn request_trades(&self, req: &RequestTrades) -> anyhow::Result<()> {
         self.client.request_trades(req)
     }
 
-    pub fn request_bars(&self, req: RequestBars) -> anyhow::Result<()> {
+    pub fn request_bars(&self, req: &RequestBars) -> anyhow::Result<()> {
         self.client.request_bars(req)
     }
 
