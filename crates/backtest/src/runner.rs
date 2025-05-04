@@ -151,9 +151,8 @@ pub struct BacktestRunner {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use futures::StreamExt;
     use nautilus_common::{
-        clock::{LiveClock, TestClock},
+        clock::TestClock,
         timer::{TimeEvent, TimeEventCallback},
     };
     use rstest::rstest;
@@ -166,10 +165,11 @@ mod tests {
         set_clock(test_clock.clone());
 
         // component/actor adding an alert
-        get_clock().borrow_mut().set_time_alert_ns(
+        let _ = get_clock().borrow_mut().set_time_alert_ns(
             "hola",
             2.into(),
             Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
+            None,
         );
 
         // runner pulling advancing and pulling from event stream

@@ -64,7 +64,7 @@ use nautilus_common::{
     },
     msgbus::{
         self, get_message_bus,
-        handler::{MessageHandler, ShareableMessageHandler},
+        handler::ShareableMessageHandler,
         switchboard::{self},
     },
     timer::TimeEventCallback,
@@ -335,7 +335,7 @@ impl DataEngine {
         log::info!("Deregistered client {client_id}");
     }
 
-    pub fn execute(&mut self, cmd: DataCommand) {
+    pub fn execute(&mut self, cmd: &DataCommand) {
         let result = match cmd {
             DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
             DataCommand::Unsubscribe(cmd) => self.execute_unsubscribe(cmd),
@@ -347,7 +347,7 @@ impl DataEngine {
         }
     }
 
-    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
         // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
@@ -366,7 +366,7 @@ impl DataEngine {
 
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_subscribe_command(cmd.clone());
+            client.execute_subscribe_command(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -378,7 +378,7 @@ impl DataEngine {
         Ok(())
     }
 
-    pub fn execute_unsubscribe(&mut self, cmd: UnsubscribeCommand) -> anyhow::Result<()> {
+    pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
             UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
@@ -396,7 +396,7 @@ impl DataEngine {
 
         // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_unsubscribe_command(cmd.clone());
+            client.execute_unsubscribe_command(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -409,7 +409,7 @@ impl DataEngine {
     }
 
     /// Sends a [`RequestCommand`] to an endpoint that must be a data client implementation.
-    pub fn execute_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+    pub fn execute_request(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
         if let Some(cid) = req.client_id() {
             if self.external_clients.contains(cid) {
@@ -1024,25 +1024,31 @@ impl DataEngine {
             let topic = switchboard::get_bars_topic(bar_type.composite());
             let handler =
                 ShareableMessageHandler(Rc::new(BarBarHandler::new(aggregator.clone(), bar_key)));
+
             if !msgbus::is_subscribed(topic, handler.clone()) {
                 msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
             }
+
             handlers.push((topic, handler));
         } else if bar_type.spec().price_type == PriceType::Last {
             let topic = switchboard::get_trades_topic(bar_type.instrument_id());
             let handler =
                 ShareableMessageHandler(Rc::new(BarTradeHandler::new(aggregator.clone(), bar_key)));
+
             if !msgbus::is_subscribed(topic, handler.clone()) {
                 msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
             }
+
             handlers.push((topic, handler));
         } else {
             let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
             let handler =
                 ShareableMessageHandler(Rc::new(BarQuoteHandler::new(aggregator.clone(), bar_key)));
+
             if !msgbus::is_subscribed(topic, handler.clone()) {
                 msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
             }
+
             handlers.push((topic, handler));
         }
 
@@ -1073,29 +1079,5 @@ impl DataEngine {
         }
 
         Ok(())
-    }
-}
-
-// TODO: Rename to Data command handler
-pub struct SubscriptionCommandHandler {
-    pub id: Ustr,
-    pub engine_ref: Rc<RefCell<DataEngine>>,
-}
-
-impl MessageHandler for SubscriptionCommandHandler {
-    fn id(&self) -> Ustr {
-        self.id
-    }
-
-    fn handle(&self, msg: &dyn Any) {
-        if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
-            self.engine_ref.borrow_mut().execute(cmd.clone());
-        } else {
-            log::error!("Expected DataCommand message for data engine command handler: {msg:?}");
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }

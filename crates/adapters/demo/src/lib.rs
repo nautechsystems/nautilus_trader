@@ -24,15 +24,15 @@ use futures::{Stream, stream::SelectAll};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, LiveClock},
-    messages::data::DataResponse,
+    messages::data::{DataCommand, DataResponse},
     msgbus::{
-        handler::{MessageHandler, ShareableMessageHandler},
+        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         register,
     },
 };
 use nautilus_data::{
     client::{DataClient, DataClientAdapter},
-    engine::{DataEngine, SubscriptionCommandHandler},
+    engine::DataEngine,
 };
 use nautilus_model::identifiers::Venue;
 use tokio_stream::StreamExt;
@@ -65,17 +65,14 @@ pub async fn init_data_engine(
     );
     let cache = Rc::new(RefCell::new(Cache::new(None, None)));
 
-    let mut engine = DataEngine::new(clock, cache, None);
-    engine.register_client(adapter, None);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    data_engine.register_client(adapter, None);
+    let data_engine = Rc::new(RefCell::new(data_engine));
 
-    let engine = Rc::new(RefCell::new(engine));
-    let handler = SubscriptionCommandHandler {
-        id: Ustr::from("data_engine_handler"),
-        engine_ref: engine,
-    };
-
-    let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-    register("data_engine", handler);
+    let data_engine_clone = data_engine.clone();
+    let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+        move |cmd: &DataCommand| data_engine_clone.borrow_mut().execute(cmd),
+    )));
 
     (http_stream, websocket_stream)
 }
