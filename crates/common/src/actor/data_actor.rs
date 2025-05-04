@@ -22,7 +22,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{RefCell, UnsafeCell},
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
@@ -32,6 +32,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 use nautilus_model::{
     data::{
@@ -157,8 +158,8 @@ pub trait DataActor: Actor {
     /// # Errors
     ///
     /// Returns an error if saving the actor state fails.
-    fn on_save(&self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-        Ok(HashMap::new())
+    fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
+        Ok(IndexMap::new())
     }
 
     /// Actions to be performed when the actor state is loaded.
@@ -166,7 +167,7 @@ pub trait DataActor: Actor {
     /// # Errors
     ///
     /// Returns an error if loading the actor state fails.
-    fn on_load(&mut self, state: HashMap<String, Vec<u8>>) -> anyhow::Result<()> {
+    fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -980,7 +981,7 @@ impl DataActorCore {
         &mut self,
         data_type: DataType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1023,7 +1024,7 @@ impl DataActorCore {
         &mut self,
         venue: Venue,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1055,7 +1056,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1094,7 +1095,7 @@ impl DataActorCore {
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1140,7 +1141,7 @@ impl DataActorCore {
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1184,7 +1185,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1217,7 +1218,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1254,7 +1255,7 @@ impl DataActorCore {
         bar_type: BarType,
         client_id: Option<ClientId>,
         await_partial: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1289,7 +1290,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1325,7 +1326,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1361,7 +1362,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1397,7 +1398,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1430,7 +1431,7 @@ impl DataActorCore {
         &self,
         data_type: DataType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1460,7 +1461,7 @@ impl DataActorCore {
         &self,
         venue: Venue,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1485,7 +1486,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1511,7 +1512,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1540,7 +1541,7 @@ impl DataActorCore {
         instrument_id: InstrumentId,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1566,7 +1567,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1592,7 +1593,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1618,7 +1619,7 @@ impl DataActorCore {
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1644,7 +1645,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1670,7 +1671,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1696,7 +1697,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1722,7 +1723,7 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1752,7 +1753,7 @@ impl DataActorCore {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1790,7 +1791,7 @@ impl DataActorCore {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1830,7 +1831,7 @@ impl DataActorCore {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1869,7 +1870,7 @@ impl DataActorCore {
         instrument_id: InstrumentId,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1906,7 +1907,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1948,7 +1949,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1990,7 +1991,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
