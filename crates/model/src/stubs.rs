@@ -29,7 +29,13 @@ use crate::{
     types::{Money, Price, Quantity},
 };
 
-/// Calculate commission for testing
+/// Calculate commission for testing.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The liquidity side is `NoLiquiditySide`.
+/// - `instrument.maker_fee()` or `instrument.taker_fee()` cannot be converted to `f64`.
 pub fn calculate_commission(
     instrument: &InstrumentAny,
     last_qty: Quantity,
