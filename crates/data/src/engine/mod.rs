@@ -106,10 +106,7 @@ pub struct DataEngine {
     book_intervals: HashMap<NonZeroUsize, HashSet<InstrumentId>>,
     book_updaters: HashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: HashMap<InstrumentId, Rc<BookSnapshotter>>,
-    // Internal bar aggregators keyed by their BarType
-    // Internal bar aggregators keyed by their BarType
     bar_aggregators: HashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
-    // Subscriptions for each bar aggregator: (topic, handler)
     bar_aggregator_handlers: HashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
