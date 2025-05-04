@@ -227,17 +227,10 @@ mod tests {
             .price(price)
             .quantity(Quantity::from(100_000))
             .build();
-        let order_filled =
-            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
-        let expected_commission_amount =
-            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let fill = TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
+        let expected_commission_amount = fill.quantity().as_f64() * price.as_f64() * maker_fee;
         let commission = fee_model
-            .get_commission(
-                &order_filled,
-                Quantity::from(100_000),
-                Price::from("1.0"),
-                &aud_usd,
-            )
+            .get_commission(&fill, Quantity::from(100_000), Price::from("1.0"), &aud_usd)
             .unwrap();
         assert_eq!(commission.as_f64(), expected_commission_amount);
     }
@@ -255,17 +248,10 @@ mod tests {
             .quantity(Quantity::from(100_000))
             .build();
 
-        let order_filled =
-            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
-        let expected_commission_amount =
-            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let fill = TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
+        let expected_commission_amount = fill.quantity().as_f64() * price.as_f64() * maker_fee;
         let commission = fee_model
-            .get_commission(
-                &order_filled,
-                Quantity::from(100_000),
-                Price::from("1.0"),
-                &aud_usd,
-            )
+            .get_commission(&fill, Quantity::from(100_000), Price::from("1.0"), &aud_usd)
             .unwrap();
         assert_eq!(commission.as_f64(), expected_commission_amount);
     }
