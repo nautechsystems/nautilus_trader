@@ -58,7 +58,15 @@ cdef class FillModel:
         double prob_fill_on_stop = 1.0,
         double prob_slippage = 0.0,
         random_seed: int | None = None,
+        config = None,
     ):
+        if config is not None:
+            # Initialize from config
+            prob_fill_on_limit = config.prob_fill_on_limit
+            prob_fill_on_stop = config.prob_fill_on_stop
+            prob_slippage = config.prob_slippage
+            random_seed = config.random_seed
+
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
         Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
@@ -149,7 +157,15 @@ cdef class LatencyModel:
         uint64_t insert_latency_nanos = 0,
         uint64_t update_latency_nanos = 0,
         uint64_t cancel_latency_nanos = 0,
+        config = None,
     ):
+        if config is not None:
+            # Initialize from config
+            base_latency_nanos = config.base_latency_nanos
+            insert_latency_nanos = config.insert_latency_nanos
+            update_latency_nanos = config.update_latency_nanos
+            cancel_latency_nanos = config.cancel_latency_nanos
+
         Condition.not_negative_int(base_latency_nanos, "base_latency_nanos")
         Condition.not_negative_int(insert_latency_nanos, "insert_latency_nanos")
         Condition.not_negative_int(update_latency_nanos, "update_latency_nanos")
@@ -200,7 +216,15 @@ cdef class MakerTakerFeeModel(FeeModel):
     Provide a fee model for trades based on a maker/taker fee schedule
     and notional value of the trade.
 
+    Parameters
+    ----------
+    config : MakerTakerFeeModelConfig, optional
+        The configuration for the fee model.
     """
+
+    def __init__(self, config=None):
+        # No configuration needed for this model
+        pass
 
     cpdef Money get_commission(
         self,
@@ -254,9 +278,15 @@ cdef class FixedFeeModel(FeeModel):
 
     def __init__(
         self,
-        Money commission not None,
+        Money commission not None = None,
         bint charge_commission_once: bool = True,
+        config = None,
     ):
+        if config is not None:
+            # Initialize from config
+            commission = Money.from_str(config.commission)
+            charge_commission_once = config.charge_commission_once
+
         Condition.positive(commission, "commission")
 
         self._commission = commission
@@ -292,7 +322,11 @@ cdef class PerContractFeeModel(FeeModel):
 
     """
 
-    def __init__(self, Money commission not None):
+    def __init__(self, Money commission not None = None, config = None):
+        if config is not None:
+            # Initialize from config
+            commission = Money.from_str(config.commission)
+
         Condition.not_negative(commission, "commission")
 
         self._commission = commission

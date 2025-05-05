@@ -213,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1198  # UNIX
+        assert result == 1270  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -234,7 +234,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 895  # UNIX
+        assert len(raw) == 951  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -255,7 +255,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 2050
+        assert result == 2122
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -263,7 +263,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "bb8070e2b9c260bd6e51b1ef57c93d338b0d31a3798e0b6bc4787cbc7f25fd1b"
+        assert token == "42f5abf042666be6e4539868b9b66e4e56f26743662af4ddd5eb1ea1f733c21c"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
@@ -273,7 +273,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.venue_config,
                 (),
                 {},
-                ("71b17265090437aaef857215e9abda4d1e95e6c52d29434df9bb3a70c9c2523b",),
+                ("03972e1b8abc649b22a211df779ce47b5a5791adaedcae3f4345fb0ae0e3c88a",),
             ),
             (
                 TestConfigStubs.backtest_data_config,
