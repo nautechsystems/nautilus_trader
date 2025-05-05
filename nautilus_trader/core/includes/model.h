@@ -2853,8 +2853,7 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
  *
  * # Panics
  *
- * This function panics:
- * - If book type is not `L1_MBP`.
+ * Panics if book type is not `L1_MBP`.
  */
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *quote);
 
@@ -2863,8 +2862,7 @@ void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteT
  *
  * # Panics
  *
- * This function panics:
- * - If book type is not `L1_MBP`.
+ * Panics if book type is not `L1_MBP`.
  */
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *trade);
 

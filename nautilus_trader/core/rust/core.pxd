@@ -95,12 +95,11 @@ cdef extern from "../includes/core.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
-    # This function panics:
-    # - If `ptr` is null.
+    # Panics if `ptr` is null.
     void cstr_drop(const char *ptr);
 
     UUID4_t uuid4_new();
@@ -113,8 +112,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
-    # This function panics:
-    # - If `ptr` cannot be cast to a valid C string.
+    # Panics if `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 
     const char *uuid4_to_cstr(const UUID4_t *uuid);
