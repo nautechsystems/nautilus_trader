@@ -67,7 +67,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, millis_to_nanos},
+    datetime::millis_to_nanos,
 };
 use nautilus_model::{
     data::{
@@ -336,8 +336,20 @@ impl DataEngine {
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         if let Some(cid) = client_id {
-            // Try to get client directly from clients map
-            return self.clients.get_mut(cid);
+            // Explicit ID: first look in registered clients
+            if let Some(client) = self.clients.get_mut(cid) {
+                return Some(client);
+            }
+
+            // Then check if it matches the default client
+            if let Some(default) = self.default_client.as_mut() {
+                if default.client_id() == *cid {
+                    return Some(default);
+                }
+            }
+
+            // Unknown explicit client
+            return None;
         }
 
         if let Some(v) = venue {
@@ -843,12 +855,9 @@ impl DataEngine {
                 interval_ms: cmd.interval_ms,
             };
 
+            // Schedule the first snapshot at the next interval boundary
             let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-            let mut start_time_ns = now_ns - (now_ns % interval_ns);
-
-            if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
-                start_time_ns += NANOSECONDS_IN_SECOND;
-            }
+            let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
 
             let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
             self.book_snapshotters
