@@ -16,12 +16,74 @@
 //! Abstraction layer over common hash-based containers.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     hash::Hash,
 };
 
-/// Represents a generic map-like container with keys and values.
+/// Represents a generic set-like container with members.
+pub trait SetLike {
+    type Item: Hash + Eq + Display + Clone;
+
+    fn contains(&self, item: &Self::Item) -> bool;
+    fn is_empty(&self) -> bool;
+}
+
+impl<T, S> SetLike for HashSet<T, S>
+where
+    T: Eq + Hash + Display + Clone,
+    S: std::hash::BuildHasher,
+{
+    type Item = T;
+
+    #[inline]
+    fn contains(&self, v: &T) -> bool {
+        HashSet::contains(self, v)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        HashSet::is_empty(self)
+    }
+}
+
+impl<T, S> SetLike for indexmap::IndexSet<T, S>
+where
+    T: Eq + Hash + Display + Clone,
+    S: std::hash::BuildHasher,
+{
+    type Item = T;
+
+    #[inline]
+    fn contains(&self, v: &T) -> bool {
+        indexmap::IndexSet::contains(self, v)
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        indexmap::IndexSet::is_empty(self)
+    }
+}
+
+impl<T, S> SetLike for ahash::AHashSet<T, S>
+where
+    T: Eq + Hash + Display + Clone,
+    S: std::hash::BuildHasher,
+{
+    type Item = T;
+
+    #[inline]
+    fn contains(&self, v: &T) -> bool {
+        self.get(v).is_some()
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// Represents a generic map-like container with key-value pairs.
 pub trait MapLike {
     type Key: Hash + Eq + Display + Clone;
     type Value: Debug;
