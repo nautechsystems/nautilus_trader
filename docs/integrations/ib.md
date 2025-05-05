@@ -340,6 +340,7 @@ Finally, the node is built and run.
 You can find additional examples here: <https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers>
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
@@ -364,8 +365,8 @@ config_node = TradingNodeConfig(
 )
 
 node = TradingNode(config=config_node)
-node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 node.portfolio.set_specific_venue(IB_VENUE)
 
