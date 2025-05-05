@@ -14,6 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Base data client functionality.
+//!
+//! Defines the `DataClient` trait, the `DataClientAdapter` for managing subscriptions and requests,
+//! and utilities for constructing data responses.
 
 // Under development
 #![allow(dead_code)]
@@ -50,14 +53,23 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 
+/// Defines the interface for a data client, managing connections, subscriptions, and requests.
 pub trait DataClient {
+    /// Returns the unique identifier for this data client.
     fn client_id(&self) -> ClientId;
+    /// Returns the optional venue this client is associated with.
     fn venue(&self) -> Option<Venue>;
+    /// Starts the data client, establishing connections or resources as needed.
     fn start(&self);
+    /// Stops the data client, terminating any active connections.
     fn stop(&self);
+    /// Resets the data client to its initial state.
     fn reset(&self);
+    /// Disposes of client resources and cleans up.
     fn dispose(&self);
+    /// Returns `true` if the client is currently connected.
     fn is_connected(&self) -> bool;
+    /// Returns `true` if the client is currently disconnected.
     fn is_disconnected(&self) -> bool;
 
     // TODO: Move to separate trait
@@ -65,87 +77,217 @@ pub trait DataClient {
     // fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
     // fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
+    /// Subscribes to generic data types according to the command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to instruments list for the specified venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to data for a single instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to order book delta updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to top 10 order book depth updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to periodic order book snapshots for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to quote updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to trade updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to mark price updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to index price updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to bar updates of the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to status updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_instrument_status(
         &mut self,
         cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Subscribes to instrument close events for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from generic data types according to the command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from instruments list for the specified venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from data for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from order book delta updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from top 10 order book depth updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from periodic order book snapshots for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from quote updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from trade updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from mark price updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from index price updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from bar updates of the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from instrument status updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+    /// Unsubscribes from instrument close events for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     fn unsubscribe_instrument_close(
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
@@ -153,39 +295,69 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Sends a generic data request to the provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the data request fails.
     fn request_data(&self, request: &RequestData) -> anyhow::Result<()>;
 
-    /// Requests instruments data from the data provider.
+    /// Requests a list of instruments from the provider for a given venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instruments request fails.
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Requests instrument data from the data provider.
+    /// Requests detailed data for a single instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument request fails.
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Requests a book snapshot from the data provider.
+    /// Requests a snapshot of the order book for a specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the book snapshot request fails.
     fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Requests quotes data from the data provider.
+    /// Requests historical or streaming quote data for a specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the quotes request fails.
     fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Requests trades data from the data provider.
+    /// Requests historical or streaming trade data for a specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trades request fails.
     fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
         Ok(())
     }
 
-    /// Requests bars data from the data provider.
+    /// Requests historical or streaming bar data for a specified instrument and bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bars request fails.
     fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
         Ok(())
     }
 }
 
+/// Wraps a [`DataClient`], managing subscription state and forwarding commands.
 pub struct DataClientAdapter {
     client: Box<dyn DataClient>,
     clock: Rc<RefCell<dyn Clock>>,
@@ -265,7 +437,11 @@ impl Debug for DataClientAdapter {
 }
 
 impl DataClientAdapter {
-    /// Creates a new [`DataClientAdapter`] instance.
+    /// Creates a new [`DataClientAdapter`] with the given client and clock, initializing empty subscriptions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if internal subscription maps cannot be created.
     #[must_use]
     pub fn new(
         client_id: ClientId,
@@ -520,6 +696,11 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Subscribes to a generic data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscription fails.
     pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         if !self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.insert(cmd.data_type.clone());
@@ -528,6 +709,11 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Unsubscribes from a generic data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscription fails.
     pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         if self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.remove(&cmd.data_type);
@@ -538,26 +724,56 @@ impl DataClientAdapter {
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
+    /// Sends a data request to the underlying client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client request fails.
     pub fn request_data(&self, req: &RequestData) -> anyhow::Result<()> {
         self.client.request_data(req)
     }
 
+    /// Sends a single instrument request to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the request.
     pub fn request_instrument(&self, req: &RequestInstrument) -> anyhow::Result<()> {
         self.client.request_instrument(req)
     }
 
+    /// Sends a batch instruments request to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the request.
     pub fn request_instruments(&self, req: &RequestInstruments) -> anyhow::Result<()> {
         self.client.request_instruments(req)
     }
 
+    /// Sends a quotes request for a given instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the quotes request.
     pub fn request_quotes(&self, req: &RequestQuotes) -> anyhow::Result<()> {
         self.client.request_quotes(req)
     }
 
+    /// Sends a trades request for a given instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the trades request.
     pub fn request_trades(&self, req: &RequestTrades) -> anyhow::Result<()> {
         self.client.request_trades(req)
     }
 
+    /// Sends a bars request for a given instrument and bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the bars request.
     pub fn request_bars(&self, req: &RequestBars) -> anyhow::Result<()> {
         self.client.request_bars(req)
     }
@@ -566,6 +782,7 @@ impl DataClientAdapter {
     // TODO: Below handler style is deprecated (need to update incorrect CustomDataResponse)
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
+    /// Constructs a `CustomDataResponse` wrapping a single instrument.
     #[must_use]
     pub fn handle_instrument(
         &self,
@@ -588,6 +805,7 @@ impl DataClientAdapter {
         )
     }
 
+    /// Constructs a `CustomDataResponse` wrapping multiple instruments for a venue.
     #[must_use]
     pub fn handle_instruments(
         &self,
@@ -610,6 +828,7 @@ impl DataClientAdapter {
         )
     }
 
+    /// Constructs a `CustomDataResponse` carrying quote ticks for the specified instrument.
     #[must_use]
     pub fn handle_quotes(
         &self,
@@ -632,6 +851,7 @@ impl DataClientAdapter {
         )
     }
 
+    /// Constructs a `CustomDataResponse` carrying trade ticks for the specified instrument.
     #[must_use]
     pub fn handle_trades(
         &self,
@@ -654,6 +874,7 @@ impl DataClientAdapter {
         )
     }
 
+    /// Constructs a `CustomDataResponse` carrying bar data for the specified bar type.
     #[must_use]
     pub fn handle_bars(
         &self,
