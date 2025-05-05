@@ -38,6 +38,7 @@ mod tests;
 use std::{
     any::Any,
     cell::{Ref, RefCell},
+    collections::hash_map::Entry,
     num::NonZeroUsize,
     rc::Rc,
 };
@@ -814,47 +815,60 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        {
-            if !self.book_intervals.contains_key(&cmd.interval_ms) {
-                let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
-                let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id);
-
-                let snap_info = BookSnapshotInfo {
-                    instrument_id: cmd.instrument_id,
-                    venue: cmd.instrument_id.venue,
-                    is_composite: cmd.instrument_id.symbol.is_composite(),
-                    root: Ustr::from(cmd.instrument_id.symbol.root()),
-                    topic,
-                    interval_ms: cmd.interval_ms,
-                };
-
-                let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-                let mut start_time_ns = now_ns - (now_ns % interval_ns);
-
-                if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
-                    start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
-                }
-
-                let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
-                self.book_snapshotters
-                    .insert(cmd.instrument_id, snapshotter.clone());
-                let timer_name = snapshotter.timer_name;
-
-                let callback =
-                    TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
-
-                self.clock
-                    .borrow_mut()
-                    .set_timer_ns(
-                        &timer_name,
-                        interval_ns,
-                        start_time_ns.into(),
-                        None,
-                        Some(callback),
-                        None,
-                    )
-                    .expect(FAILED);
+        // Track snapshot intervals per instrument, and set up timer on first subscription
+        let first_for_interval = match self.book_intervals.entry(cmd.interval_ms) {
+            Entry::Vacant(e) => {
+                let mut set = AHashSet::new();
+                set.insert(cmd.instrument_id);
+                e.insert(set);
+                true
             }
+            Entry::Occupied(mut e) => {
+                e.get_mut().insert(cmd.instrument_id);
+                false
+            }
+        };
+
+        if first_for_interval {
+            // Initialize snapshotter and schedule its timer
+            let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
+            let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id);
+
+            let snap_info = BookSnapshotInfo {
+                instrument_id: cmd.instrument_id,
+                venue: cmd.instrument_id.venue,
+                is_composite: cmd.instrument_id.symbol.is_composite(),
+                root: Ustr::from(cmd.instrument_id.symbol.root()),
+                topic,
+                interval_ms: cmd.interval_ms,
+            };
+
+            let now_ns = self.clock.borrow().timestamp_ns().as_u64();
+            let mut start_time_ns = now_ns - (now_ns % interval_ns);
+
+            if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
+                start_time_ns += NANOSECONDS_IN_SECOND;
+            }
+
+            let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
+            self.book_snapshotters
+                .insert(cmd.instrument_id, snapshotter.clone());
+            let timer_name = snapshotter.timer_name;
+
+            let callback =
+                TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
+
+            self.clock
+                .borrow_mut()
+                .set_timer_ns(
+                    &timer_name,
+                    interval_ns,
+                    start_time_ns.into(),
+                    None,
+                    Some(callback),
+                    None,
+                )
+                .expect(FAILED);
         }
 
         self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
@@ -921,6 +935,18 @@ impl DataEngine {
         if !self.subscribed_book_deltas().contains(&cmd.instrument_id) {
             log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
             return Ok(());
+        }
+
+        // Remove instrument from interval tracking, and drop empty intervals
+        let mut to_remove = Vec::new();
+        for (interval, set) in self.book_intervals.iter_mut() {
+            if set.remove(&cmd.instrument_id) && set.is_empty() {
+                to_remove.push(*interval);
+            }
+        }
+
+        for interval in to_remove {
+            self.book_intervals.remove(&interval);
         }
 
         let topics = vec![
