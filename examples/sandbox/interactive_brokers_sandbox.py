@@ -16,9 +16,9 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
-
 # fmt: off
+from nautilus_trader.adapters.interactive_brokers.common import IB
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
@@ -74,7 +74,7 @@ config_node = TradingNodeConfig(
     trader_id="SANDBOX-001",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
+        IB: InteractiveBrokersDataClientConfig(
             ibg_host="127.0.0.1",
             ibg_port=7497,
             ibg_client_id=1,
