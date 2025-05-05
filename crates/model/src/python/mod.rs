@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 use pyo3::prelude::*;
@@ -38,6 +35,10 @@ pub mod types;
 /// # Errors
 ///
 /// Returns a `PyErr` if registering any module components fails.
+///
+/// # Panics
+///
+/// Panics if inserting classes or functions into the Python module unexpectedly fails.
 #[pymodule]
 pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types

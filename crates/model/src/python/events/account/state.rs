@@ -108,6 +108,10 @@ impl AccountState {
     /// # Errors
     ///
     /// Returns a `PyErr` if any required field is missing or type conversion fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any `unwrap` on parsed values fails (e.g., invalid formats or missing items).
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let dict = values.as_ref();
