@@ -139,6 +139,9 @@ impl Equity {
     }
 
     /// Creates a new [`Equity`] instance.
+    /// # Panics
+    ///
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

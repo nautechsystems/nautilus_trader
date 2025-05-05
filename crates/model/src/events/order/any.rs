@@ -273,7 +273,13 @@ impl OrderEventAny {
     }
 }
 
+/// Converts an `OrderEventAny` into an `OrderFilled`.
+///
+/// # Panics
+///
+/// Panics if `event` is not a `Filled` variant.
 impl From<OrderEventAny> for OrderFilled {
+    #[inline]
     fn from(event: OrderEventAny) -> OrderFilled {
         match event {
             OrderEventAny::Filled(event) => event,

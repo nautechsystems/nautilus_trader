@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};

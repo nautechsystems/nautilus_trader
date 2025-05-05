@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 //! Order types for the trading domain model.
 
 pub mod any;

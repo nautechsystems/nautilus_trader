@@ -473,6 +473,11 @@ impl Position {
     }
 
     #[must_use]
+    /// Calculates the notional value based on the last price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.base_currency` is `None`.
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
             Money::new(
@@ -488,6 +493,11 @@ impl Position {
     }
 
     #[must_use]
+    /// Returns the last `OrderFilled` event for the position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no events in the position.
     pub fn last_event(&self) -> OrderFilled {
         *self
             .events

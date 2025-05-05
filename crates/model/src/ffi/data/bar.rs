@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::c_char,

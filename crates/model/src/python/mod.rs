@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(clippy::missing_errors_doc)] // Allow missing errors docs for Python modules at this stage
+// Under development
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 //! Python bindings from [PyO3](https://pyo3.rs).
 

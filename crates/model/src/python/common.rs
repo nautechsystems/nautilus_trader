@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use indexmap::IndexMap;
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{

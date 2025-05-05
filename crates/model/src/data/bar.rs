@@ -77,6 +77,11 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
+///
+/// # Panics
+///
+/// Panics if computing the base `NaiveDate` or `DateTime` from `now` fails,
+/// or if the aggregation type is unsupported.
 pub fn get_time_bar_start(
     now: DateTime<Utc>,
     bar_type: &BarType,
@@ -264,6 +269,11 @@ impl BarSpecification {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
+    /// Returns the `TimeDelta` interval for this bar specification.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the aggregation method is not supported for time duration.
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
             BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),

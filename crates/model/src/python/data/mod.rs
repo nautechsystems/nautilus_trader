@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 //! Data types for the trading domain model.
 
 pub mod bar;

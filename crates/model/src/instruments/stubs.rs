@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use chrono::{TimeZone, Utc};
 use nautilus_core::UnixNanos;
 use rstest::*;

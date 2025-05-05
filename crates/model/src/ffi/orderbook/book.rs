@@ -195,6 +195,9 @@ pub extern "C" fn orderbook_has_ask(book: &mut OrderBook_API) -> u8 {
     u8::from(book.has_ask())
 }
 
+/// # Panics
+///
+/// Panics if there are no bid orders for best bid price.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
@@ -202,6 +205,9 @@ pub extern "C" fn orderbook_best_bid_price(book: &mut OrderBook_API) -> Price {
         .expect("Error: No bid orders for best bid price")
 }
 
+/// # Panics
+///
+/// Panics if there are no ask orders for best ask price.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
@@ -209,6 +215,9 @@ pub extern "C" fn orderbook_best_ask_price(book: &mut OrderBook_API) -> Price {
         .expect("Error: No ask orders for best ask price")
 }
 
+/// # Panics
+///
+/// Panics if there are no bid orders for best bid size.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity {
@@ -216,6 +225,9 @@ pub extern "C" fn orderbook_best_bid_size(book: &mut OrderBook_API) -> Quantity 
         .expect("Error: No bid orders for best bid size")
 }
 
+/// # Panics
+///
+/// Panics if there are no ask orders for best ask size.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity {
@@ -223,12 +235,18 @@ pub extern "C" fn orderbook_best_ask_size(book: &mut OrderBook_API) -> Quantity 
         .expect("Error: No ask orders for best ask size")
 }
 
+/// # Panics
+///
+/// Panics if unable to calculate spread (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
     book.spread()
         .expect("Error: Unable to calculate `spread` (no bid or ask)")
 }
 
+/// # Panics
+///
+/// Panics if unable to calculate midpoint (requires at least one bid and one ask).
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
     book.midpoint()

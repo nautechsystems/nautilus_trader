@@ -89,6 +89,10 @@ impl AccountAny {
     /// # Errors
     ///
     /// Returns an error if `events` is empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `events` is empty when unwrapping the first element.
     pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create `AccountAny`");

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use std::{
     ffi::c_char,
     ops::{Deref, DerefMut},
@@ -61,6 +64,12 @@ impl DerefMut for SyntheticInstrument_API {
     }
 }
 
+/// Changes the formula of the synthetic instrument.
+///
+/// # Panics
+///
+/// Panics if the formula update operation fails (`unwrap`).
+///
 /// # Safety
 ///
 /// - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.

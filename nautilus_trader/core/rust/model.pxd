@@ -1700,14 +1700,26 @@ cdef extern from "../includes/model.h":
 
     uint8_t venue_is_synthetic(const Venue_t *venue);
 
+    # Checks if a venue code exists in the internal map.
+    #
     # # Safety
     #
-    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the internal mutex `VENUE_MAP` is poisoned.
     uint8_t venue_code_exists(const char *code_ptr);
 
+    # Converts a UTF-8 C string pointer to a `Venue`.
+    #
     # # Safety
     #
-    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the code is not found or invalid (unwrap on `from_code`).
     Venue_t venue_from_cstr_code(const char *code_ptr);
 
     # Returns a Nautilus identifier from a C string pointer.
@@ -1719,6 +1731,12 @@ cdef extern from "../includes/model.h":
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *id);
 
+    # Changes the formula of the synthetic instrument.
+    #
+    # # Panics
+    #
+    # Panics if the formula update operation fails (`unwrap`).
+    #
     # # Safety
     #
     # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
@@ -1816,16 +1834,34 @@ cdef extern from "../includes/model.h":
 
     uint8_t orderbook_has_ask(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if there are no bid orders for best bid price.
     Price_t orderbook_best_bid_price(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if there are no ask orders for best ask price.
     Price_t orderbook_best_ask_price(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if there are no bid orders for best bid size.
     Quantity_t orderbook_best_bid_size(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if there are no ask orders for best ask size.
     Quantity_t orderbook_best_ask_size(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if unable to calculate spread (requires at least one bid and one ask).
     double orderbook_spread(OrderBook_API *book);
 
+    # # Panics
+    #
+    # Panics if unable to calculate midpoint (requires at least one bid and one ask).
     double orderbook_midpoint(OrderBook_API *book);
 
     double orderbook_get_avg_px_for_quantity(OrderBook_API *book,
@@ -1901,16 +1937,33 @@ cdef extern from "../includes/model.h":
 
     uint64_t currency_hash(const Currency_t *currency);
 
+    # Registers a currency in the global map for FFI.
+    #
+    # # Panics
+    #
+    # Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
     void currency_register(Currency_t currency);
 
+    # Checks whether a currency code exists in the global map for FFI.
+    #
+    # # Panics
+    #
+    # Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
+    #
     # # Safety
     #
-    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     uint8_t currency_exists(const char *code_ptr);
 
+    # Converts a C string pointer to a `Currency` for FFI.
+    #
+    # # Panics
+    #
+    # Panics if the provided code string is invalid or not found (`unwrap`).
+    #
     # # Safety
     #
-    # - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     Currency_t currency_from_cstr(const char *code_ptr);
 
     Money_t money_new(double amount, Currency_t currency);

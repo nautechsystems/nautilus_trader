@@ -62,6 +62,11 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
     currency.code.precomputed_hash()
 }
 
+/// Registers a currency in the global map for FFI.
+///
+/// # Panics
+///
+/// Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
 #[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
     CURRENCY_MAP
@@ -70,18 +75,30 @@ pub extern "C" fn currency_register(currency: Currency) {
         .insert(currency.code.to_string(), currency);
 }
 
+/// Checks whether a currency code exists in the global map for FFI.
+///
+/// # Panics
+///
+/// Panics if the internal mutex `CURRENCY_MAP` is poisoned when locking.
+///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
     let code = unsafe { cstr_as_str(code_ptr) };
     u8::from(CURRENCY_MAP.lock().unwrap().contains_key(code))
 }
 
+/// Converts a C string pointer to a `Currency` for FFI.
+///
+/// # Panics
+///
+/// Panics if the provided code string is invalid or not found (`unwrap`).
+///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
     let code = unsafe { cstr_as_str(code_ptr) };
