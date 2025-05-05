@@ -14,6 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Bar aggregation machinery.
+//!
+//! Defines the `BarAggregator` trait and core aggregation types (tick, volume, value, time),
+//! along with the `BarBuilder` and `BarAggregatorCore` helpers for constructing bars.
 
 use std::{any::Any, cell::RefCell, ops::Add, rc::Rc};
 
@@ -36,13 +39,17 @@ use nautilus_model::{
     types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
+/// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
+/// Implementors receive updates and produce completed bars via handlers, with support for partial and batch updates.
 pub trait BarAggregator: Any {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
     fn is_running(&self) -> bool;
     fn set_await_partial(&mut self, value: bool);
+    /// Enables or disables awaiting a partial bar before full aggregation.
     fn set_is_running(&mut self, value: bool);
+    /// Sets the running state of the aggregator (receiving updates when `true`).
     /// Updates the aggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
     /// Updates the aggregator with the given quote.
@@ -69,10 +76,14 @@ pub trait BarAggregator: Any {
         }
     }
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
+    /// Incorporates an existing bar and its volume into aggregation at the given init timestamp.
     fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos);
+    /// Starts batch mode, sending bars to the supplied handler for the given time context.
     fn stop_batch_update(&mut self);
+    /// Stops batch mode and restores the standard bar handler.
     fn await_partial(&self) -> bool;
-    /// Set the initial values for a partially completed bar.
+    /// Returns `true` if awaiting a partial bar before processing updates.
+    /// Sets the initial values for a partially completed bar.
     fn set_partial(&mut self, partial_bar: Bar);
     /// Stop the aggregator, e.g., cancel timers. Default is no-op.
     fn stop(&mut self) {}
@@ -142,6 +153,9 @@ impl BarBuilder {
     }
 
     /// Set the initial values for a partially completed bar.
+    /// # Panics
+    ///
+    /// Panics if internal values for `high` or `low` are unexpectedly missing.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         if self.partial_set {
             return; // Already updated
@@ -171,7 +185,10 @@ impl BarBuilder {
         self.initialized = true;
     }
 
-    /// Update the bar builder.
+    /// Updates the builder state with the given price, size, and event timestamp.
+    /// # Panics
+    ///
+    /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         if ts_event < self.ts_last {
             return; // Not applicable
@@ -197,6 +214,10 @@ impl BarBuilder {
         self.ts_last = ts_event;
     }
 
+    /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
+    /// # Panics
+    ///
+    /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         if ts_init < self.ts_last {
             return; // Not applicable
@@ -238,7 +259,11 @@ impl BarBuilder {
         self.build(self.ts_last, self.ts_last)
     }
 
-    /// Return the aggregated bar with the given closing timestamp, and reset.
+    /// Returns the aggregated bar for the given timestamps, then resets the builder.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `open`, `high`, `low`, or `close` values are `None` when building the bar.
     pub fn build(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) -> Bar {
         if self.open.is_none() {
             self.open = self.last_close;
@@ -322,19 +347,22 @@ where
         }
     }
 
+    /// Sets whether to await a partial bar before processing new updates.
     pub const fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
     }
 
+    /// Sets the running state of the aggregator (receives updates when `true`).
     pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
     }
 
+    /// Returns `true` if the aggregator is awaiting a partial bar to complete before aggregation.
     pub const fn await_partial(&self) -> bool {
         self.await_partial
     }
 
-    /// Set the initial values for a partially completed bar.
+    /// Initializes builder state with a partially completed bar.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         self.builder.set_partial(partial_bar);
     }
@@ -360,11 +388,13 @@ where
         }
     }
 
+    /// Enables batch update mode, sending bars to the provided handler instead of immediate dispatch.
     pub fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
         self.batch_mode = true;
         self.batch_handler = Some(handler);
     }
 
+    /// Disables batch update mode and restores the original bar handler.
     pub fn stop_batch_update(&mut self) {
         self.batch_mode = false;
 
@@ -801,6 +831,8 @@ pub struct NewBarCallback<H: FnMut(Bar)> {
 }
 
 impl<H: FnMut(Bar)> NewBarCallback<H> {
+    /// Creates a new callback that invokes the time bar aggregator on timer events.
+    #[must_use]
     pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
         Self { aggregator }
     }
@@ -877,7 +909,15 @@ where
         }
     }
 
-    /// Starts the time bar aggregator.
+    /// Starts the time bar aggregator, scheduling periodic bar builds on the clock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if setting up the underlying clock timer fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying clock timer registration fails.
     pub fn start(&mut self, callback: NewBarCallback<H>) -> anyhow::Result<()> {
         let now = self.clock.borrow().utc_now();
         let mut start_time = get_time_bar_start(now, &self.bar_type(), self.time_bars_origin);

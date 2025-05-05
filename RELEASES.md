@@ -28,8 +28,8 @@ None
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
-- Added errors docs for `common` crate
-- Added errors docs for `model` crate
+- Added errors and panics docs for `common` crate
+- Added errors and panics docs for `model` crate
 
 ### Deprecations
 None

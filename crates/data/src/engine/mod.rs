@@ -214,6 +214,10 @@ impl DataEngine {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a default client has already been registered.
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
         check_predicate_true(
             self.default_client.is_none(),
@@ -227,6 +231,7 @@ impl DataEngine {
         log::info!("Registered default client {client_id}");
     }
 
+    /// Starts all registered data clients.
     pub fn start(&self) {
         if let Some(default_client) = &self.default_client {
             default_client.start()
@@ -235,6 +240,7 @@ impl DataEngine {
         self.clients.values().for_each(|client| client.start());
     }
 
+    /// Stops all registered data clients.
     pub fn stop(&self) {
         if let Some(default_client) = &self.default_client {
             default_client.stop()
@@ -243,6 +249,7 @@ impl DataEngine {
         self.clients.values().for_each(|client| client.stop());
     }
 
+    /// Resets all registered data clients to their initial state.
     pub fn reset(&self) {
         if let Some(default_client) = &self.default_client {
             default_client.reset()
@@ -251,6 +258,7 @@ impl DataEngine {
         self.clients.values().for_each(|client| client.reset());
     }
 
+    /// Disposes the engine, stopping all clients and cancelling any timers.
     pub fn dispose(&self) {
         if let Some(default_client) = &self.default_client {
             default_client.dispose()
@@ -260,14 +268,25 @@ impl DataEngine {
         self.clock.borrow_mut().cancel_timers();
     }
 
+    /// Connects all registered data clients.
+    ///
+    /// # Panics
+    ///
+    /// Always, as not yet implemented.
     pub fn connect(&self) {
         todo!() //  Implement actual client connections for a live/sandbox context
     }
 
+    /// Disconnects all registered data clients.
+    ///
+    /// # Panics
+    ///
+    /// Always, as not yet implemented.
     pub fn disconnect(&self) {
         todo!() // Implement actual client connections for a live/sandbox context
     }
 
+    /// Returns `true` if all registered data clients are currently connected.
     #[must_use]
     pub fn check_connected(&self) -> bool {
         // All registered clients (including default) must be connected
@@ -276,6 +295,7 @@ impl DataEngine {
             .all(|client| client.is_connected())
     }
 
+    /// Returns `true` if all registered data clients are currently disconnected.
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
         // All registered clients (including default) must be disconnected
@@ -284,6 +304,7 @@ impl DataEngine {
             .all(|client| !client.is_connected())
     }
 
+    /// Returns a list of all registered client IDs, including the default client if set.
     #[must_use]
     pub fn registered_clients(&self) -> Vec<ClientId> {
         // Return all client IDs, including the default client if set
@@ -356,69 +377,93 @@ impl DataEngine {
         out
     }
 
+    /// Returns all custom data types currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_custom_data(&self) -> Vec<DataType> {
         self.collect_subscriptions(|client| &client.subscriptions_generic)
     }
 
+    /// Returns all instrument IDs currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_instruments(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument)
     }
 
+    /// Returns all instrument IDs for which book delta subscriptions exist.
     #[must_use]
     pub fn subscribed_book_deltas(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_book_deltas)
     }
 
+    /// Returns all instrument IDs for which book snapshot subscriptions exist.
     #[must_use]
     pub fn subscribed_book_snapshots(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_book_snapshots)
     }
 
+    /// Returns all instrument IDs for which quote subscriptions exist.
     #[must_use]
     pub fn subscribed_quotes(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_quotes)
     }
 
+    /// Returns all instrument IDs for which trade subscriptions exist.
     #[must_use]
     pub fn subscribed_trades(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_trades)
     }
 
+    /// Returns all bar types currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
         self.collect_subscriptions(|client| &client.subscriptions_bars)
     }
 
+    /// Returns all instrument IDs for which mark price subscriptions exist.
     #[must_use]
     pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_mark_prices)
     }
 
+    /// Returns all instrument IDs for which index price subscriptions exist.
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
     }
 
+    /// Returns all instrument IDs for which status subscriptions exist.
     #[must_use]
     pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
     }
 
+    /// Returns all instrument IDs for which instrument close subscriptions exist.
     #[must_use]
     pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
+    /// Called when the engine is started.
+    ///
+    /// # Panics
+    ///
+    /// Always, as not yet implemented.
     pub fn on_start(&mut self) {
         todo!()
     }
 
+    /// Called when the engine is stopped.
+    ///
+    /// # Panics
+    ///
+    /// Always, as not yet implemented.
     pub fn on_stop(&mut self) {
         todo!()
     }
 
+    /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
+    ///
+    /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: &DataCommand) {
         let result = match cmd {
             DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
@@ -431,6 +476,12 @@ impl DataEngine {
         }
     }
 
+    /// Handles a subscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
+    /// or if the underlying client operation fails.
     pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
         // Update internal engine state
         match &cmd {
@@ -462,6 +513,11 @@ impl DataEngine {
         Ok(())
     }
 
+    /// Handles an unsubscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client operation fails.
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
@@ -492,7 +548,12 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Sends a [`RequestCommand`] to an endpoint that must be a data client implementation.
+    /// Sends a [`RequestCommand`] to a suitable data client implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is found for the given client ID or venue,
+    /// or if the client fails to process the request.
     pub fn execute_request(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
         if let Some(cid) = req.client_id() {
@@ -519,6 +580,9 @@ impl DataEngine {
         }
     }
 
+    /// Processes a dynamically-typed data message.
+    ///
+    /// Currently supports `InstrumentAny`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
@@ -528,6 +592,7 @@ impl DataEngine {
         }
     }
 
+    /// Processes a `Data` enum instance, dispatching to appropriate handlers.
     pub fn process_data(&mut self, data: Data) {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
@@ -542,6 +607,7 @@ impl DataEngine {
         }
     }
 
+    /// Processes a `DataResponse`, handling and publishing the response message.
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
