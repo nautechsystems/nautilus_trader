@@ -23,13 +23,9 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use std::{
-    collections::HashSet,
-    fmt::{Debug, Display},
-    hash::{BuildHasher, Hash},
-};
+use std::fmt::{Debug, Display};
 
-use crate::collections::MapLike;
+use crate::collections::{MapLike, SetLike};
 
 /// A message prefix that can be used with calls to `expect` or other assertion-related functions.
 ///
@@ -464,20 +460,20 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_not_in_set<V, S: BuildHasher>(
-    member: &V,
-    set: &HashSet<V, S>,
+pub fn check_member_not_in_set<S>(
+    member: &S::Item,
+    set: &S,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash + Eq + Display + Clone,
+    S: SetLike,
 {
     if set.contains(member) {
         anyhow::bail!(
             "the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<S::Item>(),
+        );
     }
     Ok(())
 }
@@ -488,20 +484,20 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_in_set<V, S: BuildHasher>(
-    member: &V,
-    set: &HashSet<V, S>,
+pub fn check_member_in_set<S>(
+    member: &S::Item,
+    set: &S,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash + Eq + Display + Clone,
+    S: SetLike,
 {
     if !set.contains(member) {
         anyhow::bail!(
             "the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<S::Item>(),
+        );
     }
     Ok(())
 }
@@ -511,7 +507,10 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fmt::Display};
+    use std::{
+        collections::{HashMap, HashSet},
+        fmt::Display,
+    };
 
     use rstest::rstest;
 
