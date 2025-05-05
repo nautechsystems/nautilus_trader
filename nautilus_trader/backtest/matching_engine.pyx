@@ -1999,6 +1999,7 @@ cdef class OrderMatchingEngine:
             self.cancel_order(order)
             return
 
+        # Check MARKET order on exhausted book volume
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_MBP
@@ -2030,6 +2031,39 @@ cdef class OrderMatchingEngine:
                 position=position,
             )
 
+        # Check LIMIT order on exhausted book volume
+        if (
+            order.is_open_c()
+            and self.book_type == BookType.L1_MBP
+            and order.liquidity_side == LiquiditySide.TAKER  # Marketable limit order
+            and (
+            order.order_type == OrderType.LIMIT
+            or order.order_type == OrderType.LIMIT_IF_TOUCHED
+            or order.order_type == OrderType.MARKET_TO_LIMIT
+            or order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ) and ((order.side == OrderSide.BUY and order.price > self._core.ask) or (order.side == OrderSide.SELL and order.price < self._core.bid))
+        ):
+            # Exhausted simulated book volume (continue aggressive filling into next level)
+            # This is a very basic implementation of slipping by a single tick, in the future
+            # we will implement more detailed fill modeling.
+            if order.side == OrderSide.BUY:
+                fill_px = last_fill_px.add(self.instrument.price_increment)
+            elif order.side == OrderSide.SELL:
+                fill_px = last_fill_px.sub(self.instrument.price_increment)
+            else:
+                raise ValueError(  # pragma: no cover (design-time error)
+                    f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
+                )
+
+            self.fill_order(
+                order=order,
+                last_px=fill_px,
+                last_qty=order.leaves_qty,
+                liquidity_side=order.liquidity_side,
+                venue_position_id=venue_position_id,
+                position=position,
+            )
 
     cpdef void fill_order(
         self,

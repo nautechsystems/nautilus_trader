@@ -12,6 +12,7 @@ None
 
 ### Internal Improvements
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
+- Improved fill behavior for marketable limit orders in `L1_MBP` books, will now slip one tick and fill the remainder like a market order
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
 - Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
 - Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
