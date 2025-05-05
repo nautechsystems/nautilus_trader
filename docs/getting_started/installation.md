@@ -15,13 +15,14 @@ NautilusTrader may work on other platforms, but only those listed above are regu
 
 We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
 
-There are two supported ways to install:
+**There are two supported ways to install**:
 
-1. Pre-built binary wheel from PyPI or the Nautech Systems package index.
+1. Pre-built binary wheel from PyPI *or* the Nautech Systems package index.
 2. Build from source.
 
 :::tip
 We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
+
 Conda and other Python distributions *may* work but aren’t officially supported.
 :::
 
