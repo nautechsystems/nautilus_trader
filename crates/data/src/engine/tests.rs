@@ -113,7 +113,7 @@ fn data_client(
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
     let client = Box::new(MockDataClient::new(cache, client_id, venue));
-    DataClientAdapter::new(client_id, venue, true, true, client, clock)
+    DataClientAdapter::new(client_id, Some(venue), true, true, client, clock)
 }
 
 #[rstest]
@@ -128,7 +128,7 @@ fn test_execute_subscribe_custom_data(
     let data_type = DataType::new(stringify!(String), None);
     let cmd = SubscribeData::new(
         Some(client_id),
-        Some(venue),
+        venue,
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
@@ -148,7 +148,7 @@ fn test_execute_subscribe_custom_data(
 
     let cmd = UnsubscribeData::new(
         Some(client_id),
-        Some(venue),
+        venue,
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
@@ -180,7 +180,7 @@ fn test_execute_subscribe_book_deltas(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -202,7 +202,7 @@ fn test_execute_subscribe_book_deltas(
     let cmd = UnsubscribeBookDeltas::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -234,7 +234,7 @@ fn test_execute_subscribe_book_snapshots(
         audusd_sim.id,
         BookType::L2_MBP,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -256,7 +256,7 @@ fn test_execute_subscribe_book_snapshots(
     let cmd = UnsubscribeBookSnapshots::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -286,7 +286,7 @@ fn test_execute_subscribe_instrument(
     let cmd = SubscribeInstrument::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -306,7 +306,7 @@ fn test_execute_subscribe_instrument(
     let cmd = UnsubscribeInstrument::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -336,7 +336,7 @@ fn test_execute_subscribe_quotes(
     let cmd = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -356,7 +356,7 @@ fn test_execute_subscribe_quotes(
     let cmd = UnsubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -386,7 +386,7 @@ fn test_execute_subscribe_trades(
     let cmd = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -406,7 +406,7 @@ fn test_execute_subscribe_trades(
     let cmd = UnsubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -443,7 +443,7 @@ fn test_execute_subscribe_bars(
     let cmd = SubscribeBars::new(
         bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         false,
@@ -459,7 +459,7 @@ fn test_execute_subscribe_bars(
     let cmd = UnsubscribeBars::new(
         bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -485,7 +485,7 @@ fn test_execute_subscribe_mark_prices(
     let cmd = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -505,7 +505,7 @@ fn test_execute_subscribe_mark_prices(
     let cmd = UnsubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -535,7 +535,7 @@ fn test_execute_subscribe_index_prices(
     let cmd = SubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -555,7 +555,7 @@ fn test_execute_subscribe_index_prices(
     let cmd = UnsubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -587,7 +587,7 @@ fn test_process_instrument(
     let cmd = SubscribeInstrument::new(
         audusd_sim.id(),
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -628,7 +628,7 @@ fn test_process_book_delta(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -667,7 +667,7 @@ fn test_process_book_deltas(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -708,7 +708,7 @@ fn test_process_book_depth10(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -747,7 +747,7 @@ fn test_process_quote_tick(
     let cmd = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -785,7 +785,7 @@ fn test_process_trade_tick(
     let cmd = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -823,7 +823,7 @@ fn test_process_mark_price(
     let cmd = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -877,7 +877,7 @@ fn test_process_index_price(
     let cmd = SubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -925,7 +925,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     let cmd = SubscribeBars::new(
         bar.bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         false,

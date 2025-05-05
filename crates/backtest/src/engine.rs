@@ -308,6 +308,7 @@ impl BacktestEngine {
         todo!("implement add_data_client_if_not_exists")
     }
 
+    // TODO: We might want venue to be optional for multi-venue clients
     pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
         let client_id = ClientId::from(venue.as_str());
         if !self
@@ -320,7 +321,7 @@ impl BacktestEngine {
                 BacktestDataClient::new(client_id, venue, self.kernel.cache.clone());
             let data_client_adapter = DataClientAdapter::new(
                 client_id,
-                venue,
+                Some(venue), // TBD
                 false,
                 false,
                 Box::new(backtest_client),

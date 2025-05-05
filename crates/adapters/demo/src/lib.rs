@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-
 use std::{cell::RefCell, net::SocketAddr, pin::Pin, rc::Rc};
 
 use data_client::MockDataClient;
@@ -25,10 +21,7 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, LiveClock},
     messages::data::{DataCommand, DataResponse},
-    msgbus::{
-        handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
-        register,
-    },
+    msgbus::handler::{ShareableMessageHandler, TypedMessageHandler},
 };
 use nautilus_data::{
     client::{DataClient, DataClientAdapter},
@@ -57,7 +50,7 @@ pub async fn init_data_engine(
 
     let adapter = DataClientAdapter::new(
         client.client_id(),
-        Venue::from_str_unchecked("yooohooo"),
+        Some(Venue::from_str_unchecked("DEMO")),
         false,
         false,
         client,
@@ -70,7 +63,7 @@ pub async fn init_data_engine(
     let data_engine = Rc::new(RefCell::new(data_engine));
 
     let data_engine_clone = data_engine.clone();
-    let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+    let _handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
         move |cmd: &DataCommand| data_engine_clone.borrow_mut().execute(cmd),
     )));
 

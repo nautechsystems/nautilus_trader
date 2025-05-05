@@ -190,7 +190,7 @@ pub struct DataClientAdapter {
     client: Box<dyn DataClient>,
     clock: Rc<RefCell<dyn Clock>>,
     pub client_id: ClientId,
-    pub venue: Venue,
+    pub venue: Option<Venue>,
     pub handles_book_deltas: bool,
     pub handles_book_snapshots: bool,
     pub subscriptions_generic: AHashSet<DataType>,
@@ -269,7 +269,7 @@ impl DataClientAdapter {
     #[must_use]
     pub fn new(
         client_id: ClientId,
-        venue: Venue,
+        venue: Option<Venue>,
         handles_order_book_deltas: bool,
         handles_order_book_snapshots: bool,
         client: Box<dyn DataClient>,

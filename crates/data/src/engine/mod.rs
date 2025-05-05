@@ -65,7 +65,7 @@ use nautilus_common::{
     timer::TimeEventCallback,
 };
 use nautilus_core::{
-    correctness::{FAILED, check_key_in_map, check_key_not_in_map},
+    correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, millis_to_nanos},
 };
 use nautilus_model::{
@@ -120,12 +120,21 @@ impl DataEngine {
         cache: Rc<RefCell<Cache>>,
         config: Option<DataEngineConfig>,
     ) -> Self {
+        let config = config.unwrap_or_default();
+
+        let external_clients: AHashSet<ClientId> = config
+            .external_clients
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
         Self {
             clock,
             cache,
             clients: IndexMap::new(),
             default_client: None,
-            external_clients: AHashSet::new(),
+            external_clients,
             catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
@@ -137,7 +146,7 @@ impl DataEngine {
             _synthetic_trade_feeds: AHashMap::new(),
             buffered_deltas_map: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
-            config: config.unwrap_or_default(),
+            config,
         }
     }
 
@@ -161,7 +170,8 @@ impl DataEngine {
         log::info!("Registered catalog <{name}>");
     }
 
-    /// Registers a new [`DataClientAdapter`]
+    /// Registers a new [`DataClientAdapter`].
+    ///
     ///
     /// # Panics
     ///
@@ -176,8 +186,13 @@ impl DataEngine {
             log::info!("Set client {client_id} routing for {routing}");
         }
 
-        self.clients.insert(client_id, client);
-        log::info!("Registered client {client_id}");
+        if client.venue.is_none() && self.default_client.is_none() {
+            self.default_client = Some(client);
+            log::info!("Registered client {client_id} for default routing");
+        } else {
+            self.clients.insert(client_id, client);
+            log::info!("Registered client {client_id}");
+        };
     }
 
     /// Deregisters a [`DataClientAdapter`]
@@ -199,27 +214,48 @@ impl DataEngine {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
-    /// TODO: change this to suit message bus behaviour
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
+        check_predicate_true(
+            self.default_client.is_none(),
+            "default client already registered",
+        )
+        .expect(FAILED);
+
         let client_id = client.client_id();
 
         self.default_client = Some(client);
         log::info!("Registered default client {client_id}");
     }
 
-    pub fn start(self) {
+    pub fn start(&self) {
+        if let Some(default_client) = &self.default_client {
+            default_client.start()
+        }
+
         self.clients.values().for_each(|client| client.start());
     }
 
-    pub fn stop(self) {
+    pub fn stop(&self) {
+        if let Some(default_client) = &self.default_client {
+            default_client.stop()
+        }
+
         self.clients.values().for_each(|client| client.stop());
     }
 
-    pub fn reset(self) {
+    pub fn reset(&self) {
+        if let Some(default_client) = &self.default_client {
+            default_client.reset()
+        }
+
         self.clients.values().for_each(|client| client.reset());
     }
 
-    pub fn dispose(self) {
+    pub fn dispose(&self) {
+        if let Some(default_client) = &self.default_client {
+            default_client.dispose()
+        }
+
         self.clients.values().for_each(|client| client.dispose());
         self.clock.borrow_mut().cancel_timers();
     }
@@ -234,17 +270,27 @@ impl DataEngine {
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|client| client.is_connected())
+        // All registered clients (including default) must be connected
+        self.get_clients()
+            .iter()
+            .all(|client| client.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|client| !client.is_connected())
+        // All registered clients (including default) must be disconnected
+        self.get_clients()
+            .iter()
+            .all(|client| !client.is_connected())
     }
 
     #[must_use]
     pub fn registered_clients(&self) -> Vec<ClientId> {
-        self.clients.keys().copied().collect()
+        // Return all client IDs, including the default client if set
+        self.get_clients()
+            .into_iter()
+            .map(|client| client.client_id())
+            .collect()
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
@@ -255,7 +301,8 @@ impl DataEngine {
         T: Clone,
     {
         let mut subs = Vec::new();
-        for client in self.clients.values() {
+
+        for client in self.get_clients() {
             subs.extend(get_subs(client).iter().cloned());
         }
         subs
@@ -266,21 +313,47 @@ impl DataEngine {
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
-        if let Some(client_id) = client_id {
+        if let Some(cid) = client_id {
             // Try to get client directly from clients map
-            if self.clients.contains_key(client_id) {
-                return self.clients.get_mut(client_id);
+            return self.clients.get_mut(cid);
+        }
+
+        if let Some(v) = venue {
+            if let Some(mapped_cid) = self.routing_map.get(v) {
+                return self.clients.get_mut(mapped_cid);
             }
         }
 
-        if let Some(venue) = venue {
-            // If not found, try to get client_id from routing map
-            if let Some(mapped_client_id) = self.routing_map.get(venue) {
-                return self.clients.get_mut(mapped_client_id);
-            }
+        self.get_default_client()
+    }
+
+    fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
+        self.default_client.as_mut()
+    }
+
+    fn get_clients(&self) -> Vec<&DataClientAdapter> {
+        let (default_opt, clients_map) = (&self.default_client, &self.clients);
+
+        let mut out: Vec<&DataClientAdapter> = clients_map.values().collect();
+
+        if let Some(default) = default_opt {
+            out.push(default);
         }
 
-        None
+        out
+    }
+
+    #[allow(dead_code)] // Under development
+    fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
+        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
+
+        let mut out: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
+
+        if let Some(default) = default_opt {
+            out.push(default);
+        }
+
+        out
     }
 
     #[must_use]
@@ -338,11 +411,11 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
-    pub fn on_start(self) {
+    pub fn on_start(&mut self) {
         todo!()
     }
 
-    pub fn on_stop(self) {
+    pub fn on_stop(&mut self) {
         todo!()
     }
 

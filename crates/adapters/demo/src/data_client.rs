@@ -18,7 +18,7 @@ use std::{net::SocketAddr, pin::Pin, sync::Arc};
 use futures::{Stream, StreamExt};
 use nautilus_common::{
     messages::data::{
-        self, CustomDataResponse, DataResponse, RequestData, SubscribeData, UnsubscribeData,
+        CustomDataResponse, DataResponse, RequestData, SubscribeData, UnsubscribeData,
     },
     runtime,
 };
