@@ -16,6 +16,7 @@
 
 # fmt: off
 
+from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
@@ -63,7 +64,7 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
+        IB: InteractiveBrokersDataClientConfig(
             ibg_host="127.0.0.1",
             ibg_port=7497,
             ibg_client_id=1,
@@ -74,7 +75,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "IB": InteractiveBrokersExecClientConfig(
+        IB: InteractiveBrokersExecClientConfig(
             ibg_host="127.0.0.1",
             ibg_port=7497,
             ibg_client_id=1,
@@ -114,8 +115,8 @@ strategy = SubscribeStrategy(config=strategy_config)
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 
 

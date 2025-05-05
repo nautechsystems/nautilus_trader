@@ -97,7 +97,7 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
+        IB: InteractiveBrokersDataClientConfig(
             ibg_client_id=1,
             handle_revised_bars=False,
             use_regular_trading_hours=True,
@@ -107,7 +107,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "IB": InteractiveBrokersExecClientConfig(
+        IB: InteractiveBrokersExecClientConfig(
             ibg_client_id=1,
             account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
             dockerized_gateway=dockerized_gateway,

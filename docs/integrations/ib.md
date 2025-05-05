@@ -356,8 +356,8 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
-    data_clients={"IB": data_client_config},
-    exec_clients={"IB": exec_client_config},
+    data_clients={IB: data_client_config},
+    exec_clients={IB: exec_client_config},
     data_engine=LiveDataEngineConfig(
         time_bars_timestamp_on_close=False,  # Use opening time as `ts_event`, as per IB standard
         validate_data_sequence=True,         # Discards bars received out of sequence
