@@ -13,8 +13,16 @@ NautilusTrader is officially supported for Python 3.11-3.13 on the following 64-
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
 :::
 
+We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
+
+There are two supported ways to install:
+
+1. Pre-built binary wheel from PyPI or the Nautech Systems package index.
+2. Build from source.
+
 :::tip
-We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
+We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
+Conda and other Python distributions *may* work but aren’t officially supported.
 :::
 
 ## From PyPI
@@ -119,8 +127,7 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 ## From Source
 
-It's possible to install from source using pip if you first install the build dependencies
-as specified in the `pyproject.toml`. We highly recommend installing using [uv](https://docs.astral.sh/uv) as below.
+It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:

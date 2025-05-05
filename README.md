@@ -191,9 +191,19 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Installation
 
-### From PyPI
+We recommend using the latest supported version of Python and installing [nautilus_trader](https://pypi.org/project/nautilus_trader/) inside a virtual environment to isolate dependencies.
 
-We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
+There are two supported ways to install:
+
+1. Pre-built binary wheel from PyPI or the Nautech Systems package index.
+2. Build from source.
+
+> [!TIP]
+>
+> We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
+> Conda and other Python distributions *may* work but aren’t officially supported.
+
+### From PyPI
 
 To install the latest binary wheel (or sdist package) from PyPI using Python's pip package manager:
 
@@ -279,8 +289,7 @@ curl -s https://packages.nautechsystems.io/simple/nautilus-trader/index.html | g
 
 ### From Source
 
-It's possible to install from source using pip if you first install the build dependencies
-as specified in the `pyproject.toml`. We highly recommend installing using [uv](https://docs.astral.sh/uv) as below.
+It's possible to install from source using pip if you first install the build dependencies as specified in the `pyproject.toml`.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:
