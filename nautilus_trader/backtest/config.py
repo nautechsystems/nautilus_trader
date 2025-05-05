@@ -25,7 +25,11 @@ from nautilus_trader.common import Environment
 from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import NonNegativeInt
+from nautilus_trader.common.config import msgspec_encoding_hook
+from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
@@ -143,8 +147,10 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     bar_execution: bool = True
     bar_adaptive_high_low_ordering: bool = False
     trade_execution: bool = False
-    # fill_model: FillModel | None = None  # TODO: Implement
     modules: list[ImportableActorConfig] | None = None
+    fill_model: ImportableFillModelConfig | None = None
+    latency_model: ImportableLatencyModelConfig | None = None
+    fee_model: ImportableFeeModelConfig | None = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
@@ -412,6 +418,257 @@ class SimulationModuleConfig(ActorConfig, frozen=True):
     """
     Configuration for ``SimulationModule`` instances.
     """
+
+
+class FillModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for ``FillModel`` instances.
+
+    Parameters
+    ----------
+    prob_fill_on_limit : float, default 1.0
+        The probability of limit order filling if the market rests on its price.
+    prob_fill_on_stop : float, default 1.0
+        The probability of stop orders filling if the market rests on its price.
+    prob_slippage : float, default 0.0
+        The probability of order fill prices slipping by one tick.
+    random_seed : int, optional
+        The random seed (if None then no random seed).
+
+    """
+
+    prob_fill_on_limit: float = 1.0
+    prob_fill_on_stop: float = 1.0
+    prob_slippage: float = 0.0
+    random_seed: int | None = None
+
+
+class ImportableFillModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for a fill model instance.
+
+    Parameters
+    ----------
+    fill_model_path : str
+        The fully qualified name of the fill model class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : dict[str, Any]
+        The fill model configuration.
+
+    """
+
+    fill_model_path: str
+    config_path: str
+    config: dict[str, Any]
+
+
+class FillModelFactory:
+    """
+    Provides fill model creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(config: ImportableFillModelConfig):
+        """
+        Create a fill model from the given configuration.
+
+        Parameters
+        ----------
+        config : ImportableFillModelConfig
+            The configuration for the building step.
+
+        Returns
+        -------
+        FillModel
+
+        Raises
+        ------
+        TypeError
+            If `config` is not of type `ImportableFillModelConfig`.
+
+        """
+        PyCondition.type(config, ImportableFillModelConfig, "config")
+        fill_model_cls = resolve_path(config.fill_model_path)
+        config_cls = resolve_config_path(config.config_path)
+        json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
+        config_obj = config_cls.parse(json)
+        return fill_model_cls(config=config_obj)
+
+
+class LatencyModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for ``LatencyModel`` instances.
+
+    Parameters
+    ----------
+    base_latency_nanos : int, default 1_000_000_000
+        The base latency (nanoseconds) for the model.
+    insert_latency_nanos : int, default 0
+        The order insert latency (nanoseconds) for the model.
+    update_latency_nanos : int, default 0
+        The order update latency (nanoseconds) for the model.
+    cancel_latency_nanos : int, default 0
+        The order cancel latency (nanoseconds) for the model.
+
+    """
+
+    base_latency_nanos: NonNegativeInt = 1_000_000_000  # 1 millisecond in nanoseconds
+    insert_latency_nanos: NonNegativeInt = 0
+    update_latency_nanos: NonNegativeInt = 0
+    cancel_latency_nanos: NonNegativeInt = 0
+
+
+class ImportableLatencyModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for a latency model instance.
+
+    Parameters
+    ----------
+    latency_model_path : str
+        The fully qualified name of the latency model class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : dict[str, Any]
+        The latency model configuration.
+
+    """
+
+    latency_model_path: str
+    config_path: str
+    config: dict[str, Any]
+
+
+class LatencyModelFactory:
+    """
+    Provides latency model creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(config: ImportableLatencyModelConfig):
+        """
+        Create a latency model from the given configuration.
+
+        Parameters
+        ----------
+        config : ImportableLatencyModelConfig
+            The configuration for the building step.
+
+        Returns
+        -------
+        LatencyModel
+
+        Raises
+        ------
+        TypeError
+            If `config` is not of type `ImportableLatencyModelConfig`.
+
+        """
+        PyCondition.type(config, ImportableLatencyModelConfig, "config")
+        latency_model_cls = resolve_path(config.latency_model_path)
+        config_cls = resolve_config_path(config.config_path)
+        json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
+        config_obj = config_cls.parse(json)
+        return latency_model_cls(config=config_obj)
+
+
+class FeeModelConfig(NautilusConfig, frozen=True):
+    """
+    Base configuration for ``FeeModel`` instances.
+    """
+
+
+class MakerTakerFeeModelConfig(FeeModelConfig, frozen=True):
+    """
+    Configuration for ``MakerTakerFeeModel`` instances.
+
+    This fee model uses the maker/taker fees defined on the instrument.
+
+    """
+
+
+class FixedFeeModelConfig(FeeModelConfig, frozen=True):
+    """
+    Configuration for ``FixedFeeModel`` instances.
+
+    Parameters
+    ----------
+    commission : Money | str
+        The fixed commission amount for trades.
+    charge_commission_once : bool, default True
+        Whether to charge the commission once per order or per fill.
+
+    """
+
+    commission: str
+    charge_commission_once: bool = True
+
+
+class PerContractFeeModelConfig(FeeModelConfig, frozen=True):
+    """
+    Configuration for ``PerContractFeeModel`` instances.
+
+    Parameters
+    ----------
+    commission : Money | str
+        The commission amount per contract.
+
+    """
+
+    commission: str
+
+
+class ImportableFeeModelConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for a fee model instance.
+
+    Parameters
+    ----------
+    fee_model_path : str
+        The fully qualified name of the fee model class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : dict[str, Any]
+        The fee model configuration.
+
+    """
+
+    fee_model_path: str
+    config_path: str
+    config: dict[str, Any]
+
+
+class FeeModelFactory:
+    """
+    Provides fee model creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(config: ImportableFeeModelConfig):
+        """
+        Create a fee model from the given configuration.
+
+        Parameters
+        ----------
+        config : ImportableFeeModelConfig
+            The configuration for the building step.
+
+        Returns
+        -------
+        FeeModel
+
+        Raises
+        ------
+        TypeError
+            If `config` is not of type `ImportableFeeModelConfig`.
+
+        """
+        PyCondition.type(config, ImportableFeeModelConfig, "config")
+        fee_model_cls = resolve_path(config.fee_model_path)
+        config_cls = resolve_config_path(config.config_path)
+        json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
+        config_obj = config_cls.parse(json)
+        return fee_model_cls(config=config_obj)
 
 
 class FXRolloverInterestConfig(SimulationModuleConfig, frozen=True):

@@ -21,8 +21,14 @@ import pandas as pd
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.config import FeeModelFactory
+from nautilus_trader.backtest.config import FillModelFactory
+from nautilus_trader.backtest.config import LatencyModelFactory
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.backtest.models import FeeModel
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import LogGuard
@@ -246,6 +252,9 @@ class BacktestNode:
                 book_type=book_type_from_str(config.book_type),
                 routing=config.routing,
                 modules=[ActorFactory.create(module) for module in (config.modules or [])],
+                fill_model=get_fill_model(config),
+                fee_model=get_fee_model(config),
+                latency_model=get_latency_model(config),
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
                 support_gtd_orders=config.support_gtd_orders,
@@ -584,3 +593,33 @@ def get_leverages(config: BacktestVenueConfig) -> dict[InstrumentId, Decimal]:
         if config.leverages
         else {}
     )
+
+
+def get_fill_model(config: BacktestVenueConfig) -> FillModel | None:
+    """
+    Create a FillModel from an ImportableFillModelConfig.
+    """
+    if config.fill_model is None:
+        return None
+
+    return FillModelFactory.create(config.fill_model)
+
+
+def get_latency_model(config: BacktestVenueConfig) -> LatencyModel | None:
+    """
+    Create a LatencyModel from an ImportableLatencyModelConfig.
+    """
+    if config.latency_model is None:
+        return None
+
+    return LatencyModelFactory.create(config.latency_model)
+
+
+def get_fee_model(config: BacktestVenueConfig) -> FeeModel | None:
+    """
+    Create a FeeModel from an ImportableFeeModelConfig.
+    """
+    if config.fee_model is None:
+        return None
+
+    return FeeModelFactory.create(config.fee_model)
