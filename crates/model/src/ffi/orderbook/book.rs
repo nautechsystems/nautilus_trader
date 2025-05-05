@@ -277,8 +277,7 @@ pub extern "C" fn orderbook_get_quantity_for_price(
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If book type is not `L1_MBP`.
+/// Panics if book type is not `L1_MBP`.
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &QuoteTick) {
     book.update_quote_tick(quote).unwrap();
@@ -288,8 +287,7 @@ pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If book type is not `L1_MBP`.
+/// Panics if book type is not `L1_MBP`.
 #[unsafe(no_mangle)]
 pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, trade: &TradeTick) {
     book.update_trade_tick(trade).unwrap();
