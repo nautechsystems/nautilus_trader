@@ -21,7 +21,7 @@
 ///
 /// Panics if the input string is not a valid decimal or scientific notation format.
 #[must_use]
-#[allow(clippy::cast_possible_truncation, clippy::missing_panics_doc)]
+#[allow(clippy::cast_possible_truncation)]
 pub fn precision_from_str(s: &str) -> u8 {
     let s = s.trim().to_ascii_lowercase();
 

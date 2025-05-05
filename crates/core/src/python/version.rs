@@ -13,9 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(clippy::missing_panics_doc, clippy::manual_let_else)]
+#![allow(clippy::manual_let_else)]
 use pyo3::{prelude::*, types::PyTuple};
 
+/// Retrieves the Python interpreter version as a string.
+///
+/// # Panics
+///
+/// Panics if `version_info` cannot be downcast to a tuple or if tuple elements are missing.
 #[must_use]
 pub fn get_python_version() -> String {
     Python::with_gil(|py| {
