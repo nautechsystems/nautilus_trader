@@ -1269,6 +1269,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `AccountType` variant.
     AccountType account_type_from_cstr(const char *ptr);
 
     const char *aggregation_source_to_cstr(AggregationSource value);
@@ -1287,6 +1291,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `AggregationSource` variant.
     AggressorSide aggressor_side_from_cstr(const char *ptr);
 
     const char *asset_class_to_cstr(AssetClass value);

@@ -38,6 +38,10 @@ pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AccountType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn account_type_from_cstr(ptr: *const c_char) -> AccountType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -72,6 +76,10 @@ pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char 
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AggregationSource` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aggressor_side_from_cstr(ptr: *const c_char) -> AggressorSide {
     let value = unsafe { cstr_as_str(ptr) };

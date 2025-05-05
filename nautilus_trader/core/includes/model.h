@@ -2127,6 +2127,10 @@ const char *account_type_to_cstr(enum AccountType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `AccountType` variant.
  */
 enum AccountType account_type_from_cstr(const char *ptr);
 
@@ -2149,6 +2153,10 @@ const char *aggressor_side_to_cstr(enum AggressorSide value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `AggregationSource` variant.
  */
 enum AggressorSide aggressor_side_from_cstr(const char *ptr);
 
