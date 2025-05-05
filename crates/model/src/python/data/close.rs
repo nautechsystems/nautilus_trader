@@ -176,7 +176,11 @@ impl InstrumentClose {
 }
 
 impl InstrumentClose {
-    /// Create a [`InstrumentClose`] from a PyObject reference.
+    /// Creates a new [`InstrumentClose`] from a Python object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if retrieving any attribute or converting types fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id = obj.getattr("instrument_id")?.extract::<InstrumentId>()?;
         let close_price = obj.getattr("close_price")?.extract::<Price>()?;
@@ -196,7 +200,11 @@ impl InstrumentClose {
     }
 }
 
-/// Transforms the given `data` Python objects into a vector of [`InstrumentClose`] objects.
+/// Transforms the given Python objects into a vector of [`InstrumentClose`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if any element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_closes(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentClose>> {

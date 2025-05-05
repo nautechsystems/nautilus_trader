@@ -34,6 +34,11 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
+/// Converts a Python order object into an [`OrderAny`] enum.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction fails or the order type is unsupported.
 pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
     if order_type == OrderType::Limit {
@@ -68,6 +73,11 @@ pub fn pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> 
     }
 }
 
+/// Converts an [`OrderAny`] enum into a Python object.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if conversion to a Python object fails.
 pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<PyObject> {
     match order {
         OrderAny::Limit(limit_order) => limit_order.into_py_any(py),

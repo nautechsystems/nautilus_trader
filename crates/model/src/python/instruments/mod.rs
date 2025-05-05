@@ -36,6 +36,11 @@ pub mod futures_spread;
 pub mod option_contract;
 pub mod option_spread;
 
+/// Converts an [`InstrumentAny`] into a Python object.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if conversion to a Python object fails.
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
         InstrumentAny::Betting(inst) => inst.into_py_any(py),
@@ -52,6 +57,11 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
     }
 }
 
+/// Converts a Python object into an [`InstrumentAny`] enum.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction fails or the instrument type is unsupported.
 pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_str")?.extract::<&str>(py)? {
         stringify!(BettingInstrument) => Ok(InstrumentAny::Betting(

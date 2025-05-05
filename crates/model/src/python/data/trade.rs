@@ -48,7 +48,11 @@ use crate::{
 };
 
 impl TradeTick {
-    /// Create a new [`TradeTick`] extracted from the given [`PyAny`].
+    /// Creates a new [`TradeTick`] from a Python object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if attribute extraction or type conversion fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
