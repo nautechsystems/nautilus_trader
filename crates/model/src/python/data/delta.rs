@@ -42,7 +42,11 @@ use crate::{
 };
 
 impl OrderBookDelta {
-    /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
+    /// Creates a new [`OrderBookDelta`] from a Python object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if extracting any attribute or converting types fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;

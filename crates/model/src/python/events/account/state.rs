@@ -103,6 +103,11 @@ impl AccountState {
     }
 
     #[staticmethod]
+    /// Constructs an [`AccountState`] from a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if any required field is missing or type conversion fails.
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let dict = values.as_ref();
@@ -143,6 +148,11 @@ impl AccountState {
         Ok(account)
     }
 
+    /// Converts this [`AccountState`] into a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

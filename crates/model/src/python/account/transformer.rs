@@ -23,6 +23,10 @@ use crate::{
 
 /// Constructs a `CashAccount` from a list of Python dict events.
 ///
+/// # Errors
+///
+/// Returns a `PyErr` if the input `events` list is empty.
+///
 /// # Panics
 ///
 /// Panics if event conversion (`py_from_dict`) unwrap fails.
@@ -48,6 +52,10 @@ pub fn cash_account_from_account_events(
 }
 
 /// Constructs a `MarginAccount` from a list of Python dict events.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input `events` list is empty.
 ///
 /// # Panics
 ///

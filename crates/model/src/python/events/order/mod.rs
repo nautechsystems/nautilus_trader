@@ -40,6 +40,11 @@ pub mod submitted;
 pub mod triggered;
 pub mod updated;
 
+/// Converts an [`OrderEventAny`] into a Python object.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if conversion to a Python object fails.
 pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<PyObject> {
     match order_event {
         OrderEventAny::Initialized(event) => Ok(event.into_py_any_unwrap(py)),
@@ -61,6 +66,11 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
     }
 }
 
+/// Converts a Python object into an [`OrderEventAny`] enum.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if extraction fails or the event type is unsupported.
 pub fn pyobject_to_order_event(py: Python, order_event: PyObject) -> PyResult<OrderEventAny> {
     let class = order_event.getattr(py, "__class__")?;
     match class.getattr(py, "__name__")?.extract::<&str>(py)? {
