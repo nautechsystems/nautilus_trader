@@ -16,12 +16,13 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{
+    UUID4, UnixNanos,
+    correctness::{FAILED, check_predicate_true},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
-
-use nautilus_core::correctness::{FAILED, check_predicate_true};
 
 use super::{Order, OrderAny, OrderCore, OrderError};
 use crate::{
@@ -583,6 +584,7 @@ impl From<OrderInitialized> for TrailingStopLimitOrder {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
@@ -590,7 +592,6 @@ mod tests {
         orders::{Order, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
-    use rust_decimal_macros::dec;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
