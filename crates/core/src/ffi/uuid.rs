@@ -34,8 +34,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` cannot be cast to a valid C string.
+/// Panics if `ptr` cannot be cast to a valid C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     assert!(!ptr.is_null(), "`ptr` was NULL");

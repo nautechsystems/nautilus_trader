@@ -301,9 +301,6 @@ impl DataType {
     /// This function panics:
     /// - If there is no metadata.
     /// - If the `instrument_id` value contained in the metadata is invalid.
-    /// # Panics
-    ///
-    /// Panics if `metadata` is `None`, or if the `instrument_id` value is invalid.
     pub fn instrument_id(&self) -> Option<InstrumentId> {
         let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let instrument_id = metadata.get("instrument_id")?;
@@ -320,9 +317,6 @@ impl DataType {
     /// This function panics:
     /// - If there is no metadata.
     /// - If the `venue` value contained in the metadata is invalid.
-    /// # Panics
-    ///
-    /// Panics if `metadata` is `None`, or if the `venue` value is invalid.
     pub fn venue(&self) -> Option<Venue> {
         let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let venue_str = metadata.get("venue")?;
@@ -336,9 +330,6 @@ impl DataType {
     /// This function panics:
     /// - If there is no metadata.
     /// - If the `start` value contained in the metadata is invalid.
-    /// # Panics
-    ///
-    /// Panics if `metadata` is `None`, or if the `start` value is invalid.
     pub fn start(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let start_str = metadata.get("start")?;
@@ -352,9 +343,6 @@ impl DataType {
     /// This function panics:
     /// - If there is no metadata.
     /// - If the `end` value contained in the metadata is invalid.
-    /// # Panics
-    ///
-    /// Panics if `metadata` is `None`, or if the `end` value is invalid.
     pub fn end(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let end_str = metadata.get("end")?;
@@ -368,9 +356,6 @@ impl DataType {
     /// This function panics:
     /// - If there is no metadata.
     /// - If the `limit` value contained in the metadata is invalid.
-    /// # Panics
-    ///
-    /// Panics if the `limit` value cannot be parsed as a `usize`.
     pub fn limit(&self) -> Option<usize> {
         let metadata = self.metadata.as_ref()?;
         let depth_str = metadata.get("limit")?;

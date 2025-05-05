@@ -45,8 +45,7 @@ use crate::{
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
 
@@ -66,8 +65,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)
         .num_nanoseconds()
@@ -75,7 +73,6 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     UnixNanos::from(interval_ns)
 }
 
-/// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
 ///
 /// # Panics
@@ -238,8 +235,7 @@ impl BarSpecification {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `step` is not positive (> 0).
+    /// Returns an error if `step` is not positive (> 0).
     ///
     /// # Notes
     ///
@@ -262,8 +258,7 @@ impl BarSpecification {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `step` is not positive (> 0).
+    /// Panics if `step` is not positive (> 0).
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
