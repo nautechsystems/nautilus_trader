@@ -116,6 +116,40 @@ fn data_client(
     DataClientAdapter::new(client_id, Some(venue), true, true, client, clock)
 }
 
+// ------------------------------------------------------------------------------------------------
+// Client registration & routing tests
+// ------------------------------------------------------------------------------------------------
+
+#[rstest]
+fn test_client_registration_and_routing() {
+    // Build engine with test clock and in-memory cache
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    // Register a client with explicit routing
+    let venue1 = Venue::default();
+    let id1 = ClientId::new("CLIENT1");
+    let client1 = Box::new(MockDataClient::new(cache.clone(), id1, venue1));
+    let adapter1 = DataClientAdapter::new(id1, Some(venue1), true, true, client1, clock.clone());
+    engine.register_client(adapter1, Some(venue1));
+
+    // Register a default client (no routing)
+    let id2 = ClientId::new("CLIENT2");
+    let client2 = Box::new(MockDataClient::new(cache.clone(), id2, venue1));
+    let adapter2 = DataClientAdapter::new(id2, None, true, true, client2, clock.clone());
+    engine.register_client(adapter2, None);
+
+    // All registered clients must be connected
+    assert!(engine.check_connected());
+    // There should be exactly the two registered client IDs
+    assert_eq!(engine.registered_clients(), vec![id1, id2]);
+}
+
+// ------------------------------------------------------------------------------------------------
+// Subscription and data flow tests
+// ------------------------------------------------------------------------------------------------
+
 #[rstest]
 fn test_execute_subscribe_custom_data(
     data_engine: Rc<RefCell<DataEngine>>,
