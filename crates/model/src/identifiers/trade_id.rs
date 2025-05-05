@@ -120,6 +120,10 @@ impl TradeId {
     }
 
     /// Returns a C string slice from the trade ID value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the stored byte array is not a valid C string up to the first NUL.
     #[must_use]
     pub fn as_cstr(&self) -> &CStr {
         // SAFETY: Unwrap safe as we always store valid C strings

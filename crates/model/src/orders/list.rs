@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use std::fmt::Display;
 
 use nautilus_core::{UnixNanos, correctness::check_slice_not_empty};

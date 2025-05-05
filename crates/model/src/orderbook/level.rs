@@ -163,7 +163,11 @@ impl BookLevel {
         self.orders.shift_remove(&order.order_id);
     }
 
-    /// Removes an order by its ID. Panics if the order doesn't exist.
+    /// Removes an order by its ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no order with the given `order_id` exists at this level.
     pub fn remove_by_id(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         assert!(
             self.orders.shift_remove(&order_id).is_some(),

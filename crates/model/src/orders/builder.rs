@@ -15,6 +15,7 @@
 
 // TODO: Under development
 #![allow(dead_code)]
+#![allow(clippy::missing_panics_doc)]
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};

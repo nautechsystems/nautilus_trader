@@ -190,6 +190,9 @@ impl CryptoOption {
     }
 
     /// Creates a new [`CryptoOption`] instance.
+    /// # Panics
+    ///
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

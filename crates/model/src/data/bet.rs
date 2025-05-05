@@ -254,10 +254,11 @@ impl BetPosition {
         self.exposure += bet.exposure();
     }
 
-    /// Decreases the position with the provided bet.
+    /// Decreases the position with the provided bet, updating exposure and realized P&L.
     ///
-    /// This method calculates the realized PnL by comparing the incoming bet with
-    /// a corresponding bet derived from the current position.
+    /// # Panics
+    ///
+    /// Panics if there is no current side (empty position) when unwrapping the side.
     pub fn position_decrease(&mut self, bet: &Bet) {
         let abs_bet_exposure = bet.exposure().abs();
         let abs_self_exposure = self.exposure.abs();

@@ -74,6 +74,11 @@ pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount
     CashAccount::new(cash_account_state_multi, true)
 }
 
+/// Helper to calculate commission in test fixtures.
+///
+/// # Panics
+///
+/// Panics if the underlying `calculate_commission` returns an error.
 #[must_use]
 pub fn calculate_commission(
     instrument: InstrumentAny,

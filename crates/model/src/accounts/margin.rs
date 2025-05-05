@@ -106,6 +106,11 @@ impl MarginAccount {
         maintenance_margins
     }
 
+    /// Updates the initial margin for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_initial_margin(&mut self, instrument_id: InstrumentId, margin_init: Money) {
         let margin_balance = self.margins.get(&instrument_id);
         if margin_balance.is_none() {
@@ -141,6 +146,11 @@ impl MarginAccount {
         margin_balance.unwrap().initial
     }
 
+    /// Updates the maintenance margin for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_maintenance_margin(
         &mut self,
         instrument_id: InstrumentId,
@@ -180,6 +190,11 @@ impl MarginAccount {
         margin_balance.unwrap().maintenance
     }
 
+    /// Calculates the initial margin amount for the specified instrument and quantity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails, or if `instrument.base_currency()` is `None` for inverse instruments.
     pub fn calculate_initial_margin<T: Instrument>(
         &mut self,
         instrument: T,
@@ -205,6 +220,11 @@ impl MarginAccount {
         }
     }
 
+    /// Calculates the maintenance margin amount for the specified instrument and quantity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails, or if `instrument.base_currency()` is `None` for inverse instruments.
     pub fn calculate_maintenance_margin<T: Instrument>(
         &mut self,
         instrument: T,

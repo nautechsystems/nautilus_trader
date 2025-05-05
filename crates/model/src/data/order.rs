@@ -87,7 +87,11 @@ impl BookOrder {
         self.price.as_f64() * self.size.as_f64()
     }
 
-    /// Returns the signed order exposure as an `f64`.
+    /// Returns the signed order size as `f64`, positive for buys, negative for sells.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.side` is `NoOrderSide`.
     #[must_use]
     pub fn signed_size(&self) -> f64 {
         match self.side {

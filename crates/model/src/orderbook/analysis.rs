@@ -26,6 +26,10 @@ use crate::{
 
 /// Calculates the estimated fill quantity for a specified price from a set of
 /// order book levels and order side.
+///
+/// # Panics
+///
+/// Panics if `order_side` is neither [`OrderSide::Buy`] nor [`OrderSide::Sell`].
 #[must_use]
 pub fn get_quantity_for_price(
     price: Price,

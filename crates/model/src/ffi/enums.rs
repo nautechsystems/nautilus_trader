@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_panics_doc)]
+
 use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};

@@ -172,8 +172,11 @@ impl BinaryOption {
         })
     }
 
-    /// Creates a new [`BinaryOption`] instance.
+    /// Creates a new [`BinaryOption`] instance by validating parameters.
     #[allow(clippy::too_many_arguments)]
+    /// # Panics
+    ///
+    /// Panics if parameter validation fails during `new_checked`.
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
