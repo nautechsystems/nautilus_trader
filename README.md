@@ -201,7 +201,7 @@ We recommend using the latest supported version of Python and installing [nautil
 > [!TIP]
 >
 > We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
-
+>
 > Conda and other Python distributions *may* work but aren’t officially supported.
 
 ### From PyPI
