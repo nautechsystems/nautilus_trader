@@ -81,213 +81,238 @@ pub trait DataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to instruments list for the specified venue.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to data for a single instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to order book delta updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to top 10 order book depth updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to periodic order book snapshots for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to quote updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to trade updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to mark price updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to index price updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to bar updates of the specified bar type.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to status updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscribe operation fails.
     fn subscribe_instrument_status(
         &mut self,
         cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Subscribes to instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the subscription fails.
+    /// Returns an error if the subscription operation fails.
     fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from generic data types according to the command.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from instruments list for the specified venue.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from data for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from order book delta updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from top 10 order book depth updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from periodic order book snapshots for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from quote updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from trade updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from mark price updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from index price updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from bar updates of the specified bar type.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from instrument status updates for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     /// Unsubscribes from instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the unsubscription fails.
+    /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instrument_close(
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
@@ -700,7 +725,7 @@ impl DataClientAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying client subscription fails.
+    /// Returns an error if the underlying client subscribe operation fails.
     pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
         if !self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.insert(cmd.data_type.clone());
@@ -713,7 +738,7 @@ impl DataClientAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying client unsubscription fails.
+    /// Returns an error if the underlying client unsubscribe operation fails.
     pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
         if self.subscriptions_generic.contains(&cmd.data_type) {
             self.subscriptions_generic.remove(&cmd.data_type);
