@@ -206,11 +206,11 @@ impl DataEngine {
         };
     }
 
-    /// Deregisters a [`DataClientAdapter`]
+    /// Deregisters a [`DataClientAdapter`].
     ///
     /// # Panics
     ///
-    /// Panics if a client with the same client ID has not been registered.
+    /// Panics if the client ID has not been registered.
     pub fn deregister_client(&mut self, client_id: &ClientId) {
         check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
@@ -244,63 +244,79 @@ impl DataEngine {
 
     /// Starts all registered data clients.
     pub fn start(&self) {
-        if let Some(default_client) = &self.default_client {
-            default_client.start()
+        for client in self.get_clients() {
+            if let Err(e) = client.start() {
+                log::error!("{e}");
+            }
         }
-
-        self.clients.values().for_each(|client| client.start());
     }
 
     /// Stops all registered data clients.
     pub fn stop(&self) {
-        if let Some(default_client) = &self.default_client {
-            default_client.stop()
+        for client in self.get_clients() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
         }
-
-        self.clients.values().for_each(|client| client.stop());
     }
 
     /// Resets all registered data clients to their initial state.
     pub fn reset(&self) {
-        if let Some(default_client) = &self.default_client {
-            default_client.reset()
+        for client in self.get_clients() {
+            if let Err(e) = client.reset() {
+                log::error!("{e}");
+            }
         }
-
-        self.clients.values().for_each(|client| client.reset());
     }
 
     /// Disposes the engine, stopping all clients and cancelling any timers.
     pub fn dispose(&self) {
-        if let Some(default_client) = &self.default_client {
-            default_client.dispose()
+        for client in self.get_clients() {
+            if let Err(e) = client.dispose() {
+                log::error!("{e}");
+            }
         }
 
-        self.clients.values().for_each(|client| client.dispose());
         self.clock.borrow_mut().cancel_timers();
     }
 
     /// Connects all registered data clients.
-    ///
-    /// # Panics
-    ///
-    /// Always, as not yet implemented.
     pub fn connect(&self) {
-        todo!() //  Implement actual client connections for a live/sandbox context
+        let clients = self.get_clients();
+
+        if clients.is_empty() {
+            log::warn!("No clients to connect");
+        } else {
+            log::info!("Connecting all clients...");
+        }
+
+        for client in clients {
+            if let Err(e) = client.connect() {
+                log::error!("{e}");
+            }
+        }
     }
 
     /// Disconnects all registered data clients.
-    ///
-    /// # Panics
-    ///
-    /// Always, as not yet implemented.
     pub fn disconnect(&self) {
-        todo!() // Implement actual client connections for a live/sandbox context
+        let clients = self.get_clients();
+
+        if clients.is_empty() {
+            log::warn!("No clients to disconnect");
+        } else {
+            log::info!("Disconnecting all clients...");
+        }
+
+        for client in clients {
+            if let Err(e) = client.disconnect() {
+                log::error!("{e}");
+            }
+        }
     }
 
     /// Returns `true` if all registered data clients are currently connected.
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        // All registered clients (including default) must be connected
         self.get_clients()
             .iter()
             .all(|client| client.is_connected())
@@ -309,7 +325,6 @@ impl DataEngine {
     /// Returns `true` if all registered data clients are currently disconnected.
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        // All registered clients (including default) must be disconnected
         self.get_clients()
             .iter()
             .all(|client| !client.is_connected())
@@ -318,7 +333,6 @@ impl DataEngine {
     /// Returns a list of all registered client IDs, including the default client if set.
     #[must_use]
     pub fn registered_clients(&self) -> Vec<ClientId> {
-        // Return all client IDs, including the default client if set
         self.get_clients()
             .into_iter()
             .map(|client| client.client_id())

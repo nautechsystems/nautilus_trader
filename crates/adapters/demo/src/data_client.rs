@@ -218,13 +218,29 @@ impl DataClient for MockDataClient {
         None
     }
 
-    fn start(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn stop(&self) {}
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn reset(&self) {}
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn dispose(&self) {}
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn is_connected(&self) -> bool {
         true
