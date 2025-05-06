@@ -766,6 +766,12 @@ impl DataActorCore {
     }
 
     // TODO: TBD initialization flow
+
+    /// Initializes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initialization state transition fails.
     pub fn initialize(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Initialize)
     }
@@ -846,6 +852,11 @@ impl DataActorCore {
         msgbus::send(&endpoint, request.as_any())
     }
 
+    /// Starts the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if starting the actor fails.
     pub fn start(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
@@ -859,6 +870,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Stops the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stopping the actor fails.
     pub fn stop(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
@@ -872,6 +888,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Resumes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resuming the actor fails.
     pub fn resume(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
@@ -885,6 +906,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Resets the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resetting the actor fails.
     pub fn reset(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
@@ -898,6 +924,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Disposes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disposing the actor fails.
     pub fn dispose(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
@@ -911,6 +942,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Degrades the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if degrading the actor fails.
     pub fn degrade(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
@@ -924,6 +960,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Faults the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if faulting the actor fails.
     pub fn fault(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 

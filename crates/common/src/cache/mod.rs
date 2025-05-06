@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(clippy::missing_errors_doc)]
+
 //! In-memory cache for market and execution data, with optional persistent backing.
 //!
 //! Provides methods to load, query, and update cached data such as instruments, orders, and prices.
-
-// Allow missing error documentation for now
-#![allow(clippy::missing_errors_doc)]
 
 pub mod config;
 pub mod database;
@@ -1654,6 +1654,10 @@ impl Cache {
     }
 
     /// Updates the given `account` in the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the account in the database fails.
     pub fn update_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
             database.update_account(&account)?;
@@ -1662,6 +1666,10 @@ impl Cache {
     }
 
     /// Updates the given `order` in the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the order in the database fails.
     pub fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let client_order_id = order.client_order_id();
 
@@ -1722,6 +1730,10 @@ impl Cache {
     }
 
     /// Updates the given `position` in the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if updating the position in the database fails.
     pub fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
         // Update open/closed state
         if position.is_open() {
@@ -1744,6 +1756,10 @@ impl Cache {
 
     /// Creates a snapshot of the given position by cloning it, assigning a new ID,
     /// serializing it, and storing it in the position snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serializing or storing the position snapshot fails.
     pub fn snapshot_position(&mut self, position: &Position) -> anyhow::Result<()> {
         let position_id = position.id;
 
@@ -1769,6 +1785,11 @@ impl Cache {
         Ok(())
     }
 
+    /// Creates a snapshot of the given position state in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if snapshotting the position state fails.
     pub fn snapshot_position_state(
         &mut self,
         position: &Position,
@@ -1801,6 +1822,11 @@ impl Cache {
         todo!()
     }
 
+    /// Snapshots the given order state in the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if snapshotting the order state fails.
     pub fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
         let database = if let Some(database) = &self.database {
             database
@@ -2640,6 +2666,10 @@ impl Cache {
     // -- GENERAL ---------------------------------------------------------------------------------
 
     /// Gets a reference to the general object value for the given `key` (if found).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the `key` is invalid.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
         check_valid_string(key, stringify!(key)).expect(FAILED);
 
