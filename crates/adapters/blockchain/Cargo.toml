@@ -45,10 +45,18 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
+hypersync-client = "0.18.0"
+hypersync-schema = "0.3.0"
+
 
 [dev-dependencies]
 rstest = { workspace = true }
 
 [[bin]]
-name = "live_blocks"
-path = "bin/watch_live_blocks.rs"
+name = "live_blocks_rpc"
+path = "bin/watch_rpc_live_blocks.rs"
+
+[[bin]]
+name = "live_blocks_hypersync"
+path = "bin/watch_hypersync_live_blocks.rs"

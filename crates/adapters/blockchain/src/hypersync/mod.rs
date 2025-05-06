@@ -13,23 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::defi::block::Block;
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
-
-/// Represents normalized blockchain messages
-#[derive(Debug, Clone)]
-pub enum BlockchainMessage {
-    Block(Block),
-}
-
-/// Represents the types of events that can be subscribed to via the blockchain RPC interface.
-///
-/// This enum defines the various event types that the application can subscribe to using
-/// the WebSocket-based RPC subscription
-#[derive(
-    Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
-)]
-pub enum RpcEventType {
-    NewBlock,
-}
+pub mod client;
+pub mod transform;

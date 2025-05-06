@@ -42,6 +42,7 @@ runs:
         sudo apt-get update
         sudo apt-get install -y curl clang git libssl-dev make pkg-config
         sudo apt-get install -y python3-dev libpython3-dev
+        sudo apt-get install -y capnproto libcapnp-dev
 
     - name: Install mold
       # https://github.com/rui314/setup-mold
