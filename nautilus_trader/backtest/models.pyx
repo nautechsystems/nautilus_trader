@@ -43,6 +43,8 @@ cdef class FillModel:
         The probability of order fill prices slipping by one tick.
     random_seed : int, optional
         The random seed (if None then no random seed).
+    config : FillModelConfig, optional
+        The configuration for the model.
 
     Raises
     ------
@@ -59,7 +61,7 @@ cdef class FillModel:
         double prob_slippage = 0.0,
         random_seed: int | None = None,
         config = None,
-    ):
+    ) -> None:
         if config is not None:
             # Initialize from config
             prob_fill_on_limit = config.prob_fill_on_limit
@@ -138,6 +140,8 @@ cdef class LatencyModel:
         The order update latency (nanoseconds) for the model.
     cancel_latency_nanos : int, default 0
         The order cancel latency (nanoseconds) for the model.
+    config : FillModelConfig, optional
+        The configuration for the model.
 
     Raises
     ------
@@ -158,7 +162,7 @@ cdef class LatencyModel:
         uint64_t update_latency_nanos = 0,
         uint64_t cancel_latency_nanos = 0,
         config = None,
-    ):
+    ) -> None:
         if config is not None:
             # Initialize from config
             base_latency_nanos = config.base_latency_nanos
@@ -222,7 +226,7 @@ cdef class MakerTakerFeeModel(FeeModel):
         The configuration for the fee model.
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config = None) -> None:
         # No configuration needed for this model
         pass
 
@@ -264,24 +268,29 @@ cdef class FixedFeeModel(FeeModel):
 
     Parameters
     ----------
-    commission : Money
+    commission : Money, optional
         The fixed commission amount for trades.
     charge_commission_once : bool, default True
         Whether to charge the commission once per order or per fill.
+    config : FixedFeeModelConfig, optional
+        The configuration for the model.
 
     Raises
     ------
     ValueError
+        If both ``commission`` **and** ``config`` are provided, **or** if both are ``None`` (exactly one must be supplied).
+    ValueError
         If `commission` is not a positive amount.
-
     """
 
     def __init__(
         self,
-        Money commission not None = None,
+        Money commission = None,
         bint charge_commission_once: bool = True,
         config = None,
-    ):
+    ) -> None:
+        Condition.is_true((commission is None) ^ (config is None), "Provide exactly one of `commission` or `config`")
+
         if config is not None:
             # Initialize from config
             commission = Money.from_str(config.commission)
@@ -312,17 +321,26 @@ cdef class PerContractFeeModel(FeeModel):
 
     Parameters
     ----------
-    commission : Money
+    commission : Money, optional
         The commission amount per contract.
+    config : PerContractFeeModelConfig, optional
+        The configuration for the model.
 
     Raises
     ------
     ValueError
+        If both ``commission`` **and** ``config`` are provided, **or** if both are ``None`` (exactly one must be supplied).
+    ValueError
         If `commission` is negative (< 0).
-
     """
 
-    def __init__(self, Money commission not None = None, config = None):
+    def __init__(
+        self,
+        Money commission = None,
+        config = None,
+    ) -> None:
+        Condition.is_true((commission is None) ^ (config is None), "Provide exactly one of `commission` or `config`")
+
         if config is not None:
             # Initialize from config
             commission = Money.from_str(config.commission)
