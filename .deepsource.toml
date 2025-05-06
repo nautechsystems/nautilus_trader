@@ -14,3 +14,9 @@ name = "python"
 
   [analyzers.meta]
   runtime_version = "3.x.x"
+
+[[analyzers]]
+name = "sca"  # Software Composition Analysis (security-focused)
+
+  [analyzers.meta]
+  autofix = true
