@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{UUID4, UnixNanos};
@@ -72,6 +69,9 @@ impl TestOrderEventStubs {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// # Panics
+    ///
+    /// Panics if parsing the fallback price string fails or unwrapping default values fails.
     pub fn filled(
         order: &OrderAny,
         instrument: &InstrumentAny,
@@ -128,6 +128,9 @@ impl TestOrderEventStubs {
 pub struct TestOrderStubs;
 
 impl TestOrderStubs {
+    /// # Panics
+    ///
+    /// Panics if applying the accepted event via `new_order.apply(...)` fails.
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
         let mut new_order = order.clone();
         let accepted_event = TestOrderEventStubs::accepted(
@@ -139,6 +142,9 @@ impl TestOrderStubs {
         new_order
     }
 
+    /// # Panics
+    ///
+    /// Panics if applying the filled event via `accepted_order.apply(...)` fails.
     pub fn make_filled_order(
         order: &OrderAny,
         instrument: &InstrumentAny,

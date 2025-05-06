@@ -1872,6 +1872,11 @@ struct Data_t data_clone(const struct Data_t *data);
 
 void interned_string_stats(void);
 
+/**
+ * # Panics
+ *
+ * Panics if `aggregation` or `price_type` do not correspond to valid enum variants.
+ */
 struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
                                                 uint8_t price_type);
@@ -1898,6 +1903,11 @@ uint8_t bar_specification_gt(const struct BarSpecification_t *lhs,
 uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
                              const struct BarSpecification_t *rhs);
 
+/**
+ * # Panics
+ *
+ * Panics if `aggregation_source` does not correspond to a valid enum variant.
+ */
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
@@ -2024,6 +2034,9 @@ void orderbook_deltas_vec_drop(CVec v);
  *
  * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
  * - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+ * # Panics
+ *
+ * Panics if any input pointer is null or if slice conversion for bids or asks fails.
  */
 struct OrderBookDepth10_t orderbook_depth10_new(struct InstrumentId_t instrument_id,
                                                 const struct BookOrder_t *bids_ptr,
@@ -2093,6 +2106,11 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
+/**
+ * # Panics
+ *
+ * Panics if any field of the two `QuoteTick` instances differs.
+ */
 uint8_t quote_tick_eq(const struct QuoteTick_t *lhs, const struct QuoteTick_t *rhs);
 
 uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
@@ -2142,6 +2160,10 @@ const char *aggregation_source_to_cstr(enum AggregationSource value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `AggressorSide` variant.
  */
 enum AggregationSource aggregation_source_from_cstr(const char *ptr);
 
@@ -2168,6 +2190,10 @@ const char *asset_class_to_cstr(enum AssetClass value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `AssetClass` variant.
  */
 enum AssetClass asset_class_from_cstr(const char *ptr);
 
@@ -2179,6 +2205,10 @@ const char *instrument_class_to_cstr(enum InstrumentClass value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `InstrumentClass` variant.
  */
 enum InstrumentClass instrument_class_from_cstr(const char *ptr);
 
@@ -2190,6 +2220,10 @@ const char *bar_aggregation_to_cstr(uint8_t value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `BarAggregation` variant.
  */
 uint8_t bar_aggregation_from_cstr(const char *ptr);
 
@@ -2201,6 +2235,10 @@ const char *book_action_to_cstr(enum BookAction value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `BookAction` variant.
  */
 enum BookAction book_action_from_cstr(const char *ptr);
 
@@ -2212,6 +2250,10 @@ const char *book_type_to_cstr(enum BookType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `BookType` variant.
  */
 enum BookType book_type_from_cstr(const char *ptr);
 
@@ -2223,6 +2265,10 @@ const char *contingency_type_to_cstr(enum ContingencyType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `ContingencyType` variant.
  */
 enum ContingencyType contingency_type_from_cstr(const char *ptr);
 
@@ -2234,6 +2280,10 @@ const char *currency_type_to_cstr(enum CurrencyType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `CurrencyType` variant.
  */
 enum CurrencyType currency_type_from_cstr(const char *ptr);
 
@@ -2243,6 +2293,10 @@ enum CurrencyType currency_type_from_cstr(const char *ptr);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `InstrumentCloseType` variant.
  */
 enum InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
@@ -2256,6 +2310,9 @@ const char *liquidity_side_to_cstr(enum LiquiditySide value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `LiquiditySide` variant.
  */
 enum LiquiditySide liquidity_side_from_cstr(const char *ptr);
 
@@ -2267,6 +2324,10 @@ const char *market_status_to_cstr(enum MarketStatus value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `MarketStatus` variant.
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
 
@@ -2278,6 +2339,9 @@ const char *market_status_action_to_cstr(enum MarketStatusAction value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
  */
 enum MarketStatusAction market_status_action_from_cstr(const char *ptr);
 
@@ -2289,6 +2353,9 @@ const char *oms_type_to_cstr(enum OmsType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OmsType` variant.
  */
 enum OmsType oms_type_from_cstr(const char *ptr);
 
@@ -2300,6 +2367,9 @@ const char *option_kind_to_cstr(enum OptionKind value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OptionKind` variant.
  */
 enum OptionKind option_kind_from_cstr(const char *ptr);
 
@@ -2311,6 +2381,9 @@ const char *order_side_to_cstr(enum OrderSide value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OrderSide` variant.
  */
 enum OrderSide order_side_from_cstr(const char *ptr);
 
@@ -2322,6 +2395,9 @@ const char *order_status_to_cstr(enum OrderStatus value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OrderStatus` variant.
  */
 enum OrderStatus order_status_from_cstr(const char *ptr);
 
@@ -2333,6 +2409,9 @@ const char *order_type_to_cstr(enum OrderType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `OrderType` variant.
  */
 enum OrderType order_type_from_cstr(const char *ptr);
 
@@ -2344,6 +2423,9 @@ const char *position_side_to_cstr(enum PositionSide value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `PositionSide` variant.
  */
 enum PositionSide position_side_from_cstr(const char *ptr);
 
@@ -2355,6 +2437,9 @@ const char *price_type_to_cstr(enum PriceType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `PriceType` variant.
  */
 enum PriceType price_type_from_cstr(const char *ptr);
 
@@ -2366,6 +2451,9 @@ const char *record_flag_to_cstr(enum RecordFlag value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `RecordFlag` variant.
  */
 enum RecordFlag record_flag_from_cstr(const char *ptr);
 
@@ -2377,6 +2465,9 @@ const char *time_in_force_to_cstr(enum TimeInForce value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `TimeInForce` variant.
  */
 enum TimeInForce time_in_force_from_cstr(const char *ptr);
 
@@ -2388,6 +2479,9 @@ const char *trading_state_to_cstr(enum TradingState value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `TradingState` variant.
  */
 enum TradingState trading_state_from_cstr(const char *ptr);
 
@@ -2399,6 +2493,9 @@ const char *trailing_offset_type_to_cstr(enum TrailingOffsetType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
  */
 enum TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
 
@@ -2410,6 +2507,9 @@ const char *trigger_type_to_cstr(enum TriggerType value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ * # Panics
+ *
+ * Panics if the C string does not correspond to a valid `TriggerType` variant.
  */
 enum TriggerType trigger_type_from_cstr(const char *ptr);
 
@@ -2737,6 +2837,10 @@ uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_A
  * # Safety
  *
  * - Assumes `formula_ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if changing the formula fails (i.e., `unwrap()` in `change_formula`).
  */
 void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
                                          const char *formula_ptr);

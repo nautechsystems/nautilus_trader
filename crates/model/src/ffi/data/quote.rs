@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::c_char,
@@ -52,6 +49,9 @@ pub extern "C" fn quote_tick_new(
     )
 }
 
+/// # Panics
+///
+/// Panics if any field of the two `QuoteTick` instances differs.
 #[unsafe(no_mangle)]
 pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
     assert_eq!(lhs.ask_price, rhs.ask_price);

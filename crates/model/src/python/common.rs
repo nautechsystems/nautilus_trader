@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 use indexmap::IndexMap;
 use nautilus_core::python::IntoPyObjectNautilusExt;
 use pyo3::{
@@ -51,6 +48,11 @@ impl EnumIterator {
 }
 
 impl EnumIterator {
+    /// Creates a new Python iterator over the variants of an enum.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion of enum variants into Python objects fails.
     #[must_use]
     pub fn new<'py, E>(py: Python<'py>) -> Self
     where
@@ -70,6 +72,10 @@ impl EnumIterator {
 }
 
 /// Converts a JSON `Value::Object` into a Python `dict`.
+///
+/// # Panics
+///
+/// Panics if creating a Python list fails due to an invalid iterator.
 ///
 /// # Errors
 ///
@@ -94,6 +100,10 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 }
 
 /// Converts a JSON `Value` into a corresponding Python object.
+///
+/// # Panics
+///
+/// Panics if parsing numbers (`as_i64`, `as_f64`) or creating the Python list (`PyList::new().expect`) fails.
 ///
 /// # Errors
 ///
@@ -127,6 +137,10 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
 }
 
 /// Converts a list of `Money` values into a Python list of strings, or `None` if empty.
+///
+/// # Panics
+///
+/// Panics if creating the Python list fails or during the conversion unwrap.
 ///
 /// # Errors
 ///

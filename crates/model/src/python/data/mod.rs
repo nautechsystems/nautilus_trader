@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 //! Data types for the trading domain model.
 
 pub mod bar;
@@ -125,6 +122,12 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
 
 #[pyfunction]
 #[cfg(not(feature = "ffi"))]
+/// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
+///
+/// # Panics
+///
+/// Always panics with the message "`ffi` feature is not enabled" to indicate that
+/// FFI functionality is unavailable.
 pub fn drop_cvec_pycapsule(_capsule: &Bound<'_, PyAny>) {
     panic!("`ffi` feature is not enabled");
 }

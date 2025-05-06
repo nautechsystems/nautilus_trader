@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-#![allow(clippy::missing_panics_doc)]
-
 use std::{
     ffi::c_char,
     ops::{Deref, DerefMut},
@@ -175,6 +172,10 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if changing the formula fails (i.e., `unwrap()` in `change_formula`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_change_formula(
     synth: &mut SyntheticInstrument_API,

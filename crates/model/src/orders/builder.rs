@@ -15,7 +15,6 @@
 
 // TODO: Under development
 #![allow(dead_code)]
-#![allow(clippy::missing_panics_doc)]
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
@@ -482,6 +481,12 @@ impl OrderTestBuilder {
         )
     }
 
+    /// Builds the order, consuming the provided parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if required fields (instrument ID, quantity, price, offsets, etc.) are not set,
+    /// or if internal calls to `.expect(...)` or `.unwrap()` fail during order construction.
     pub fn build(&self) -> OrderAny {
         let mut order = match self.kind {
             OrderType::Market => OrderAny::Market(MarketOrder::new(
