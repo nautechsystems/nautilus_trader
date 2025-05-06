@@ -121,29 +121,162 @@ fn data_client(
 // ------------------------------------------------------------------------------------------------
 
 #[rstest]
-fn test_client_registration_and_routing() {
-    // Build engine with test clock and in-memory cache
-    let clock = Rc::new(RefCell::new(TestClock::new()));
-    let cache = Rc::new(RefCell::new(Cache::default()));
-    let mut engine = DataEngine::new(clock.clone(), cache.clone(), None);
+#[should_panic]
+fn test_register_default_client_twice_panics(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
 
-    // Register a client with explicit routing
+    let client_id = ClientId::new("DUPLICATE");
+
+    let data_client1 = DataClientAdapter::new(
+        client_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            cache.clone(),
+            client_id,
+            Venue::default(),
+        )),
+        clock.clone(),
+    );
+    let data_client2 = DataClientAdapter::new(
+        client_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            cache.clone(),
+            client_id,
+            Venue::default(),
+        )),
+        clock.clone(),
+    );
+
+    data_engine.register_default_client(data_client1);
+    data_engine.register_default_client(data_client2);
+}
+
+#[rstest]
+#[should_panic]
+fn test_register_client_duplicate_id_panics(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id = ClientId::new("DUPLICATE");
+    let venue = Venue::default();
+
+    let data_client1 = DataClientAdapter::new(
+        client_id,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            cache.clone(),
+            client_id,
+            Venue::default(),
+        )),
+        clock.clone(),
+    );
+    let data_client2 = DataClientAdapter::new(
+        client_id,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            cache.clone(),
+            client_id,
+            Venue::default(),
+        )),
+        clock.clone(),
+    );
+
+    data_engine.register_client(data_client1, None);
+    data_engine.register_client(data_client2, None);
+}
+
+#[rstest]
+fn test_register_and_deregister_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id1 = ClientId::new("C1");
     let venue1 = Venue::default();
-    let id1 = ClientId::new("CLIENT1");
-    let client1 = Box::new(MockDataClient::new(cache.clone(), id1, venue1));
-    let adapter1 = DataClientAdapter::new(id1, Some(venue1), true, true, client1, clock.clone());
-    engine.register_client(adapter1, Some(venue1));
 
-    // Register a default client (no routing)
-    let id2 = ClientId::new("CLIENT2");
-    let client2 = Box::new(MockDataClient::new(cache.clone(), id2, venue1));
-    let adapter2 = DataClientAdapter::new(id2, None, true, true, client2, clock.clone());
-    engine.register_client(adapter2, None);
+    let data_client1 = DataClientAdapter::new(
+        client_id1,
+        Some(venue1),
+        true,
+        true,
+        Box::new(MockDataClient::new(cache.clone(), client_id1, venue1)),
+        clock.clone(),
+    );
 
-    // All registered clients must be connected
-    assert!(engine.check_connected());
-    // There should be exactly the two registered client IDs
-    assert_eq!(engine.registered_clients(), vec![id1, id2]);
+    data_engine.register_client(data_client1, Some(venue1));
+
+    let client_id2 = ClientId::new("C2");
+    let data_client2 = DataClientAdapter::new(
+        client_id2,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(cache.clone(), client_id2, venue1)),
+        clock.clone(),
+    );
+
+    data_engine.register_client(data_client2, None);
+
+    // Both present
+    assert_eq!(
+        data_engine.registered_clients(),
+        vec![client_id1, client_id2]
+    );
+
+    // Deregister first client
+    data_engine.deregister_client(&client_id1);
+    assert_eq!(data_engine.registered_clients(), vec![client_id2]);
+
+    // Routing for deregistered venue now yields no client
+    assert!(data_engine.get_client(None, Some(&venue1)).is_none());
+}
+
+#[rstest]
+fn test_register_default_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let default_id = ClientId::new("DEFAULT");
+    let default_client = DataClientAdapter::new(
+        default_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            cache.clone(),
+            default_id,
+            Venue::default(),
+        )),
+        clock.clone(),
+    );
+    data_engine.register_default_client(default_client);
+
+    assert_eq!(data_engine.registered_clients(), vec![default_id]);
+    assert_eq!(
+        data_engine.get_client(None, None).unwrap().client_id(),
+        default_id
+    );
 }
 
 // ------------------------------------------------------------------------------------------------
