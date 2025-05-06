@@ -257,14 +257,14 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_quote_tick_updates_market(self) -> None:
         # Arrange
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             _USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
 
         # Act
-        self.exchange.process_quote_tick(tick)
+        self.exchange.process_quote_tick(quote)
 
         # Assert
         assert self.exchange.get_book(_USDJPY_SIM.id).book_type == BookType.L1_MBP
@@ -483,13 +483,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_order_with_invalid_price_gets_rejected(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.exchange.process_quote_tick(tick)
-        self.portfolio.update_quote_tick(tick)
+        self.exchange.process_quote_tick(quote)
+        self.portfolio.update_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -535,13 +535,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.market(
@@ -691,13 +691,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order_then_immediately_cancel_submits_and_fills(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.market(
@@ -716,15 +716,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order_with_fok_time_in_force_cancels_immediately(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.market(
@@ -745,15 +745,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_with_fok_time_in_force_cancels_immediately(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.limit(
@@ -775,15 +775,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order_with_ioc_time_in_force_cancels_remaining_qty(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.market(
@@ -804,13 +804,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_then_immediately_cancel_submits_then_cancels(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -830,13 +830,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -856,13 +856,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -882,15 +882,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_with_ioc_time_in_force_immediately_cancels(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.limit(
@@ -914,15 +914,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_with_fok_time_in_force_immediately_cancels(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Create order
         order = self.strategy.order_factory.limit(
@@ -946,13 +946,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_to_limit_order_less_than_available_top_of_book(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market_to_limit(
             _USDJPY_SIM.id,
@@ -971,15 +971,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_to_limit_order_greater_than_available_top_of_book(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market_to_limit(
             _USDJPY_SIM.id,
@@ -1000,15 +1000,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order_ioc_cancels_remaining(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -1029,15 +1029,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_order_fok_cancels_when_cannot_fill_full_size(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -1058,15 +1058,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_fok_cancels_when_cannot_fill_full_size(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1088,15 +1088,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_market_to_limit_order_after_filling_initial_quantity(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market_to_limit(
             _USDJPY_SIM.id,
@@ -1124,15 +1124,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_to_limit_order_becomes_limit_then_fills_remaining(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market_to_limit(
             _USDJPY_SIM.id,
@@ -1144,15 +1144,15 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,  # <-- hit bid again
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1163,13 +1163,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_if_touched_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market_if_touched(
             _USDJPY_SIM.id,
@@ -1189,13 +1189,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_if_touched_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit_if_touched(
             _USDJPY_SIM.id,
@@ -1216,13 +1216,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_when_marketable_then_fills(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1244,13 +1244,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_limit_order_buy_l1_taker_exhausting_book_volume(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1272,13 +1272,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_limit_order_sell_l1_taker_exhausting_book_volume(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1305,7 +1305,7 @@ class TestSimulatedExchangeMarginAccount:
             [89.999, 5, OrderStatus.FILLED, Quantity.from_int(1_000_000)],
         ],
     )
-    def test_process_limit_order_buy_l1_maker_exhausting_book_volume(
+    def test_process_limit_order_buy_l1_maker_quotes_exhausting_book_volume(
         self,
         ask_price: float,
         event_count: int,
@@ -1313,13 +1313,13 @@ class TestSimulatedExchangeMarginAccount:
         filled_qty: Quantity,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1333,13 +1333,60 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Act
-        tick = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=_USDJPY_SIM.make_price(ask_price - 0.001),
             ask_price=_USDJPY_SIM.make_price(ask_price),
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote2)
+        self.exchange.process_quote_tick(quote2)
+
+        assert order.status == order_status
+        assert len(order.events) == event_count
+        assert order.last_event.last_px == _USDJPY_SIM.make_price(90.000)
+        assert order.filled_qty == filled_qty
+        assert order.liquidity_side == LiquiditySide.MAKER
+
+    @pytest.mark.parametrize(
+        ("trade_price", "event_count", "order_status", "filled_qty"),
+        [
+            [90.000, 4, OrderStatus.PARTIALLY_FILLED, Quantity.from_int(100_000)],
+            [89.999, 5, OrderStatus.FILLED, Quantity.from_int(1_000_000)],
+        ],
+    )
+    def test_process_limit_order_buy_l1_maker_trades_exhausting_book_volume(
+        self,
+        trade_price: float,
+        event_count: int,
+        order_status: OrderStatus,
+        filled_qty: Quantity,
+    ) -> None:
+        # Arrange: Prepare market
+        trade1 = TestDataStubs.trade_tick(
+            instrument=_USDJPY_SIM,
+            price=90.002,
+        )
+        self.data_engine.process(trade1)
+        self.exchange.process_trade_tick(trade1)
+
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+            _USDJPY_SIM.make_price(90.000),
+            post_only=True,
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade2 = TestDataStubs.trade_tick(
+            instrument=_USDJPY_SIM,
+            price=_USDJPY_SIM.make_price(trade_price),
+        )
+        self.data_engine.process(trade2)
+        self.exchange.process_trade_tick(trade2)
 
         assert order.status == order_status
         assert len(order.events) == event_count
@@ -1354,7 +1401,7 @@ class TestSimulatedExchangeMarginAccount:
             [90.011, 5, OrderStatus.FILLED, Quantity.from_int(1_000_000)],
         ],
     )
-    def test_process_limit_order_sell_l1_maker_exhausting_book_volume(
+    def test_process_limit_order_sell_l1_maker_quotes_exhausting_book_volume(
         self,
         bid_price: float,
         event_count: int,
@@ -1362,13 +1409,13 @@ class TestSimulatedExchangeMarginAccount:
         filled_qty: Quantity,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1382,13 +1429,60 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Act
-        tick = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=_USDJPY_SIM.make_price(bid_price),
             ask_price=_USDJPY_SIM.make_price(bid_price + 0.001),
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote2)
+        self.exchange.process_quote_tick(quote2)
+
+        assert order.status == order_status
+        assert len(order.events) == event_count
+        assert order.last_event.last_px == _USDJPY_SIM.make_price(90.010)
+        assert order.filled_qty == filled_qty
+        assert order.liquidity_side == LiquiditySide.MAKER
+
+    @pytest.mark.parametrize(
+        ("trade_price", "event_count", "order_status", "filled_qty"),
+        [
+            [90.010, 4, OrderStatus.PARTIALLY_FILLED, Quantity.from_int(100_000)],
+            [90.011, 5, OrderStatus.FILLED, Quantity.from_int(1_000_000)],
+        ],
+    )
+    def test_process_limit_order_sell_l1_maker_trades_exhausting_book_volume(
+        self,
+        trade_price: float,
+        event_count: int,
+        order_status: OrderStatus,
+        filled_qty: Quantity,
+    ) -> None:
+        # Arrange: Prepare market
+        trade1 = TestDataStubs.trade_tick(
+            instrument=_USDJPY_SIM,
+            price=90.002,
+        )
+        self.data_engine.process(trade1)
+        self.exchange.process_trade_tick(trade1)
+
+        order = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(1_000_000),
+            _USDJPY_SIM.make_price(90.010),
+            post_only=True,
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade2 = TestDataStubs.trade_tick(
+            instrument=_USDJPY_SIM,
+            price=_USDJPY_SIM.make_price(trade_price),
+        )
+        self.data_engine.process(trade2)
+        self.exchange.process_trade_tick(trade2)
 
         assert order.status == order_status
         assert len(order.events) == event_count
@@ -1398,13 +1492,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_fills_at_correct_price(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1418,13 +1512,13 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order)
         self.exchange.process(0)
 
-        tick = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=89.900,
             ask_price=89.950,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote2)
+        self.exchange.process_quote_tick(quote2)
         self.exchange.process(0)
 
         # Assert
@@ -1434,15 +1528,15 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_limit_order_fills_at_most_book_volume(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.008,
             ask_price=90.010,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1463,13 +1557,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_submit_market_if_touched_order_then_fills(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.market_if_touched(
             _USDJPY_SIM.id,
@@ -1483,13 +1577,13 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Quantity is refreshed -> Ensure we don't trade the entire amount
-        tick = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             ask_price=90.0,
             ask_size=10_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote2)
+        self.exchange.process_quote_tick(quote2)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1518,13 +1612,13 @@ class TestSimulatedExchangeMarginAccount:
         trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.000,
             ask_price=90.010,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.limit_if_touched(
             _USDJPY_SIM.id,
@@ -1539,15 +1633,15 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Quantity is refreshed -> Ensure we don't trade the entire amount
-        tick = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.010,  # <-- in cross for purpose of test
             ask_price=90.000,
             bid_size=10_000,
             ask_size=10_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote2)
+        self.exchange.process_quote_tick(quote2)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1567,15 +1661,15 @@ class TestSimulatedExchangeMarginAccount:
         price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.000,
             ask_price=90.010,
             bid_size=Quantity.from_int(10_000),
             ask_size=Quantity.from_int(10_000),
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1593,15 +1687,15 @@ class TestSimulatedExchangeMarginAccount:
         assert order.filled_qty == 10_000
 
         # Quantity is refreshed -> Ensure we don't trade the entire amount
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.005,
             ask_price=90.005,
             bid_size=10_000,
             ask_size=10_000,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1620,13 +1714,13 @@ class TestSimulatedExchangeMarginAccount:
         trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -1665,13 +1759,13 @@ class TestSimulatedExchangeMarginAccount:
         trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -1708,13 +1802,13 @@ class TestSimulatedExchangeMarginAccount:
         trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -1754,13 +1848,13 @@ class TestSimulatedExchangeMarginAccount:
         trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -1795,13 +1889,13 @@ class TestSimulatedExchangeMarginAccount:
     )
     def test_submit_stop_limit_order(self, side, price, trigger_price) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -1829,13 +1923,13 @@ class TestSimulatedExchangeMarginAccount:
     )
     def test_submit_reduce_only_order_when_no_position_rejects(self, side: OrderSide) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -1864,13 +1958,13 @@ class TestSimulatedExchangeMarginAccount:
         side: OrderSide,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order1 = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -1900,13 +1994,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_cancel_stop_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -1947,13 +2041,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_cancel_all_orders_with_no_side_filter_cancels_all(self):
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order1 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -1984,13 +2078,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_cancel_all_orders_with_buy_side_filter_cancels_all_buy_orders(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order1 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2033,13 +2127,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_cancel_all_orders_with_sell_side_filter_cancels_all_sell_orders(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order1 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2082,13 +2176,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_batch_cancel_orders_all_open_orders_for_batch(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order1 = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2163,13 +2257,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_order_with_zero_quantity_rejects_modify(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2194,13 +2288,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_post_only_limit_order_when_marketable_then_rejects_modify(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2225,13 +2319,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_limit_order_when_marketable_then_fills_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2258,13 +2352,13 @@ class TestSimulatedExchangeMarginAccount:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=_USDJPY_SIM.make_price(90.002),
             ask_price=_USDJPY_SIM.make_price(90.005),
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -2291,13 +2385,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_stop_market_order_when_price_valid_then_updates(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -2347,13 +2441,13 @@ class TestSimulatedExchangeMarginAccount:
         new_trigger_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.005,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit_if_touched(
             _USDJPY_SIM.id,
@@ -2383,13 +2477,13 @@ class TestSimulatedExchangeMarginAccount:
         self,
     ) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -2417,13 +2511,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_untriggered_stop_limit_order_when_price_valid_then_amends(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -2543,13 +2637,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_modify_triggered_stop_limit_order_when_price_valid_then_amends(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.stop_limit(
             _USDJPY_SIM.id,
@@ -2587,13 +2681,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_order_fills_gets_commissioned_for_fx(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -2868,13 +2962,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_quote_tick_fills_sell_stop_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.stop_market(
             _USDJPY_SIM.id,
@@ -2887,13 +2981,13 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Act
-        tick2 = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=89.997,
             ask_price=89.999,
         )
 
-        self.exchange.process_quote_tick(tick2)
+        self.exchange.process_quote_tick(quote2)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -2903,13 +2997,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_quote_tick_fills_sell_limit_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
@@ -2922,13 +3016,13 @@ class TestSimulatedExchangeMarginAccount:
         self.exchange.process(0)
 
         # Act
-        tick2 = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.101,
             ask_price=90.102,
         )
 
-        self.exchange.process_quote_tick(tick2)
+        self.exchange.process_quote_tick(quote2)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -2938,13 +3032,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_process_trade_tick_fills_sell_limit_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         limit_price = Price.from_str("90.100")
         order = self.strategy.order_factory.limit(
@@ -2975,13 +3069,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_realized_pnl_contains_commission(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -3000,13 +3094,13 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_unrealized_pnl(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote1 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote1)
+        self.exchange.process_quote_tick(quote1)
 
         order_open = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -3018,14 +3112,14 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(order_open)
         self.exchange.process(0)
 
-        quote = TestDataStubs.quote_tick(
+        quote2 = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=100.003,
             ask_price=100.004,
         )
 
-        self.exchange.process_quote_tick(quote)
-        self.portfolio.update_quote_tick(quote)
+        self.exchange.process_quote_tick(quote2)
+        self.portfolio.update_quote_tick(quote2)
 
         order_reduce = self.strategy.order_factory.market(
             _USDJPY_SIM.id,
@@ -3145,14 +3239,14 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=14.0,
             ask_price=13.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.exchange.process_quote_tick(tick)
+        self.exchange.process_quote_tick(quote)
 
         entry = self.strategy.order_factory.market(
             instrument_id=_USDJPY_SIM.id,
@@ -3176,14 +3270,14 @@ class TestSimulatedExchangeMarginAccount:
 
     def test_reduce_only_limit_order_does_not_open_position_on_flip_scenario(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=14.0,
             ask_price=13.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.exchange.process_quote_tick(tick)
+        self.exchange.process_quote_tick(quote)
 
         entry = self.strategy.order_factory.market(
             instrument_id=_USDJPY_SIM.id,
@@ -3204,14 +3298,14 @@ class TestSimulatedExchangeMarginAccount:
         self.strategy.submit_order(exit, position_id=PositionId("SIM-1-001"))
         self.exchange.process(0)
 
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=10.0,
             ask_price=11.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
-        self.exchange.process_quote_tick(tick)
+        self.exchange.process_quote_tick(quote)
 
         # Assert
         assert exit.status == OrderStatus.DENIED
@@ -3408,13 +3502,13 @@ class TestSimulatedExchangeL1:
 
     def test_process_trade_tick_fills_sell_limit_order(self) -> None:
         # Arrange: Prepare market
-        tick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=_USDJPY_SIM,
             bid_price=90.002,
             ask_price=90.005,
         )
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(quote)
+        self.exchange.process_quote_tick(quote)
 
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
