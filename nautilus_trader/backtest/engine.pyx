@@ -1658,6 +1658,16 @@ cdef class BacktestEngine:
             )
             self._kernel.data_engine.register_client(client)
 
+    def set_default_market_data_client(self) -> None:
+        cdef ClientId client_id = ClientId("default")
+        client = BacktestMarketDataClient(
+            client_id=client_id,
+            msgbus=self._kernel.msgbus,
+            cache=self._kernel.cache,
+            clock=self._kernel.clock,
+        )
+        self._kernel.data_engine.register_default_client(client)
+
 
 cdef class BacktestDataIterator:
     def __init__(self, empty_data_callback: Callable[[str, uint64_t], None] | None = None) -> None:

@@ -193,7 +193,6 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef tuple[datetime, object] _catalogs_timestamp_bound(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*, bint is_last=*)
     cpdef void _handle_request(self, RequestData request)
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request)
     cpdef void _handle_request_instrument(self, DataClient client, RequestInstrument request)
@@ -227,6 +226,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = *)
     cpdef void _update_catalog(self, list ticks, update_catalog_mode: CatalogWriteMode, bint is_instrument=*)
+    cpdef tuple[datetime, object] _catalogs_timestamp_bound(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*, bint is_last=*)
     cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
     cpdef DataResponse _handle_query_group(self, DataResponse response)
     cdef DataResponse _handle_query_group_aux(self, DataResponse response)

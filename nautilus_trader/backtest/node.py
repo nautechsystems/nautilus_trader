@@ -29,6 +29,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FeeModel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.node_builder import BacktestNodeBuilder
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import LogGuard
@@ -44,6 +45,7 @@ from nautilus_trader.core.datetime import max_date
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -88,9 +90,11 @@ class BacktestNode:
         )
         self._validate_configs(configs)
 
-        self._configs: list[BacktestRunConfig] = configs
+        self._configs: dict[str, BacktestRunConfig] = {config.id: config for config in configs}
         self._engines: dict[str, BacktestEngine] = {}
         self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
+        self._builders: dict[str, BacktestNodeBuilder] = {}
+        self._data_client_factories: dict[str, type[LiveDataClientFactory]] = {}
 
     @property
     def configs(self) -> list[BacktestRunConfig]:
@@ -102,7 +106,7 @@ class BacktestNode:
         list[BacktestRunConfig]
 
         """
-        return self._configs
+        return list(self._configs.values())
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
@@ -196,6 +200,30 @@ class BacktestNode:
                             f"No order book data available for {venue} with book type {venue_config.book_type}",
                         )
 
+    def add_data_client_factory(self, name: str, factory: type[LiveDataClientFactory]) -> None:
+        """
+        Add the given data client factory to the node.
+
+        Parameters
+        ----------
+        name : str
+            The name of the client factory.
+        factory : type[LiveDataClientFactory]
+            The factory class to add.
+
+        Raises
+        ------
+        ValueError
+            If `name` is not a valid string.
+        KeyError
+            If `name` has already been added.
+
+        """
+        if not issubclass(factory, LiveDataClientFactory):
+            raise ValueError(f"Factory was not of type `LiveDataClientFactory`, was {factory}")
+
+        self._data_client_factories[name] = factory
+
     def build(self) -> None:
         """
         Can be optionally run before a backtest to build backtest engines for all
@@ -205,7 +233,7 @@ class BacktestNode:
         any type of information.
 
         """
-        for config in self._configs:
+        for config in self._configs.values():
             try:
                 if config.id in self._engines:
                     # Only create an engine if one doesn't already exist for this config
@@ -217,6 +245,7 @@ class BacktestNode:
                     venue_configs=config.venues,
                     data_configs=config.data,
                 )
+                self.build_data_clients(config.id)
             except Exception as e:
                 if config.raise_exception:
                     raise e
@@ -240,6 +269,13 @@ class BacktestNode:
 
         if log_guard:
             self._log_guard = log_guard
+
+        # Create a builder for this engine
+        builder = BacktestNodeBuilder(
+            engine=engine,
+            logger=engine.logger,
+        )
+        self._builders[run_config_id] = builder
 
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
@@ -286,6 +322,19 @@ class BacktestNode:
 
         return engine
 
+    def build_data_clients(self, run_config_id):
+        engine = self._engines[run_config_id]
+        config = self._configs[run_config_id]
+
+        if config.data_clients:
+            builder = self._builders.get(config.id)
+
+            for name, factory in self._data_client_factories.items():
+                builder.add_data_client_factory(name, factory)
+
+            builder.build_data_clients(config.data_clients)
+            engine.set_default_market_data_client()
+
     def run(self) -> list[BacktestResult]:
         """
         Run the backtest node which will synchronously execute the list of loaded
@@ -300,7 +349,7 @@ class BacktestNode:
         self.build()
         results: list[BacktestResult] = []
 
-        for config in self._configs:
+        for config in self._configs.values():
             try:
                 result = self._run(
                     run_config_id=config.id,
@@ -528,7 +577,7 @@ class BacktestNode:
                 sort=True,  # Already sorted from backend
             )
 
-    def log_backtest_exception(self, e: Exception, config: BacktestRunConfig):
+    def log_backtest_exception(self, e: Exception, config: BacktestRunConfig) -> None:
         # Broad catch all prevents a single backtest run from halting
         # the execution of the other backtests (such as a zero balance exception).
         if not is_logging_initialized():
