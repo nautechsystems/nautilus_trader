@@ -16,6 +16,17 @@
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 
+/// Converts a hexadecimal string to a u64 integer.
+/// # Errors
+///
+/// Returns a `std::num::ParseIntError` if:
+/// - The input string contains non-hexadecimal characters
+/// - The hexadecimal value is too large to fit in a u64
+pub fn from_str_hex_to_u64(hex_string: &str) -> Result<u64, std::num::ParseIntError> {
+    let without_prefix = hex_string.trim_start_matches("0x");
+    u64::from_str_radix(without_prefix, 16)
+}
+
 /// Custom deserializer function for hex numbers.
 /// # Errors
 ///
@@ -25,9 +36,7 @@ where
     D: Deserializer<'de>,
 {
     let hex_string = String::deserialize(deserializer)?;
-    let without_prefix = hex_string.trim_start_matches("0x");
-
-    u64::from_str_radix(without_prefix, 16).map_err(serde::de::Error::custom)
+    from_str_hex_to_u64(hex_string.as_str()).map_err(serde::de::Error::custom)
 }
 
 /// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
@@ -39,9 +48,7 @@ where
     D: Deserializer<'de>,
 {
     let hex_string = String::deserialize(deserializer)?;
-    let without_prefix = hex_string.trim_start_matches("0x");
-
-    u64::from_str_radix(without_prefix, 16)
+    from_str_hex_to_u64(hex_string.as_str())
         .map(|num| UnixNanos::new(num * NANOSECONDS_IN_SECOND))
         .map_err(serde::de::Error::custom)
 }

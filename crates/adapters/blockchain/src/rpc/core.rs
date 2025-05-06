@@ -23,7 +23,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::rpc::{
     error::BlockchainRpcClientError,
-    types::{BlockchainRpcMessage, RpcEventType},
+    types::{BlockchainMessage, RpcEventType},
     utils::{
         extract_rpc_subscription_id, is_subscription_confirmation_response, is_subscription_event,
     },
@@ -152,7 +152,7 @@ impl CoreBlockchainRpcClient {
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.
     pub async fn next_rpc_message(
         &mut self,
-    ) -> Result<BlockchainRpcMessage, BlockchainRpcClientError> {
+    ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
         while let Some(msg) = self.wait_on_rpc_channel().await {
             match msg {
                 Message::Text(text) => match serde_json::from_str::<serde_json::Value>(&text) {
@@ -191,7 +191,7 @@ impl CoreBlockchainRpcClient {
                                             Ok(block_response) => {
                                                 let mut block = block_response.params.result;
                                                 block.set_chain(self.chain.clone());
-                                                Ok(BlockchainRpcMessage::Block(block))
+                                                Ok(BlockchainMessage::Block(block))
                                             }
                                             Err(e) => {
                                                 Err(BlockchainRpcClientError::MessageParsingError(

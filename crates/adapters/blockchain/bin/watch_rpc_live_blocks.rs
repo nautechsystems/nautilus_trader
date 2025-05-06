@@ -54,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         notifier.notify_one();
     });
 
-    // Initialize the blockchain data client, connect and subscribe to live blocks
+    // Initialize the blockchain data client, connect and subscribe to live blocks with RPC
     let chain: Chain = match std::env::var("CHAIN") {
         Ok(chain_str) => {
             if let Ok(blockchain) = chain_str.parse::<Blockchain>() {
@@ -72,10 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => chains::ETHEREUM.clone(), // default
     };
     let wss_rpc_url = std::env::var("RPC_WSS_URL").expect("RPC_WSS_URL must be set");
-    let blockchain_adapter_config = BlockchainAdapterConfig::new(wss_rpc_url);
+    let blockchain_adapter_config = BlockchainAdapterConfig::new(Some(wss_rpc_url), false);
     let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_adapter_config);
     data_client.connect().await?;
-    data_client.subscribe_blocks().await?;
+    data_client.subscribe_blocks().await;
 
     // Main loop to keep the app running
     loop {
@@ -84,5 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             () = data_client.process_rpc_message() => {}
         }
     }
+    data_client.disconnect()?;
     Ok(())
 }

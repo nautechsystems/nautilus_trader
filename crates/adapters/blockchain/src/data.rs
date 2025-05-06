@@ -17,27 +17,41 @@ use nautilus_model::defi::chain::{Blockchain, Chain};
 
 use crate::{
     config::BlockchainAdapterConfig,
+    hypersync::client::HyperSyncClient,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
             arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
             polygon::PolygonRpclient,
         },
-        error::BlockchainRpcClientError,
-        types::BlockchainRpcMessage,
+        types::BlockchainMessage,
     },
 };
 
 pub struct BlockchainDataClient {
     pub chain: Chain,
-    rpc_client: BlockchainRpcClientAny,
+    rpc_client: Option<BlockchainRpcClientAny>,
+    hypersync_client: HyperSyncClient,
+    hypersync_rx: tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>,
 }
 
 impl BlockchainDataClient {
     #[must_use]
     pub fn new(chain: Chain, config: BlockchainAdapterConfig) -> Self {
-        let rpc_client = Self::initialize_rpc_client(chain.name, config.wss_rpc_url);
-        Self { chain, rpc_client }
+        let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
+            let wss_rpc_url = config.wss_rpc_url.expect("wss_rpc_url is required");
+            Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
+        } else {
+            None
+        };
+        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
+        Self {
+            chain,
+            rpc_client,
+            hypersync_client,
+            hypersync_rx,
+        }
     }
 
     fn initialize_rpc_client(
@@ -60,29 +74,57 @@ impl BlockchainDataClient {
     }
 
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        self.rpc_client.connect().await
+        if let Some(ref mut rpc_client) = self.rpc_client {
+            rpc_client.connect().await?;
+        }
+        Ok(())
     }
 
-    pub async fn process_rpc_message(&mut self) {
-        loop {
-            match self.rpc_client.next_rpc_message().await {
-                Ok(msg) => match msg {
-                    BlockchainRpcMessage::Block(block) => {
-                        log::info!("{block}");
-                    }
-                },
-                Err(e) => {
-                    log::error!("Error processing rpc message: {e}");
+    pub fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.hypersync_client.disconnect();
+        Ok(())
+    }
+
+    pub async fn process_hypersync_message(&mut self) {
+        while let Some(msg) = self.hypersync_rx.recv().await {
+            match msg {
+                BlockchainMessage::Block(block) => {
+                    log::info!("{block}");
                 }
             }
         }
     }
 
-    pub async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.rpc_client.subscribe_blocks().await
+    pub async fn process_rpc_message(&mut self) {
+        if let Some(rpc_client) = self.rpc_client.as_mut() {
+            loop {
+                match rpc_client.next_rpc_message().await {
+                    Ok(msg) => match msg {
+                        BlockchainMessage::Block(block) => {
+                            log::info!("{block}");
+                        }
+                    },
+                    Err(e) => {
+                        log::error!("Error processing rpc message: {e}");
+                    }
+                }
+            }
+        }
     }
 
-    pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
-        self.rpc_client.unsubscribe_blocks().await
+    pub async fn subscribe_blocks(&mut self) {
+        if let Some(rpc_client) = self.rpc_client.as_mut() {
+            rpc_client.subscribe_blocks().await.unwrap()
+        } else {
+            self.hypersync_client.subscribe_blocks()
+        }
+    }
+
+    pub async fn unsubscribe_blocks(&mut self) {
+        if let Some(rpc_client) = self.rpc_client.as_mut() {
+            rpc_client.unsubscribe_blocks().await.unwrap()
+        } else {
+            self.hypersync_client.unsubscribe_blocks()
+        }
     }
 }
