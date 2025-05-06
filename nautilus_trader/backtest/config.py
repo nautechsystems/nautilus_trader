@@ -125,6 +125,14 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
         - If Low is closer to Open than High then the processing order is Open, Low, High, Close.
     trade_execution : bool, default False
         If trades should be processed by the matching engine(s) (and move the market).
+    modules : list[ImportableActorConfig], optional
+        The simulation modules for the venue.
+    fill_model : ImportableFillModelConfig, optional
+        The fill model for the venue.
+    latency_model : ImportableLatencyModelConfig, optional
+        The latency model for the venue.
+    fee_model : ImportableFeeModelConfig, optional
+        The fee model for the venue.
 
     """
 
