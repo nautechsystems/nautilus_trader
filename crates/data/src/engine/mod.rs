@@ -66,7 +66,9 @@ use nautilus_common::{
     timer::TimeEventCallback,
 };
 use nautilus_core::{
-    correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
+    correctness::{
+        FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
+    },
     datetime::millis_to_nanos,
 };
 use nautilus_model::{
@@ -179,6 +181,14 @@ impl DataEngine {
     /// Panics if a client with the same client ID has already been registered.
     pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
         let client_id = client.client_id();
+
+        if let Some(default_client) = &self.default_client {
+            check_predicate_false(
+                default_client.client_id() == client.client_id(),
+                "client_id already registered as default client",
+            )
+            .expect(FAILED);
+        }
 
         check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
@@ -353,11 +363,13 @@ impl DataEngine {
         }
 
         if let Some(v) = venue {
+            // Route by venue if mapped client still registered
             if let Some(mapped_cid) = self.routing_map.get(v) {
                 return self.clients.get_mut(mapped_cid);
             }
         }
 
+        // Fallback to default client
         self.get_default_client()
     }
 
