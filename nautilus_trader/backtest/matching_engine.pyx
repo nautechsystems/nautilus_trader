@@ -2035,26 +2035,32 @@ cdef class OrderMatchingEngine:
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_MBP
-            and order.liquidity_side == LiquiditySide.TAKER  # Marketable limit order
             and (
             order.order_type == OrderType.LIMIT
             or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.MARKET_TO_LIMIT
             or order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ) and ((order.side == OrderSide.BUY and order.price > self._core.ask) or (order.side == OrderSide.SELL and order.price < self._core.bid))
+        )
         ):
-            # Exhausted simulated book volume (continue aggressive filling into next level)
-            # This is a very basic implementation of slipping by a single tick, in the future
-            # we will implement more detailed fill modeling.
-            if order.side == OrderSide.BUY:
-                fill_px = last_fill_px.add(self.instrument.price_increment)
-            elif order.side == OrderSide.SELL:
-                fill_px = last_fill_px.sub(self.instrument.price_increment)
-            else:
-                raise ValueError(  # pragma: no cover (design-time error)
-                    f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
-                )
+            if not self._has_targets and ((order.side == OrderSide.BUY and order.price == self._core.ask) or (order.side == OrderSide.SELL and order.price == self._core.bid)):
+                return  # Limit price is equal to top-of-book, no further fills
+
+            if order.liquidity_side == LiquiditySide.MAKER:
+                # Market moved through limit price, assumption is there was enough liquidity to fill entire order
+                fill_px = order.price
+            else:  # Marketable limit order
+                # Exhausted simulated book volume (continue aggressive filling into next level)
+                # This is a very basic implementation of slipping by a single tick, in the future
+                # we will implement more detailed fill modeling.
+                if order.side == OrderSide.BUY:
+                    fill_px = last_fill_px.add(self.instrument.price_increment)
+                elif order.side == OrderSide.SELL:
+                    fill_px = last_fill_px.sub(self.instrument.price_increment)
+                else:
+                    raise ValueError(  # pragma: no cover (design-time error)
+                        f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
+                    )
 
             self.fill_order(
                 order=order,
