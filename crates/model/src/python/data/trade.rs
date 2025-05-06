@@ -50,6 +50,10 @@ use crate::{
 impl TradeTick {
     /// Creates a new [`TradeTick`] from a Python object.
     ///
+    /// # Panics
+    ///
+    /// Panics if converting `aggressor_side_u8` to `AggressorSide` fails.
+    ///
     /// # Errors
     ///
     /// Returns a `PyErr` if attribute extraction or type conversion fails.

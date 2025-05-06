@@ -1044,6 +1044,9 @@ cdef extern from "../includes/model.h":
 
     void interned_string_stats();
 
+    # # Panics
+    #
+    # Panics if `aggregation` or `price_type` do not correspond to valid enum variants.
     BarSpecification_t bar_specification_new(uintptr_t step,
                                              uint8_t aggregation,
                                              uint8_t price_type);
@@ -1063,6 +1066,9 @@ cdef extern from "../includes/model.h":
 
     uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
 
+    # # Panics
+    #
+    # Panics if `aggregation_source` does not correspond to a valid enum variant.
     BarType_t bar_type_new(InstrumentId_t instrument_id,
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
@@ -1178,6 +1184,9 @@ cdef extern from "../includes/model.h":
     #
     # - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
     # - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+    # # Panics
+    #
+    # Panics if any input pointer is null or if slice conversion for bids or asks fails.
     OrderBookDepth10_t orderbook_depth10_new(InstrumentId_t instrument_id,
                                              const BookOrder_t *bids_ptr,
                                              const BookOrder_t *asks_ptr,
@@ -1240,6 +1249,9 @@ cdef extern from "../includes/model.h":
                                uint64_t ts_event,
                                uint64_t ts_init);
 
+    # # Panics
+    #
+    # Panics if any field of the two `QuoteTick` instances differs.
     uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
 
     uint64_t quote_tick_hash(const QuoteTick_t *delta);
@@ -1282,6 +1294,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `AggressorSide` variant.
     AggregationSource aggregation_source_from_cstr(const char *ptr);
 
     const char *aggressor_side_to_cstr(AggressorSide value);
@@ -1304,6 +1320,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `AssetClass` variant.
     AssetClass asset_class_from_cstr(const char *ptr);
 
     const char *instrument_class_to_cstr(InstrumentClass value);
@@ -1313,6 +1333,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `InstrumentClass` variant.
     InstrumentClass instrument_class_from_cstr(const char *ptr);
 
     const char *bar_aggregation_to_cstr(uint8_t value);
@@ -1322,6 +1346,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `BarAggregation` variant.
     uint8_t bar_aggregation_from_cstr(const char *ptr);
 
     const char *book_action_to_cstr(BookAction value);
@@ -1331,6 +1359,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `BookAction` variant.
     BookAction book_action_from_cstr(const char *ptr);
 
     const char *book_type_to_cstr(BookType value);
@@ -1340,6 +1372,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `BookType` variant.
     BookType book_type_from_cstr(const char *ptr);
 
     const char *contingency_type_to_cstr(ContingencyType value);
@@ -1349,6 +1385,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `ContingencyType` variant.
     ContingencyType contingency_type_from_cstr(const char *ptr);
 
     const char *currency_type_to_cstr(CurrencyType value);
@@ -1358,6 +1398,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `CurrencyType` variant.
     CurrencyType currency_type_from_cstr(const char *ptr);
 
     # Returns an enum from a Python string.
@@ -1365,6 +1409,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `InstrumentCloseType` variant.
     InstrumentCloseType instrument_close_type_from_cstr(const char *ptr);
 
     const char *instrument_close_type_to_cstr(InstrumentCloseType value);
@@ -1376,6 +1424,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `LiquiditySide` variant.
     LiquiditySide liquidity_side_from_cstr(const char *ptr);
 
     const char *market_status_to_cstr(MarketStatus value);
@@ -1385,6 +1436,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `MarketStatus` variant.
     MarketStatus market_status_from_cstr(const char *ptr);
 
     const char *market_status_action_to_cstr(MarketStatusAction value);
@@ -1394,6 +1449,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
     MarketStatusAction market_status_action_from_cstr(const char *ptr);
 
     const char *oms_type_to_cstr(OmsType value);
@@ -1403,6 +1461,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OmsType` variant.
     OmsType oms_type_from_cstr(const char *ptr);
 
     const char *option_kind_to_cstr(OptionKind value);
@@ -1412,6 +1473,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OptionKind` variant.
     OptionKind option_kind_from_cstr(const char *ptr);
 
     const char *order_side_to_cstr(OrderSide value);
@@ -1421,6 +1485,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OrderSide` variant.
     OrderSide order_side_from_cstr(const char *ptr);
 
     const char *order_status_to_cstr(OrderStatus value);
@@ -1430,6 +1497,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OrderStatus` variant.
     OrderStatus order_status_from_cstr(const char *ptr);
 
     const char *order_type_to_cstr(OrderType value);
@@ -1439,6 +1509,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `OrderType` variant.
     OrderType order_type_from_cstr(const char *ptr);
 
     const char *position_side_to_cstr(PositionSide value);
@@ -1448,6 +1521,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `PositionSide` variant.
     PositionSide position_side_from_cstr(const char *ptr);
 
     const char *price_type_to_cstr(PriceType value);
@@ -1457,6 +1533,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `PriceType` variant.
     PriceType price_type_from_cstr(const char *ptr);
 
     const char *record_flag_to_cstr(RecordFlag value);
@@ -1466,6 +1545,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `RecordFlag` variant.
     RecordFlag record_flag_from_cstr(const char *ptr);
 
     const char *time_in_force_to_cstr(TimeInForce value);
@@ -1475,6 +1557,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `TimeInForce` variant.
     TimeInForce time_in_force_from_cstr(const char *ptr);
 
     const char *trading_state_to_cstr(TradingState value);
@@ -1484,6 +1569,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `TradingState` variant.
     TradingState trading_state_from_cstr(const char *ptr);
 
     const char *trailing_offset_type_to_cstr(TrailingOffsetType value);
@@ -1493,6 +1581,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
     TrailingOffsetType trailing_offset_type_from_cstr(const char *ptr);
 
     const char *trigger_type_to_cstr(TriggerType value);
@@ -1502,6 +1593,9 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    # # Panics
+    #
+    # Panics if the C string does not correspond to a valid `TriggerType` variant.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
     # # Safety
@@ -1783,6 +1877,10 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `formula_ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if changing the formula fails (i.e., `unwrap()` in `change_formula`).
     void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
                                              const char *formula_ptr);
 

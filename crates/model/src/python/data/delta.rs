@@ -44,6 +44,10 @@ use crate::{
 impl OrderBookDelta {
     /// Creates a new [`OrderBookDelta`] from a Python object.
     ///
+    /// # Panics
+    ///
+    /// Panics if converting `instrument_id` from string or `action` from u8 fails.
+    ///
     /// # Errors
     ///
     /// Returns a `PyErr` if extracting any attribute or converting types fails.
