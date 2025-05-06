@@ -58,17 +58,39 @@ impl DataClient for BacktestDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
     }
+
     fn venue(&self) -> Option<Venue> {
         Some(self.venue)
     }
 
-    fn start(&self) {}
-    fn stop(&self) {}
-    fn reset(&self) {}
-    fn dispose(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
+
     fn is_disconnected(&self) -> bool {
         false
     }

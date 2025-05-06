@@ -31,10 +31,10 @@ pub struct DataEngineConfig {
     /// If time bar aggregators will skip emitting a bar if the aggregation starts mid-interval.
     pub time_bars_skip_first_non_full_bar: bool,
     /// Determines the type of interval used for time aggregation.
-    /// - `leftOpen` : start time is excluded and end time is included (default).
-    /// - `rightOpen`: start time is included and end time is excluded.
+    /// - `LeftOpen`: start time is excluded and end time is included (default).
+    /// - `RightOpen`: start time is included and end time is excluded.
     pub time_bars_interval_type: BarIntervalType,
-    /// A dictionary mapping time bar aggregations to their origin time offsets
+    /// A dictionary mapping time bar aggregations to their origin time offsets.
     pub time_bars_origins: HashMap<BarAggregation, Duration>,
     /// If data objects timestamp sequencing will be validated and handled.
     pub validate_data_sequence: bool,
