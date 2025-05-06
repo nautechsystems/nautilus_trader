@@ -14,6 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod config;
-pub mod data;
-pub mod hypersync;
 pub mod rpc;
+
+#[cfg(feature = "hypersync")]
+pub mod data;
+#[cfg(feature = "hypersync")]
+pub mod hypersync;
