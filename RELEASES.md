@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
+- Introduce HyperSync client to blockchain adapter (#2606), thanks @filipmacek
 
 ### Breaking Changes
 None
@@ -22,6 +23,7 @@ None
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
+- Upgraded `tokio` crate to v1.45.0
 
 ### Fixes
 - Fixed position snapshot cache access for `ExecutionEngine`

@@ -1,7 +1,7 @@
 [package]
 name = "nautilus-demo"
 readme = "README.md"
-publish = false  # Do not publish. Demo only.
+publish = false  # Do not publish to crates.io - demo only
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

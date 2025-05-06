@@ -124,7 +124,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 def _set_feature_flags() -> list[str]:
     if HIGH_PRECISION:
-        return ["--all-features"]
+        return ["--features", "high-precision,ffi,python,extension-module"]
     else:
         return ["--features", "ffi,python,extension-module"]
 

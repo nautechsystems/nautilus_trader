@@ -53,14 +53,14 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--all-features", "--", "-D", "warnings"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
         pass_filenames: false
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors.
         entry: cargo doc
         language: system
-        args: ["--all-features", "--no-deps", "--workspace"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
         pass_filenames: false
 
   ##############################################################################
