@@ -15,4 +15,5 @@
 
 pub mod config;
 pub mod data;
+pub mod hypersync;
 pub mod rpc;

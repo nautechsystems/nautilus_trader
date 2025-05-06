@@ -16,13 +16,27 @@
 /// Configuration for blockchain adapter connections.
 #[derive(Debug, Clone)]
 pub struct BlockchainAdapterConfig {
+    /// Determines if the adapter should use Hypersync for live data streaming.
+    pub use_hypersync_for_live_data: bool,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
-    pub wss_rpc_url: String,
+    pub wss_rpc_url: Option<String>,
 }
 
 impl BlockchainAdapterConfig {
     #[must_use]
-    pub const fn new(wss_rpc_url: String) -> Self {
-        Self { wss_rpc_url }
+    pub const fn new(wss_rpc_url: Option<String>, use_hypersync_for_live_data: bool) -> Self {
+        Self {
+            wss_rpc_url,
+            use_hypersync_for_live_data,
+        }
+    }
+}
+
+impl Default for BlockchainAdapterConfig {
+    fn default() -> Self {
+        Self {
+            wss_rpc_url: None,
+            use_hypersync_for_live_data: true,
+        }
     }
 }
