@@ -39,6 +39,7 @@ use std::{
     any::Any,
     cell::{Ref, RefCell},
     collections::hash_map::Entry,
+    fmt::Display,
     num::NonZeroUsize,
     rc::Rc,
 };
@@ -659,7 +660,7 @@ impl DataEngine {
             .borrow_mut()
             .add_instrument(instrument.clone())
         {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_instrument_topic(instrument.id());
@@ -731,7 +732,7 @@ impl DataEngine {
 
     fn handle_quote(&mut self, quote: QuoteTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_quote(quote) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         // TODO: Handle synthetics
@@ -742,7 +743,7 @@ impl DataEngine {
 
     fn handle_trade(&mut self, trade: TradeTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trade(trade) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         // TODO: Handle synthetics
@@ -774,7 +775,7 @@ impl DataEngine {
         }
 
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_bars_topic(bar.bar_type);
@@ -783,7 +784,7 @@ impl DataEngine {
 
     fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_mark_price(mark_price) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
@@ -797,7 +798,7 @@ impl DataEngine {
             .borrow_mut()
             .add_index_price(index_price)
         {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_index_price_topic(index_price.instrument_id);
@@ -1046,26 +1047,26 @@ impl DataEngine {
         let mut cache = self.cache.as_ref().borrow_mut();
         for instrument in instruments {
             if let Err(e) = cache.add_instrument(instrument.clone()) {
-                log::error!("Error on cache insert: {e}");
+                log_error_on_cache_insert(&e);
             }
         }
     }
 
     fn handle_quotes(&self, quotes: &[QuoteTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(quotes) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
     fn handle_trades(&self, trades: &[TradeTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
     fn handle_bars(&self, bars: &[Bar]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
@@ -1114,7 +1115,7 @@ impl DataEngine {
 
         let handler = move |bar: Bar| {
             if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
-                log::error!("Error on cache insert: {e}");
+                log_error_on_cache_insert(&e);
             }
 
             let topic = switchboard::get_bars_topic(bar.bar_type);
@@ -1264,4 +1265,9 @@ impl DataEngine {
 
         Ok(())
     }
+}
+
+#[inline(always)]
+fn log_error_on_cache_insert<T: Display>(e: &T) {
+    log::error!("Error on cache insert: {e}");
 }
