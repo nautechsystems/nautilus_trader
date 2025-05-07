@@ -17,9 +17,12 @@ use std::{cell::Ref, fmt::Display};
 
 use nautilus_common::{
     clock::Clock,
-    messages::data::{
-        BarsResponse, BookResponse, DataResponse, InstrumentResponse, InstrumentsResponse,
-        QuotesResponse, TradesResponse,
+    messages::{
+        DataEvent,
+        data::{
+            BarsResponse, BookResponse, DataResponse, InstrumentResponse, InstrumentsResponse,
+            QuotesResponse, TradesResponse,
+        },
     },
 };
 use nautilus_core::UUID4;
@@ -35,8 +38,7 @@ use nautilus_model::{
 };
 
 pub trait LiveDataClient: DataClient {
-    fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
-    fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
+    fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataEvent>;
 
     fn get_clock(&self) -> Ref<'_, dyn Clock>;
 
@@ -77,7 +79,7 @@ pub trait LiveDataClient: DataClient {
     }
 
     fn send_data(&self, data: Data) {
-        if let Err(e) = self.get_subscriber_data_channel().send(data) {
+        if let Err(e) = self.get_message_channel().send(DataEvent::Data(data)) {
             log_send_error(&self.client_id(), &e);
         }
     }
@@ -92,9 +94,7 @@ pub trait LiveDataClient: DataClient {
             None,
         )));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
-            log_send_error(&self.client_id(), &e);
-        }
+        self.send_response(response);
     }
 
     fn send_instruments_response(
@@ -112,9 +112,7 @@ pub trait LiveDataClient: DataClient {
             None,
         ));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
-            log_send_error(&self.client_id(), &e);
-        }
+        self.send_response(response);
     }
 
     fn send_book_response(&self, book: OrderBook, correlation_id: UUID4) {
@@ -127,9 +125,7 @@ pub trait LiveDataClient: DataClient {
             None,
         ));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
-            log_send_error(&self.client_id(), &e);
-        }
+        self.send_response(response);
     }
 
     fn send_quotes_response(
@@ -147,9 +143,7 @@ pub trait LiveDataClient: DataClient {
             None,
         ));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
-            log_send_error(&self.client_id(), &e);
-        }
+        self.send_response(response);
     }
 
     fn send_trades_response(
@@ -167,9 +161,7 @@ pub trait LiveDataClient: DataClient {
             None,
         ));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
-            log_send_error(&self.client_id(), &e);
-        }
+        self.send_response(response);
     }
 
     fn send_bars(&self, bar_type: BarType, bars: Vec<Bar>, correlation_id: UUID4) {
@@ -182,7 +174,14 @@ pub trait LiveDataClient: DataClient {
             None,
         ));
 
-        if let Err(e) = self.get_response_data_channel().send(response) {
+        self.send_response(response);
+    }
+
+    fn send_response(&self, response: DataResponse) {
+        if let Err(e) = self
+            .get_message_channel()
+            .send(DataEvent::Response(response))
+        {
             log_send_error(&self.client_id(), &e);
         }
     }

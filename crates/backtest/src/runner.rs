@@ -26,17 +26,9 @@ use std::{
 use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::SubscribeCommand,
-    runner::{DataEvent, DataQueue, DataResponseQueue, GlobalDataQueue},
+    runner::{DataQueue, GlobalDataQueue},
 };
 use nautilus_data::engine::DataEngine;
-
-pub struct SyncDataQueue(VecDeque<DataEvent>);
-
-impl DataQueue for SyncDataQueue {
-    fn push(&mut self, event: DataEvent) {
-        self.0.push_back(event);
-    }
-}
 
 #[must_use]
 pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
@@ -101,12 +93,11 @@ pub trait Runner {
     fn run(&mut self, engine: &mut DataEngine);
 }
 
-pub struct BacktestRunner {
-    pub dq: DataResponseQueue,
+pub struct SyncRunner {
     pub clock: Rc<RefCell<TestClock>>,
 }
 
-// TODO: Untangle puzzle later
+// TODO: Untangle puzzle later (can use common trait once message bus wired up)
 // impl Runner for BacktestRunner {
 //     fn new() -> Self {
 //         let clock = Rc::new(RefCell::new(TestClock::new()));
