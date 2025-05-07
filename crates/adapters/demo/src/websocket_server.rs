@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(dead_code)]
+
 use std::net::SocketAddr;
 
 use futures::{SinkExt, StreamExt};

@@ -21,7 +21,7 @@ use crate::rpc::{
         polygon::PolygonRpclient,
     },
     error::BlockchainRpcClientError,
-    types::BlockchainRpcMessage,
+    types::BlockchainMessage,
 };
 
 pub mod chains;
@@ -44,5 +44,5 @@ pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
     async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
     async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
-    async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError>;
+    async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
 }

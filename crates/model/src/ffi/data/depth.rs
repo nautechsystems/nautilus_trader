@@ -32,6 +32,9 @@ use crate::{
 ///
 /// - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
 /// - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+/// # Panics
+///
+/// Panics if any input pointer is null or if slice conversion for bids or asks fails.
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub unsafe extern "C" fn orderbook_depth10_new(

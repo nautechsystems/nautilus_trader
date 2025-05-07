@@ -91,8 +91,7 @@ impl TradeTick {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `size` is not positive (> 0).
+    /// Panics if `size` is not positive (> 0).
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,

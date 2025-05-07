@@ -157,7 +157,10 @@ impl SyntheticInstrument {
         })
     }
 
-    /// Creates a new [`SyntheticInstrument`] instance
+    /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
+    /// # Panics
+    ///
+    /// Panics if the provided formula is invalid and cannot be parsed.
     pub fn new(
         symbol: Symbol,
         price_precision: u8,
@@ -192,13 +195,16 @@ impl SyntheticInstrument {
         Ok(())
     }
 
-    /// Calculates the price of the synthetic instrument based on the given component input prices
-    /// provided as a map.
-    #[allow(dead_code)]
+    /// Calculates the price of the synthetic instrument based on component input prices provided as a map.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a required component price is missing from the input map,
+    /// or if setting the value in the evaluation context fails.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the underlying calculation of the formula fails.
-    #[allow(dead_code)]
+    /// Returns an error if formula evaluation fails.
     pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> anyhow::Result<Price> {
         let mut input_values = Vec::new();
 

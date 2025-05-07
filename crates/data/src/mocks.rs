@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Mock data client implementations.
+//!
+//! Provides a `MockDataClient` for testing scenarios with an in-memory cache.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -37,6 +41,7 @@ use nautilus_model::identifiers::{ClientId, Venue};
 
 use crate::client::DataClient;
 
+/// A mock implementation of [`DataClient`] for testing, using an in-memory cache.
 pub struct MockDataClient {
     cache: Rc<RefCell<Cache>>,
     pub client_id: ClientId,
@@ -44,7 +49,8 @@ pub struct MockDataClient {
 }
 
 impl MockDataClient {
-    /// Creates a new [`MockDataClient`] instance.
+    /// Creates a new [`MockDataClient`] instance with the given cache, client ID, and venue.
+    #[must_use]
     pub const fn new(cache: Rc<RefCell<Cache>>, client_id: ClientId, venue: Venue) -> Self {
         Self {
             cache,
@@ -58,17 +64,39 @@ impl DataClient for MockDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
     }
+
     fn venue(&self) -> Option<Venue> {
         Some(self.venue)
     }
 
-    fn start(&self) {}
-    fn stop(&self) {}
-    fn reset(&self) {}
-    fn dispose(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
+
     fn is_disconnected(&self) -> bool {
         false
     }

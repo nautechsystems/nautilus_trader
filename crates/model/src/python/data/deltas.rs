@@ -103,6 +103,9 @@ impl OrderBookDeltas {
 
     #[staticmethod]
     #[pyo3(name = "from_pycapsule")]
+    /// # Panics
+    ///
+    /// Panics if downcasting the Python object to `PyCapsule` fails.
     pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
         let capsule: &Bound<'_, PyCapsule> = capsule
             .downcast::<PyCapsule>()

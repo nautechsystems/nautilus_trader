@@ -48,6 +48,11 @@ impl EnumIterator {
 }
 
 impl EnumIterator {
+    /// Creates a new Python iterator over the variants of an enum.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion of enum variants into Python objects fails.
     #[must_use]
     pub fn new<'py, E>(py: Python<'py>) -> Self
     where
@@ -66,6 +71,17 @@ impl EnumIterator {
     }
 }
 
+/// Converts a JSON `Value::Object` into a Python `dict`.
+///
+/// # Panics
+///
+/// Panics if creating a Python list fails due to an invalid iterator.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if:
+/// - the input `val` is not a JSON object.
+/// - conversion of any nested JSON value into a Python object fails.
 pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
 
@@ -83,6 +99,17 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     dict.into_py_any(py)
 }
 
+/// Converts a JSON `Value` into a corresponding Python object.
+///
+/// # Panics
+///
+/// Panics if parsing numbers (`as_i64`, `as_f64`) or creating the Python list (`PyList::new().expect`) fails.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if:
+/// - encountering an unsupported JSON number type.
+/// - conversion of nested arrays or objects fails.
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
     match val {
         Value::Null => Ok(py.None()),
@@ -109,6 +136,15 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
     }
 }
 
+/// Converts a list of `Money` values into a Python list of strings, or `None` if empty.
+///
+/// # Panics
+///
+/// Panics if creating the Python list fails or during the conversion unwrap.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if Python list creation or conversion fails.
 pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult<Bound<'_, PyAny>> {
     let mut values = Vec::new();
 
@@ -125,6 +161,11 @@ pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult
     }
 }
 
+/// Converts an `IndexMap<Currency, Money>` into a Python list of strings, or `None` if empty.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if Python list creation or conversion fails.
 pub fn commissions_from_indexmap(
     py: Python<'_>,
     commissions: IndexMap<Currency, Money>,

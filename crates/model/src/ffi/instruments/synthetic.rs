@@ -61,6 +61,12 @@ impl DerefMut for SyntheticInstrument_API {
     }
 }
 
+/// Changes the formula of the synthetic instrument.
+///
+/// # Panics
+///
+/// Panics if the formula update operation fails (`unwrap`).
+///
 /// # Safety
 ///
 /// - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
@@ -166,6 +172,10 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if changing the formula fails (i.e., `unwrap()` in `change_formula`).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn synthetic_instrument_change_formula(
     synth: &mut SyntheticInstrument_API,

@@ -54,7 +54,7 @@ use crate::runtime::get_runtime;
 ///
 /// # Panics
 ///
-/// This function panics if `interval_ns` is zero.
+/// Panics if `interval_ns` is zero.
 #[must_use]
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
@@ -248,7 +248,7 @@ impl TestTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     pub fn new(
         name: Ustr,
@@ -367,7 +367,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     #[cfg(not(feature = "clock_v2"))]
     pub fn new(
@@ -395,7 +395,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     #[cfg(feature = "clock_v2")]
     pub fn new(

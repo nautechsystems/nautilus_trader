@@ -161,6 +161,10 @@ impl QuoteTick {
     }
 
     /// Returns the [`Price`] for this quote depending on the given `price_type`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unsupported `price_type` is provided.
     #[must_use]
     pub fn extract_price(&self, price_type: PriceType) -> Price {
         match price_type {
@@ -175,6 +179,10 @@ impl QuoteTick {
     }
 
     /// Returns the [`Quantity`] for this quote depending on the given `price_type`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unsupported `price_type` is provided.
     #[must_use]
     pub fn extract_size(&self, price_type: PriceType) -> Quantity {
         match price_type {

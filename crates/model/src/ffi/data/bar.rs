@@ -32,6 +32,9 @@ use crate::{
     types::{Price, Quantity},
 };
 
+/// # Panics
+///
+/// Panics if `aggregation` or `price_type` do not correspond to valid enum variants.
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_new(
     step: usize,
@@ -82,6 +85,9 @@ pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecific
     u8::from(lhs >= rhs)
 }
 
+/// # Panics
+///
+/// Panics if `aggregation_source` does not correspond to a valid enum variant.
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_type_new(
     instrument_id: InstrumentId,

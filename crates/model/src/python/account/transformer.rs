@@ -21,6 +21,15 @@ use crate::{
     events::AccountState,
 };
 
+/// Constructs a `CashAccount` from a list of Python dict events.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input `events` list is empty.
+///
+/// # Panics
+///
+/// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
 pub fn cash_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,
@@ -42,6 +51,15 @@ pub fn cash_account_from_account_events(
     Ok(cash_account)
 }
 
+/// Constructs a `MarginAccount` from a list of Python dict events.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input `events` list is empty.
+///
+/// # Panics
+///
+/// Panics if event conversion (`py_from_dict`) unwrap fails.
 #[pyfunction]
 pub fn margin_account_from_account_events(
     events: Vec<Bound<'_, PyDict>>,

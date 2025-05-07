@@ -156,6 +156,12 @@ impl MarginAccount {
 
     #[pyo3(name = "calculate_initial_margin")]
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
+    /// Calculates the initial margin for a given instrument and quantity at the specified price.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the Python `instrument` object cannot be converted to a supported internal instrument,
+    /// or if the instrument type is unsupported.
     pub fn py_calculate_initial_margin(
         &mut self,
         instrument: PyObject,
@@ -188,6 +194,12 @@ impl MarginAccount {
         }
     }
 
+    /// Calculates the maintenance margin for a given instrument and quantity at the specified price.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if the Python `instrument` object cannot be converted to a supported internal instrument,
+    /// or if the instrument type is unsupported.
     #[pyo3(name = "calculate_maintenance_margin")]
     #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(

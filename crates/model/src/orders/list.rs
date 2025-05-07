@@ -36,6 +36,11 @@ pub struct OrderList {
 
 impl OrderList {
     /// Creates a new [`OrderList`] instance.
+    /// Creates a new [`OrderList`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `orders` is empty or if any order's instrument or strategy ID does not match.
     pub fn new(
         order_list_id: OrderListId,
         instrument_id: InstrumentId,

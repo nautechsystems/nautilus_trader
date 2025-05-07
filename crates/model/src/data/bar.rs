@@ -45,8 +45,7 @@ use crate::{
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
 
@@ -66,8 +65,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)
         .num_nanoseconds()
@@ -76,7 +74,11 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 }
 
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
-/// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
+///
+/// # Panics
+///
+/// Panics if computing the base `NaiveDate` or `DateTime` from `now` fails,
+/// or if the aggregation type is unsupported.
 pub fn get_time_bar_start(
     now: DateTime<Utc>,
     bar_type: &BarType,
@@ -233,8 +235,7 @@ impl BarSpecification {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `step` is not positive (> 0).
+    /// Returns an error if `step` is not positive (> 0).
     ///
     /// # Notes
     ///
@@ -257,13 +258,17 @@ impl BarSpecification {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `step` is not positive (> 0).
+    /// Panics if `step` is not positive (> 0).
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
+    /// Returns the `TimeDelta` interval for this bar specification.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the aggregation method is not supported for time duration.
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
             BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),

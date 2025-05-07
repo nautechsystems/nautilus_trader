@@ -163,6 +163,9 @@ impl CurrencyPair {
     }
 
     /// Creates a new [`CurrencyPair`] instance.
+    /// # Panics
+    ///
+    /// Panics if any input parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

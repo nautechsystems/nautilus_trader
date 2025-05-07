@@ -99,6 +99,11 @@ impl StrategyId {
         self.0 == EXTERNAL_STRATEGY_ID
     }
 
+    /// Returns the numerical tag portion of the strategy ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal ID does not contain a '-' separator.
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated

@@ -294,7 +294,7 @@ impl DataType {
         self.topic.as_str()
     }
 
-    /// Returns an [`Option<InstrumentId>`] from the metadata.
+    /// Returns an [`Option<InstrumentId>`] parsed from the metadata.
     ///
     /// # Panics
     ///
@@ -310,7 +310,7 @@ impl DataType {
         )
     }
 
-    /// Returns an [`Option<Venue>`] from the metadata.
+    /// Returns an [`Option<Venue>`] parsed from the metadata.
     ///
     /// # Panics
     ///
@@ -323,7 +323,7 @@ impl DataType {
         Some(Venue::from(venue_str.as_str()))
     }
 
-    /// Returns an [`Option<UnixNanos>`] start from the metadata.
+    /// Returns an [`Option<UnixNanos>`] parsed from the metadata `start` field.
     ///
     /// # Panics
     ///
@@ -336,7 +336,7 @@ impl DataType {
         Some(UnixNanos::from_str(start_str).expect("Invalid `UnixNanos` for 'start'"))
     }
 
-    /// Returns an [`Option<UnixNanos>`] end from the metadata.
+    /// Returns an [`Option<UnixNanos>`] parsed from the metadata `end` field.
     ///
     /// # Panics
     ///
@@ -349,7 +349,7 @@ impl DataType {
         Some(UnixNanos::from_str(end_str).expect("Invalid `UnixNanos` for 'end'"))
     }
 
-    /// Returns an [`Option<usize>`] limit from the metadata.
+    /// Returns an [`Option<usize>`] parsed from the metadata `limit` field.
     ///
     /// # Panics
     ///

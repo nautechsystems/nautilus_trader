@@ -17,9 +17,9 @@ use nautilus_model::defi::block::Block;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
-/// Represents normalized blockchain RPC messages which was processed from the node.
+/// Represents normalized blockchain messages
 #[derive(Debug, Clone)]
-pub enum BlockchainRpcMessage {
+pub enum BlockchainMessage {
     Block(Block),
 }
 

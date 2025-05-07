@@ -3,15 +3,18 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added support for `FillModel`, `LatencyModel` and `FeeModel` in BacktestNode (#2601), thanks @faysou
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
+- Introduce HyperSync client to blockchain adapter (#2606), thanks @filipmacek
 
 ### Breaking Changes
 None
 
 ### Internal Improvements
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
+- Improved fill behavior for limit orders in `L1_MBP` books, will now fill entire size when marketable as `TAKER` or market moves through limit as `MAKER`
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
 - Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
 - Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
@@ -20,6 +23,7 @@ None
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
+- Upgraded `tokio` crate to v1.45.0
 
 ### Fixes
 - Fixed position snapshot cache access for `ExecutionEngine`
@@ -28,8 +32,8 @@ None
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
-- Added errors docs for `common` crate
-- Added errors docs for `model` crate
+- Added errors and panics docs for `common` crate
+- Added errors and panics docs for `model` crate
 
 ### Deprecations
 None

@@ -50,9 +50,9 @@ impl Symbol {
 
     /// Creates a new [`Symbol`] instance.
     ///
-    /// # Panic
+    /// # Panics
     ///
-    /// - If `value` is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

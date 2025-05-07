@@ -48,6 +48,10 @@ impl OrderAny {
     /// Returns an error if:
     /// - The `events` is empty.
     /// - The first event is not `OrderInitialized`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `events` is empty or when applying events via `order.apply`, which may panic on invalid transitions.
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create OrderAny");
@@ -215,6 +219,9 @@ pub enum LimitOrderAny {
 
 impl LimitOrderAny {
     #[must_use]
+    /// # Panics
+    ///
+    /// Panics if called on a `MarketToLimit` variant when the inner `price` is `None`.
     pub fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,
