@@ -165,7 +165,7 @@ impl DataEngine {
         self.cache.borrow()
     }
 
-    /// Registers the catalog with the engine.
+    /// Registers the `catalog` with the engine with an optional specific `name`.
     ///
     /// # Panics
     ///
@@ -179,7 +179,7 @@ impl DataEngine {
         log::info!("Registered catalog <{name}>");
     }
 
-    /// Registers a new [`DataClientAdapter`].
+    /// Registers the `client` with the engine with an optional venue `routing`.
     ///
     ///
     /// # Panics
@@ -212,7 +212,7 @@ impl DataEngine {
         };
     }
 
-    /// Deregisters a [`DataClientAdapter`].
+    /// Deregisters the client for the `client_id`.
     ///
     /// # Panics
     ///
@@ -352,12 +352,11 @@ impl DataEngine {
         F: Fn(&DataClientAdapter) -> &AHashSet<T>,
         T: Clone,
     {
-        let mut subs = Vec::new();
-
-        for client in self.get_clients() {
-            subs.extend(get_subs(client).iter().cloned());
-        }
-        subs
+        self.get_clients()
+            .into_iter()
+            .flat_map(get_subs)
+            .cloned()
+            .collect()
     }
 
     fn get_client(
@@ -365,15 +364,15 @@ impl DataEngine {
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
-        if let Some(cid) = client_id {
+        if let Some(client_id) = client_id {
             // Explicit ID: first look in registered clients
-            if let Some(client) = self.clients.get_mut(cid) {
+            if let Some(client) = self.clients.get_mut(client_id) {
                 return Some(client);
             }
 
             // Then check if it matches the default client
             if let Some(default) = self.default_client.as_mut() {
-                if default.client_id() == *cid {
+                if default.client_id() == *client_id {
                     return Some(default);
                 }
             }
@@ -384,8 +383,8 @@ impl DataEngine {
 
         if let Some(v) = venue {
             // Route by venue if mapped client still registered
-            if let Some(mapped_cid) = self.routing_map.get(v) {
-                return self.clients.get_mut(mapped_cid);
+            if let Some(client_id) = self.routing_map.get(v) {
+                return self.clients.get_mut(client_id);
             }
         }
 
@@ -488,35 +487,17 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
-    /// Called when the engine is started.
-    ///
-    /// # Panics
-    ///
-    /// Always, as not yet implemented.
-    pub fn on_start(&mut self) {
-        todo!()
-    }
-
-    /// Called when the engine is stopped.
-    ///
-    /// # Panics
-    ///
-    /// Always, as not yet implemented.
-    pub fn on_stop(&mut self) {
-        todo!()
-    }
+    // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
     ///
     /// Errors during execution are logged.
     pub fn execute(&mut self, cmd: &DataCommand) {
-        let result = match cmd {
-            DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
-            DataCommand::Unsubscribe(cmd) => self.execute_unsubscribe(cmd),
-            DataCommand::Request(cmd) => self.execute_request(cmd),
-        };
-
-        if let Err(e) = result {
+        if let Err(e) = match cmd {
+            DataCommand::Subscribe(c) => self.execute_subscribe(c),
+            DataCommand::Unsubscribe(c) => self.execute_unsubscribe(c),
+            DataCommand::Request(c) => self.execute_request(c),
+        } {
             log::error!("{e}");
         }
     }
@@ -682,7 +663,7 @@ impl DataEngine {
         }
 
         let topic = switchboard::get_instrument_topic(instrument.id());
-        msgbus::publish(&topic, &instrument as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &instrument as &dyn Any);
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
