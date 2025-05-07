@@ -200,7 +200,7 @@ impl DataEngine {
         check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
         if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id());
+            self.routing_map.insert(routing, client_id);
             log::info!("Set client {client_id} routing for {routing}");
         }
 
@@ -639,6 +639,9 @@ impl DataEngine {
         log::debug!("{RECV}{RES} {resp:?}");
 
         match &resp {
+            DataResponse::Instrument(resp) => {
+                self.handle_instrument_response(resp.data.clone());
+            }
             DataResponse::Instruments(resp) => {
                 self.handle_instruments(&resp.data);
             }
@@ -1041,6 +1044,13 @@ impl DataEngine {
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
+
+    fn handle_instrument_response(&self, instrument: InstrumentAny) {
+        let mut cache = self.cache.as_ref().borrow_mut();
+        if let Err(e) = cache.add_instrument(instrument.clone()) {
+            log_error_on_cache_insert(&e);
+        }
+    }
 
     fn handle_instruments(&self, instruments: &[InstrumentAny]) {
         // TODO: Improve by adding bulk update methods to cache and database

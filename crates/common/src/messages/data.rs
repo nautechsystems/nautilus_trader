@@ -1281,6 +1281,7 @@ impl RequestBars {
 #[derive(Clone, Debug)]
 pub enum DataResponse {
     Data(CustomDataResponse),
+    Instrument(Box<InstrumentResponse>),
     Instruments(InstrumentsResponse),
     Book(BookResponse),
     Quotes(QuotesResponse),
@@ -1297,6 +1298,7 @@ impl DataResponse {
     pub fn correlation_id(&self) -> &UUID4 {
         match self {
             Self::Data(resp) => &resp.correlation_id,
+            Self::Instrument(resp) => &resp.correlation_id,
             Self::Instruments(resp) => &resp.correlation_id,
             Self::Book(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
@@ -1312,7 +1314,7 @@ pub type Payload = Arc<dyn Any + Send + Sync>;
 pub struct CustomDataResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
-    pub venue: Venue,
+    pub venue: Option<Venue>,
     pub data_type: DataType,
     pub data: Payload,
     pub ts_init: UnixNanos,
@@ -1323,7 +1325,7 @@ impl CustomDataResponse {
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,
-        venue: Venue,
+        venue: Option<Venue>,
         data_type: DataType,
         data: T,
         ts_init: UnixNanos,
@@ -1347,10 +1349,45 @@ impl CustomDataResponse {
 }
 
 #[derive(Clone, Debug)]
-pub struct InstrumentsResponse {
+pub struct InstrumentResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
+    pub data: InstrumentAny,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl InstrumentResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: InstrumentAny,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InstrumentsResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
     pub data: Vec<InstrumentAny>,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
@@ -1365,7 +1402,7 @@ impl InstrumentsResponse {
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
-        instrument_id: InstrumentId,
+        venue: Venue,
         data: Vec<InstrumentAny>,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
@@ -1373,7 +1410,7 @@ impl InstrumentsResponse {
         Self {
             correlation_id,
             client_id,
-            instrument_id,
+            venue,
             data,
             ts_init,
             params,

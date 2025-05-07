@@ -57,11 +57,11 @@ use crate::{
     logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
-            BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentsResponse,
-            QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand, RequestData,
-            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentResponse,
+            InstrumentsResponse, QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand,
+            RequestData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
+            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
             SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
             SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
             UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
@@ -638,6 +638,15 @@ pub trait DataActor: Actor {
         log_received(&response);
 
         if let Err(e) = self.on_historical_data(response.data.as_ref()) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles an instrument response.
+    fn handle_instrument_response(&mut self, response: &InstrumentResponse) {
+        log_received(&response);
+
+        if let Err(e) = self.on_instrument(&response.data) {
             log_error(&e);
         }
     }
@@ -1852,8 +1861,8 @@ impl DataActorCore {
 
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentsResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_instruments_response(response);
+            move |response: &InstrumentResponse| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_response(response);
             },
         )));
 

@@ -19,34 +19,25 @@
 //! and utilities for constructing data responses.
 
 use std::{
-    cell::RefCell,
     fmt::{Debug, Display},
     ops::{Deref, DerefMut},
-    rc::Rc,
-    sync::Arc,
 };
 
 use ahash::AHashSet;
-use indexmap::IndexMap;
-use nautilus_common::{
-    clock::Clock,
-    messages::data::{
-        CustomDataResponse, RequestBars, RequestBookSnapshot, RequestData, RequestInstrument,
-        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
-        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
-    },
+use nautilus_common::messages::data::{
+    RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
+    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+    SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+    UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData,
+    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
+    UnsubscribeTrades,
 };
-use nautilus_core::UUID4;
 use nautilus_model::{
-    data::{Bar, BarType, DataType, QuoteTick, TradeTick},
+    data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::{Instrument, InstrumentAny},
 };
 
 /// Defines the interface for a data client, managing connections, subscriptions, and requests.
@@ -104,11 +95,6 @@ pub trait DataClient {
 
     /// Returns `true` if the client is currently disconnected.
     fn is_disconnected(&self) -> bool;
-
-    // TODO: Move to separate trait
-    // A [`LiveDataClient`] must have two channels to send back data and data responses
-    // fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
-    // fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
     /// Subscribes to generic data types according to the command.
     ///
@@ -453,7 +439,6 @@ pub trait DataClient {
 /// Wraps a [`DataClient`], managing subscription state and forwarding commands.
 pub struct DataClientAdapter {
     client: Box<dyn DataClient>,
-    clock: Rc<RefCell<dyn Clock>>,
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub handles_book_deltas: bool,
@@ -521,11 +506,9 @@ impl DataClientAdapter {
         handles_order_book_deltas: bool,
         handles_order_book_snapshots: bool,
         client: Box<dyn DataClient>,
-        clock: Rc<RefCell<dyn Clock>>,
     ) -> Self {
         Self {
             client,
-            clock,
             client_id,
             venue,
             handles_book_deltas: handles_order_book_deltas,
@@ -949,125 +932,6 @@ impl DataClientAdapter {
     pub fn request_bars(&self, req: &RequestBars) -> anyhow::Result<()> {
         self.client.request_bars(req)
     }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-    // TODO: Below handler style is deprecated (need to update incorrect CustomDataResponse)
-    ///////////////////////////////////////////////////////////////////////////////////////////////
-
-    /// Constructs a `CustomDataResponse` wrapping a single instrument.
-    #[must_use]
-    pub fn handle_instrument(
-        &self,
-        instrument: InstrumentAny,
-        correlation_id: UUID4,
-    ) -> CustomDataResponse {
-        let instrument_id = instrument.id();
-        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
-        let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
-        let data = Arc::new(instrument);
-
-        CustomDataResponse::new(
-            correlation_id,
-            self.client_id,
-            instrument_id.venue,
-            data_type,
-            data,
-            self.clock.borrow().timestamp_ns(),
-            None,
-        )
-    }
-
-    /// Constructs a `CustomDataResponse` wrapping multiple instruments for a venue.
-    #[must_use]
-    pub fn handle_instruments(
-        &self,
-        venue: Venue,
-        instruments: Vec<InstrumentAny>,
-        correlation_id: UUID4,
-    ) -> CustomDataResponse {
-        let metadata = IndexMap::from([("venue".to_string(), venue.to_string())]);
-        let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
-        let data = Arc::new(instruments);
-
-        CustomDataResponse::new(
-            correlation_id,
-            self.client_id,
-            venue,
-            data_type,
-            data,
-            self.clock.borrow().timestamp_ns(),
-            None,
-        )
-    }
-
-    /// Constructs a `CustomDataResponse` carrying quote ticks for the specified instrument.
-    #[must_use]
-    pub fn handle_quotes(
-        &self,
-        instrument_id: &InstrumentId,
-        quotes: Vec<QuoteTick>,
-        correlation_id: UUID4,
-    ) -> CustomDataResponse {
-        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
-        let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
-        let data = Arc::new(quotes);
-
-        CustomDataResponse::new(
-            correlation_id,
-            self.client_id,
-            instrument_id.venue,
-            data_type,
-            data,
-            self.clock.borrow().timestamp_ns(),
-            None,
-        )
-    }
-
-    /// Constructs a `CustomDataResponse` carrying trade ticks for the specified instrument.
-    #[must_use]
-    pub fn handle_trades(
-        &self,
-        instrument_id: &InstrumentId,
-        trades: Vec<TradeTick>,
-        correlation_id: UUID4,
-    ) -> CustomDataResponse {
-        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
-        let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
-        let data = Arc::new(trades);
-
-        CustomDataResponse::new(
-            correlation_id,
-            self.client_id,
-            instrument_id.venue,
-            data_type,
-            data,
-            self.clock.borrow().timestamp_ns(),
-            None,
-        )
-    }
-
-    /// Constructs a `CustomDataResponse` carrying bar data for the specified bar type.
-    #[must_use]
-    pub fn handle_bars(
-        &self,
-        bar_type: &BarType,
-        bars: Vec<Bar>,
-        correlation_id: UUID4,
-    ) -> CustomDataResponse {
-        let metadata = IndexMap::from([("bar_type".to_string(), bar_type.to_string())]);
-        let data_type = DataType::new(stringify!(Bar), Some(metadata));
-        let data = Arc::new(bars);
-
-        CustomDataResponse::new(
-            correlation_id,
-            self.client_id,
-            bar_type.instrument_id().venue,
-            data_type,
-            data,
-            self.clock.borrow().timestamp_ns(),
-            None,
-        )
-    }
 }
 
 #[inline(always)]
@@ -1107,18 +971,23 @@ mod adapter_tests {
     #[test]
     fn test_generic_data_subscription() {
         // Setup adapter with a mock client
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let client_id = ClientId::new("GEN");
         let venue = Venue::default();
-        let client = Box::new(MockDataClient::new(cache.clone(), client_id, venue));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let client = Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id,
+            venue,
+        ));
         let mut client = DataClientAdapter::new(
             client_id,
             Some(venue),
             false, // handles deltas
             false, // handles snapshots
             client,
-            clock,
         );
 
         // Define a custom data type
@@ -1157,18 +1026,23 @@ mod adapter_tests {
     #[test]
     fn test_instrument_subscription() {
         // Setup adapter with a mock client
+        let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let client_id = ClientId::new("INS");
         let venue = Venue::default();
-        let client = Box::new(MockDataClient::new(cache.clone(), client_id, venue));
-        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let client = Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id,
+            venue,
+        ));
         let mut client = DataClientAdapter::new(
             client_id,
             Some(venue),
             false, // handles deltas
             false, // handles snapshots
             client,
-            clock,
         );
 
         let instrument = audusd_sim();
