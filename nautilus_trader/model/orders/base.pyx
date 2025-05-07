@@ -326,6 +326,10 @@ cdef class Order:
     cdef Price get_triggered_price_c(self):
         return self._triggered_price
 
+    cdef void set_activated(self, Price activation_price):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
+
     cdef OrderStatus status_c(self):
         return <OrderStatus>self._fsm.state
 
@@ -361,6 +365,9 @@ cdef class Order:
 
     cdef bint has_price_c(self):
         raise NotImplementedError("method `has_price_c` must be implemented in subclass")  # pragma: no cover
+
+    cdef bint has_activation_price_c(self):
+        return False
 
     cdef bint has_trigger_price_c(self):
         raise NotImplementedError("method `has_trigger_price_c` must be implemented in subclass")  # pragma: no cover
