@@ -474,3 +474,174 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
         )
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        enums::{TimeInForce, TriggerType},
+        events::order::{filled::OrderFilledBuilder, initialized::OrderInitializedBuilder},
+        identifiers::InstrumentId,
+        orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
+        types::{Price, Quantity},
+    };
+
+    #[test]
+    fn test_limit_if_touched_order_creation() {
+        // Create a limit-if-touched order with specific parameters
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
+            .build();
+
+        // Assert that the limit-if-touched specific fields are correctly set
+        assert_eq!(order.price(), Some(Price::new(100.0, 2)));
+        assert_eq!(order.trigger_price(), Some(Price::new(95.0, 2)));
+        assert_eq!(order.trigger_type(), Some(TriggerType::Default));
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+
+        // Verify order type
+        assert_eq!(order.order_type(), OrderType::LimitIfTouched);
+    }
+
+    #[test]
+    fn test_limit_if_touched_order_update() {
+        // Create and accept a basic limit-if-touched order
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Update with new values
+        let updated_price = Price::new(105.0, 2);
+        let updated_trigger_price = Price::new(97.0, 2);
+        let updated_quantity = Quantity::from(5);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            price: Some(updated_price),
+            trigger_price: Some(updated_trigger_price),
+            quantity: updated_quantity,
+            ..Default::default()
+        };
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        // Verify updates were applied correctly
+        assert_eq!(accepted_order.price(), Some(updated_price));
+        assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
+        assert_eq!(accepted_order.quantity(), updated_quantity);
+    }
+
+    #[test]
+    fn test_limit_if_touched_order_expire_time() {
+        // Create a new LimitIfTouchedOrder with an expire time
+        let expire_time = UnixNanos::from(1234567890);
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .trigger_type(TriggerType::Default)
+            .expire_time(expire_time)
+            .build();
+
+        // Assert that the expire time is set correctly
+        assert_eq!(order.expire_time(), Some(expire_time));
+    }
+
+    #[test]
+    fn test_limit_if_touched_order_from_order_initialized() {
+        // Create an OrderInitialized event with all required fields for a LimitIfTouchedOrder
+        let order_initialized = OrderInitializedBuilder::default()
+            .price(Some(Price::new(100.0, 2)))
+            .trigger_price(Some(Price::new(95.0, 2)))
+            .trigger_type(Some(TriggerType::Default))
+            .order_type(OrderType::LimitIfTouched)
+            .build()
+            .unwrap();
+
+        // Convert the OrderInitialized event into a LimitIfTouchedOrder
+        let order: LimitIfTouchedOrder = order_initialized.clone().into();
+
+        // Assert essential fields match the OrderInitialized fields
+        assert_eq!(order.trader_id(), order_initialized.trader_id);
+        assert_eq!(order.strategy_id(), order_initialized.strategy_id);
+        assert_eq!(order.instrument_id(), order_initialized.instrument_id);
+        assert_eq!(order.client_order_id(), order_initialized.client_order_id);
+        assert_eq!(order.order_side(), order_initialized.order_side);
+        assert_eq!(order.quantity(), order_initialized.quantity);
+
+        // Assert specific fields for LimitIfTouchedOrder
+        assert_eq!(order.price, order_initialized.price.unwrap());
+        assert_eq!(
+            order.trigger_price,
+            order_initialized.trigger_price.unwrap()
+        );
+        assert_eq!(order.trigger_type, order_initialized.trigger_type.unwrap());
+    }
+
+    #[test]
+    fn test_limit_if_touched_order_sets_slippage_when_filled() {
+        // Create a limit-if-touched order
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy) // Explicitly setting Buy side
+            .price(Price::new(90.0, 2)) // Limit price
+            .trigger_price(Price::new(95.0, 2)) // Trigger price LOWER than fill price
+            .trigger_type(TriggerType::Default)
+            .build();
+
+        // Accept the order first
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Create a filled event with the correct quantity
+        let fill_quantity = accepted_order.quantity(); // Use the same quantity as the order
+        let fill_price = Price::new(98.50, 2); // Use a price LOWER than limit price
+
+        let order_filled_event = OrderFilledBuilder::default()
+            .client_order_id(accepted_order.client_order_id())
+            .strategy_id(accepted_order.strategy_id())
+            .instrument_id(accepted_order.instrument_id())
+            .order_side(accepted_order.order_side())
+            .last_qty(fill_quantity)
+            .last_px(fill_price)
+            .venue_order_id(VenueOrderId::from("TEST-001"))
+            .trade_id(TradeId::from("TRADE-001"))
+            .build()
+            .unwrap();
+
+        // Apply the fill event
+        accepted_order
+            .apply(OrderEventAny::Filled(order_filled_event))
+            .unwrap();
+
+        // The slippage calculation should be triggered by the filled event
+        print!("Slippageee: {:?}", accepted_order.slippage());
+        assert!(accepted_order.slippage().is_some());
+
+        // We can also check the actual slippage value
+        let expected_slippage = 98.50 - 90.0; // For buy order: execution price - trigger price
+        let actual_slippage = accepted_order.slippage().unwrap();
+
+        assert!(
+            (actual_slippage - expected_slippage).abs() < 0.001,
+            "Expected slippage around {}, got {}",
+            expected_slippage,
+            actual_slippage
+        );
+    }
+}
