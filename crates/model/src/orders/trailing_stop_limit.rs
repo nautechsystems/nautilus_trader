@@ -16,10 +16,7 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::{FAILED, check_predicate_true},
-};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -35,6 +32,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
+    orders::{check_display_qty, check_time_in_force},
     types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
@@ -103,16 +101,9 @@ impl TrailingStopLimitOrder {
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
 
-        if let Some(q) = display_qty {
-            check_predicate_true(q <= quantity, "`display_qty` may not exceed `quantity`")?;
-        }
+        check_display_qty(display_qty, quantity)?;
 
-        if time_in_force == TimeInForce::Gtd {
-            check_predicate_true(
-                expire_time.unwrap_or_default() > 0,
-                "`expire_time` is required for `GTD` order",
-            )?;
-        }
+        check_time_in_force(time_in_force, expire_time)?;
 
         let init_order = OrderInitialized::new(
             trader_id,

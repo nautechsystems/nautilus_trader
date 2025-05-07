@@ -33,6 +33,7 @@ pub mod trailing_stop_market;
 pub mod stubs;
 
 // Re-exports
+use anyhow::anyhow;
 use enum_dispatch::enum_dispatch;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
@@ -110,6 +111,8 @@ pub enum OrderError {
     AlreadyInitialized,
     #[error("Order had no previous state")]
     NoPreviousState,
+    #[error("{0}")]
+    Invariant(#[from] anyhow::Error),
 }
 
 #[must_use]
@@ -124,6 +127,34 @@ pub fn str_indexmap_to_ustr(h: IndexMap<String, String>) -> IndexMap<Ustr, Ustr>
     h.into_iter()
         .map(|(k, v)| (Ustr::from(&k), Ustr::from(&v)))
         .collect()
+}
+
+#[inline]
+pub(crate) fn check_display_qty(
+    display_qty: Option<Quantity>,
+    quantity: Quantity,
+) -> Result<(), OrderError> {
+    if let Some(q) = display_qty {
+        if q > quantity {
+            return Err(OrderError::Invariant(anyhow!(
+                "`display_qty` may not exceed `quantity`"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[inline]
+pub(crate) fn check_time_in_force(
+    time_in_force: TimeInForce,
+    expire_time: Option<UnixNanos>,
+) -> Result<(), OrderError> {
+    if time_in_force == TimeInForce::Gtd && expire_time.unwrap_or_default() == 0 {
+        return Err(OrderError::Invariant(anyhow!(
+            "`expire_time` is required for `GTD` order"
+        )));
+    }
+    Ok(())
 }
 
 impl OrderStatus {
