@@ -102,8 +102,8 @@ impl TestClock_Py {
             .map_err(to_pyvalue_err)
     }
 
-    fn next_time_ns(&self, name: &str) -> u64 {
-        *self.0.next_time_ns(name)
+    fn next_time_ns(&self, name: &str) -> Option<u64> {
+        self.0.next_time_ns(name).map(|n| n.as_u64())
     }
 
     fn cancel_timer(&mut self, name: &str) {
@@ -183,8 +183,8 @@ impl LiveClock_Py {
             .map_err(to_pyvalue_err)
     }
 
-    fn next_time_ns(&self, name: &str) -> u64 {
-        *self.0.next_time_ns(name)
+    fn next_time_ns(&self, name: &str) -> Option<u64> {
+        self.0.next_time_ns(name).map(|t| t.as_u64())
     }
 
     fn cancel_timer(&mut self, name: &str) {
