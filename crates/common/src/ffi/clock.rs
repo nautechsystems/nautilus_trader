@@ -233,7 +233,7 @@ pub unsafe extern "C" fn test_clock_next_time(
     name_ptr: *const c_char,
 ) -> UnixNanos {
     let name = unsafe { cstr_as_str(name_ptr) };
-    clock.next_time_ns(name)
+    clock.next_time_ns(name).unwrap_or_default()
 }
 
 /// # Safety
@@ -431,7 +431,7 @@ pub unsafe extern "C" fn live_clock_next_time(
     name_ptr: *const c_char,
 ) -> UnixNanos {
     let name = unsafe { cstr_as_str(name_ptr) };
-    clock.next_time_ns(name)
+    clock.next_time_ns(name).unwrap_or_default()
 }
 
 /// # Safety

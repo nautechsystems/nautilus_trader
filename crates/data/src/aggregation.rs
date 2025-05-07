@@ -1093,7 +1093,11 @@ where
 
             self.next_close_ns = next_alert_ns;
         } else {
-            self.next_close_ns = self.clock.borrow().next_time_ns(&self.timer_name);
+            self.next_close_ns = self
+                .clock
+                .borrow()
+                .next_time_ns(&self.timer_name)
+                .unwrap_or_default();
         }
     }
 }

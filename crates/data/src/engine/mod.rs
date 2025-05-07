@@ -153,7 +153,13 @@ impl DataEngine {
         }
     }
 
-    /// Provides read-only access to the cache.
+    /// Returns a read-only reference to the engines clock.
+    #[must_use]
+    pub fn get_clock(&self) -> Ref<'_, dyn Clock> {
+        self.clock.borrow()
+    }
+
+    /// Returns a read-only reference to the engines cache.
     #[must_use]
     pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
