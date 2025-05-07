@@ -25,6 +25,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
+    clock::Clock,
     messages::data::{
         RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
@@ -43,6 +44,7 @@ use crate::client::DataClient;
 
 /// A mock implementation of [`DataClient`] for testing, using an in-memory cache.
 pub struct MockDataClient {
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -51,8 +53,14 @@ pub struct MockDataClient {
 impl MockDataClient {
     /// Creates a new [`MockDataClient`] instance with the given cache, client ID, and venue.
     #[must_use]
-    pub const fn new(cache: Rc<RefCell<Cache>>, client_id: ClientId, venue: Venue) -> Self {
+    pub const fn new(
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) -> Self {
         Self {
+            clock,
             cache,
             client_id,
             venue,

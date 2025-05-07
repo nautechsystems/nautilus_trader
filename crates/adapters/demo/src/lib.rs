@@ -54,7 +54,6 @@ pub async fn init_data_engine(
         false,
         false,
         client,
-        clock.clone(),
     );
     let cache = Rc::new(RefCell::new(Cache::new(None, None)));
 

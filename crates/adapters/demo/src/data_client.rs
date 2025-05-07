@@ -131,7 +131,7 @@ impl MockDataClient {
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
                 Arc::new(value),
                 UnixNanos::new(0),
@@ -168,7 +168,7 @@ impl MockDataClient {
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
                 Arc::new(value),
                 UnixNanos::new(0),

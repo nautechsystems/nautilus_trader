@@ -325,7 +325,6 @@ impl BacktestEngine {
                 false,
                 false,
                 Box::new(backtest_client),
-                self.kernel.clock.clone(),
             );
             self.kernel
                 .data_engine

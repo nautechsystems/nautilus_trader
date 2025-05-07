@@ -53,8 +53,8 @@ use crate::{
     enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
-        BarsResponse, BookResponse, CustomDataResponse, InstrumentsResponse, QuotesResponse,
-        TradesResponse,
+        BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
+        QuotesResponse, TradesResponse,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -751,10 +751,10 @@ fn test_request_instrument(
 
     let client_id = ClientId::new("TestClient");
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-    let data = vec![instrument.clone()];
+    let data = instrument.clone();
     let ts_init = UnixNanos::default();
     let response =
-        InstrumentsResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+        InstrumentResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
@@ -784,8 +784,7 @@ fn test_request_instruments(
     let instrument2 = InstrumentAny::CurrencyPair(gbpusd_sim);
     let data = vec![instrument1.clone(), instrument2.clone()];
     let ts_init = UnixNanos::default();
-    let response =
-        InstrumentsResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+    let response = InstrumentsResponse::new(request_id, client_id, venue, data, ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
@@ -1030,7 +1029,6 @@ fn test_subscribe_and_receive_instrument_close(
     assert_eq!(actor.received_closes[0], stub_instrument_close);
 }
 
-// Unsubscribe tests for various data types
 #[rstest]
 fn test_unsubscribe_instruments(
     clock: Rc<RefCell<TestClock>>,
@@ -1257,6 +1255,7 @@ fn test_request_book_snapshot(
     // Build a dummy book and response
     let client_id = ClientId::new("Client2");
     let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+
     // Provide ts_init and no params
     let ts_init = UnixNanos::default();
     let response = BookResponse::new(
@@ -1296,16 +1295,18 @@ fn test_request_data(
     // Build a response payload containing a String
     let payload = Arc::new(Bytes::from("Data-001"));
     let ts_init = UnixNanos::default();
+
     // Create response with payload type String
     let response = CustomDataResponse::new(
         request_id,
         client_id.clone(),
-        Venue::from("SIM"),
+        None,
         data_type.clone(),
         payload,
         ts_init,
         None,
     );
+
     // Publish the response
     msgbus::response(&request_id, response.as_any());
 

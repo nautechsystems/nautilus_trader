@@ -112,8 +112,8 @@ fn data_client(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
-    let client = Box::new(MockDataClient::new(cache, client_id, venue));
-    DataClientAdapter::new(client_id, Some(venue), true, true, client, clock)
+    let client = Box::new(MockDataClient::new(clock.clone(), cache, client_id, venue));
+    DataClientAdapter::new(client_id, Some(venue), true, true, client)
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -137,11 +137,11 @@ fn test_register_default_client_twice_panics(
         true,
         true,
         Box::new(MockDataClient::new(
+            clock.clone(),
             cache.clone(),
             client_id,
             Venue::default(),
         )),
-        clock.clone(),
     );
     let data_client2 = DataClientAdapter::new(
         client_id,
@@ -149,11 +149,11 @@ fn test_register_default_client_twice_panics(
         true,
         true,
         Box::new(MockDataClient::new(
+            clock.clone(),
             cache.clone(),
             client_id,
             Venue::default(),
         )),
-        clock.clone(),
     );
 
     data_engine.register_default_client(data_client1);
@@ -178,11 +178,11 @@ fn test_register_client_duplicate_id_panics(
         true,
         true,
         Box::new(MockDataClient::new(
+            clock.clone(),
             cache.clone(),
             client_id,
             Venue::default(),
         )),
-        clock.clone(),
     );
     let data_client2 = DataClientAdapter::new(
         client_id,
@@ -190,11 +190,11 @@ fn test_register_client_duplicate_id_panics(
         true,
         true,
         Box::new(MockDataClient::new(
+            clock.clone(),
             cache.clone(),
             client_id,
             Venue::default(),
         )),
-        clock.clone(),
     );
 
     data_engine.register_client(data_client1, None);
@@ -217,8 +217,12 @@ fn test_register_and_deregister_client(
         Some(venue1),
         true,
         true,
-        Box::new(MockDataClient::new(cache.clone(), client_id1, venue1)),
-        clock.clone(),
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id1,
+            venue1,
+        )),
     );
 
     data_engine.register_client(data_client1, Some(venue1));
@@ -229,8 +233,12 @@ fn test_register_and_deregister_client(
         None,
         true,
         true,
-        Box::new(MockDataClient::new(cache.clone(), client_id2, venue1)),
-        clock.clone(),
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id2,
+            venue1,
+        )),
     );
 
     data_engine.register_client(data_client2, None);
@@ -264,11 +272,11 @@ fn test_register_default_client(
         true,
         true,
         Box::new(MockDataClient::new(
+            clock.clone(),
             cache.clone(),
             default_id,
             Venue::default(),
         )),
-        clock.clone(),
     );
     data_engine.register_default_client(default_client);
 
