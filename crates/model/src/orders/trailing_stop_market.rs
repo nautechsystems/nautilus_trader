@@ -159,7 +159,7 @@ impl TrailingStopMarketOrder {
     /// # Panics
     ///
     /// Panics **(with the constant [`FAILED`])** if the underlying call to
-    /// [`Self::new_checked`] returns `Err(_)`.  
+    /// [`Self::new_checked`] returns `Err(_)`.
     /// In other words, it panics for the same set of validation failures that
     /// [`Self::new_checked`] reports via its `Result`.
     pub fn new(
