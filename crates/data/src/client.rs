@@ -18,13 +18,9 @@
 //! Defines the `DataClient` trait, the `DataClientAdapter` for managing subscriptions and requests,
 //! and utilities for constructing data responses.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     cell::RefCell,
-    fmt::Debug,
+    fmt::{Debug, Display},
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
@@ -120,6 +116,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -129,6 +126,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_instruments(&mut self, cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -138,6 +136,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -147,6 +146,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -156,6 +156,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_book_depth10(&mut self, cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -165,6 +166,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_book_snapshots(&mut self, cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -174,6 +176,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -183,6 +186,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -192,6 +196,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -201,6 +206,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -210,6 +216,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -222,6 +229,7 @@ pub trait DataClient {
         &mut self,
         cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -231,6 +239,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -240,6 +249,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -249,6 +259,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -258,6 +269,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -267,6 +279,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -276,6 +289,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_depth10(&mut self, cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -285,6 +299,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -294,6 +309,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -303,6 +319,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -312,6 +329,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -321,6 +339,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -330,6 +349,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -342,6 +362,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -354,6 +375,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
         Ok(())
     }
 
@@ -362,7 +384,10 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the data request fails.
-    fn request_data(&self, request: &RequestData) -> anyhow::Result<()>;
+    fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
+        log_not_implemented(&request);
+        Ok(())
+    }
 
     /// Requests a list of instruments from the provider for a given venue.
     ///
@@ -370,6 +395,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the instruments request fails.
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 
@@ -379,6 +405,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the instrument request fails.
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 
@@ -388,6 +415,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the book snapshot request fails.
     fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 
@@ -397,6 +425,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the quotes request fails.
     fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 
@@ -406,6 +435,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the trades request fails.
     fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 
@@ -415,6 +445,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the bars request fails.
     fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
+        log_not_implemented(&request);
         Ok(())
     }
 }
@@ -457,6 +488,7 @@ impl DerefMut for DataClientAdapter {
 }
 
 impl Debug for DataClientAdapter {
+    #[rustfmt::skip]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(DataClientAdapter))
             .field("client_id", &self.client_id)
@@ -465,35 +497,17 @@ impl Debug for DataClientAdapter {
             .field("handles_book_snapshots", &self.handles_book_snapshots)
             .field("subscriptions_generic", &self.subscriptions_generic)
             .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
-            .field(
-                "subscriptions_book_depth10",
-                &self.subscriptions_book_depth10,
-            )
-            .field(
-                "subscriptions_book_snapshot",
-                &self.subscriptions_book_snapshots,
-            )
+            .field("subscriptions_book_depth10", &self.subscriptions_book_depth10)
+            .field("subscriptions_book_snapshot", &self.subscriptions_book_snapshots)
             .field("subscriptions_quotes", &self.subscriptions_quotes)
             .field("subscriptions_trades", &self.subscriptions_trades)
             .field("subscriptions_bars", &self.subscriptions_bars)
             .field("subscriptions_mark_prices", &self.subscriptions_mark_prices)
-            .field(
-                "subscriptions_index_prices",
-                &self.subscriptions_index_prices,
-            )
-            .field(
-                "subscriptions_instrument_status",
-                &self.subscriptions_instrument_status,
-            )
-            .field(
-                "subscriptions_instrument_close",
-                &self.subscriptions_instrument_close,
-            )
+            .field("subscriptions_index_prices", &self.subscriptions_index_prices)
+            .field("subscriptions_instrument_status", &self.subscriptions_instrument_status)
+            .field("subscriptions_instrument_close", &self.subscriptions_instrument_close)
             .field("subscriptions_instrument", &self.subscriptions_instrument)
-            .field(
-                "subscriptions_instrument_venue",
-                &self.subscriptions_instrument_venue,
-            )
+            .field("subscriptions_instrument_venue", &self.subscriptions_instrument_venue)
             .finish()
     }
 }
@@ -546,12 +560,12 @@ impl DataClientAdapter {
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
-            SubscribeCommand::InstrumentStatus(cmd) => todo!(),
-            SubscribeCommand::InstrumentClose(cmd) => todo!(),
+            SubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
+            SubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
         };
 
         if let Err(e) = result {
-            log::debug!("Error on subscribe: {cmd:?}");
+            log_command_error(&cmd, &e);
         }
     }
 
@@ -569,12 +583,12 @@ impl DataClientAdapter {
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
-            UnsubscribeCommand::InstrumentStatus(cmd) => todo!(),
-            UnsubscribeCommand::InstrumentClose(cmd) => todo!(),
+            UnsubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
+            UnsubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
         };
 
         if let Err(e) = result {
-            log::debug!("Error on unsubscribe: {cmd:?}");
+            log_command_error(&cmd, &e);
         }
     }
 
@@ -1053,5 +1067,141 @@ impl DataClientAdapter {
             self.clock.borrow().timestamp_ns(),
             None,
         )
+    }
+}
+
+#[inline(always)]
+fn log_not_implemented<T: Debug>(msg: &T) {
+    log::warn!("{msg:?} – handler not implemented");
+}
+
+#[inline(always)]
+fn log_command_error<C: Debug, E: Display>(cmd: &C, e: &E) {
+    log::error!("Error on {cmd:?}: {e}");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod adapter_tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        clock::TestClock,
+        messages::data::{
+            SubscribeData, SubscribeInstrument, UnsubscribeData, UnsubscribeInstrument,
+        },
+    };
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        data::DataType,
+        identifiers::{ClientId, InstrumentId, Venue},
+        instruments::stubs::audusd_sim,
+    };
+
+    use super::*;
+    use crate::mocks::MockDataClient;
+
+    #[test]
+    fn test_generic_data_subscription() {
+        // Setup adapter with a mock client
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client_id = ClientId::new("GEN");
+        let venue = Venue::default();
+        let client = Box::new(MockDataClient::new(cache.clone(), client_id, venue));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut client = DataClientAdapter::new(
+            client_id,
+            Some(venue),
+            false, // handles deltas
+            false, // handles snapshots
+            client,
+            clock,
+        );
+
+        // Define a custom data type
+        let data_type = DataType::new("MyType", None);
+
+        // Subscribe
+        let sub = SubscribeData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.subscribe(&sub).unwrap();
+        assert!(client.subscriptions_generic.contains(&data_type));
+
+        // Check idempotency
+        client.subscribe(&sub).unwrap();
+        assert_eq!(client.subscriptions_generic.len(), 1);
+
+        // Unsubscribe
+        let unsub = UnsubscribeData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.unsubscribe(&unsub).unwrap();
+
+        assert!(!client.subscriptions_generic.contains(&data_type));
+    }
+
+    #[test]
+    fn test_instrument_subscription() {
+        // Setup adapter with a mock client
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client_id = ClientId::new("INS");
+        let venue = Venue::default();
+        let client = Box::new(MockDataClient::new(cache.clone(), client_id, venue));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut client = DataClientAdapter::new(
+            client_id,
+            Some(venue),
+            false, // handles deltas
+            false, // handles snapshots
+            client,
+            clock,
+        );
+
+        let instrument = audusd_sim();
+        let instr_id: InstrumentId = instrument.id;
+
+        // Subscribe instrument
+        let sub = SubscribeInstrument::new(
+            instr_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        client.subscribe_instrument(&sub).unwrap();
+        assert!(client.subscriptions_instrument.contains(&instr_id));
+
+        // Check idempotency
+        client.subscribe_instrument(&sub).unwrap();
+        assert_eq!(client.subscriptions_instrument.len(), 1);
+
+        // Unsubscribe instrument
+        let unsub = UnsubscribeInstrument::new(
+            instr_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        client.unsubscribe_instrument(&unsub).unwrap();
+
+        assert!(!client.subscriptions_instrument.contains(&instr_id));
     }
 }
