@@ -16,10 +16,7 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::FAILED,
-};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -35,7 +32,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::{OrderError,check_display_qty, check_time_in_force},
+    orders::{OrderError, check_display_qty, check_time_in_force},
     types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
@@ -519,8 +516,8 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
             event
                 .trigger_type
                 .expect("Error initializing order: `trigger_type` was `None` for `TrailingStopMarketOrder`"),
-            event.trailing_offset.unwrap(),          
-            event.trailing_offset_type.unwrap(),     
+            event.trailing_offset.unwrap(),
+            event.trailing_offset_type.unwrap(),
             event.time_in_force,
             event.expire_time,
             event.reduce_only,
