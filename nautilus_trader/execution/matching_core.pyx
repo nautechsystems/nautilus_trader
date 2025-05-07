@@ -273,20 +273,18 @@ cdef class MatchingCore:
             or order.order_type == OrderType.MARKET_TO_LIMIT
         ):
             self.match_limit_order(order)
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ):
+        elif order.order_type == OrderType.STOP_LIMIT:
             self.match_stop_limit_order(order, initial)
-        elif (
-            order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
-        ):
+        elif order.order_type == OrderType.STOP_MARKET:
             self.match_stop_market_order(order)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
             self.match_limit_if_touched_order(order, initial)
         elif order.order_type == OrderType.MARKET_IF_TOUCHED:
             self.match_market_if_touched_order(order)
+        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
+            self.match_trailing_stop_limit_order(order, initial)
+        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
+            self.match_trailing_stop_market_order(order)
         else:
             raise TypeError(f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
@@ -306,16 +304,21 @@ cdef class MatchingCore:
             self._fill_market_order(order)
 
     cpdef void match_stop_limit_order(self, Order order, bint initial):
+        print(f"match_stop_limit_order BEGIN")
+
         Condition.not_none(order, "order")
 
         if order.is_triggered:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
                 self._fill_limit_order(order)
+            print(f"match_stop_limit_order: is_limit_matched - END")
             return
 
         cdef LiquiditySide liquidity_side
         if self.is_stop_triggered(order.side, order.trigger_price):
+            print(f"match_stop_limit_order: is_stop_triggered")
+
             order.set_triggered_price_c(order.trigger_price)
             order.liquidity_side = self._determine_order_liquidity(
                 initial,
@@ -326,8 +329,10 @@ cdef class MatchingCore:
             self._trigger_stop_order(order)
             # Check if immediately marketable
             if self.is_limit_matched(order.side, order.price):
+                print(f"match_stop_limit_order: immediately marketable")
                 order.liquidity_side = LiquiditySide.TAKER
                 self._fill_limit_order(order)
+        print(f"match_stop_limit_order END")
 
     cpdef void match_market_if_touched_order(self, Order order):
         Condition.not_none(order, "order")
@@ -361,6 +366,14 @@ cdef class MatchingCore:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.TAKER
                 self._fill_limit_order(order)
+
+    cpdef void match_trailing_stop_limit_order(self, Order order, bint initial):
+        if order.is_activated:
+            self.match_stop_limit_order(order, initial)
+
+    cpdef void match_trailing_stop_market_order(self, Order order):
+        if order.is_activated:
+            self.match_stop_market_order(order)
 
     cpdef bint is_limit_matched(self, OrderSide side, Price price):
         Condition.not_none(price, "price")
@@ -446,10 +459,10 @@ cdef inline int64_t order_sort_key(Order order):
         price = order.price
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
     elif order.order_type == OrderType.TRAILING_STOP_MARKET:
-        trigger_price = order.trigger_price
+        trigger_price = order.trigger_price or order.activation_price
         return trigger_price._mem.raw
     elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
-        trigger_price = order.trigger_price
+        trigger_price = order.trigger_price or order.activation_price
         price = order.price
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
     else:
