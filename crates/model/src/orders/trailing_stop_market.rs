@@ -16,7 +16,7 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -32,8 +32,8 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    orders::OrderError,
-    types::{Currency, Money, Price, Quantity},
+    orders::{OrderError, check_display_qty, check_time_in_force},
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,7 +56,112 @@ pub struct TrailingStopMarketOrder {
 
 impl TrailingStopMarketOrder {
     /// Creates a new [`TrailingStopMarketOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`anyhow::Error`] if **any** of the following invariants is
+    /// violated (see functions it delegates to for exact wording):
+    ///
+    /// * `quantity` is **not positive** (`check_positive_quantity`)
+    /// * `display_qty` exceeds `quantity` (`check_display_qty`)
+    /// * `time_in_force == TimeInForce::Gtd` **and** `expire_time` is `None`
+    ///   (`check_time_in_force`)
+    /// * Any other internal validation added in the future
     #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        trailing_offset: Decimal,
+        trailing_offset_type: TrailingOffsetType,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_positive_quantity(quantity, stringify!(quantity))?;
+
+        check_display_qty(display_qty, quantity)?;
+
+        check_time_in_force(time_in_force, expire_time)?;
+
+        let init_order = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            OrderType::TrailingStopMarket,
+            quantity,
+            time_in_force,
+            /*post_only=*/ false,
+            reduce_only,
+            quote_quantity,
+            /*is_close=*/ false,
+            init_id,
+            ts_init,
+            ts_init,
+            /*price=*/ None,
+            Some(trigger_price),
+            Some(trigger_type),
+            /*limit_offset=*/ None,
+            Some(trailing_offset),
+            Some(trailing_offset_type),
+            expire_time,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        );
+
+        Ok(Self {
+            core: OrderCore::new(init_order),
+            trigger_price,
+            trigger_type,
+            trailing_offset,
+            trailing_offset_type,
+            expire_time,
+            display_qty,
+            trigger_instrument_id,
+            is_triggered: false,
+            ts_triggered: None,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Convenience wrapper around [`Self::new_checked`].
+    ///
+    /// # Panics
+    ///
+    /// Panics **(with the constant [`FAILED`])** if the underlying call to
+    /// [`Self::new_checked`] returns `Err(_)`.
+    /// In other words, it panics for the same set of validation failures that
+    /// [`Self::new_checked`] reports via its `Result`.
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -86,30 +191,21 @@ impl TrailingStopMarketOrder {
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
-        // TODO: Implement new_checked and check quantity positive, add error docs.
-        let init_order = OrderInitialized::new(
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
             client_order_id,
             order_side,
-            OrderType::TrailingStopMarket,
             quantity,
+            trigger_price,
+            trigger_type,
+            trailing_offset,
+            trailing_offset_type,
             time_in_force,
-            false,
+            expire_time,
             reduce_only,
             quote_quantity,
-            false,
-            init_id,
-            ts_init,
-            ts_init,
-            None,
-            Some(trigger_price),
-            Some(trigger_type),
-            None,
-            Some(trailing_offset),
-            Some(trailing_offset_type),
-            expire_time,
             display_qty,
             emulation_trigger,
             trigger_instrument_id,
@@ -121,20 +217,10 @@ impl TrailingStopMarketOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        );
-
-        Self {
-            core: OrderCore::new(init_order),
-            trigger_price,
-            trigger_type,
-            trailing_offset,
-            trailing_offset_type,
-            expire_time,
-            display_qty,
-            trigger_instrument_id,
-            is_triggered: false,
-            ts_triggered: None,
-        }
+            init_id,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 }
 
@@ -438,15 +524,13 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
             event.order_side,
             event.quantity,
             event
-                .trigger_price // TODO: Improve this error, model order domain errors
-                .expect(
-                    "Error initializing order: `trigger_price` was `None` for `TrailingStopMarketOrder`",
-                ),
+                .trigger_price
+                .expect("Error initializing order: `trigger_price` was `None` for `TrailingStopMarketOrder`"),
             event
                 .trigger_type
                 .expect("Error initializing order: `trigger_type` was `None` for `TrailingStopMarketOrder`"),
-            event.trailing_offset.unwrap(),  // TODO
-            event.trailing_offset_type.unwrap(),  // TODO
+            event.trailing_offset.unwrap(),
+            event.trailing_offset_type.unwrap(),
             event.time_in_force,
             event.expire_time,
             event.reduce_only,
@@ -465,5 +549,91 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
             event.event_id,
             event.ts_event,
         )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//  Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
+    use crate::{
+        enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+        instruments::{CurrencyPair, stubs::*},
+        orders::{Order, builder::OrderTestBuilder},
+        types::{Price, Quantity},
+    };
+
+    #[rstest]
+    fn test_initialize(_audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(_audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("0.68000"))
+            .trigger_type(TriggerType::LastPrice)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.trigger_price(), Some(Price::from("0.68000")));
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+
+        assert_eq!(order.is_triggered(), Some(false));
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(1));
+
+        assert_eq!(order.display_qty(), None);
+        assert_eq!(order.trigger_instrument_id(), None);
+        assert_eq!(order.order_list_id(), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
+    fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
+        OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("0.68000"))
+            .trigger_type(TriggerType::LastPrice)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .quantity(Quantity::from(1))
+            .display_qty(Quantity::from(2))
+            .build();
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
+    fn test_quantity_zero_err(audusd_sim: CurrencyPair) {
+        OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("0.68000"))
+            .trigger_type(TriggerType::LastPrice)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .quantity(Quantity::from(0))
+            .build();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    fn test_gtd_without_expire_err(audusd_sim: CurrencyPair) {
+        OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("0.68000"))
+            .trigger_type(TriggerType::LastPrice)
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .time_in_force(TimeInForce::Gtd)
+            .quantity(Quantity::from(1))
+            .build();
     }
 }
