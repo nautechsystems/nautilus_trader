@@ -13,17 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cell::{OnceCell, RefCell},
-    collections::VecDeque,
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
-    messages::data::{CustomDataResponse, DataCommand, SubscribeCommand},
-    runner::{DataEvent, DataQueue, GlobalDataQueue, RunnerEvent, SyncDataQueue},
+    messages::DataEvent,
+    runner::{DataQueue, RunnerEvent, get_data_cmd_queue, set_data_evt_queue, set_global_clock},
     runtime::get_runtime,
 };
 use nautilus_data::engine::DataEngine;
@@ -39,104 +35,42 @@ impl DataQueue for AsyncDataQueue {
     }
 }
 
-#[must_use]
-pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
-    DATA_QUEUE
-        .try_with(|dq| {
-            dq.get()
-                .expect("Data queue should be initialized by runner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
-pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
-    DATA_QUEUE
-        .try_with(|deque| {
-            assert!(deque.set(dq).is_ok(), "Global data queue already set");
-        })
-        .expect("Should be able to access thread local storage");
-}
-
-pub type GlobalClock = Rc<RefCell<dyn Clock>>;
-
-#[must_use]
-pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
-    CLOCK
-        .try_with(|clock| {
-            clock
-                .get()
-                .expect("Clock should be initialized by runner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
-pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
-    CLOCK
-        .try_with(|clock| {
-            assert!(clock.set(c).is_ok(), "Global clock already set");
-        })
-        .expect("Should be able to access thread local clock");
-}
-
-pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
-
-/// Get globally shared message bus command queue
-#[must_use]
-pub fn get_msgbus_cmd() -> MessageBusCommands {
-    MSGBUS_CMD
-        .try_with(std::clone::Clone::clone)
-        .expect("Should be able to access thread local storage")
-}
-
-thread_local! {
-    static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
-    static DATA_QUEUE: OnceCell<GlobalDataQueue> = OnceCell::new();
-    static MSGBUS_CMD: MessageBusCommands = Rc::new(RefCell::new(VecDeque::new()));
-}
-
-// TODO: Determine how to deduplicate trait
+// TODO: Use message bus instead of direct reference to DataEngine
 pub trait Runner {
     fn new() -> Self;
-    fn run(&mut self, engine: &mut DataEngine);
+    fn run(&mut self, data_engine: &mut DataEngine);
 }
 
-pub trait SendResponse {
-    fn send(&self, resp: CustomDataResponse);
-}
-
-pub type DataResponseQueue = Rc<RefCell<SyncDataQueue>>;
-
-pub struct LiveRunner {
-    resp_rx: UnboundedReceiver<DataEvent>,
+pub struct AsyncRunner {
     pub clock: Rc<RefCell<LiveClock>>,
+    data_rx: UnboundedReceiver<DataEvent>,
 }
 
-impl Runner for LiveRunner {
+impl Runner for AsyncRunner {
     fn new() -> Self {
-        let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        set_data_queue(Rc::new(RefCell::new(AsyncDataQueue(resp_tx))));
+        let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        set_data_evt_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
-        set_clock(clock.clone());
+        set_global_clock(clock.clone());
 
-        Self { resp_rx, clock }
+        Self { clock, data_rx }
     }
 
-    fn run(&mut self, engine: &mut DataEngine) {
+    fn run(&mut self, data_engine: &mut DataEngine) {
         let mut time_event_stream = self.clock.borrow().get_event_stream();
-        let msgbus_cmd = get_msgbus_cmd();
+        let data_cmd_queue = get_data_cmd_queue();
 
         loop {
-            while let Some(cmd) = msgbus_cmd.borrow_mut().pop_front() {
-                engine.execute(&DataCommand::Subscribe(cmd));
+            while let Some(cmd) = data_cmd_queue.borrow_mut().pop_front() {
+                // TODO: Send to data engine execute endpoint address
+                data_engine.execute(&cmd);
             }
 
             // Collect the next event to process
             let next_event = get_runtime().block_on(async {
                 tokio::select! {
-                    Some(resp) = self.resp_rx.recv() => Some(RunnerEvent::Data(resp)),
+                    Some(resp) = self.data_rx.recv() => Some(RunnerEvent::Data(resp)),
                     Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
                     else => None,
                 }
@@ -144,12 +78,12 @@ impl Runner for LiveRunner {
 
             // Process the event outside of the async context
             match next_event {
-                Some(RunnerEvent::Data(resp)) => match resp {
-                    DataEvent::Response(resp) => engine.response(resp),
-                    DataEvent::Data(data) => engine.process_data(data),
+                Some(RunnerEvent::Data(event)) => match event {
+                    DataEvent::Response(resp) => data_engine.response(resp),
+                    DataEvent::Data(data) => data_engine.process_data(data),
                 },
                 Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
-                None => break,
+                None => break, // Sentinel event ends runner
             }
         }
     }
@@ -163,19 +97,18 @@ mod tests {
     use futures::StreamExt;
     use nautilus_common::{
         clock::LiveClock,
+        runner::{get_global_clock, set_global_clock},
         timer::{TimeEvent, TimeEventCallback},
     };
-
-    use super::{get_clock, set_clock};
 
     #[tokio::test]
     async fn test_global_live_clock() {
         let live_clock = Rc::new(RefCell::new(LiveClock::new()));
-        set_clock(live_clock.clone());
+        set_global_clock(live_clock.clone());
         let alert_time = live_clock.borrow().get_time_ns() + 100;
 
         // component/actor adding an alert
-        let _ = get_clock().borrow_mut().set_time_alert_ns(
+        let _ = get_global_clock().borrow_mut().set_time_alert_ns(
             "hola",
             alert_time,
             Some(TimeEventCallback::Rust(Rc::new(|_event: TimeEvent| {}))),
