@@ -59,9 +59,14 @@ impl TrailingStopMarketOrder {
     ///
     /// # Errors
     ///
-    /// * `quantity` must be strictly positive.
-    /// * If `time_in_force == GTD`, an `expire_time` > 0 ns must be supplied.
-    /// * When provided, `display_qty` must not exceed `quantity`.
+    /// Returns an [`anyhow::Error`] if **any** of the following invariants is
+    /// violated (see functions it delegates to for exact wording):
+    ///
+    /// * `quantity` is **not positive** (`check_positive_quantity`)
+    /// * `display_qty` exceeds `quantity` (`check_display_qty`)
+    /// * `time_in_force == TimeInForce::Gtd` **and** `expire_time` is `None`
+    ///   (`check_time_in_force`)
+    /// * Any other internal validation added in the future
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -149,6 +154,14 @@ impl TrailingStopMarketOrder {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Convenience wrapper around [`Self::new_checked`].
+    ///
+    /// # Panics
+    ///
+    /// Panics **(with the constant [`FAILED`])** if the underlying call to
+    /// [`Self::new_checked`] returns `Err(_)`.  
+    /// In other words, it panics for the same set of validation failures that
+    /// [`Self::new_checked`] reports via its `Result`.
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
