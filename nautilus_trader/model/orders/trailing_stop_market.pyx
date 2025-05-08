@@ -141,6 +141,7 @@ cdef class TrailingStopMarketOrder(Order):
         TrailingOffsetType trailing_offset_type,
         UUID4 init_id not None,
         uint64_t ts_init,
+        Price activation_price: Price | None = None,
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
         bint reduce_only = False,
@@ -171,6 +172,7 @@ cdef class TrailingStopMarketOrder(Order):
 
         # Set options
         cdef dict options = {
+            "activation_price": str(activation_price) if activation_price is not None else None,
             "trigger_price": str(trigger_price) if trigger_price is not None else None,
             "trigger_type": trigger_type_to_str(trigger_type),
             "trailing_offset": str(trailing_offset),
@@ -207,11 +209,14 @@ cdef class TrailingStopMarketOrder(Order):
         )
         super().__init__(init=init)
 
+        self.activation_price = activation_price
         self.trigger_price = trigger_price
         self.trigger_type = trigger_type
         self.trailing_offset = trailing_offset
         self.trailing_offset_type = trailing_offset_type
         self.expire_time_ns = expire_time_ns
+        self.is_activated = False
+
 
     cdef void _updated(self, OrderUpdated event):
         if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
@@ -232,8 +237,25 @@ cdef class TrailingStopMarketOrder(Order):
         elif self.side == OrderSide.SELL:
             self.slippage = self.trigger_price.as_f64_c() - self.avg_px
 
+    cdef void set_activated(self, Price activation_price):
+        # NOTE:
+        # In current design, 'activated' is not considered a state change.
+        # 'activated' is just included in ACCEPTED state.
+
+        Condition.is_false(self.is_activated, "set_activated() is invoked when already activated", RuntimeError)
+        if self.activation_price is None:
+            Condition.not_none(activation_price, "activation_price")
+            self.activation_price = activation_price
+        else:
+            Condition.none(activation_price, "activation_price")
+
+        self.is_activated = True
+
     cdef bint has_price_c(self):
         return False
+
+    cdef bint has_activation_price_c(self):
+        return self.activation_price is not None
 
     cdef bint has_trigger_price_c(self):
         return self.trigger_price is not None
@@ -264,6 +286,7 @@ cdef class TrailingStopMarketOrder(Order):
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
+            f"{'@ ' + str(self.activation_price.to_formatted_str()) + '-ACTIVATION ' if self.activation_price else ''}"
             f"{'@ ' + str(self.trigger_price.to_formatted_str()) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
@@ -292,6 +315,7 @@ cdef class TrailingStopMarketOrder(Order):
             "type": order_type_to_str(self.order_type),
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
+            "activation_price": str(self.activation_price) if self.activation_price is not None else None,
             "trigger_price": str(self.trigger_price) if self.trigger_price is not None else None,
             "trigger_type": trigger_type_to_str(self.trigger_type),
             "trailing_offset": str(self.trailing_offset),
@@ -344,6 +368,7 @@ cdef class TrailingStopMarketOrder(Order):
         Condition.not_none(init, "init")
         Condition.equal(init.order_type, OrderType.TRAILING_STOP_MARKET, "init.order_type", "OrderType")
 
+        cdef str activation_price_str = init.options.get("activation_price")
         cdef str trigger_price_str = init.options.get("trigger_price")
 
         return TrailingStopMarketOrder(
@@ -353,6 +378,7 @@ cdef class TrailingStopMarketOrder(Order):
             client_order_id=init.client_order_id,
             order_side=init.side,
             quantity=init.quantity,
+            activation_price=Price.from_str_c(activation_price_str) if activation_price_str is not None else None,
             trigger_price=Price.from_str_c(trigger_price_str) if trigger_price_str is not None else None,
             trigger_type=trigger_type_from_str(init.options["trigger_type"]),
             trailing_offset=Decimal(init.options["trailing_offset"]),
