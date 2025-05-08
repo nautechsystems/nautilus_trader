@@ -547,7 +547,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
-        assert entry_order.avg_px == entry_order.price  # <-- fills at limit price
+        assert entry_order.avg_px == entry_order.price  # <-- Fills at limit price
         assert (
             sl_order.status == OrderStatus.EMULATED
             if sl_order.is_emulated
