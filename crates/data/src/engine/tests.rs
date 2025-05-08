@@ -103,7 +103,7 @@ fn data_client(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
-    let client = Box::new(MockDataClient::new(clock.clone(), cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
     DataClientAdapter::new(client_id, Some(venue), true, true, client)
 }
 
@@ -140,8 +140,8 @@ fn test_register_default_client_twice_panics(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            clock,
+            cache,
             client_id,
             Venue::default(),
         )),
@@ -181,8 +181,8 @@ fn test_register_client_duplicate_id_panics(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            clock,
+            cache,
             client_id,
             Venue::default(),
         )),
@@ -224,12 +224,7 @@ fn test_register_and_deregister_client(
         None,
         true,
         true,
-        Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id2,
-            venue1,
-        )),
+        Box::new(MockDataClient::new(clock, cache, client_id2, venue1)),
     );
 
     data_engine.register_client(data_client2, None);
@@ -263,8 +258,8 @@ fn test_register_default_client(
         true,
         true,
         Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
+            clock,
+            cache,
             default_id,
             Venue::default(),
         )),

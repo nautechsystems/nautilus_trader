@@ -38,12 +38,12 @@ where
 
     #[inline]
     fn contains(&self, v: &T) -> bool {
-        HashSet::contains(self, v)
+        Self::contains(self, v)
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        HashSet::is_empty(self)
+        Self::is_empty(self)
     }
 }
 
@@ -56,12 +56,12 @@ where
 
     #[inline]
     fn contains(&self, v: &T) -> bool {
-        indexmap::IndexSet::contains(self, v)
+        Self::contains(self, v)
     }
 
     #[inline]
     fn is_empty(&self) -> bool {
-        indexmap::IndexSet::is_empty(self)
+        Self::is_empty(self)
     }
 }
 

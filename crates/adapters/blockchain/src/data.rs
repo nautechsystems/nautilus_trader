@@ -114,17 +114,17 @@ impl BlockchainDataClient {
 
     pub async fn subscribe_blocks(&mut self) {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.subscribe_blocks().await.unwrap()
+            rpc_client.subscribe_blocks().await.unwrap();
         } else {
-            self.hypersync_client.subscribe_blocks()
+            self.hypersync_client.subscribe_blocks();
         }
     }
 
     pub async fn unsubscribe_blocks(&mut self) {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.unsubscribe_blocks().await.unwrap()
+            rpc_client.unsubscribe_blocks().await.unwrap();
         } else {
-            self.hypersync_client.unsubscribe_blocks()
+            self.hypersync_client.unsubscribe_blocks();
         }
     }
 }

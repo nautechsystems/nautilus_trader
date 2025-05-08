@@ -28,11 +28,11 @@ use crate::{hypersync::transform::transform_hypersync_block, rpc::types::Blockch
 /// for the hypersync to index the block.
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
-/// A client for interacting with a HyperSync api to retrieve blockchain data.
+/// A client for interacting with a `HyperSync` api to retrieve blockchain data.
 pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum)
     chain: Chain,
-    /// The underlying HyperSync Rust client for making API requests
+    /// The underlying `HyperSync` Rust client for making API requests
     client: Arc<Client>,
     /// Background task handle for the block subscription task
     blocks_subscription_task: Option<tokio::task::JoinHandle<()>>,
@@ -41,6 +41,7 @@ pub struct HyperSyncClient {
 }
 
 impl HyperSyncClient {
+    #[must_use]
     pub fn new(chain: Chain, tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>) -> Self {
         let mut config = ClientConfig::default();
         let hypersync_url =
@@ -55,7 +56,7 @@ impl HyperSyncClient {
         }
     }
 
-    /// Disconnects from the HyperSync service and stops all background tasks.
+    /// Disconnects from the `HyperSync` service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
     }
@@ -90,7 +91,7 @@ impl HyperSyncClient {
                         block.set_chain(chain.clone());
                         let msg = BlockchainMessage::Block(block);
                         if let Err(e) = tx.send(msg) {
-                            log::error!("Error sending message: {}", e);
+                            log::error!("Error sending message: {e}");
                         }
                     }
                 }
@@ -109,7 +110,7 @@ impl HyperSyncClient {
                 query.from_block = response.next_block;
             }
         });
-        self.blocks_subscription_task = Some(task)
+        self.blocks_subscription_task = Some(task);
     }
 
     /// Unsubscribes to the new blocks by stopping the background watch task

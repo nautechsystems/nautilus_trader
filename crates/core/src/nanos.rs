@@ -86,7 +86,7 @@ impl UnixNanos {
 
     /// Returns `true` if the value of this instance is zero.
     #[must_use]
-    pub fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.0 == 0
     }
 

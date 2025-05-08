@@ -1002,12 +1002,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
         let mut adapter = DataClientAdapter::new(
             client_id,
             Some(venue),
@@ -1054,12 +1049,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
         let mut adapter = DataClientAdapter::new(
             client_id,
             Some(venue),
@@ -1107,12 +1097,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1150,12 +1135,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1202,12 +1182,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1254,12 +1229,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1307,12 +1277,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1355,12 +1320,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1403,12 +1363,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1451,12 +1406,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1499,12 +1449,7 @@ mod adapter_tests {
         client_id: ClientId,
         venue: Venue,
     ) {
-        let client = Box::new(MockDataClient::new(
-            clock.clone(),
-            cache.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
 
         let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 

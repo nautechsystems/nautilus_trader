@@ -804,7 +804,7 @@ mod tests {
             TraderId::default(),
             AccountId::default(),
             exchange.clone(),
-            cache.clone(),
+            cache,
             Rc::new(RefCell::new(clock)),
             None,
             None,
@@ -1354,7 +1354,7 @@ mod tests {
         assert_eq!(exchange.borrow().inflight_queue.len(), 2);
         // First inflight command should have timestamp at 100 and 200 insert latency
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(300)
         );
         // Second inflight command should have timestamp at 150 and 200 insert latency
@@ -1368,7 +1368,7 @@ mod tests {
         assert_eq!(exchange.borrow().message_queue.len(), 0);
         assert_eq!(exchange.borrow().inflight_queue.len(), 1);
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(350)
         );
     }

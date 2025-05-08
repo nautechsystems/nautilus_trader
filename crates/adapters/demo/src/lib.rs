@@ -64,7 +64,7 @@ pub async fn init_data_engine(
     data_engine.register_client(adapter, None);
     let data_engine = Rc::new(RefCell::new(data_engine));
 
-    let data_engine_clone = data_engine.clone();
+    let data_engine_clone = data_engine;
     let _handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
         move |cmd: &DataCommand| data_engine_clone.borrow_mut().execute(cmd),
     )));
