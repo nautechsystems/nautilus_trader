@@ -17,7 +17,7 @@
 #![allow(dead_code)]
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
+use nautilus_core::{UUID4, UnixNanos};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -510,36 +510,33 @@ impl OrderTestBuilder {
                 self.get_exec_spawn_id(),
                 self.get_tags(),
             )),
-            OrderType::Limit => OrderAny::Limit(
-                LimitOrder::new(
-                    self.get_trader_id(),
-                    self.get_strategy_id(),
-                    self.get_instrument_id(),
-                    self.get_client_order_id(),
-                    self.get_side(),
-                    self.get_quantity(),
-                    self.get_price(),
-                    self.get_time_in_force(),
-                    self.get_expire_time(),
-                    self.get_post_only(),
-                    self.get_reduce_only(),
-                    self.get_quote_quantity(),
-                    self.get_display_qty(),
-                    self.get_emulation_trigger(),
-                    self.get_trigger_instrument_id(),
-                    self.get_contingency_type(),
-                    self.get_order_list_id(),
-                    self.get_linked_order_ids(),
-                    self.get_parent_order_id(),
-                    self.get_exec_algorithm_id(),
-                    self.get_exec_algorithm_params(),
-                    self.get_exec_spawn_id(),
-                    self.get_tags(),
-                    self.get_init_id(),
-                    self.get_ts_init(),
-                )
-                .expect(FAILED),
-            ),
+            OrderType::Limit => OrderAny::Limit(LimitOrder::new(
+                self.get_trader_id(),
+                self.get_strategy_id(),
+                self.get_instrument_id(),
+                self.get_client_order_id(),
+                self.get_side(),
+                self.get_quantity(),
+                self.get_price(),
+                self.get_time_in_force(),
+                self.get_expire_time(),
+                self.get_post_only(),
+                self.get_reduce_only(),
+                self.get_quote_quantity(),
+                self.get_display_qty(),
+                self.get_emulation_trigger(),
+                self.get_trigger_instrument_id(),
+                self.get_contingency_type(),
+                self.get_order_list_id(),
+                self.get_linked_order_ids(),
+                self.get_parent_order_id(),
+                self.get_exec_algorithm_id(),
+                self.get_exec_algorithm_params(),
+                self.get_exec_spawn_id(),
+                self.get_tags(),
+                self.get_init_id(),
+                self.get_ts_init(),
+            )),
             OrderType::StopMarket => OrderAny::StopMarket(StopMarketOrder::new(
                 self.get_trader_id(),
                 self.get_strategy_id(),
