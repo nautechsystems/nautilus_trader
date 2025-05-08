@@ -15,12 +15,7 @@
 
 //! Tests module for `DataEngine`.
 
-use std::{
-    any::Any,
-    cell::{OnceCell, RefCell},
-    num::NonZeroUsize,
-    rc::Rc,
-};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
@@ -75,10 +70,6 @@ fn clock() -> Rc<RefCell<TestClock>> {
 
 #[fixture]
 fn cache() -> Rc<RefCell<Cache>> {
-    // Ensure there is only ever one instance of the cache *per test*
-    thread_local! {
-        static CACHE: OnceCell<Rc<RefCell<Cache>>> = const { OnceCell::new() };
-    }
     Rc::new(RefCell::new(Cache::default()))
 }
 
