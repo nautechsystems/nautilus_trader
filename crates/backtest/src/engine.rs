@@ -351,7 +351,7 @@ mod tests {
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
-        let config = config.unwrap_or(BacktestEngineConfig::default());
+        let config = config.unwrap_or_default();
         let mut engine = BacktestEngine::new(config);
         engine.add_venue(
             Venue::from("BINANCE"),
@@ -410,6 +410,6 @@ mod tests {
                 .data_engine
                 .registered_clients()
                 .contains(&client_id)
-        )
+        );
     }
 }

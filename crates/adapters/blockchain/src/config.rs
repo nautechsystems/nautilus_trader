@@ -26,8 +26,8 @@ impl BlockchainAdapterConfig {
     #[must_use]
     pub const fn new(wss_rpc_url: Option<String>, use_hypersync_for_live_data: bool) -> Self {
         Self {
-            wss_rpc_url,
             use_hypersync_for_live_data,
+            wss_rpc_url,
         }
     }
 }

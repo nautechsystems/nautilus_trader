@@ -40,6 +40,7 @@ use nautilus_model::{
 };
 
 /// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
+///
 /// Implementors receive updates and produce completed bars via handlers, with support for partial and batch updates.
 pub trait BarAggregator: Any {
     /// The [`BarType`] to be aggregated.
@@ -1127,7 +1128,7 @@ where
     }
     /// Stop time-based aggregator by cancelling its timer.
     fn stop(&mut self) {
-        TimeBarAggregator::<H>::stop(self);
+        Self::stop(self);
     }
 
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {

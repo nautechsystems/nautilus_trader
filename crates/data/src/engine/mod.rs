@@ -210,7 +210,7 @@ impl DataEngine {
         } else {
             self.clients.insert(client_id, client);
             log::info!("Registered client {client_id}");
-        };
+        }
     }
 
     /// Deregisters the client for the `client_id`.
@@ -393,7 +393,7 @@ impl DataEngine {
         self.get_default_client()
     }
 
-    fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
+    const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
         self.default_client.as_mut()
     }
 
@@ -699,7 +699,7 @@ impl DataEngine {
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
         let deltas = if self.config.buffer_deltas {
             let mut is_last_delta = false;
-            for delta in deltas.deltas.iter() {
+            for delta in &deltas.deltas {
                 if RecordFlag::F_LAST.matches(delta.flags) {
                     is_last_delta = true;
                     break;
@@ -965,7 +965,7 @@ impl DataEngine {
 
         // Remove instrument from interval tracking, and drop empty intervals
         let mut to_remove = Vec::new();
-        for (interval, set) in self.book_intervals.iter_mut() {
+        for (interval, set) in &mut self.book_intervals {
             if set.remove(&cmd.instrument_id) && set.is_empty() {
                 to_remove.push(*interval);
             }
@@ -1047,7 +1047,7 @@ impl DataEngine {
 
     fn handle_instrument_response(&self, instrument: InstrumentAny) {
         let mut cache = self.cache.as_ref().borrow_mut();
-        if let Err(e) = cache.add_instrument(instrument.clone()) {
+        if let Err(e) = cache.add_instrument(instrument) {
             log_error_on_cache_insert(&e);
         }
     }
