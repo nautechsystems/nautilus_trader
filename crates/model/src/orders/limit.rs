@@ -54,14 +54,18 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    /// Creates a new [`LimitOrder`] instance.
+    // ---------------------------------------------------------------------
+    //  Constructors
+    // ---------------------------------------------------------------------
+
+    /// Creates a new [`LimitOrder`] instance **propagating validation errors**.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The `quantity` is not positive.
-    /// - The `display_qty` (when provided) exceeds `quantity`.
-    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
+    /// - `quantity` is not positive
+    /// - `display_qty` (when provided) exceeds `quantity`
+    /// - `time_in_force == TimeInForce::Gtd` **and** `expire_time` is `None`/0
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -106,9 +110,9 @@ impl LimitOrder {
             post_only,
             reduce_only,
             quote_quantity,
-            false,
+            /* is_close = */ false,
             init_id,
-            ts_init, // ts_event timestamp identical to ts_init
+            ts_init, // ts_event == ts_init
             ts_init,
             Some(price),
             None,
@@ -138,6 +142,63 @@ impl LimitOrder {
             display_qty,
             trigger_instrument_id,
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        Self::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            time_in_force,
+            expire_time,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+        )
     }
 }
 
