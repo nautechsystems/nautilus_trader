@@ -596,7 +596,7 @@ mod tests {
 
     #[rstest]
     fn test_initialize(audusd_sim: CurrencyPair) {
-        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30200"))
@@ -604,6 +604,11 @@ mod tests {
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
+
+        assert_eq!(
+            order.to_string(),
+            "LimitIfTouchedOrder(BUY 1 AUD/USD.SIM @ 30200 / trigger 30200 (LastPrice) GTC, status=INITIALIZED)"
+        );
     }
 
     #[rstest]

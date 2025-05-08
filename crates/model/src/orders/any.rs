@@ -93,14 +93,14 @@ impl Display for OrderAny {
             "{}",
             match self {
                 Self::Limit(order) => order.to_string(),
-                Self::LimitIfTouched(order) => format!("{order:?}"), // TODO: Implement
+                Self::LimitIfTouched(order) => order.to_string(),
                 Self::Market(order) => order.to_string(),
-                Self::MarketIfTouched(order) => format!("{order:?}"), // TODO: Implement
-                Self::MarketToLimit(order) => format!("{order:?}"),   // TODO: Implement
+                Self::MarketIfTouched(order) => order.to_string(),
+                Self::MarketToLimit(order) => order.to_string(),
                 Self::StopLimit(order) => order.to_string(),
-                Self::StopMarket(order) => format!("{order:?}"), // TODO: Implement
-                Self::TrailingStopLimit(order) => format!("{order:?}"), // TODO: Implement
-                Self::TrailingStopMarket(order) => format!("{order:?}"), // TODO: Implement
+                Self::StopMarket(order) => order.to_string(),
+                Self::TrailingStopLimit(order) => order.to_string(),
+                Self::TrailingStopMarket(order) => order.to_string(),
             }
         )
     }

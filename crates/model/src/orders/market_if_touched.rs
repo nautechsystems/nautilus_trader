@@ -578,13 +578,13 @@ mod tests {
         assert_eq!(
             order.to_string(),
             "MarketIfTouchedOrder { \
-                side: Buy, \
+                side: BUY, \
                 qty: 1, \
                 instrument: AUD/USD.SIM, \
-                tif: Gtc, \
-                trigger_price: Price(30000), \
-                trigger_type: LastPrice, \
-                status: Initialized \
+                tif: GTC, \
+                trigger_price: 30000, \
+                trigger_type: LAST_PRICE, \
+                status: INITIALIZED \
             }"
         );
     }

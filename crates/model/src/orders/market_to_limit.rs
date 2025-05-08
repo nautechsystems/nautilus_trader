@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow;
 use indexmap::IndexMap;
@@ -485,6 +488,44 @@ impl Order for MarketToLimitOrder {
     }
 }
 
+impl Display for MarketToLimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MarketToLimitOrder(\
+            {} {} {} {} {}, \
+            status={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            position_id={}, \
+            exec_algorithm_id={}, \
+            exec_spawn_id={}, \
+            tags={:?}\
+            )",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
+            self.position_id.map_or_else(
+                || "None".to_string(),
+                |position_id| format!("{position_id}")
+            ),
+            self.exec_algorithm_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.exec_spawn_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.tags
+        )
+    }
+}
+
 impl From<OrderInitialized> for MarketToLimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -530,11 +571,16 @@ mod tests {
 
     #[rstest]
     fn test_initialize(audusd_sim: CurrencyPair) {
-        let _ = OrderTestBuilder::new(OrderType::MarketToLimit)
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .quantity(Quantity::from(1))
             .build();
+
+        assert_eq!(
+            order.to_string(),
+            "MarketToLimitOrder(BUY 1 AUD/USD.SIM MARKET_TO_LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+        );
     }
 
     #[rstest]
@@ -545,7 +591,7 @@ mod tests {
         let _ = OrderTestBuilder::new(OrderType::MarketToLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
-            .quantity(Quantity::from(0)) // Invalid: zero quantity
+            .quantity(Quantity::from(0))
             .build();
     }
 
