@@ -17,15 +17,12 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow;
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::{FAILED, check_predicate_false},
-};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore};
+use super::{Order, OrderAny, OrderCore, check_display_qty, check_time_in_force};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -60,7 +57,8 @@ impl MarketToLimitOrder {
     ///
     /// Returns an error if:
     /// - The `quantity` is not positive.
-    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
+    /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -87,18 +85,8 @@ impl MarketToLimitOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
-
-        if let Some(disp) = display_qty {
-            check_positive_quantity(disp, stringify!(display_quantity))?;
-            check_predicate_false(disp > quantity, "`display_qty` may not exceed `quantity`")?;
-        }
-
-        if time_in_force == TimeInForce::Gtd {
-            check_predicate_false(
-                expire_time.unwrap_or_default().is_zero(),
-                "`expire_time` is required for `GTD` order",
-            )?;
-        }
+        check_display_qty(display_qty, quantity)?;
+        check_time_in_force(time_in_force, expire_time)?;
 
         let init_order = OrderInitialized::new(
             trader_id,
@@ -541,7 +529,7 @@ mod tests {
     };
 
     #[rstest]
-    fn test_ok(audusd_sim: CurrencyPair) {
+    fn test_initialize(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketToLimit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)

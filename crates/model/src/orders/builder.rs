@@ -633,7 +633,6 @@ impl OrderTestBuilder {
                 self.get_expire_time(),
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
-                self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
                 self.get_contingency_type(),

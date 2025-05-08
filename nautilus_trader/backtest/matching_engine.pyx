@@ -2452,7 +2452,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_triggered(order)
 
-        # Check for immediate fill
+        # Check for immediate fill (which would fill passively as a maker)
         if order.side == OrderSide.BUY and trigger_price._mem.raw > price._mem.raw > self._core.ask_raw:
             order.liquidity_side = LiquiditySide.MAKER
             self.fill_limit_order(order)

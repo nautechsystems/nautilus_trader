@@ -20,6 +20,7 @@ None
 - Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
 - Improved validations for `StopLimitOrder` in Rust (#2593), thanks @nicolad
 - Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
+- Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
@@ -28,6 +29,7 @@ None
 ### Fixes
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
+- Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
