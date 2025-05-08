@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.0
+#       jupytext_version: 1.17.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -29,8 +29,6 @@ import asyncio
 
 import nautilus_trader.adapters.databento.data_utils as db_data_utils
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
-from nautilus_trader.adapters.databento.data_utils import databento_data
-from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -71,8 +69,8 @@ else:
 # DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
-catalog_folder = "options_catalog2"
-catalog = load_catalog(catalog_folder)
+catalog_folder = "futures_catalog"
+catalog = db_data_utils.load_catalog(catalog_folder)
 
 future_symbols = ["ESM4"]
 
@@ -80,19 +78,19 @@ future_symbols = ["ESM4"]
 start_time = "2024-05-09T10:00"
 end_time = "2024-05-09T10:05"
 
-# # A valid databento key can be entered here (or as an env variable of the same name)
-DATABENTO_API_KEY = None
-db_data_utils.init_databento_client(DATABENTO_API_KEY)
+# A valid databento key can be entered here (or as an env variable of the same name)
+# DATABENTO_API_KEY = None
+# db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
-# # Ensure data is available
-futures_data = databento_data(
-    future_symbols,
-    start_time,
-    end_time,
-    "definition",  # "ohlcv-1m"
-    "futures",
-    catalog_folder,
-)
+# # # Ensure data is available
+# futures_data = databento_data(
+#     future_symbols,
+#     start_time,
+#     end_time,
+#     "definition",  # "ohlcv-1m"
+#     "futures",
+#     catalog_folder,
+# )
 
 # %% [markdown]
 # ## Strategy

@@ -2272,7 +2272,6 @@ class TestActor:
     @pytest.mark.parametrize(
         ("start", "stop"),
         [
-            (UNIX_EPOCH, UNIX_EPOCH),
             (UNIX_EPOCH + timedelta(milliseconds=1), UNIX_EPOCH),
         ],
     )

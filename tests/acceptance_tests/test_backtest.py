@@ -78,7 +78,8 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -842,6 +843,11 @@ class TestBacktestNodeWithBacktestDataIterator:
         run_backtest(messages_with_data.append, with_data=True)
         run_backtest(messages_without_data.append, with_data=False)
 
+        assert (
+            messages_with_data[-1]
+            == "portfolio_greeks=PortfolioGreeks(pnl=-312.50, price=5,312.50, delta=30.18, gamma=-0.00, vega=-9.35, "
+            "theta=643.70, ts_event=2024-05-09T10:05:00.000000000Z, ts_init=2024-05-09T10:05:00.000000000Z)"
+        )
         assert messages_with_data == messages_without_data
 
 
@@ -911,9 +917,9 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         log_colors=True,
         log_level="WARN",
         log_level_file="WARN",
-        log_directory=log_path,  # must be the same as conftest.py
+        log_directory=log_path,
         log_file_format=None,  # "json" or None
-        log_file_name="test_logs",  # must be the same as conftest.py
+        log_file_name="test_logs",
         clear_log_file=True,
         print_config=False,
         use_pyo3=False,
@@ -999,7 +1005,6 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         catalog.convert_stream_to_data(
             results[0].instance_id,
             GreeksData,
-            mode=CatalogWriteMode.NEWFILE,
         )
 
     engine: BacktestEngine = node.get_engine(configs[0].id)

@@ -740,13 +740,15 @@ cdef class BacktestEngine:
                 self._backtest_subscription_names.add(f"{data_point.bar_type}")
             elif data_type in (QuoteTick, TradeTick):
                 self._backtest_subscription_names.add(f"{data_type.__name__}.{data_point.instrument_id}")
+            elif data_type is CustomData:
+                self._backtest_subscription_names.add(f"{type(data_point.data).__name__}.{data_point.data.__dict__.get('instrument_id', None)}")
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
     cpdef void _handle_data_command(self, DataCommand command):
-        if command.data_type.type not in [Bar, QuoteTick, TradeTick]:
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick] or type(command) in [SubscribeData, UnsubscribeData]):
             return
 
         if isinstance(command, SubscribeData):

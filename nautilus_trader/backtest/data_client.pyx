@@ -173,6 +173,25 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
+    cpdef void subscribe(self, SubscribeData command):
+        Condition.not_none(command.data_type, "data_type")
+
+        if command.instrument_id and not self._cache.instrument(command.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {command.instrument_id} to subscribe for {command.data_type} data, "
+                "No data has been loaded for this instrument",
+            )
+            return
+
+        self._add_subscription(command.data_type)
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
+
+    cpdef void unsubscribe(self, UnsubscribeData command):
+        Condition.not_none(command.data_type, "data_type")
+
+        self._remove_subscription(command.data_type)
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
+
     cpdef void subscribe_instruments(self, SubscribeInstruments command):
         cdef Instrument instrument
         for instrument in self._cache.instruments(Venue(self.id.value)):

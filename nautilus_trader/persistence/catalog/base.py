@@ -70,13 +70,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def query_timestamp_bound(
+    def query_last_timestamp(
         self,
         data_cls: type,
         instrument_id: str | None = None,
-        bar_type: str | None = None,
-        ts_column: str = "ts_init",
-        is_last: bool = True,
     ) -> pd.Timestamp | None:
         raise NotImplementedError
 
@@ -172,11 +169,12 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def custom_data(
         self,
         cls: type,
+        instrument_ids: list[str] | None = None,
         as_nautilus: bool = False,
         metadata: dict | None = None,
         **kwargs: Any,
     ) -> list[CustomData]:
-        data = self.query(data_cls=cls, **kwargs)
+        data = self.query(data_cls=cls, instrument_ids=instrument_ids, **kwargs)
 
         if as_nautilus:
             if data is None:

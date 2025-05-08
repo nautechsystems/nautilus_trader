@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.0
+#       jupytext_version: 1.17.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -47,7 +47,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
@@ -334,17 +333,7 @@ if stream_data:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
-        mode=CatalogWriteMode.NEWFILE,
     )
-
-    # other possibility, partitioning data by date (because GreeksData contains a date field)
-    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
-    # catalog.convert_stream_to_data(
-    #     results[0].instance_id,
-    #     GreeksData,
-    #     partitioning=["date"],
-    #     existing_data_behavior="overwrite_or_ignore",
-    # )
 
 # %%
 # catalog.consolidate_catalog()

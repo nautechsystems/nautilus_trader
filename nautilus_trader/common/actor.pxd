@@ -16,8 +16,6 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.enums import UpdateCatalogMode
-
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -143,7 +141,7 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)
     cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_order_book_deltas(
@@ -183,7 +181,7 @@ cdef class Actor(Component):
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
-    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, dict[str, object] params=*)
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, InstrumentId instrument_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id=*, dict[str, object] params=*)
@@ -205,11 +203,12 @@ cdef class Actor(Component):
         self,
         DataType data_type,
         ClientId client_id,
+        InstrumentId instrument_id=*,
         datetime start=*,
         datetime end=*,
         int limit=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instrument(
@@ -219,7 +218,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_instruments(
@@ -229,7 +228,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_order_book_snapshot(
@@ -248,7 +247,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_trade_ticks(
@@ -259,7 +258,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_bars(
@@ -270,7 +269,7 @@ cdef class Actor(Component):
         int limit=*,
         ClientId client_id=*,
         callback=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef UUID4 request_aggregated_bars(
@@ -283,7 +282,7 @@ cdef class Actor(Component):
         callback=*,
         bint include_external_data=*,
         bint update_subscriptions=*,
-        update_catalog_mode: UpdateCatalogMode | None = *,
+        update_catalog: bool = *,
         dict[str, object] params=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)

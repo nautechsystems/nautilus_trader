@@ -44,6 +44,7 @@ class TestDataMessage:
         # Arrange, Act , Assert
         with pytest.raises(ValueError) as e:
             SubscribeData(
+                instrument_id=None,
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -55,6 +56,7 @@ class TestDataMessage:
 
         with pytest.raises(ValueError) as e:
             UnsubscribeData(
+                instrument_id=None,
                 client_id=None,
                 venue=None,
                 data_type=DataType(Data, {"type": "newswire"}),
@@ -68,6 +70,7 @@ class TestDataMessage:
             handler = []
             RequestData(
                 data_type=DataType(QuoteTick),
+                instrument_id=None,
                 start=None,
                 end=None,
                 limit=0,
@@ -99,6 +102,7 @@ class TestDataMessage:
         command_id = UUID4()
 
         command = SubscribeData(
+            instrument_id=None,
             client_id=None,
             venue=BINANCE,
             data_type=DataType(Data, {"type": "newswire"}),
@@ -125,6 +129,7 @@ class TestDataMessage:
         command_id = UUID4()
 
         command = SubscribeData(
+            instrument_id=None,
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
             data_type=DataType(TradeTick, {"instrument_id": "BTCUSDT"}),
@@ -157,6 +162,7 @@ class TestDataMessage:
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                 },
             ),
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
             start=None,
             end=None,
             limit=1000,
@@ -171,12 +177,12 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "RequestData(data_type=Data{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, start=None, end=None, "
-            "limit=1000, client_id=None, venue=BINANCE)"
+            == "RequestData(data_type=Data{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, instrument_id=SOMETHING.RANDOM, "
+            "start=None, end=None, limit=1000, client_id=None, venue=BINANCE)"
         )
         assert repr(request) == (
             f"RequestData(data_type=Data{{'instrument_id': InstrumentId('SOMETHING.RANDOM')}}, "
-            f"start=None, end=None, limit=1000, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
+            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, limit=1000, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
         )
 
     def test_venue_data_request_message_str_and_repr(self):
@@ -191,6 +197,7 @@ class TestDataMessage:
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                 },
             ),
+            instrument_id=InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
             start=None,
             end=None,
             limit=1000,
@@ -205,12 +212,12 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "RequestData(data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, start=None, end=None, "
-            "limit=1000, client_id=None, venue=BINANCE)"
+            == "RequestData(data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM')}, instrument_id=SOMETHING.RANDOM, "
+            "start=None, end=None, limit=1000, client_id=None, venue=BINANCE)"
         )
         assert (
             f"RequestData(data_type=TradeTick{{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'limit': 1000}}, "
-            f"start=None, end=None, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
+            f"instrument_id=SOMETHING.RANDOM, start=None, end=None, client_id=None, venue=BINANCE, callback={handler!r}, id={request_id})"
         )
 
     def test_data_response_message_str_and_repr(self):

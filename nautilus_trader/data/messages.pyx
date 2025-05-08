@@ -107,6 +107,8 @@ cdef class SubscribeData(DataCommand):
     ----------
     data_type : type
         The data type for the subscription.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
@@ -128,12 +130,19 @@ cdef class SubscribeData(DataCommand):
     def __init__(
         self,
         DataType data_type not None,
+        InstrumentId instrument_id: InstrumentId | None,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
+        if instrument_id is not None:
+            # for a unique type in such usage: self._add_subscription(command.data_type)
+            metadata = data_type.metadata.copy()
+            metadata["instrument_id"] = instrument_id
+            data_type = DataType(data_type.type, metadata)
+
         super().__init__(
             data_type,
             client_id,
@@ -141,6 +150,48 @@ cdef class SubscribeData(DataCommand):
             command_id,
             ts_init,
             params,
+        )
+        self.instrument_id = instrument_id
+
+    def to_request(
+        self,
+        datetime start: datetime | None,
+        datetime end: datetime | None,
+        callback not None: Callable[[Any], None],
+    ) -> RequestData:
+        """
+        Convert this subscribe message to a request message.
+
+        Parameters
+        ----------
+        start : datetime
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
+
+        Returns
+        -------
+        RequestQuoteTicks
+            The converted request message.
+        """
+        params = self.params.copy() if self.params else {}
+        params["subscription_name"] = f"{self.data_type.type.__name__}.{self.instrument_id}"
+
+        return RequestData(
+            data_type=self.data_type,
+            instrument_id=self.instrument_id,
+            start=start,
+            end=end,
+            limit=0,
+            client_id=self.client_id,
+            venue=self.venue,
+            callback=callback,
+            request_id=self.id,
+            ts_init=self.ts_init,
+            params=params,
         )
 
 
@@ -178,6 +229,7 @@ cdef class SubscribeInstruments(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            None,
             client_id,
             venue,
             command_id,
@@ -238,13 +290,13 @@ cdef class SubscribeInstrument(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -318,13 +370,13 @@ cdef class SubscribeOrderBook(SubscribeData):
         Condition.positive_int(interval_ms, "interval_ms")
         super().__init__(
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
         self.book_type = book_type
         self.depth = depth
         self.managed = managed
@@ -396,13 +448,13 @@ cdef class SubscribeQuoteTicks(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(QuoteTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -499,13 +551,13 @@ cdef class SubscribeTradeTicks(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -602,13 +654,13 @@ cdef class SubscribeMarkPrices(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -665,13 +717,13 @@ cdef class SubscribeIndexPrices(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -731,6 +783,7 @@ cdef class SubscribeBars(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(Bar),
+            None,
             client_id,
             venue,
             command_id,
@@ -837,13 +890,13 @@ cdef class SubscribeInstrumentStatus(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(InstrumentStatus),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -900,13 +953,13 @@ cdef class SubscribeInstrumentClose(SubscribeData):
     ) -> None:
         super().__init__(
             DataType(InstrumentClose),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -934,6 +987,8 @@ cdef class UnsubscribeData(DataCommand):
     ----------
     data_type : type
         The data type for the subscription.
+    instrument_id : InstrumentId
+        The instrument ID for the subscription.
     client_id : ClientId or ``None``
         The data client ID for the command.
     venue : Venue or ``None``
@@ -955,12 +1010,19 @@ cdef class UnsubscribeData(DataCommand):
     def __init__(
         self,
         DataType data_type not None,
+        InstrumentId instrument_id: InstrumentId | None,
         ClientId client_id: ClientId | None,
         Venue venue: Venue | None,
         UUID4 command_id not None,
         uint64_t ts_init,
         dict[str, object] params: dict | None = None,
     ) -> None:
+        if instrument_id is not None:
+            # for a unique type in such usage: self._add_subscription(command.data_type)
+            metadata = data_type.metadata.copy()
+            metadata["instrument_id"] = instrument_id
+            data_type = DataType(data_type.type, metadata)
+
         super().__init__(
             data_type,
             client_id,
@@ -969,6 +1031,7 @@ cdef class UnsubscribeData(DataCommand):
             ts_init,
             params,
         )
+        self.instrument_id = instrument_id
 
 
 cdef class UnsubscribeInstruments(UnsubscribeData):
@@ -1005,6 +1068,7 @@ cdef class UnsubscribeInstruments(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            None,
             client_id,
             venue,
             command_id,
@@ -1065,13 +1129,13 @@ cdef class UnsubscribeInstrument(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
         def __str__(self) -> str:
             return (
@@ -1131,13 +1195,13 @@ cdef class UnsubscribeOrderBook(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(OrderBookDelta) if only_deltas else DataType(OrderBook),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
         self.only_deltas = only_deltas
 
     def __str__(self) -> str:
@@ -1197,13 +1261,13 @@ cdef class UnsubscribeQuoteTicks(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(QuoteTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1260,13 +1324,13 @@ cdef class UnsubscribeTradeTicks(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1323,13 +1387,13 @@ cdef class UnsubscribeMarkPrices(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1386,13 +1450,13 @@ cdef class UnsubscribeIndexPrices(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1449,6 +1513,7 @@ cdef class UnsubscribeBars(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(Bar),
+            None,
             client_id,
             venue,
             command_id,
@@ -1512,13 +1577,13 @@ cdef class UnsubscribeInstrumentStatus(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(InstrumentStatus),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1575,13 +1640,13 @@ cdef class UnsubscribeInstrumentClose(UnsubscribeData):
     ) -> None:
         super().__init__(
             DataType(InstrumentClose),
+            instrument_id,
             client_id,
             venue,
             command_id,
             ts_init,
             params,
         )
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1609,6 +1674,8 @@ cdef class RequestData(Request):
     ----------
     data_type : type
         The data type for the request.
+    instrument_id : InstrumentId
+        The instrument ID for the request.
     start : datetime
         The start datetime (UTC) of request time range (inclusive).
     end : datetime
@@ -1639,6 +1706,7 @@ cdef class RequestData(Request):
     def __init__(
         self,
         DataType data_type not None,
+        InstrumentId instrument_id: InstrumentId | None,
         datetime start : datetime | None,
         datetime end : datetime | None,
         int limit,
@@ -1655,8 +1723,8 @@ cdef class RequestData(Request):
             request_id,
             ts_init,
         )
-
         self.data_type = data_type
+        self.instrument_id = instrument_id
         self.start = start
         self.end = end
         self.limit = limit
@@ -1667,6 +1735,7 @@ cdef class RequestData(Request):
     def with_dates(self, datetime start, datetime end):
         return RequestData(
             data_type=self.data_type,
+            instrument_id=self.instrument_id,
             start=start,
             end=end,
             limit=self.limit,
@@ -1682,6 +1751,7 @@ cdef class RequestData(Request):
         return (
             f"{type(self).__name__}("
             f"data_type={self.data_type}{form_params_str(self.params)}, "
+            f"instrument_id={self.instrument_id}, "
             f"start={self.start}, "
             f"end={self.end}, "
             f"limit={self.limit}, "
@@ -1693,6 +1763,7 @@ cdef class RequestData(Request):
         return (
             f"{type(self).__name__}("
             f"data_type={self.data_type}{form_params_str(self.params)}, "
+            f"instrument_id={self.instrument_id}, "
             f"start={self.start}, "
             f"end={self.end}, "
             f"limit={self.limit}, "
@@ -1750,6 +1821,7 @@ cdef class RequestInstrument(RequestData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            instrument_id,
             start,
             end,
             0,
@@ -1760,8 +1832,6 @@ cdef class RequestInstrument(RequestData):
             ts_init,
             params
         )
-
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1831,6 +1901,7 @@ cdef class RequestInstruments(RequestData):
     ) -> None:
         super().__init__(
             DataType(Instrument),
+            None,
             start,
             end,
             0,
@@ -1839,7 +1910,7 @@ cdef class RequestInstruments(RequestData):
             callback,
             request_id,
             ts_init,
-            params
+            params,
         )
 
     def __str__(self) -> str:
@@ -1907,6 +1978,7 @@ cdef class RequestOrderBookSnapshot(RequestData):
     ) -> None:
         super().__init__(
             DataType(OrderBookDeltas),
+            instrument_id,
             None,
             None,
             limit,
@@ -1917,8 +1989,6 @@ cdef class RequestOrderBookSnapshot(RequestData):
             ts_init,
             params
         )
-
-        self.instrument_id = instrument_id
 
     def __str__(self) -> str:
         return (
@@ -1992,6 +2062,7 @@ cdef class RequestQuoteTicks(RequestData):
     ) -> None:
         super().__init__(
             DataType(QuoteTick),
+            instrument_id,
             start,
             end,
             limit,
@@ -2002,8 +2073,6 @@ cdef class RequestQuoteTicks(RequestData):
             ts_init,
             params
         )
-
-        self.instrument_id = instrument_id
 
     def with_dates(self, datetime start, datetime end):
         return RequestQuoteTicks(
@@ -2094,6 +2163,7 @@ cdef class RequestTradeTicks(RequestData):
     ) -> None:
         super().__init__(
             DataType(TradeTick),
+            instrument_id,
             start,
             end,
             limit,
@@ -2104,8 +2174,6 @@ cdef class RequestTradeTicks(RequestData):
             ts_init,
             params
         )
-
-        self.instrument_id = instrument_id
 
     def with_dates(self, datetime start, datetime end):
         return RequestTradeTicks(
@@ -2197,6 +2265,7 @@ cdef class RequestBars(RequestData):
     ) -> None:
         super().__init__(
             DataType(Bar),
+            None,
             start,
             end,
             limit,
@@ -2207,7 +2276,6 @@ cdef class RequestBars(RequestData):
             ts_init,
             params
         )
-
         self.bar_type = bar_type
 
     def with_dates(self, datetime start, datetime end):

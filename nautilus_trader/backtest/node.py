@@ -245,7 +245,6 @@ class BacktestNode:
                     venue_configs=config.venues,
                     data_configs=config.data,
                 )
-                self.build_data_clients(config.id)
             except Exception as e:
                 if config.raise_exception:
                     raise e
@@ -320,9 +319,11 @@ class BacktestNode:
                     if instrument.id not in engine.cache.instrument_ids():
                         engine.add_instrument(instrument)
 
+        self._build_data_clients(run_config_id)
+
         return engine
 
-    def build_data_clients(self, run_config_id):
+    def _build_data_clients(self, run_config_id):
         engine = self._engines[run_config_id]
         config = self._configs[run_config_id]
 

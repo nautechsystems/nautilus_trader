@@ -84,6 +84,7 @@ class TestDataClient:
         # Act
         self.client.subscribe(
             SubscribeData(
+                instrument_id=None,
                 data_type=data_type,
                 client_id=ClientId("TEST_PROVIDER"),
                 venue=None,
@@ -102,6 +103,7 @@ class TestDataClient:
         # Act
         self.client.unsubscribe(
             UnsubscribeData(
+                instrument_id=None,
                 data_type=data_type,
                 client_id=ClientId("TEST_PROVIDER"),
                 venue=None,
@@ -119,6 +121,7 @@ class TestDataClient:
 
         request = RequestData(
             data_type=data_type,
+            instrument_id=None,
             start=None,
             end=None,
             limit=0,
