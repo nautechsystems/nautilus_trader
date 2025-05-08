@@ -36,7 +36,7 @@ use crate::{
 impl MarketIfTouchedOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -52,7 +52,6 @@ impl MarketIfTouchedOrder {
         init_id: UUID4,
         ts_init: u64,
         expire_time: Option<u64>,
-        display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
         contingency_type: Option<ContingencyType>,
@@ -78,7 +77,6 @@ impl MarketIfTouchedOrder {
             expire_time.map(std::convert::Into::into),
             reduce_only,
             quote_quantity,
-            display_qty,
             emulation_trigger,
             trigger_instrument_id,
             contingency_type,

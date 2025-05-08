@@ -19,15 +19,12 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::{FAILED, check_predicate_false},
-};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore};
+use super::{Order, OrderAny, OrderCore, check_display_qty, check_time_in_force};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -39,10 +36,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::OrderError,
-    types::{
-        Currency, Money, Price, Quantity, price::check_positive_price,
-        quantity::check_positive_quantity,
-    },
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,6 +65,8 @@ impl LimitIfTouchedOrder {
     ///
     /// Returns an error if:
     /// - The `quantity` is not positive.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -102,20 +98,8 @@ impl LimitIfTouchedOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
-        check_positive_price(price, stringify!(price))?;
-        check_positive_price(trigger_price, stringify!(trigger_price))?;
-
-        if let Some(disp) = display_qty {
-            check_positive_quantity(disp, stringify!(display_qty))?;
-            check_predicate_false(disp > quantity, "`display_qty` may not exceed `quantity`")?;
-        }
-
-        if time_in_force == TimeInForce::Gtd {
-            check_predicate_false(
-                expire_time.unwrap_or_default().is_zero(),
-                "`expire_time` is required for `GTD` order",
-            )?;
-        }
+        check_display_qty(display_qty, quantity)?;
+        check_time_in_force(time_in_force, expire_time)?;
 
         match order_side {
             OrderSide::Buy if trigger_price > price => {
@@ -611,7 +595,7 @@ mod tests {
     };
 
     #[rstest]
-    fn test_ok(audusd_sim: CurrencyPair) {
+    fn test_initialize(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)

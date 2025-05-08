@@ -16,15 +16,12 @@
 use std::ops::{Deref, DerefMut};
 
 use indexmap::IndexMap;
-use nautilus_core::{
-    UUID4, UnixNanos,
-    correctness::{FAILED, check_predicate_false},
-};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore, OrderError};
+use super::{Order, OrderAny, OrderCore, OrderError, check_time_in_force};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -35,10 +32,7 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    types::{
-        Currency, Money, Price, Quantity, price::check_positive_price,
-        quantity::check_positive_quantity,
-    },
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,7 +44,6 @@ pub struct MarketIfTouchedOrder {
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
     pub expire_time: Option<UnixNanos>,
-    pub display_qty: Option<Quantity>,
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
@@ -79,7 +72,6 @@ impl MarketIfTouchedOrder {
         expire_time: Option<UnixNanos>,
         reduce_only: bool,
         quote_quantity: bool,
-        display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
         contingency_type: Option<ContingencyType>,
@@ -94,19 +86,7 @@ impl MarketIfTouchedOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
-        check_positive_price(trigger_price, stringify!(trigger_price))?;
-
-        if let Some(disp) = display_qty {
-            check_positive_quantity(disp, stringify!(display_qty))?;
-            check_predicate_false(disp > quantity, "`display_qty` may not exceed `quantity`")?;
-        }
-
-        if time_in_force == TimeInForce::Gtd {
-            check_predicate_false(
-                expire_time.unwrap_or_default().is_zero(),
-                "`expire_time` is required for `GTD` order",
-            )?;
-        }
+        check_time_in_force(time_in_force, expire_time)?;
 
         let init_order = OrderInitialized::new(
             trader_id,
@@ -131,7 +111,7 @@ impl MarketIfTouchedOrder {
             None,
             None,
             expire_time,
-            display_qty,
+            None,
             emulation_trigger,
             trigger_instrument_id,
             contingency_type,
@@ -149,7 +129,6 @@ impl MarketIfTouchedOrder {
             trigger_price,
             trigger_type,
             expire_time,
-            display_qty,
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
@@ -175,7 +154,6 @@ impl MarketIfTouchedOrder {
         expire_time: Option<UnixNanos>,
         reduce_only: bool,
         quote_quantity: bool,
-        display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
         contingency_type: Option<ContingencyType>,
@@ -202,7 +180,6 @@ impl MarketIfTouchedOrder {
             expire_time,
             reduce_only,
             quote_quantity,
-            display_qty,
             emulation_trigger,
             trigger_instrument_id,
             contingency_type,
@@ -336,7 +313,7 @@ impl Order for MarketIfTouchedOrder {
     }
 
     fn display_qty(&self) -> Option<Quantity> {
-        self.display_qty
+        None
     }
 
     fn limit_offset(&self) -> Option<Decimal> {
@@ -531,7 +508,6 @@ impl From<OrderInitialized> for MarketIfTouchedOrder {
             event.expire_time,
             event.reduce_only,
             event.quote_quantity,
-            event.display_qty,
             event.emulation_trigger,
             event.trigger_instrument_id,
             event.contingency_type,
@@ -563,7 +539,7 @@ mod tests {
     };
 
     #[rstest]
-    fn test_ok(audusd_sim: CurrencyPair) {
+    fn test_initialize(audusd_sim: CurrencyPair) {
         let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
@@ -597,19 +573,6 @@ mod tests {
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .time_in_force(TimeInForce::Gtd)
-            .build();
-    }
-
-    #[rstest]
-    #[should_panic(expected = "Condition failed: `display_qty` may not exceed `quantity`")]
-    fn test_display_qty_gt_quantity(audusd_sim: CurrencyPair) {
-        let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
-            .instrument_id(audusd_sim.id)
-            .side(OrderSide::Buy)
-            .trigger_price(Price::from("30000"))
-            .trigger_type(TriggerType::LastPrice)
-            .quantity(Quantity::from(1))
-            .display_qty(Quantity::from(2))
             .build();
     }
 }

@@ -1484,7 +1484,6 @@ class MarketIfTouchedOrder:
         init_id: UUID4,
         ts_init: int,
         expire_time: int | None = None,
-        display_qty: Quantity | None = None,
         emulation_trigger: TriggerType | None = None,
         trigger_instrument_id: InstrumentId | None = None,
         contingency_type: ContingencyType | None = None,
