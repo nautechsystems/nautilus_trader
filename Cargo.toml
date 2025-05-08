@@ -68,7 +68,7 @@ nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.
 nautilus-databento = { path = "crates/adapters/databento", version = "0.48.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.48.0" }
 
-ahash = "0.8.11"
+ahash = "0.8.12"
 anyhow = "1.0.98"
 arrow = "55.0.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"

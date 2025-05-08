@@ -23,6 +23,7 @@ None
 - Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
 - Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
+- Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0rc1 (includes several valuable bug fixes)
 - Upgraded `tokio` crate to v1.45.0
