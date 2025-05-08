@@ -36,7 +36,6 @@ pub struct OrderList {
 
 impl OrderList {
     /// Creates a new [`OrderList`] instance.
-    /// Creates a new [`OrderList`] instance.
     ///
     /// # Panics
     ///
