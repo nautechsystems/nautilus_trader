@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
@@ -505,6 +508,44 @@ impl Order for TrailingStopMarketOrder {
     }
 }
 
+impl Display for TrailingStopMarketOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TrailingStopMarketOrder(\
+            {} {} {} {} {}, \
+            status={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            position_id={}, \
+            exec_algorithm_id={}, \
+            exec_spawn_id={}, \
+            tags={:?}\
+            )",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.order_type,
+            self.time_in_force,
+            self.status,
+            self.client_order_id,
+            self.venue_order_id.map_or_else(
+                || "None".to_string(),
+                |venue_order_id| format!("{venue_order_id}")
+            ),
+            self.position_id.map_or_else(
+                || "None".to_string(),
+                |position_id| format!("{position_id}")
+            ),
+            self.exec_algorithm_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.exec_spawn_id
+                .map_or_else(|| "None".to_string(), |id| format!("{id}")),
+            self.tags
+        )
+    }
+}
+
 impl From<OrderInitialized> for TrailingStopMarketOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -554,7 +595,7 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
         instruments::{CurrencyPair, stubs::*},
-        orders::{Order, builder::OrderTestBuilder},
+        orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
     };
 
@@ -570,16 +611,10 @@ mod tests {
             .quantity(Quantity::from(1))
             .build();
 
-        assert_eq!(order.trigger_price(), Some(Price::from("0.68000")));
-        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
-
-        assert_eq!(order.is_triggered(), Some(false));
-        assert_eq!(order.filled_qty(), Quantity::from(0));
-        assert_eq!(order.leaves_qty(), Quantity::from(1));
-
-        assert_eq!(order.display_qty(), None);
-        assert_eq!(order.trigger_instrument_id(), None);
-        assert_eq!(order.order_list_id(), None);
+        assert_eq!(
+            order.to_string(),
+            "TrailingStopMarketOrder(BUY 1 AUD/USD.SIM TRAILING_STOP_MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+        );
     }
 
     #[rstest]

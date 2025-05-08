@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
@@ -524,6 +527,30 @@ impl From<OrderInitialized> for MarketIfTouchedOrder {
     }
 }
 
+impl Display for MarketIfTouchedOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MarketIfTouchedOrder {{ \
+                side: {}, \
+                qty: {}, \
+                instrument: {}, \
+                tif: {}, \
+                trigger_price: {}, \
+                trigger_type: {}, \
+                status: {} \
+            }}",
+            self.side,
+            self.quantity,
+            self.instrument_id,
+            self.time_in_force,
+            self.trigger_price,
+            self.trigger_type,
+            self.status
+        )
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -540,13 +567,26 @@ mod tests {
 
     #[rstest]
     fn test_initialize(audusd_sim: CurrencyPair) {
-        let _ = OrderTestBuilder::new(OrderType::MarketIfTouched)
+        let order = OrderTestBuilder::new(OrderType::MarketIfTouched)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("30000"))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
+
+        assert_eq!(
+            order.to_string(),
+            "MarketIfTouchedOrder { \
+                side: BUY, \
+                qty: 1, \
+                instrument: AUD/USD.SIM, \
+                tif: GTC, \
+                trigger_price: 30000, \
+                trigger_type: LAST_PRICE, \
+                status: INITIALIZED \
+            }"
+        );
     }
 
     #[rstest]
