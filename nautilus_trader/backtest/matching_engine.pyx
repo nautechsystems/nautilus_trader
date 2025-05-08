@@ -980,6 +980,19 @@ cdef class OrderMatchingEngine:
                 )
                 return  # Invalid order
 
+        cdef Price activation_price
+        if order.has_activation_price_c():
+            # Check order activation price precision
+            activation_price = order.activation_price
+            if activation_price._mem.precision != self.instrument.price_precision:
+                self._generate_order_rejected(
+                    order,
+                    f"Invalid activation price precision for order {order.client_order_id}, "
+                    f"was {activation_price.precision} "
+                    f"when {self.instrument.id} price precision is {self.instrument.price_precision}"
+                )
+                return  # Invalid order
+
         cdef Position position = self.cache.position_for_order(order.client_order_id)
 
         cdef PositionId position_id
@@ -1029,10 +1042,11 @@ cdef class OrderMatchingEngine:
             self._process_market_if_touched_order(order)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
             self._process_limit_if_touched_order(order)
-        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
-            self._process_trailing_stop_market_order(order)
-        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
-            self._process_trailing_stop_limit_order(order)
+        elif (
+            order.order_type == OrderType.TRAILING_STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            self._process_trailing_stop_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"{order_type_to_str(order.order_type)} "  # pragma: no cover
@@ -1233,30 +1247,50 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self.accept_order(order)
 
-    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order):
-        if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_rejected(
-                order,
-                f"{order.type_string_c()} {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self._core.bid}, "
-                f"ask={self._core.ask}",
-            )
-            return  # Invalid price
+    cdef void _process_trailing_stop_order(self, Order order):
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET \
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
 
-        # Order is valid and accepted
-        self.accept_order(order)
+        cdef Price market_price = None
+        if order.activation_price is None:
+            # If activation price is not given,
+            # set the activation price to the last price, and activate order
+            market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+            if market_price is None:
+                # If there is no market price, we cannot process the order
+                raise RuntimeError(  # pragma: no cover (design-time error)
+                    f"cannot process trailing stop, "
+                    f"no BID or ASK price for {order.instrument_id} "
+                    f"(add quotes or use bars)",
+                )
+            order.set_activated(market_price)
+        else:
+            # If activation price is given,
+            # the activation price should not be in the market, like if_touched orders.
+            if self._core.is_touch_triggered(order.side, order.activation_price):
+                # NOTE: need to apply 'reject_stop_orders' to activation price?
+                if self._reject_stop_orders:
+                    self._generate_order_rejected(
+                        order,
+                        f"{order.type_string_c()} {order.side_string_c()} order "
+                        f"activation px of {order.activation_price} was in the market: "
+                        f"bid={self._core.bid}, "
+                        f"ask={self._core.ask}",
+                    )
+                    return  # Invalid price
+                # if we cannot reject the order, we activate it
+                order.set_activated(None)
 
-    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order):
-        if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_rejected(
-                order,
-                f"{order.type_string_c()} {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self._core.bid}, "
-                f"ask={self._core.ask}",
-            )
-            return  # Invalid price
+        if order.is_activated:
+            if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
+                self._generate_order_rejected(
+                    order,
+                    f"{order.type_string_c()} {order.side_string_c()} order "
+                    f"trigger stop px of {order.trigger_price} was in the market: "
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
+                )
+                return  # Invalid price
 
         # Order is valid and accepted
         self.accept_order(order)
@@ -1463,6 +1497,27 @@ cdef class OrderMatchingEngine:
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
     cdef void _update_trailing_stop_order(self, Order order):
+        cdef Price market_price = None
+
+        if not order.is_activated:
+            if order.activation_price is None:
+                # NOTE
+                # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
+                # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
+                market_price = self.ask if order.side == OrderSide.BUY else self.bid
+                if market_price is None:
+                    # If there is no market price, we cannot process the order
+                    raise RuntimeError(  # pragma: no cover (design-time error)
+                        f"cannot process trailing stop, "
+                        f"no BID or ASK price for {order.instrument_id} "
+                        f"(add quotes or use bars)",
+                    )
+                order.set_activated(market_price)
+            elif self._core.is_touch_triggered(order.side, order.activation_price):
+                order.set_activated(None)
+            else:
+                return  # nothing to do
+
         cdef tuple output = TrailingStopCalculator.calculate(
             price_increment=self.instrument.price_increment,
             order=order,

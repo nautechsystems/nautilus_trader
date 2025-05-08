@@ -34,6 +34,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -224,6 +225,7 @@ class TestSimulatedExchange:
             "trailing_offset_type",
             "trailing_offset",
             "trigger_type",
+            "expected_activation",
             "expected_trigger",
         ),
         [
@@ -232,6 +234,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.BID_ASK,
+                Price.from_str("14.000"),
                 Price.from_str("15.000"),
             ],
             [
@@ -239,6 +242,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.BID_ASK,
+                Price.from_str("13.000"),
                 Price.from_str("12.000"),
             ],
         ],
@@ -249,6 +253,7 @@ class TestSimulatedExchange:
         trailing_offset_type: TrailingOffsetType,
         trailing_offset: Decimal,
         trigger_type: TriggerType,
+        expected_activation: Price,
         expected_trigger: Price,
     ) -> None:
         # Arrange: Prepare market
@@ -274,6 +279,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
+        assert trailing_stop.activation_price == expected_activation
         assert trailing_stop.trigger_price == expected_trigger
 
     @pytest.mark.parametrize(
@@ -282,6 +288,7 @@ class TestSimulatedExchange:
             "trailing_offset_type",
             "trailing_offset",
             "trigger_type",
+            "expected_activation",
             "expected_trigger",
         ),
         [
@@ -290,6 +297,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.LAST_PRICE,
+                Price.from_str("14.000"),
                 Price.from_str("15.000"),
             ],
             [
@@ -297,6 +305,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.LAST_PRICE,
+                Price.from_str("14.000"),
                 Price.from_str("13.000"),
             ],
             [
@@ -304,6 +313,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.LAST_OR_BID_ASK,
+                Price.from_str("14.000"),
                 Price.from_str("15.000"),
             ],
             [
@@ -311,6 +321,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.LAST_OR_BID_ASK,
+                Price.from_str("14.000"),
                 Price.from_str("13.000"),
             ],
         ],
@@ -321,6 +332,7 @@ class TestSimulatedExchange:
         trailing_offset_type: TrailingOffsetType,
         trailing_offset: Decimal,
         trigger_type: TriggerType,
+        expected_activation: Price,
         expected_trigger: Price,
     ) -> None:
         # Arrange: Prepare market
@@ -358,6 +370,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
+        assert trailing_stop.activation_price == expected_activation
         assert trailing_stop.trigger_price == expected_trigger
 
     def test_trailing_stop_market_order_buy_bid_ask_price_when_offset_activated_updates_order(
@@ -450,12 +463,173 @@ class TestSimulatedExchange:
         # Assert
         assert trailing_stop.trigger_price == Price.from_str("13.000")
 
+    def test_trailing_stop_market_order_trail_activate_and_sell(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200_000),
+            activation_price=Price.from_str("15.000"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        # When the activation_price is set higher than the current market price,
+        # the order should remain inactive until the market reaches the activation price.
+        assert not trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price is None
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=15.5,  # causes activation of the order
+            ask_price=16.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the activation price,
+        # the trigger_price should be set based on the given offset and continue to trail the market.
+        assert trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price == Price.from_str("14.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=16.5,  # raises trigger_price of the order
+            ask_price=17.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves in a favorable direction,
+        # the trigger_price should continue to adjust, trailing the market.
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=16.0,
+            ask_price=16.5,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves in an unfavorable direction,
+        # the trigger_price should remain unchanged until it is triggered.
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=15.0,
+            ask_price=15.5,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the trigger price, the order should be triggered and filled.
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+        assert trailing_stop.status == OrderStatus.FILLED
+        assert trailing_stop.liquidity_side == LiquiditySide.TAKER
+        assert trailing_stop.filled_qty == 200_000
+
+    def test_trailing_stop_market_order_trail_activate_and_buy(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200_000),
+            activation_price=Price.from_str("12.000"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        # When the activation_price is set higher than the current market price,
+        # the order should remain inactive until the market reaches the activation price.
+        assert not trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert trailing_stop.trigger_price is None
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=11.5,  # causes activation of the order
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the activation price,
+        # the trigger_price should be set based on the given offset and continue to trail the market.
+        assert trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert trailing_stop.trigger_price == Price.from_str("12.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.0,
+            ask_price=10.5,  # lowers trigger_price of the order
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves down in a favorable direction,
+        # the trigger_price should continue to adjust, trailing the market.
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.5,
+            ask_price=11.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves upward in an unfavorable direction,
+        # the trigger_price should remain unchanged until it is triggered.
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=12.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves above the trigger price, the order should be triggered, and filled
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+        assert trailing_stop.status == OrderStatus.FILLED
+        assert trailing_stop.filled_qty == 200_000
+        assert trailing_stop.liquidity_side == LiquiditySide.TAKER
+
     @pytest.mark.parametrize(
         (
             "order_side",
             "trailing_offset_type",
             "trailing_offset",
             "trigger_type",
+            "expected_activation",
             "expected_trigger",
             "expected_price",
         ),
@@ -465,6 +639,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.BID_ASK,
+                Price.from_str("14.000"),
                 Price.from_str("15.000"),
                 Price.from_str("15.000"),
             ],
@@ -473,6 +648,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
                 TriggerType.BID_ASK,
+                Price.from_str("13.000"),
                 Price.from_str("12.000"),
                 Price.from_str("12.000"),
             ],
@@ -481,6 +657,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
                 TriggerType.BID_ASK,
+                Price.from_str("14.000"),
                 Price.from_str("14.140"),
                 Price.from_str("14.140"),
             ],
@@ -489,6 +666,7 @@ class TestSimulatedExchange:
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
                 TriggerType.BID_ASK,
+                Price.from_str("13.000"),
                 Price.from_str("12.870"),
                 Price.from_str("12.870"),
             ],
@@ -500,6 +678,7 @@ class TestSimulatedExchange:
         trailing_offset_type: TrailingOffsetType,
         trailing_offset: Decimal,
         trigger_type: TriggerType,
+        expected_activation: Price,
         expected_trigger: Price,
         expected_price: Price,
     ) -> None:
@@ -527,6 +706,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
+        assert trailing_stop.activation_price == expected_activation
         assert trailing_stop.trigger_price == expected_trigger
         assert trailing_stop.price == expected_price
 
@@ -1215,3 +1395,224 @@ class TestSimulatedExchange:
         assert trailing_stop.events[-1].last_px == Price.from_str("11.999")  # <-- Slipped one tick
         assert trailing_stop.events[-2].last_qty == Quantity.from_int(100_000)
         assert trailing_stop.events[-1].last_qty == Quantity.from_int(100_000)
+
+    #
+    # Tests a dynamic scenario of a sell-side trailing stop limit order
+    #
+    def test_trailing_stop_limit_order_trail_activate_and_sell(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200_000),
+            activation_price=Price.from_str("15.000"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            limit_offset=Decimal("1.0"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        # When the activation_price is set higher than the current market price,
+        # the order should remain inactive until the market reaches the activation price.
+        assert not trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price is None
+        assert not trailing_stop.is_triggered
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=15.5,  # causes activation of the order
+            ask_price=16.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the activation price,
+        # the trigger_price should be set based on the given offset and continue to trail the market.
+        assert trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price == Price.from_str("14.500")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.price == Price.from_str("14.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=16.5,  # raises trigger_price of the order
+            ask_price=17.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves in a favorable direction,
+        # the trigger_price should continue to adjust, trailing the market.
+        assert trailing_stop.activation_price == Price.from_str("15.000")
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.price == Price.from_str("15.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=16.0,
+            ask_price=16.5,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves in an unfavorable direction,
+        # the trigger_price should remain unchanged until it is triggered.
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.price == Price.from_str("15.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=15.0,
+            ask_price=15.5,
+            bid_size=100_000,
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the trigger price, the order should be triggered,
+        # but not filled because the order's limit price is higher than the bid price.
+        assert trailing_stop.is_triggered
+        assert trailing_stop.trigger_price == Price.from_str("15.500")
+        assert trailing_stop.price == Price.from_str("15.500")
+        assert trailing_stop.status == OrderStatus.TRIGGERED
+        assert trailing_stop.filled_qty == 0
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=15.5,
+            ask_price=16.0,
+            bid_size=100_000,
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market bid price reaches the order's limit price,
+        # the order should be filled up to the available quantity.
+        assert trailing_stop.status == OrderStatus.PARTIALLY_FILLED
+        assert trailing_stop.liquidity_side == LiquiditySide.MAKER
+        assert trailing_stop.filled_qty == 100_000
+
+    #
+    # Tests a dynamic scenario of a buy-side trailing stop limit order
+    #
+    def test_trailing_stop_limit_order_trail_activate_and_buy(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200_000),
+            activation_price=Price.from_str("12.000"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            limit_offset=Decimal("1.0"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        # When the activation_price is set higher than the current market price,
+        # the order should remain inactive until the market reaches the activation price.
+        assert not trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert trailing_stop.trigger_price is None
+        assert not trailing_stop.is_triggered
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=11.5,  # causes activation of the order
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market reaches the activation price,
+        # the trigger_price should be set based on the given offset and continue to trail the market.
+        assert trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert trailing_stop.trigger_price == Price.from_str("12.500")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.price == Price.from_str("12.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.0,
+            ask_price=10.5,  # lowers trigger_price of the order
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves down in a favorable direction,
+        # the trigger_price should continue to adjust, trailing the market.
+        assert trailing_stop.activation_price == Price.from_str("12.000")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+        assert trailing_stop.price == Price.from_str("11.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.5,
+            ask_price=11.0,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves upward in an unfavorable direction,
+        # the trigger_price should remain unchanged until it is triggered.
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.price == Price.from_str("11.500")
+        assert trailing_stop.price == Price.from_str("11.500")
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=12.0,
+            bid_size=100_000,
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market moves over the trigger price, the order should be triggered,
+        # but not filled because the order's limit price is lower than the ask price.
+        assert trailing_stop.is_triggered
+        assert trailing_stop.trigger_price == Price.from_str("11.500")
+        assert trailing_stop.price == Price.from_str("11.500")
+        assert trailing_stop.status == OrderStatus.TRIGGERED
+        assert trailing_stop.filled_qty == 0
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.5,
+            ask_price=11.5,
+            bid_size=100_000,
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market ask price moves down again and reaches the order's limit price,
+        # the order should be filled up to the available quantity.
+        assert trailing_stop.status == OrderStatus.FILLED
+        assert trailing_stop.liquidity_side == LiquiditySide.MAKER
+        assert trailing_stop.filled_qty == 200_000
