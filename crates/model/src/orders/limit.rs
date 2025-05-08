@@ -54,18 +54,14 @@ pub struct LimitOrder {
 }
 
 impl LimitOrder {
-    // ---------------------------------------------------------------------
-    //  Constructors
-    // ---------------------------------------------------------------------
-
-    /// Creates a new [`LimitOrder`] instance **propagating validation errors**.
+    /// Creates a new [`LimitOrder`] instance.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `quantity` is not positive
-    /// - `display_qty` (when provided) exceeds `quantity`
-    /// - `time_in_force == TimeInForce::Gtd` **and** `expire_time` is `None`/0
+    /// - The `quantity` is not positive.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -109,11 +105,11 @@ impl LimitOrder {
             time_in_force,
             post_only,
             reduce_only,
-            quote_quantity,
-            /* is_close = */ false,
+            false,
             init_id,
-            ts_init, // ts_event == ts_init
+            ts_init, // ts_event timestamp identical to ts_init
             ts_init,
+            Some(price),
             Some(price),
             None,
             None,
