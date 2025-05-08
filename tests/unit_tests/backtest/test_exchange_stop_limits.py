@@ -153,8 +153,8 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.100"),  # <-- immediately filled
-            trigger_price=Price.from_str("90.000"),  # <-- immediately triggered
+            price=Price.from_str("90.100"),  # <-- Immediately filled
+            trigger_price=Price.from_str("90.000"),  # <-- Immediately triggered
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -164,7 +164,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == 90.005  # <-- fills at ASK
+        assert order.avg_px == 90.005  # <-- Fills at ASK
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 
@@ -182,8 +182,8 @@ class TestSimulatedExchange:
             USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            price=Price.from_str("90.000"),  # <-- immediately filled
-            trigger_price=Price.from_str("90.010"),  # <-- immediately triggered
+            price=Price.from_str("90.000"),  # <-- Immediately filled
+            trigger_price=Price.from_str("90.010"),  # <-- Immediately triggered
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -193,7 +193,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == 90.002  # <-- fills at BID
+        assert order.avg_px == 90.002  # <-- Fills at BID
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_open_orders()) == 0
 
@@ -234,7 +234,7 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 90.010  # <-- fills at triggered price
+        assert order.avg_px == 90.010  # <-- Fills at triggered price
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
     def test_process_quote_tick_fills_sell_stop_limit_order_passively(self):
@@ -274,5 +274,111 @@ class TestSimulatedExchange:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 90.000  # <-- fills at triggered price
+        assert order.avg_px == 90.000  # <-- Fills at triggered price
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
+
+    def test_stop_limit_buy_order_partial_fills(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=10.0,
+            ask_price=11.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(200_000),
+            price=Price.from_str("12.000"),
+            trigger_price=Price.from_str("12.000"),
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+        assert not order.is_triggered
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=12.0,
+            bid_size=200_000,
+            ask_size=100_000,  # <-- Size is not enough to fill the order quantity
+        )
+        self.exchange.process_quote_tick(tick)
+
+        assert order.is_triggered
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
+        assert order.filled_qty == 100_000
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=11.0,
+            ask_price=12.0,
+            bid_size=200_000,
+            ask_size=200_000,  # <-- Size enough to fill remaining quantity
+        )
+        self.exchange.process_quote_tick(tick)
+
+        assert order.is_triggered
+        assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.MAKER
+        assert order.filled_qty == 200_000
+        assert order.leaves_qty == 0
+
+    def test_stop_limit_sell_order_partial_fills(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        order = self.strategy.order_factory.stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200_000),
+            price=Price.from_str("12.000"),
+            trigger_price=Price.from_str("12.000"),
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        assert order.status == OrderStatus.ACCEPTED
+        assert not order.is_triggered
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=12.0,
+            ask_price=13.0,
+            bid_size=100_000,  # <-- Size is not enough to fill the order quantity
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        assert order.is_triggered
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.liquidity_side == LiquiditySide.TAKER
+        assert order.filled_qty == 100_000
+
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=12.0,
+            ask_price=13.0,
+            bid_size=100_000,  # <-- Size enough to fill remaining quantity
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        assert order.is_triggered
+        assert order.status == OrderStatus.FILLED
+        assert order.liquidity_side == LiquiditySide.MAKER
+        assert order.filled_qty == 200_000
+        assert order.leaves_qty == 0
