@@ -150,7 +150,6 @@ impl Default for MarketIfTouchedOrder {
             None,
             None,
             None,
-            None,
             UUID4::default(),
             UnixNanos::default(),
         )

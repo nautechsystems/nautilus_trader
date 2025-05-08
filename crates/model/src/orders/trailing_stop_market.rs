@@ -59,14 +59,10 @@ impl TrailingStopMarketOrder {
     ///
     /// # Errors
     ///
-    /// Returns an [`anyhow::Error`] if **any** of the following invariants is
-    /// violated (see functions it delegates to for exact wording):
-    ///
-    /// * `quantity` is **not positive** (`check_positive_quantity`)
-    /// * `display_qty` exceeds `quantity` (`check_display_qty`)
-    /// * `time_in_force == TimeInForce::Gtd` **and** `expire_time` is `None`
-    ///   (`check_time_in_force`)
-    /// * Any other internal validation added in the future
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
+    /// - The `time_in_force` is `GTD` **and** `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         trader_id: TraderId,
@@ -98,9 +94,7 @@ impl TrailingStopMarketOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
-
         check_display_qty(display_qty, quantity)?;
-
         check_time_in_force(time_in_force, expire_time)?;
 
         let init_order = OrderInitialized::new(
@@ -153,15 +147,12 @@ impl TrailingStopMarketOrder {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    /// Convenience wrapper around [`Self::new_checked`].
+    /// Creates a new [`TrailingStopMarketOrder`] instance.
     ///
     /// # Panics
     ///
-    /// Panics **(with the constant [`FAILED`])** if the underlying call to
-    /// [`Self::new_checked`] returns `Err(_)`.
-    /// In other words, it panics for the same set of validation failures that
-    /// [`Self::new_checked`] reports via its `Result`.
+    /// This function panics if any order validation fails (see [`TrailingStopMarketOrder::new_checked`]).
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
