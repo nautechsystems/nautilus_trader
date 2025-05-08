@@ -105,11 +105,11 @@ impl LimitOrder {
             time_in_force,
             post_only,
             reduce_only,
+            quote_quantity,
             false,
             init_id,
             ts_init, // ts_event timestamp identical to ts_init
             ts_init,
-            Some(price),
             Some(price),
             None,
             None,
