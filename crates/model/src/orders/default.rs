@@ -58,7 +58,6 @@ impl Default for LimitOrder {
             UUID4::default(),
             UnixNanos::default(),
         )
-        .unwrap() // SAFETY: Valid default values are used
     }
 }
 

@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -62,9 +65,8 @@ impl MarketIfTouchedOrder {
         exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> Self {
-        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -84,12 +86,13 @@ impl MarketIfTouchedOrder {
             linked_order_ids,
             parent_order_id,
             exec_algorithm_id,
-            exec_algorithm_params,
+            exec_algorithm_params.map(str_indexmap_to_ustr),
             exec_spawn_id,
             tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
             init_id,
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
