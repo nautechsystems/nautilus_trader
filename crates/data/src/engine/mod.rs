@@ -32,9 +32,6 @@ pub mod book;
 pub mod config;
 mod handlers;
 
-#[cfg(test)]
-mod tests;
-
 use std::{
     any::Any,
     cell::{Ref, RefCell},
@@ -360,7 +357,7 @@ impl DataEngine {
             .collect()
     }
 
-    fn get_client(
+    pub fn get_client(
         &mut self,
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
@@ -397,7 +394,7 @@ impl DataEngine {
         self.default_client.as_mut()
     }
 
-    fn get_clients(&self) -> Vec<&DataClientAdapter> {
+    pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
         let (default_opt, clients_map) = (&self.default_client, &self.clients);
 
         let mut out: Vec<&DataClientAdapter> = clients_map.values().collect();

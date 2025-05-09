@@ -38,9 +38,8 @@ use nautilus_common::{
         UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
+use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
-
-use crate::client::DataClient;
 
 /// A mock implementation of [`DataClient`] for testing, using an in-memory cache.
 pub struct MockDataClient {
