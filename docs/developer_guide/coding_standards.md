@@ -53,19 +53,19 @@ We welcome all feedback on where the codebase departs from PEP-8 for no apparent
 
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase. This needs to be adhered to consistently to ensure the docs build correctly.
 
-### Flake8
+### Ruff
 
-[Flake8](https://github.com/pycqa/flake8) is utilized to lint the codebase. Current ignores can be found in the top-level `pre-commit-config.yaml`, with the justifications also commented.
+[ruff](https://astral.sh/ruff) is utilized to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
 
 ### Commit messages
 
 Here are some guidelines for the style of your commit messages:
 
-1. Limit subject titles to 50 characters or fewer. Capitalize subject line and do not end with period.
+1. Limit subject titles to 60 characters or fewer. Capitalize subject line and do not end with period.
 
 2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
 
-3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 80 character width. You can use bullet points.
+3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 100 character width. You can use bullet points with or without terminating periods.
 
 4. Optional: Provide # references to relevant issues or tickets.
 
