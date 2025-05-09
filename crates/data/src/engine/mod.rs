@@ -528,7 +528,7 @@ impl DataEngine {
 
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_subscribe_command(cmd);
+            client.execute_subscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -563,7 +563,7 @@ impl DataEngine {
 
         // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_unsubscribe_command(cmd);
+            client.execute_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
