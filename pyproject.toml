@@ -48,7 +48,7 @@ requires = [
     "setuptools>=80",
     "poetry-core>=2.0.1",
     "numpy>=1.26.4",
-    "cython==3.1.0rc1",
+    "cython==3.1.0",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -99,7 +99,7 @@ polymarket = [
 
 [dependency-groups]
 dev = [
-    "cython==3.1.0rc1",
+    "cython==3.1.0",
     "setuptools>=75",
     "black>=25.1.0,<26.0.0",
     "docformatter>=1.7.6,<2.0.0",
