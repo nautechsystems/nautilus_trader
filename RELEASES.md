@@ -34,6 +34,7 @@ None
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
+- Fixed authentication for Redis when password provided with no username
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates

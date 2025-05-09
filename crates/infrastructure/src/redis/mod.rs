@@ -50,48 +50,59 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
     }
 }
 
-/// Parse a Redis connection url from the given database config.
+/// Parse a Redis connection URL from the given database config, returning the
+/// full URL and a redacted version with the password obfuscated.
+///
+/// Authentication matrix handled:
+/// ┌───────────┬───────────┬────────────────────────────┐
+/// │ Username  │ Password  │ Resulting user-info part   │
+/// ├───────────┼───────────┼────────────────────────────┤
+/// │ non-empty │ non-empty │ user:pass@                 │
+/// │ empty     │ non-empty │ :pass@                     │
+/// │ empty     │ empty     │ (omitted)                  │
+/// └───────────┴───────────┴────────────────────────────┘
 #[must_use]
 pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     let host = config.host.unwrap_or("127.0.0.1".to_string());
     let port = config.port.unwrap_or(6379);
     let username = config.username.unwrap_or_default();
     let password = config.password.unwrap_or_default();
-    let use_ssl = config.ssl;
+    let ssl = config.ssl;
 
-    let redacted_password = if password.len() > 4 {
-        format!("{}...{}", &password[..2], &password[password.len() - 2..],)
-    } else {
-        password.to_string()
+    // Redact the password for logging/metrics: keep the first & last two chars.
+    let redact_pw = |pw: &str| {
+        if pw.len() > 4 {
+            format!("{}...{}", &pw[..2], &pw[pw.len() - 2..])
+        } else {
+            pw.to_owned()
+        }
     };
 
-    let auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{username}:{password}@")
-    } else {
-        String::new()
+    // Build the `userinfo@` portion for both the real and redacted URLs.
+    let (auth, auth_redacted) = match (username.is_empty(), password.is_empty()) {
+        // user:pass@
+        (false, false) => (
+            format!("{username}:{password}@"),
+            format!("{username}:{}@", redact_pw(&password)),
+        ),
+        // :pass@
+        (true, false) => (
+            format!(":{password}@"),
+            format!(":{}@", redact_pw(&password)),
+        ),
+        // username but no password ⇒  configuration error
+        (false, true) => panic!(
+            "Redis config error: username supplied without password. \
+            Either supply a password or omit the username."
+        ),
+        // no credentials
+        (true, true) => (String::new(), String::new()),
     };
 
-    let redacted_auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{username}:{redacted_password}@")
-    } else {
-        String::new()
-    };
+    let scheme = if ssl { "rediss" } else { "redis" };
 
-    let url = format!(
-        "redis{}://{}{}:{}",
-        if use_ssl { "s" } else { "" },
-        auth_part,
-        host,
-        port
-    );
-
-    let redacted_url = format!(
-        "redis{}://{}{}:{}",
-        if use_ssl { "s" } else { "" },
-        redacted_auth_part,
-        host,
-        port
-    );
+    let url = format!("{scheme}://{auth}{host}:{port}");
+    let redacted_url = format!("{scheme}://{auth_redacted}{host}:{port}");
 
     (url, redacted_url)
 }
@@ -233,6 +244,20 @@ mod tests {
         let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://127.0.0.1:6379");
         assert_eq!(redacted_url, "redis://127.0.0.1:6379");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_password_only() {
+        // Username omitted, but password present
+        let config_json = json!({
+            "host": "example.com",
+            "port": 6380,
+            "password": "secretpw",   // >4 chars ⇒ will be redacted
+        });
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
+        assert_eq!(url, "redis://:secretpw@example.com:6380");
+        assert_eq!(redacted_url, "redis://:se...pw@example.com:6380");
     }
 
     #[rstest]
