@@ -109,7 +109,7 @@ impl DataClient for MockDataClient {
         false
     }
 
-    // -- COMMAND HANDLERS ---------------------------------------------------------------------------
+    // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
 
     fn subscribe(&mut self, _cmd: &SubscribeData) -> anyhow::Result<()> {
         Ok(())
@@ -230,33 +230,33 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
+    // -- REQUEST HANDLERS ------------------------------------------------------------------------
 
     fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 
     fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
-        todo!()
+        Ok(())
     }
 }
