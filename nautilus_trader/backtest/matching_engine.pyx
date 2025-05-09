@@ -1356,7 +1356,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_market_order(
         self,
-        StopMarketOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ):
@@ -1379,7 +1379,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_limit_order(
         self,
-        StopLimitOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1496,7 +1496,30 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
-    cdef void _update_trailing_stop_order(self, Order order):
+    cdef void _update_trailing_stop_market_order(
+        self,
+        Order order,
+        Quantity qty,
+        Price trigger_price,
+    ):
+        if order.is_activated:
+            self._update_stop_market_order(order, qty, trigger_price)
+        elif qty or trigger_price:
+            self._generate_order_updated(order, qty, None, trigger_price)
+
+    cdef void _update_trailing_stop_limit_order(
+        self,
+        Order order,
+        Quantity qty,
+        Price price,
+        Price trigger_price,
+    ):
+        if order.is_activated:
+            self._update_stop_limit_order(order, qty, price, trigger_price)
+        elif qty or trigger_price:
+            self._generate_order_updated(order, qty, price, trigger_price)
+
+    cdef void _trail_stop_order(self, Order order):
         cdef Price market_price = None
 
         if not order.is_activated:
@@ -1584,7 +1607,7 @@ cdef class OrderMatchingEngine:
 
             # Manage trailing stop
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                self._update_trailing_stop_order(order)
+                self._trail_stop_order(order)
 
             # Move market back to targets
             if self._has_targets:
@@ -2362,7 +2385,7 @@ cdef class OrderMatchingEngine:
                 or order.order_type == OrderType.TRAILING_STOP_LIMIT
             ):
                 if order.trigger_price is None:
-                    self._update_trailing_stop_order(order)
+                    self._trail_stop_order(order)
 
         self._core.add_order(order)
 
@@ -2425,13 +2448,13 @@ cdef class OrderMatchingEngine:
         elif order.order_type == OrderType.TRAILING_STOP_MARKET:
             if trigger_price is None:
                 trigger_price = order.trigger_price
-            self._update_market_if_touched_order(order, qty, trigger_price)
+            self._update_trailing_stop_market_order(order, qty, trigger_price)
         elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if price is None:
                 price = order.price
             if trigger_price is None:
                 trigger_price = order.trigger_price
-            self._update_limit_if_touched_order(order, qty, price, trigger_price)
+            self._update_trailing_stop_limit_order(order, qty, price, trigger_price)
         else:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
