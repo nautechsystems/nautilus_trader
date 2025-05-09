@@ -95,7 +95,7 @@ implementing large performance-critical systems. Cython has addressed a lot of t
 of a statically typed language, embedded into Python's rich ecosystem of software libraries and
 developer/user communities.
 
-## What is Rust?
+## Why Rust?
 
 [Rust](https://www.rust-lang.org/) is a multi-paradigm programming language designed for performance and safety, especially safe
 concurrency. Rust is "blazingly fast" and memory-efficient (comparable to C and C++) with no garbage collector.
