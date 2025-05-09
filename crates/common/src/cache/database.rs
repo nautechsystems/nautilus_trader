@@ -18,6 +18,8 @@
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
+// TODO: Remove once error documentation is complete
+#![allow(clippy::missing_errors_doc)]
 
 use std::collections::HashMap;
 
@@ -155,10 +157,20 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if loading positions fails.
     async fn load_positions(&self) -> anyhow::Result<HashMap<PositionId, Position>>;
 
+    /// Loads all [`GreeksData`] from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading greeks data fails.
     async fn load_greeks(&self) -> anyhow::Result<HashMap<InstrumentId, GreeksData>> {
         Ok(HashMap::new())
     }
 
+    /// Loads all [`YieldCurveData`] from the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading yield curve data fails.
     async fn load_yield_curves(&self) -> anyhow::Result<HashMap<String, YieldCurveData>> {
         Ok(HashMap::new())
     }

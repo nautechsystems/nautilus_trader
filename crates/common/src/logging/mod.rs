@@ -169,6 +169,11 @@ pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     }
 }
 
+/// Parses a string into a [`LevelFilter`].
+///
+/// # Panics
+///
+/// Panics if the provided string is not a valid `LevelFilter`.
 #[must_use]
 pub fn parse_level_filter_str(s: &str) -> LevelFilter {
     let mut log_level_str = s.to_string().to_uppercase();
@@ -180,6 +185,11 @@ pub fn parse_level_filter_str(s: &str) -> LevelFilter {
 }
 
 #[must_use]
+/// Parses component-specific log levels from a JSON value map.
+///
+/// # Panics
+///
+/// Panics if a JSON value in the map is not a string representing a log level.
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
 ) -> HashMap<Ustr, LevelFilter> {
