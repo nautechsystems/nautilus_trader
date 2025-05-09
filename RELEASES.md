@@ -23,6 +23,7 @@ None
 - Improved validations for `StopLimitOrder` in Rust (#2593), thanks @nicolad
 - Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
 - Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
+- Improved orders initialize and display tests in Rust (#2617), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou

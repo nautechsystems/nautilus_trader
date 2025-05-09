@@ -523,7 +523,7 @@ fn test_bars_subscription(
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
 
     let sub = SubscribeCommand::Bars(SubscribeBars::new(
-        bar_type.clone(),
+        bar_type,
         Some(client_id),
         Some(venue),
         UUID4::new(),
@@ -539,7 +539,7 @@ fn test_bars_subscription(
     assert_eq!(adapter.subscriptions_bars.len(), 1);
 
     let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
-        bar_type.clone(),
+        bar_type,
         Some(client_id),
         Some(venue),
         UUID4::new(),
@@ -1100,7 +1100,7 @@ fn test_bars_unsubscribe_noop(
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
     let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
-        bar_type.clone(),
+        bar_type,
         Some(client_id),
         Some(venue),
         UUID4::new(),
@@ -1122,7 +1122,7 @@ fn test_bars_unsubscribe_idempotent(
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
     let sub = SubscribeCommand::Bars(SubscribeBars::new(
-        bar_type.clone(),
+        bar_type,
         Some(client_id),
         Some(venue),
         UUID4::new(),
@@ -1132,7 +1132,7 @@ fn test_bars_unsubscribe_idempotent(
     ));
     adapter.execute_subscribe(&sub);
     let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
-        bar_type.clone(),
+        bar_type,
         Some(client_id),
         Some(venue),
         UUID4::new(),
@@ -1379,7 +1379,7 @@ fn test_request_data(
     let data_type = DataType::new("ReqType", None);
     let req = RequestData {
         client_id,
-        data_type: data_type.clone(),
+        data_type: data_type,
         request_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
