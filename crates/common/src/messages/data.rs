@@ -26,7 +26,7 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
     Request(RequestCommand),
     Subscribe(SubscribeCommand),
@@ -57,7 +57,36 @@ pub enum SubscribeCommand {
     InstrumentClose(SubscribeInstrumentClose),
 }
 
+impl PartialEq for SubscribeCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.command_id() == other.command_id()
+    }
+}
+
 impl SubscribeCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn command_id(&self) -> UUID4 {
+        match self {
+            Self::Data(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
+            Self::Instrument(cmd) => cmd.command_id,
+            Self::BookDeltas(cmd) => cmd.command_id,
+            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookSnapshots(cmd) => cmd.command_id,
+            Self::Quotes(cmd) => cmd.command_id,
+            Self::Trades(cmd) => cmd.command_id,
+            Self::Bars(cmd) => cmd.command_id,
+            Self::MarkPrices(cmd) => cmd.command_id,
+            Self::IndexPrices(cmd) => cmd.command_id,
+            Self::InstrumentStatus(cmd) => cmd.command_id,
+            Self::InstrumentClose(cmd) => cmd.command_id,
+        }
+    }
+
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
@@ -91,6 +120,24 @@ impl SubscribeCommand {
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
+            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookSnapshots(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::MarkPrices(cmd) => cmd.ts_init,
+            Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
+            Self::InstrumentStatus(cmd) => cmd.ts_init,
+            Self::InstrumentClose(cmd) => cmd.ts_init,
         }
     }
 }
@@ -112,7 +159,36 @@ pub enum UnsubscribeCommand {
     InstrumentClose(UnsubscribeInstrumentClose),
 }
 
+impl PartialEq for UnsubscribeCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.command_id() == other.command_id()
+    }
+}
+
 impl UnsubscribeCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn command_id(&self) -> UUID4 {
+        match self {
+            Self::Data(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
+            Self::Instrument(cmd) => cmd.command_id,
+            Self::BookDeltas(cmd) => cmd.command_id,
+            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookSnapshots(cmd) => cmd.command_id,
+            Self::Quotes(cmd) => cmd.command_id,
+            Self::Trades(cmd) => cmd.command_id,
+            Self::Bars(cmd) => cmd.command_id,
+            Self::MarkPrices(cmd) => cmd.command_id,
+            Self::IndexPrices(cmd) => cmd.command_id,
+            Self::InstrumentStatus(cmd) => cmd.command_id,
+            Self::InstrumentClose(cmd) => cmd.command_id,
+        }
+    }
+
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
@@ -146,6 +222,24 @@ impl UnsubscribeCommand {
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
+            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookSnapshots(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::MarkPrices(cmd) => cmd.ts_init,
+            Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
+            Self::InstrumentStatus(cmd) => cmd.ts_init,
+            Self::InstrumentClose(cmd) => cmd.ts_init,
         }
     }
 }
@@ -1010,6 +1104,12 @@ pub enum RequestCommand {
     Bars(RequestBars),
 }
 
+impl PartialEq for RequestCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.request_id() == other.request_id()
+    }
+}
+
 impl RequestCommand {
     /// Converts the command to a dyn Any trait object for messaging.
     pub fn as_any(&self) -> &dyn Any {
@@ -1053,6 +1153,18 @@ impl RequestCommand {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
                 BarType::Composite { instrument_id, .. } => Some(&instrument_id.venue),
             },
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookSnapshot(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
         }
     }
 }
