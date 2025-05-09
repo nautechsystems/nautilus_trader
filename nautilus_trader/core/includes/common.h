@@ -496,6 +496,10 @@ const char *component_state_to_cstr(enum ComponentState value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum ComponentState component_state_from_cstr(const char *ptr);
 
@@ -507,6 +511,10 @@ const char *component_trigger_to_cstr(enum ComponentTrigger value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
@@ -518,6 +526,10 @@ const char *log_level_to_cstr(enum LogLevel value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum LogLevel log_level_from_cstr(const char *ptr);
 
@@ -529,6 +541,10 @@ const char *log_color_to_cstr(enum LogColor value);
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum LogColor log_color_from_cstr(const char *ptr);
 

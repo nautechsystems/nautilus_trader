@@ -587,12 +587,31 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
         instruments::{CurrencyPair, stubs::*},
-        orders::OrderTestBuilder,
+        orders::{Order, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
 
     #[rstest]
-    fn test_initialize(audusd_sim: CurrencyPair) {
+    fn test_initialize(_audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(_audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("0.68000"))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(1));
+
+        assert_eq!(order.display_qty(), None);
+        assert_eq!(order.trigger_instrument_id(), None);
+        assert_eq!(order.order_list_id(), None);
+    }
+
+    #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(audusd_sim.id)
             .side(OrderSide::Buy)

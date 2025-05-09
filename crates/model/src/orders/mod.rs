@@ -833,7 +833,7 @@ mod tests {
     };
 
     // TODO: WIP
-    // fn test_initialize_market_order() {
+    // fn test_display_market_order() {
     //     let order = MarketOrder::default();
     //     assert_eq!(order.events().len(), 1);
     //     assert_eq!(

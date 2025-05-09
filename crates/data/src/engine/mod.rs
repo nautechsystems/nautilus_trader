@@ -32,9 +32,6 @@ pub mod book;
 pub mod config;
 mod handlers;
 
-#[cfg(test)]
-mod tests;
-
 use std::{
     any::Any,
     cell::{Ref, RefCell},
@@ -360,7 +357,7 @@ impl DataEngine {
             .collect()
     }
 
-    fn get_client(
+    pub fn get_client(
         &mut self,
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
@@ -397,7 +394,8 @@ impl DataEngine {
         self.default_client.as_mut()
     }
 
-    fn get_clients(&self) -> Vec<&DataClientAdapter> {
+    #[must_use]
+    pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
         let (default_opt, clients_map) = (&self.default_client, &self.clients);
 
         let mut out: Vec<&DataClientAdapter> = clients_map.values().collect();
@@ -425,7 +423,7 @@ impl DataEngine {
     /// Returns all custom data types currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_custom_data(&self) -> Vec<DataType> {
-        self.collect_subscriptions(|client| &client.subscriptions_generic)
+        self.collect_subscriptions(|client| &client.subscriptions_custom)
     }
 
     /// Returns all instrument IDs currently subscribed across all clients.
@@ -528,7 +526,7 @@ impl DataEngine {
 
         // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_subscribe_command(cmd);
+            client.execute_subscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -563,7 +561,7 @@ impl DataEngine {
 
         // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_unsubscribe_command(cmd);
+            client.execute_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",

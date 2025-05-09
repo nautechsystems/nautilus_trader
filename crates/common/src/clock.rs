@@ -295,6 +295,11 @@ impl Clock for TestClock {
         self.default_callback = Some(callback);
     }
 
+    /// Returns the handler for the given `TimeEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no event-specific or default callback has been registered for the event.
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
         // Get the callback from either the event-specific callbacks or default callback
         let callback = self
@@ -539,6 +544,11 @@ impl Clock for LiveClock {
         self.default_callback = Some(handler);
     }
 
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - The `clock_v2` feature is not enabled.
+    /// - The event does not have an associated handler (see trait documentation).
     #[allow(unused_variables)]
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
         #[cfg(not(feature = "clock_v2"))]

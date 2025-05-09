@@ -149,6 +149,11 @@ impl Debug for TimeEventCallback {
 }
 
 impl TimeEventCallback {
+    /// Invokes the callback for the given `TimeEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying Python callback invocation fails (e.g., raises an exception).
     pub fn call(&self, event: TimeEvent) {
         match self {
             #[cfg(feature = "python")]
@@ -199,6 +204,11 @@ impl TimeEventHandlerV2 {
         Self { event, callback }
     }
 
+    /// Executes the handler by invoking its callback for the associated event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying callback invocation fails (e.g., a Python callback raises an exception).
     pub fn run(self) {
         let Self { event, callback } = self;
         callback.call(event);

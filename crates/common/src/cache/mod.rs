@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 // Under development
+// TODO: Remove once error documentation is complete
 #![allow(clippy::missing_errors_doc)]
 
 //! In-memory cache for market and execution data, with optional persistent backing.
@@ -1961,6 +1962,11 @@ impl Cache {
         query
     }
 
+    /// Retrieves orders corresponding to the given `client_order_ids`, optionally filtering by side.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any `client_order_id` in the set is not found in the cache.
     fn get_orders_for_ids(
         &self,
         client_order_ids: &HashSet<ClientOrderId>,
@@ -1982,6 +1988,11 @@ impl Cache {
         orders
     }
 
+    /// Retrieves positions corresponding to the given `position_ids`, optionally filtering by side.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any `position_id` in the set is not found in the cache.
     fn get_positions_for_ids(
         &self,
         position_ids: &HashSet<PositionId>,

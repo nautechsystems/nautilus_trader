@@ -96,7 +96,7 @@ pub trait DataClient {
     /// Returns `true` if the client is currently disconnected.
     fn is_disconnected(&self) -> bool;
 
-    /// Subscribes to generic data types according to the command.
+    /// Subscribes to custom data types according to the command.
     ///
     /// # Errors
     ///
@@ -229,7 +229,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from generic data types according to the command.
+    /// Unsubscribes from custom data types according to the command.
     ///
     /// # Errors
     ///
@@ -365,7 +365,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Sends a generic data request to the provider.
+    /// Sends a custom data request to the provider.
     ///
     /// # Errors
     ///
@@ -443,7 +443,7 @@ pub struct DataClientAdapter {
     pub venue: Option<Venue>,
     pub handles_book_deltas: bool,
     pub handles_book_snapshots: bool,
-    pub subscriptions_generic: AHashSet<DataType>,
+    pub subscriptions_custom: AHashSet<DataType>,
     pub subscriptions_book_deltas: AHashSet<InstrumentId>,
     pub subscriptions_book_depth10: AHashSet<InstrumentId>,
     pub subscriptions_book_snapshots: AHashSet<InstrumentId>,
@@ -480,7 +480,7 @@ impl Debug for DataClientAdapter {
             .field("venue", &self.venue)
             .field("handles_book_deltas", &self.handles_book_deltas)
             .field("handles_book_snapshots", &self.handles_book_snapshots)
-            .field("subscriptions_generic", &self.subscriptions_generic)
+            .field("subscriptions_custom", &self.subscriptions_custom)
             .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
             .field("subscriptions_book_depth10", &self.subscriptions_book_depth10)
             .field("subscriptions_book_snapshot", &self.subscriptions_book_snapshots)
@@ -513,7 +513,7 @@ impl DataClientAdapter {
             venue,
             handles_book_deltas: handles_order_book_deltas,
             handles_book_snapshots: handles_order_book_snapshots,
-            subscriptions_generic: AHashSet::new(),
+            subscriptions_custom: AHashSet::new(),
             subscriptions_book_deltas: AHashSet::new(),
             subscriptions_book_depth10: AHashSet::new(),
             subscriptions_book_snapshots: AHashSet::new(),
@@ -530,7 +530,7 @@ impl DataClientAdapter {
     }
 
     #[inline]
-    pub fn execute_subscribe_command(&mut self, cmd: &SubscribeCommand) {
+    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) {
         let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
@@ -543,8 +543,8 @@ impl DataClientAdapter {
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
-            SubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
-            SubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
+            SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
+            SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
         };
 
         if let Err(e) = result {
@@ -553,7 +553,7 @@ impl DataClientAdapter {
     }
 
     #[inline]
-    pub fn execute_unsubscribe_command(&mut self, cmd: &UnsubscribeCommand) {
+    pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) {
         let result = match cmd {
             UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
@@ -566,13 +566,41 @@ impl DataClientAdapter {
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
-            UnsubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
-            UnsubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
+            UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
+            UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
         };
 
         if let Err(e) = result {
             log_command_error(&cmd, &e);
         }
+    }
+
+    // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
+
+    /// Subscribes to a custom data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
+        if !self.subscriptions_custom.contains(&cmd.data_type) {
+            self.subscriptions_custom.insert(cmd.data_type.clone());
+            self.client.subscribe(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from a custom data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
+        if self.subscriptions_custom.contains(&cmd.data_type) {
+            self.subscriptions_custom.remove(&cmd.data_type);
+            self.client.unsubscribe(cmd)?;
+        }
+        Ok(())
     }
 
     /// Subscribes to instrument definitions for a venue, updating internal state and forwarding to the client.
@@ -773,6 +801,32 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        if !self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.insert(cmd.bar_type);
+            self.client.subscribe_bars(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from bars for a bar type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        if self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.remove(&cmd.bar_type);
+            self.client.unsubscribe_bars(cmd)?;
+        }
+        Ok(())
+    }
+
     /// Subscribes to mark price updates for an instrument, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -825,59 +879,84 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
+    /// Subscribes to instrument status updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        if !self.subscriptions_bars.contains(&cmd.bar_type) {
-            self.subscriptions_bars.insert(cmd.bar_type);
-            self.client.subscribe_bars(cmd)?;
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_instrument_status
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_status
+                .insert(cmd.instrument_id);
+            self.client.subscribe_instrument_status(cmd)?;
         }
         Ok(())
     }
 
-    /// Unsubscribes from bars for a bar type, updating internal state and forwarding to the client.
+    /// Unsubscribes from instrument status updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        if self.subscriptions_bars.contains(&cmd.bar_type) {
-            self.subscriptions_bars.remove(&cmd.bar_type);
-            self.client.unsubscribe_bars(cmd)?;
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if self
+            .subscriptions_instrument_status
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_status
+                .remove(&cmd.instrument_id);
+            self.client.unsubscribe_instrument_status(cmd)?;
         }
         Ok(())
     }
 
-    /// Subscribes to a generic data type, updating internal state and forwarding to the client.
+    /// Subscribes to instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
-        if !self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.insert(cmd.data_type.clone());
-            self.client.subscribe(cmd)?;
+    fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_instrument_close
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_close
+                .insert(cmd.instrument_id);
+            self.client.subscribe_instrument_close(cmd)?;
         }
         Ok(())
     }
 
-    /// Unsubscribes from a generic data type, updating internal state and forwarding to the client.
+    /// Unsubscribes from instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
-        if self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.remove(&cmd.data_type);
-            self.client.unsubscribe(cmd)?;
+    fn unsubscribe_instrument_close(
+        &mut self,
+        cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        if self
+            .subscriptions_instrument_close
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_close
+                .remove(&cmd.instrument_id);
+            self.client.unsubscribe_instrument_close(cmd)?;
         }
         Ok(())
     }
 
-    // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
+    // -- REQUEST HANDLERS ------------------------------------------------------------------------
 
     /// Sends a data request to the underlying client.
     ///
@@ -942,546 +1021,4 @@ fn log_not_implemented<T: Debug>(msg: &T) {
 #[inline(always)]
 fn log_command_error<C: Debug, E: Display>(cmd: &C, e: &E) {
     log::error!("Error on {cmd:?}: {e}");
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-mod adapter_tests {
-    use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
-
-    use nautilus_common::{
-        cache::Cache,
-        clock::TestClock,
-        messages::data::{
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-            UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
-        },
-    };
-    use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::{
-        data::DataType,
-        enums::BookType,
-        identifiers::{ClientId, InstrumentId, Venue},
-        instruments::stubs::audusd_sim,
-    };
-    use rstest::{fixture, rstest};
-
-    use super::*;
-    use crate::mocks::MockDataClient;
-
-    #[fixture]
-    fn clock() -> Rc<RefCell<TestClock>> {
-        Rc::new(RefCell::new(TestClock::new()))
-    }
-
-    #[fixture]
-    fn cache() -> Rc<RefCell<Cache>> {
-        Rc::new(RefCell::new(Cache::default()))
-    }
-
-    #[fixture]
-    fn client_id() -> ClientId {
-        ClientId::new("TEST-CLIENT")
-    }
-
-    #[fixture]
-    fn venue() -> Venue {
-        Venue::default()
-    }
-
-    #[rstest]
-    fn test_generic_data_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-        let mut adapter = DataClientAdapter::new(
-            client_id,
-            Some(venue),
-            false, // handles deltas
-            false, // handles snapshots
-            client,
-        );
-
-        // Define a custom data type
-        let data_type = DataType::new("MyType", None);
-
-        let sub = SubscribeData::new(
-            Some(client_id),
-            Some(venue),
-            data_type.clone(),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-        adapter.subscribe(&sub).unwrap();
-        assert!(adapter.subscriptions_generic.contains(&data_type));
-
-        // Idempotency check
-        adapter.subscribe(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_generic.len(), 1);
-
-        let unsub = UnsubscribeData::new(
-            Some(client_id),
-            Some(venue),
-            data_type.clone(),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-        adapter.unsubscribe(&unsub).unwrap();
-
-        assert!(!adapter.subscriptions_generic.contains(&data_type));
-    }
-
-    #[rstest]
-    fn test_instrument_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-        let mut adapter = DataClientAdapter::new(
-            client_id,
-            Some(venue),
-            false, // handles deltas
-            false, // handles snapshots
-            client,
-        );
-
-        let instrument = audusd_sim();
-        let inst_id: InstrumentId = instrument.id;
-
-        let sub = SubscribeInstrument::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_instrument(&sub).unwrap();
-        assert!(adapter.subscriptions_instrument.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_instrument(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_instrument.len(), 1);
-
-        let unsub = UnsubscribeInstrument::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-        adapter.unsubscribe_instrument(&unsub).unwrap();
-
-        assert!(!adapter.subscriptions_instrument.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_instruments_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let sub = SubscribeInstruments::new(
-            Some(client_id),
-            venue,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_instruments(&sub).unwrap();
-        assert!(adapter.subscriptions_instrument_venue.contains(&venue));
-
-        // Idempotency check
-        adapter.subscribe_instruments(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_instrument_venue.len(), 1);
-
-        let unsub = UnsubscribeInstruments::new(
-            Some(client_id),
-            venue,
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_instruments(&unsub).unwrap();
-        assert!(!adapter.subscriptions_instrument_venue.contains(&venue));
-    }
-
-    #[rstest]
-    fn test_book_deltas_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-        let depth = NonZeroUsize::new(1);
-
-        let sub = SubscribeBookDeltas::new(
-            inst_id,
-            BookType::L2_MBP,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            depth,
-            false,
-            None,
-        );
-
-        adapter.subscribe_book_deltas(&sub).unwrap();
-        assert!(adapter.subscriptions_book_deltas.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_book_deltas(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_book_deltas.len(), 1);
-
-        let unsub = UnsubscribeBookDeltas::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_book_deltas(&unsub).unwrap();
-        assert!(!adapter.subscriptions_book_deltas.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_book_depth10_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-        let depth = NonZeroUsize::new(10);
-
-        let sub = SubscribeBookDepth10::new(
-            inst_id,
-            BookType::L2_MBP,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            depth,
-            false,
-            None,
-        );
-
-        adapter.subscribe_book_depth10(&sub).unwrap();
-        assert!(adapter.subscriptions_book_depth10.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_book_depth10(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_book_depth10.len(), 1);
-
-        let unsub = UnsubscribeBookDepth10::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_book_depth10(&unsub).unwrap();
-        assert!(!adapter.subscriptions_book_depth10.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_book_snapshots_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-        let depth = NonZeroUsize::new(10);
-        let interval_ms = NonZeroUsize::new(1000).unwrap();
-
-        let sub = SubscribeBookSnapshots::new(
-            inst_id,
-            BookType::L2_MBP,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            depth,
-            interval_ms,
-            None,
-        );
-
-        adapter.subscribe_book_snapshots(&sub).unwrap();
-        assert!(adapter.subscriptions_book_snapshots.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_book_snapshots(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_book_snapshots.len(), 1);
-
-        let unsub = UnsubscribeBookSnapshots::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_book_snapshots(&unsub).unwrap();
-        assert!(!adapter.subscriptions_book_snapshots.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_quote_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-
-        let sub = SubscribeQuotes::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_quotes(&sub).unwrap();
-        assert!(adapter.subscriptions_quotes.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_quotes(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_quotes.len(), 1);
-
-        let unsub = UnsubscribeQuotes::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_quotes(&unsub).unwrap();
-        assert!(!adapter.subscriptions_quotes.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_trades_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-
-        let sub = SubscribeTrades::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_trades(&sub).unwrap();
-        assert!(adapter.subscriptions_trades.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_trades(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_trades.len(), 1);
-
-        let unsub = UnsubscribeTrades::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_trades(&unsub).unwrap();
-        assert!(!adapter.subscriptions_trades.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_mark_price_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-
-        let sub = SubscribeMarkPrices::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_mark_prices(&sub).unwrap();
-        assert!(adapter.subscriptions_mark_prices.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_mark_prices(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_mark_prices.len(), 1);
-
-        let unsub = UnsubscribeMarkPrices::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_mark_prices(&unsub).unwrap();
-        assert!(!adapter.subscriptions_mark_prices.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_index_price_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let instrument = audusd_sim();
-        let inst_id = instrument.id;
-
-        let sub = SubscribeIndexPrices::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.subscribe_index_prices(&sub).unwrap();
-        assert!(adapter.subscriptions_index_prices.contains(&inst_id));
-
-        // Idempotency check
-        adapter.subscribe_index_prices(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_index_prices.len(), 1);
-
-        let unsub = UnsubscribeIndexPrices::new(
-            inst_id,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_index_prices(&unsub).unwrap();
-        assert!(!adapter.subscriptions_index_prices.contains(&inst_id));
-    }
-
-    #[rstest]
-    fn test_bars_subscription(
-        clock: Rc<RefCell<TestClock>>,
-        cache: Rc<RefCell<Cache>>,
-        client_id: ClientId,
-        venue: Venue,
-    ) {
-        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
-
-        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
-
-        let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
-
-        let sub = SubscribeBars::new(
-            bar_type,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            false,
-            None,
-        );
-
-        adapter.subscribe_bars(&sub).unwrap();
-        assert!(adapter.subscriptions_bars.contains(&bar_type));
-
-        // Idempotency check
-        adapter.subscribe_bars(&sub).unwrap();
-        assert_eq!(adapter.subscriptions_bars.len(), 1);
-
-        let unsub = UnsubscribeBars::new(
-            bar_type,
-            Some(client_id),
-            Some(venue),
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-        );
-
-        adapter.unsubscribe_bars(&unsub).unwrap();
-        assert!(!adapter.subscriptions_bars.contains(&bar_type));
-    }
 }

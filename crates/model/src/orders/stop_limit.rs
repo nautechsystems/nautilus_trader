@@ -625,6 +625,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::MarketToLimit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(
+            order.to_string(),
+            "MarketToLimitOrder(BUY 1 AUD/USD.SIM MARKET_TO_LIMIT GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+        );
+    }
+
+    #[rstest]
     #[should_panic]
     fn test_display_qty_gt_quantity_err(audusd_sim: CurrencyPair) {
         OrderTestBuilder::new(OrderType::StopLimit)
