@@ -260,9 +260,15 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def run(self, raise_exception=False) -> None:
+    def run(self, raise_exception: bool = False) -> None:
         """
         Start and run the trading node.
+
+        Parameters
+        ----------
+        raise_exception : bool, default False
+            If runtime exceptions should be re-raised as well as being logged.
+
         """
         try:
             if self.kernel.loop.is_running():
