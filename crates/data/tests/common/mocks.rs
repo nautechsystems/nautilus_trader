@@ -19,7 +19,6 @@
 
 // Under development
 #![allow(dead_code)]
-#![allow(unused_variables)]
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -43,11 +42,11 @@ use nautilus_model::identifiers::{ClientId, Venue};
 
 /// A mock implementation of [`DataClient`] for testing, with optional generic recorder.
 pub struct MockDataClient {
-    clock: Rc<RefCell<dyn Clock>>,
-    cache: Rc<RefCell<Cache>>,
     pub client_id: ClientId,
     pub venue: Option<Venue>,
     pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
+    clock: Rc<RefCell<dyn Clock>>,
+    cache: Rc<RefCell<Cache>>,
 }
 
 impl MockDataClient {
@@ -68,7 +67,7 @@ impl MockDataClient {
         }
     }
 
-    /// Creates a new `MockDataClient` that records all DataCommands into the given recorder.
+    /// Creates a new [`MockDataClient`] that records all `DataCommands` into the given recorder.
     #[must_use]
     pub fn new_with_recorder(
         clock: Rc<RefCell<dyn Clock>>,

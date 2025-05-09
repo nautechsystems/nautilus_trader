@@ -394,6 +394,7 @@ impl DataEngine {
         self.default_client.as_mut()
     }
 
+    #[must_use]
     pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
         let (default_opt, clients_map) = (&self.default_client, &self.clients);
 

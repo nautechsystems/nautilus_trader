@@ -1151,13 +1151,13 @@ fn test_request_data(
         ts_init: UnixNanos::default(),
         params: None,
     };
-    let cmd = DataCommand::Request(RequestCommand::Data(req.clone()));
+    let cmd = DataCommand::Request(RequestCommand::Data(req));
     send_request_cmd(
         clock,
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1190,7 +1190,7 @@ fn test_request_instrument(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1222,7 +1222,7 @@ fn test_request_instruments(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1254,7 +1254,7 @@ fn test_request_book_snapshot(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1288,7 +1288,7 @@ fn test_request_quotes(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1322,7 +1322,7 @@ fn test_request_trades(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
@@ -1355,7 +1355,7 @@ fn test_request_bars(
         cache,
         client_id,
         venue,
-        &mut *eng,
+        &mut eng,
         cmd.clone(),
         &recorder,
     );
