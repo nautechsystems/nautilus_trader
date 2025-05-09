@@ -601,10 +601,11 @@ mod tests {
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
-        let order = OrderTestBuilder::new(OrderType::StopMarket)
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id(_audusd_sim.id)
             .side(OrderSide::Buy)
             .trigger_price(Price::from("0.68000"))
+            .trailing_offset(dec!(10))
             .quantity(Quantity::from(1))
             .build();
 

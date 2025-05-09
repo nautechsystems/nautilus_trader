@@ -596,16 +596,17 @@ mod tests {
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
-        let order = OrderTestBuilder::new(OrderType::StopMarket)
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
             .instrument_id(_audusd_sim.id)
             .side(OrderSide::Buy)
+            .price(Price::from("0.68000"))
             .trigger_price(Price::from("0.68000"))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
 
         assert_eq!(order.trigger_price(), Some(Price::from("0.68000")));
-        assert_eq!(order.price(), None);
+        assert_eq!(order.price(), Some(Price::from("0.68000")));
 
         assert_eq!(order.time_in_force(), TimeInForce::Gtc);
 
