@@ -1034,13 +1034,40 @@ mod adapter_tests {
         cache::Cache,
         clock::TestClock,
         messages::data::{
-            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-            UnsubscribeBookSnapshots, UnsubscribeData, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            // Request commands
+            RequestBars,
+            RequestData,
+            RequestInstrument,
+            RequestInstruments,
+            RequestQuotes,
+            RequestTrades,
+            // Subscription commands
+            SubscribeBars,
+            SubscribeBookDeltas,
+            SubscribeBookDepth10,
+            SubscribeBookSnapshots,
+            SubscribeData,
+            SubscribeIndexPrices,
+            SubscribeInstrument,
+            SubscribeInstrumentClose,
+            SubscribeInstrumentStatus,
+            SubscribeInstruments,
+            SubscribeMarkPrices,
+            SubscribeQuotes,
+            SubscribeTrades,
+            UnsubscribeBars,
+            UnsubscribeBookDeltas,
+            UnsubscribeBookDepth10,
+            UnsubscribeBookSnapshots,
+            UnsubscribeData,
+            UnsubscribeIndexPrices,
+            UnsubscribeInstrument,
+            UnsubscribeInstrumentClose,
+            UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments,
+            UnsubscribeMarkPrices,
+            UnsubscribeQuotes,
+            UnsubscribeTrades,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -1074,6 +1101,10 @@ mod adapter_tests {
     fn venue() -> Venue {
         Venue::default()
     }
+
+    // --------------------------------------------------------------------------------------------
+    // Subscription handler tests
+    // --------------------------------------------------------------------------------------------
 
     #[rstest]
     fn test_custom_data_subscription(
@@ -1608,5 +1639,147 @@ mod adapter_tests {
         ));
         adapter.execute_unsubscribe(&unsub);
         assert!(!adapter.subscriptions_instrument_close.contains(&inst_id));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Request handler tests
+    // --------------------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_request_data(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let data_type = DataType::new("ReqType", None);
+        let req = RequestData {
+            client_id,
+            data_type: data_type.clone(),
+            request_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+        };
+        adapter.request_data(&req).unwrap();
+    }
+
+    #[rstest]
+    fn test_request_instrument(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let inst_id = audusd_sim().id;
+        let req = RequestInstrument::new(
+            inst_id,
+            None,
+            None,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        adapter.request_instrument(&req).unwrap();
+    }
+
+    #[rstest]
+    fn test_request_instruments(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let req = RequestInstruments::new(
+            None,
+            None,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        adapter.request_instruments(&req).unwrap();
+    }
+
+    #[rstest]
+    fn test_request_quotes(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let inst_id = audusd_sim().id;
+        let req = RequestQuotes::new(
+            inst_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        adapter.request_quotes(&req).unwrap();
+    }
+
+    #[rstest]
+    fn test_request_trades(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let inst_id = audusd_sim().id;
+        let req = RequestTrades::new(
+            inst_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        adapter.request_trades(&req).unwrap();
+    }
+
+    #[rstest]
+    fn test_request_bars(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
+        let req = RequestBars::new(
+            bar_type,
+            None,
+            None,
+            None,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        adapter.request_bars(&req).unwrap();
     }
 }
