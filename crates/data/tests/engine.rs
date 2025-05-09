@@ -22,12 +22,13 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestData,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
+        SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -103,7 +104,7 @@ fn data_client(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     DataClientAdapter::new(client_id, Some(venue), true, true, client)
 }
 
@@ -131,7 +132,7 @@ fn test_register_default_client_twice_panics(
             clock.clone(),
             cache.clone(),
             client_id,
-            Venue::default(),
+            Some(Venue::default()),
         )),
     );
     let data_client2 = DataClientAdapter::new(
@@ -143,7 +144,7 @@ fn test_register_default_client_twice_panics(
             clock,
             cache,
             client_id,
-            Venue::default(),
+            Some(Venue::default()),
         )),
     );
 
@@ -172,7 +173,7 @@ fn test_register_client_duplicate_id_panics(
             clock.clone(),
             cache.clone(),
             client_id,
-            Venue::default(),
+            Some(Venue::default()),
         )),
     );
     let data_client2 = DataClientAdapter::new(
@@ -184,7 +185,7 @@ fn test_register_client_duplicate_id_panics(
             clock,
             cache,
             client_id,
-            Venue::default(),
+            Some(Venue::default()),
         )),
     );
 
@@ -212,7 +213,7 @@ fn test_register_and_deregister_client(
             clock.clone(),
             cache.clone(),
             client_id1,
-            venue1,
+            Some(venue1),
         )),
     );
 
@@ -224,7 +225,7 @@ fn test_register_and_deregister_client(
         None,
         true,
         true,
-        Box::new(MockDataClient::new(clock, cache, client_id2, venue1)),
+        Box::new(MockDataClient::new(clock, cache, client_id2, Some(venue1))),
     );
 
     data_engine.register_client(data_client2, None);
@@ -261,7 +262,7 @@ fn test_register_default_client(
             clock,
             cache,
             default_id,
-            Venue::default(),
+            Some(Venue::default()),
         )),
     );
     data_engine.register_default_client(default_client);
@@ -1109,4 +1110,254 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     assert_eq!(cache.bar(&bar.bar_type), Some(bar).as_ref());
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&bar));
+}
+
+/// Helper to setup engine with a recorder client and send a request command.
+fn send_request_cmd(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    data_engine: &mut DataEngine,
+    cmd: DataCommand,
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) {
+    let rec = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(rec));
+    data_engine.register_client(adapter, None);
+    data_engine.execute(&cmd);
+}
+
+#[rstest]
+fn test_request_data(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestData {
+        client_id,
+        data_type: DataType::new("X", None),
+        request_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    };
+    let cmd = DataCommand::Request(RequestCommand::Data(req.clone()));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_instrument(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestInstrument::new(
+        audusd_sim.id,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Request(RequestCommand::Instrument(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_instruments(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Request(RequestCommand::Instruments(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_book_snapshot(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestBookSnapshot::new(
+        audusd_sim.id,
+        None, // depth
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::BookSnapshot(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_quotes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestQuotes::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Quotes(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_trades(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestTrades::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Trades(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_bars(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestBars::new(
+        BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL"),
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Bars(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut *eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
 }
