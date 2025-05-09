@@ -75,6 +75,11 @@ pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
     get_actor_registry().get(id)
 }
 
+/// Returns a mutable reference to the registered actor of type `T` for the given `id`.
+///
+/// # Panics
+///
+/// Panics if no actor with the specified `id` is found in the registry.
 #[allow(clippy::mut_from_ref)]
 pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> &mut T {
     let actor = get_actor(id).unwrap_or_else(|| panic!("Actor for {id} not found"));

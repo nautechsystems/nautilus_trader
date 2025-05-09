@@ -17,7 +17,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
-#![allow(clippy::missing_errors_doc)]
 
 use std::{
     any::{Any, TypeId},
@@ -1796,6 +1795,13 @@ impl DataActorCore {
 
     // -- REQUESTS --------------------------------------------------------------------------------
 
+    /// Request historical custom data of the given `data_type`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`CustomDataResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_data<A: DataActor>(
         &self,
         data_type: DataType,
@@ -1835,6 +1841,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`InstrumentResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_instrument<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -1875,6 +1888,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`InstrumentsResponse`] definitions for the optional `venue`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`InstrumentsResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_instruments<A: DataActor>(
         &self,
         venue: Option<Venue>,
@@ -1915,6 +1935,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`BookResponse`].
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub fn request_book_snapshot<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -1950,6 +1977,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`QuoteTick`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`QuotesResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_quotes<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -1992,6 +2026,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`TradeTick`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`TradesResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_trades<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -2034,6 +2075,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`Bar`] data for the given `bar_type`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`BarsResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_bars<A: DataActor>(
         &self,
         bar_type: BarType,

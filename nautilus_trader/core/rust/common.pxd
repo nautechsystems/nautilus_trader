@@ -337,6 +337,10 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the input C string does not match a valid enum variant.
     ComponentState component_state_from_cstr(const char *ptr);
 
     const char *component_trigger_to_cstr(ComponentTrigger value);
@@ -346,6 +350,10 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the input C string does not match a valid enum variant.
     ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
     const char *log_level_to_cstr(LogLevel value);
@@ -355,6 +363,10 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the input C string does not match a valid enum variant.
     LogLevel log_level_from_cstr(const char *ptr);
 
     const char *log_color_to_cstr(LogColor value);
@@ -364,6 +376,10 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if the input C string does not match a valid enum variant.
     LogColor log_color_from_cstr(const char *ptr);
 
     # Initializes logging.

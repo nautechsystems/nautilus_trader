@@ -140,6 +140,9 @@ fn python_package_version(package: &str) -> String {
 }
 
 #[cfg(not(feature = "python"))]
+/// # Panics
+///
+/// Panics if the `python` feature is not enabled.
 fn python_package_version(_package: &str) -> &str {
     panic!("`python` feature is not enabled");
 }
@@ -152,6 +155,9 @@ fn python_version() -> String {
 }
 
 #[cfg(not(feature = "python"))]
+/// # Panics
+///
+/// Panics if the `python` feature is not enabled.
 fn python_version() -> String {
     panic!("`python` feature is not enabled");
 }

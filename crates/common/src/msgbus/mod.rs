@@ -60,6 +60,10 @@ unsafe impl Sync for ShareableMessageBus {}
 static MESSAGE_BUS: OnceLock<ShareableMessageBus> = OnceLock::new();
 
 /// Sets the global message bus.
+///
+/// # Panics
+///
+/// Panics if a message bus has already been set.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     if MESSAGE_BUS.set(ShareableMessageBus(msgbus)).is_err() {
         panic!("Failed to set MessageBus");

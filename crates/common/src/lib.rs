@@ -33,6 +33,8 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
+// TODO: Remove once panic documentation is complete
+// #![deny(clippy::missing_panics_doc)]
 
 // Uncomment once we've added trivial `Debug` impls everywhere
 // #![warn(missing_debug_implementations)]

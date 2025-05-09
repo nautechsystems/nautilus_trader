@@ -38,6 +38,10 @@ pub struct TimeEventHandler {
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler {
+    /// # Panics
+    ///
+    /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
+    /// since only Python callbacks are supported by the legacy `TimeEventHandler`.
     fn from(value: TimeEventHandlerV2) -> Self {
         Self {
             event: value.event,
