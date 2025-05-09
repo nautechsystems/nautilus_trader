@@ -10,7 +10,7 @@ language's ability to access the lowest-level primitives, we can anticipate that
 will be highly performant. This combination of accuracy and performance is highly valued for a high-frequency
 trading (HFT) platform.
 
-## Python Binding
+## Python Bindings
 
 Interoperating from Python calling Rust can be achieved by binding a Rust C-ABI compatible interface generated using `cbindgen` with
 Cython. This approach is to aid a smooth transition to greater amounts
@@ -20,7 +20,7 @@ We want to avoid a need for Rust to call Python using the FFI. In the future [Py
 ## Unsafe Rust
 
 It will be necessary to write `unsafe` Rust code to be able to achieve the value
-of interoperating between Python and Rust. The ability to step outside the boundaries of safe Rust is what makes it possible to
+of interoperating between Cython and Rust. The ability to step outside the boundaries of safe Rust is what makes it possible to
 implement many of the most fundamental features of the Rust language itself, just as C and C++ are used to implement
 their own standard libraries.
 
