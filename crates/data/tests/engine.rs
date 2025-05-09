@@ -13,10 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tests module for `DataEngine`.
+mod common;
 
 use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
 
+use common::mocks::MockDataClient;
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
@@ -37,6 +38,7 @@ use nautilus_common::{
     testing::init_logger_for_testing,
 };
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
@@ -50,8 +52,6 @@ use nautilus_model::{
     types::Price,
 };
 use rstest::*;
-
-use crate::{client::DataClientAdapter, engine::DataEngine, mocks::MockDataClient};
 
 #[fixture]
 fn client_id() -> ClientId {
