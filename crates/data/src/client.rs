@@ -96,7 +96,7 @@ pub trait DataClient {
     /// Returns `true` if the client is currently disconnected.
     fn is_disconnected(&self) -> bool;
 
-    /// Subscribes to generic data types according to the command.
+    /// Subscribes to custom data types according to the command.
     ///
     /// # Errors
     ///
@@ -229,7 +229,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from generic data types according to the command.
+    /// Unsubscribes from custom data types according to the command.
     ///
     /// # Errors
     ///
@@ -365,7 +365,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Sends a generic data request to the provider.
+    /// Sends a custom data request to the provider.
     ///
     /// # Errors
     ///
@@ -577,7 +577,7 @@ impl DataClientAdapter {
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
 
-    /// Subscribes to a generic data type, updating internal state and forwarding to the client.
+    /// Subscribes to a custom data type, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
@@ -590,7 +590,7 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    /// Unsubscribes from a generic data type, updating internal state and forwarding to the client.
+    /// Unsubscribes from a custom data type, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
@@ -1639,6 +1639,742 @@ mod adapter_tests {
         ));
         adapter.execute_unsubscribe(&unsub);
         assert!(!adapter.subscriptions_instrument_close.contains(&inst_id));
+    }
+
+    #[rstest]
+    fn test_custom_data_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        // Unsubscribe without prior subscribe should be no-op
+        let data_type = DataType::new("NoOpType", None);
+        let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(!adapter.subscriptions_custom.contains(&data_type));
+        // Underlying client should not have been called (state-only test)
+        assert!(adapter.subscriptions_custom.is_empty());
+    }
+
+    #[rstest]
+    fn test_custom_data_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        // Subscribe then unsubscribe twice
+        let data_type = DataType::new("IdemType", None);
+        let sub = SubscribeCommand::Data(SubscribeData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
+            Some(client_id),
+            Some(venue),
+            data_type.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        // Expect adapter state cleared and no panic on second unsubscribe
+        assert!(!adapter.subscriptions_custom.contains(&data_type));
+    }
+
+    #[rstest]
+    fn test_instrument_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        // Unsubscribe instrument without prior subscribe
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::Instrument(UnsubscribeInstrument::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(!adapter.subscriptions_instrument.contains(&inst_id));
+        // Underlying client should not have been called
+        assert!(adapter.subscriptions_instrument.is_empty());
+    }
+
+    #[rstest]
+    fn test_instrument_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        // Subscribe then unsubscribe twice
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::Instrument(SubscribeInstrument::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::Instrument(UnsubscribeInstrument::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        // Expect adapter state cleared and no panic on second unsubscribe
+        assert!(!adapter.subscriptions_instrument.contains(&inst_id));
+    }
+
+    // --------------------------------------------------------------------------------------------
+    // Subscription no-op & idempotent tests
+    // --------------------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_instruments_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        // Unsubscribe instruments without prior subscribe
+        let unsub = UnsubscribeCommand::Instruments(UnsubscribeInstruments::new(
+            Some(client_id),
+            venue,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_venue.is_empty());
+    }
+
+    #[rstest]
+    fn test_instruments_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        // Subscribe then unsubscribe twice
+        let sub = SubscribeCommand::Instruments(SubscribeInstruments::new(
+            Some(client_id),
+            venue,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+
+        let unsub = UnsubscribeCommand::Instruments(UnsubscribeInstruments::new(
+            Some(client_id),
+            venue,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_venue.is_empty());
+    }
+    #[rstest]
+    fn test_book_deltas_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        // Unsubscribe book deltas without subscribe
+        let inst_id = audusd_sim().id;
+
+        let unsub = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_deltas.is_empty());
+    }
+
+    #[rstest]
+    fn test_book_deltas_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+
+        let sub = SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            inst_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(1),
+            false,
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+
+        let unsub = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_deltas.is_empty());
+    }
+
+    #[rstest]
+    fn test_book_depth10_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_depth10.is_empty());
+    }
+
+    #[rstest]
+    fn test_book_depth10_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
+            inst_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(10),
+            false,
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_depth10.is_empty());
+    }
+
+    #[rstest]
+    fn test_book_snapshots_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_snapshots.is_empty());
+    }
+
+    #[rstest]
+    fn test_book_snapshots_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+            inst_id,
+            BookType::L2_MBP,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(NonZeroUsize::new(10).unwrap()),
+            NonZeroUsize::new(1000).unwrap(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_book_snapshots.is_empty());
+    }
+
+    #[rstest]
+    fn test_quotes_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_quotes.is_empty());
+    }
+
+    #[rstest]
+    fn test_quotes_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::Quotes(SubscribeQuotes::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_quotes.is_empty());
+    }
+
+    #[rstest]
+    fn test_trades_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_trades.is_empty());
+    }
+
+    #[rstest]
+    fn test_trades_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::Trades(SubscribeTrades::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::Trades(UnsubscribeTrades::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_trades.is_empty());
+    }
+
+    #[rstest]
+    fn test_bars_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
+        let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            bar_type.clone(),
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_bars.is_empty());
+    }
+
+    #[rstest]
+    fn test_bars_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
+        let sub = SubscribeCommand::Bars(SubscribeBars::new(
+            bar_type.clone(),
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            bar_type.clone(),
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_bars.is_empty());
+    }
+
+    #[rstest]
+    fn test_mark_prices_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_mark_prices.is_empty());
+    }
+
+    #[rstest]
+    fn test_mark_prices_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_mark_prices.is_empty());
+    }
+
+    #[rstest]
+    fn test_index_prices_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_index_prices.is_empty());
+    }
+
+    #[rstest]
+    fn test_index_prices_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_index_prices.is_empty());
+    }
+
+    #[rstest]
+    fn test_instrument_status_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_status.is_empty());
+    }
+
+    #[rstest]
+    fn test_instrument_status_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let sub = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        let unsub = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_status.is_empty());
+    }
+
+    #[rstest]
+    fn test_instrument_close_unsubscribe_noop(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+        let unsub = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_close.is_empty());
+    }
+
+    #[rstest]
+    fn test_instrument_close_unsubscribe_idempotent(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+        let inst_id = audusd_sim().id;
+
+        let sub = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+
+        let unsub = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        adapter.execute_unsubscribe(&unsub);
+        assert!(adapter.subscriptions_instrument_close.is_empty());
     }
 
     // --------------------------------------------------------------------------------------------
