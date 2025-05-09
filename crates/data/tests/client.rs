@@ -102,7 +102,7 @@ fn test_custom_data_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(
         client_id,
         Some(venue),
@@ -149,7 +149,7 @@ fn test_instrument_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -189,7 +189,7 @@ fn test_instruments_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let sub = SubscribeCommand::Instruments(SubscribeInstruments::new(
@@ -224,7 +224,7 @@ fn test_book_deltas_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -268,7 +268,7 @@ fn test_book_depth10_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -312,7 +312,7 @@ fn test_book_snapshots_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -357,7 +357,7 @@ fn test_quote_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -397,7 +397,7 @@ fn test_trades_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -437,7 +437,7 @@ fn test_mark_price_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -477,7 +477,7 @@ fn test_index_price_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -517,7 +517,7 @@ fn test_bars_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
@@ -557,7 +557,7 @@ fn test_instrument_status_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -597,7 +597,7 @@ fn test_instrument_close_subscription(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let instrument = audusd_sim();
@@ -637,7 +637,7 @@ fn test_custom_data_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     // Unsubscribe without prior subscribe should be no-op
@@ -663,7 +663,7 @@ fn test_custom_data_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     // Subscribe then unsubscribe twice
@@ -698,7 +698,7 @@ fn test_instrument_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     // Unsubscribe instrument without prior subscribe
@@ -724,7 +724,7 @@ fn test_instrument_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     // Subscribe then unsubscribe twice
     let inst_id = audusd_sim().id;
@@ -751,10 +751,6 @@ fn test_instrument_unsubscribe_idempotent(
     assert!(!adapter.subscriptions_instrument.contains(&inst_id));
 }
 
-// --------------------------------------------------------------------------------------------
-// Subscription no-op & idempotent tests
-// --------------------------------------------------------------------------------------------
-
 #[rstest]
 fn test_instruments_unsubscribe_noop(
     clock: Rc<RefCell<TestClock>>,
@@ -762,7 +758,7 @@ fn test_instruments_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     // Unsubscribe instruments without prior subscribe
@@ -784,7 +780,7 @@ fn test_instruments_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     // Subscribe then unsubscribe twice
@@ -816,7 +812,7 @@ fn test_book_deltas_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     // Unsubscribe book deltas without subscribe
     let inst_id = audusd_sim().id;
@@ -840,7 +836,7 @@ fn test_book_deltas_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
 
@@ -878,7 +874,7 @@ fn test_book_depth10_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::BookDepth10(UnsubscribeBookDepth10::new(
@@ -900,7 +896,7 @@ fn test_book_depth10_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::BookDepth10(SubscribeBookDepth10::new(
@@ -935,7 +931,7 @@ fn test_book_snapshots_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots::new(
@@ -957,7 +953,7 @@ fn test_book_snapshots_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
@@ -992,7 +988,7 @@ fn test_quotes_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::Quotes(UnsubscribeQuotes::new(
@@ -1014,7 +1010,7 @@ fn test_quotes_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::Quotes(SubscribeQuotes::new(
@@ -1046,7 +1042,7 @@ fn test_trades_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::Trades(UnsubscribeTrades::new(
@@ -1068,7 +1064,7 @@ fn test_trades_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::Trades(SubscribeTrades::new(
@@ -1100,7 +1096,7 @@ fn test_bars_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
     let unsub = UnsubscribeCommand::Bars(UnsubscribeBars::new(
@@ -1122,7 +1118,7 @@ fn test_bars_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
     let sub = SubscribeCommand::Bars(SubscribeBars::new(
@@ -1155,7 +1151,7 @@ fn test_mark_prices_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices::new(
@@ -1177,7 +1173,7 @@ fn test_mark_prices_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
@@ -1209,7 +1205,7 @@ fn test_index_prices_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices::new(
@@ -1231,7 +1227,7 @@ fn test_index_prices_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
@@ -1263,7 +1259,7 @@ fn test_instrument_status_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
@@ -1285,7 +1281,7 @@ fn test_instrument_status_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let sub = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus::new(
@@ -1317,7 +1313,7 @@ fn test_instrument_close_unsubscribe_noop(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
     let unsub = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
@@ -1339,7 +1335,7 @@ fn test_instrument_close_unsubscribe_idempotent(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let inst_id = audusd_sim().id;
 
@@ -1377,7 +1373,7 @@ fn test_request_data(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let data_type = DataType::new("ReqType", None);
@@ -1398,7 +1394,7 @@ fn test_request_instrument(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1421,7 +1417,7 @@ fn test_request_instruments(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let req = RequestInstruments::new(
@@ -1443,7 +1439,7 @@ fn test_request_quotes(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1467,7 +1463,7 @@ fn test_request_trades(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1491,7 +1487,7 @@ fn test_request_bars(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
