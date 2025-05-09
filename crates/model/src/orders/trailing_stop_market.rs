@@ -595,12 +595,36 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
         instruments::{CurrencyPair, stubs::*},
-        orders::builder::OrderTestBuilder,
+        orders::{Order, builder::OrderTestBuilder},
         types::{Price, Quantity},
     };
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(_audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("0.68000"))
+            .trailing_offset(dec!(10))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.trigger_price(), Some(Price::from("0.68000")));
+        assert_eq!(order.price(), None);
+
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+
+        assert_eq!(order.is_triggered(), Some(false));
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(1));
+
+        assert_eq!(order.display_qty(), None);
+        assert_eq!(order.trigger_instrument_id(), None);
+        assert_eq!(order.order_list_id(), None);
+    }
+
+    #[rstest]
+    fn test_display(_audusd_sim: CurrencyPair) {
         let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id(_audusd_sim.id)
             .side(OrderSide::Buy)
