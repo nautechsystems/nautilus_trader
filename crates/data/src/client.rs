@@ -543,8 +543,8 @@ impl DataClientAdapter {
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
-            SubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
-            SubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
+            SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
+            SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
         };
 
         if let Err(e) = result {
@@ -566,8 +566,8 @@ impl DataClientAdapter {
             UnsubscribeCommand::Bars(cmd) => self.unsubscribe_bars(cmd),
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
-            UnsubscribeCommand::InstrumentStatus(_cmd) => todo!(), // TODO: Implement
-            UnsubscribeCommand::InstrumentClose(_cmd) => todo!(),  // TODO: Implement
+            UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
+            UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
         };
 
         if let Err(e) = result {
@@ -576,6 +576,32 @@ impl DataClientAdapter {
     }
 
     // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
+
+    /// Subscribes to a generic data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
+        if !self.subscriptions_generic.contains(&cmd.data_type) {
+            self.subscriptions_generic.insert(cmd.data_type.clone());
+            self.client.subscribe(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from a generic data type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
+        if self.subscriptions_generic.contains(&cmd.data_type) {
+            self.subscriptions_generic.remove(&cmd.data_type);
+            self.client.unsubscribe(cmd)?;
+        }
+        Ok(())
+    }
 
     /// Subscribes to instrument definitions for a venue, updating internal state and forwarding to the client.
     ///
@@ -775,6 +801,32 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        if !self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.insert(cmd.bar_type);
+            self.client.subscribe_bars(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from bars for a bar type, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        if self.subscriptions_bars.contains(&cmd.bar_type) {
+            self.subscriptions_bars.remove(&cmd.bar_type);
+            self.client.unsubscribe_bars(cmd)?;
+        }
+        Ok(())
+    }
+
     /// Subscribes to mark price updates for an instrument, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -827,54 +879,79 @@ impl DataClientAdapter {
         Ok(())
     }
 
-    /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
+    /// Subscribes to instrument status updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        if !self.subscriptions_bars.contains(&cmd.bar_type) {
-            self.subscriptions_bars.insert(cmd.bar_type);
-            self.client.subscribe_bars(cmd)?;
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_instrument_status
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_status
+                .insert(cmd.instrument_id);
+            self.client.subscribe_instrument_status(cmd)?;
         }
         Ok(())
     }
 
-    /// Unsubscribes from bars for a bar type, updating internal state and forwarding to the client.
+    /// Unsubscribes from instrument status updates for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        if self.subscriptions_bars.contains(&cmd.bar_type) {
-            self.subscriptions_bars.remove(&cmd.bar_type);
-            self.client.unsubscribe_bars(cmd)?;
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        if self
+            .subscriptions_instrument_status
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_status
+                .remove(&cmd.instrument_id);
+            self.client.unsubscribe_instrument_status(cmd)?;
         }
         Ok(())
     }
 
-    /// Subscribes to a generic data type, updating internal state and forwarding to the client.
+    /// Subscribes to instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
-        if !self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.insert(cmd.data_type.clone());
-            self.client.subscribe(cmd)?;
+    fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
+        if !self
+            .subscriptions_instrument_close
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_close
+                .insert(cmd.instrument_id);
+            self.client.subscribe_instrument_close(cmd)?;
         }
         Ok(())
     }
 
-    /// Unsubscribes from a generic data type, updating internal state and forwarding to the client.
+    /// Unsubscribes from instrument close events for the specified instrument.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
-        if self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.remove(&cmd.data_type);
-            self.client.unsubscribe(cmd)?;
+    fn unsubscribe_instrument_close(
+        &mut self,
+        cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        if self
+            .subscriptions_instrument_close
+            .contains(&cmd.instrument_id)
+        {
+            self.subscriptions_instrument_close
+                .remove(&cmd.instrument_id);
+            self.client.unsubscribe_instrument_close(cmd)?;
         }
         Ok(())
     }
@@ -958,11 +1035,12 @@ mod adapter_tests {
         clock::TestClock,
         messages::data::{
             SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-            UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+            SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeBookSnapshots, UnsubscribeData, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
@@ -1450,5 +1528,85 @@ mod adapter_tests {
         ));
         adapter.execute_unsubscribe(&unsub);
         assert!(!adapter.subscriptions_bars.contains(&bar_type));
+    }
+
+    #[rstest]
+    fn test_instrument_status_subscription(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let instrument = audusd_sim();
+        let inst_id = instrument.id;
+
+        let sub = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        assert!(adapter.subscriptions_instrument_status.contains(&inst_id));
+
+        // Idempotency check
+        adapter.execute_subscribe(&sub);
+        assert_eq!(adapter.subscriptions_instrument_status.len(), 1);
+
+        let unsub = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(!adapter.subscriptions_instrument_status.contains(&inst_id));
+    }
+
+    #[rstest]
+    fn test_instrument_close_subscription(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let client = Box::new(MockDataClient::new(clock, cache, client_id, venue));
+        let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+        let instrument = audusd_sim();
+        let inst_id = instrument.id;
+
+        let sub = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_subscribe(&sub);
+        assert!(adapter.subscriptions_instrument_close.contains(&inst_id));
+
+        // Idempotency check
+        adapter.execute_subscribe(&sub);
+        assert_eq!(adapter.subscriptions_instrument_close.len(), 1);
+
+        let unsub = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose::new(
+            inst_id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ));
+        adapter.execute_unsubscribe(&unsub);
+        assert!(!adapter.subscriptions_instrument_close.contains(&inst_id));
     }
 }
