@@ -443,7 +443,7 @@ pub struct DataClientAdapter {
     pub venue: Option<Venue>,
     pub handles_book_deltas: bool,
     pub handles_book_snapshots: bool,
-    pub subscriptions_generic: AHashSet<DataType>,
+    pub subscriptions_custom: AHashSet<DataType>,
     pub subscriptions_book_deltas: AHashSet<InstrumentId>,
     pub subscriptions_book_depth10: AHashSet<InstrumentId>,
     pub subscriptions_book_snapshots: AHashSet<InstrumentId>,
@@ -480,7 +480,7 @@ impl Debug for DataClientAdapter {
             .field("venue", &self.venue)
             .field("handles_book_deltas", &self.handles_book_deltas)
             .field("handles_book_snapshots", &self.handles_book_snapshots)
-            .field("subscriptions_generic", &self.subscriptions_generic)
+            .field("subscriptions_custom", &self.subscriptions_custom)
             .field("subscriptions_book_deltas", &self.subscriptions_book_deltas)
             .field("subscriptions_book_depth10", &self.subscriptions_book_depth10)
             .field("subscriptions_book_snapshot", &self.subscriptions_book_snapshots)
@@ -513,7 +513,7 @@ impl DataClientAdapter {
             venue,
             handles_book_deltas: handles_order_book_deltas,
             handles_book_snapshots: handles_order_book_snapshots,
-            subscriptions_generic: AHashSet::new(),
+            subscriptions_custom: AHashSet::new(),
             subscriptions_book_deltas: AHashSet::new(),
             subscriptions_book_depth10: AHashSet::new(),
             subscriptions_book_snapshots: AHashSet::new(),
@@ -583,8 +583,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
-        if !self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.insert(cmd.data_type.clone());
+        if !self.subscriptions_custom.contains(&cmd.data_type) {
+            self.subscriptions_custom.insert(cmd.data_type.clone());
             self.client.subscribe(cmd)?;
         }
         Ok(())
@@ -596,8 +596,8 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
-        if self.subscriptions_generic.contains(&cmd.data_type) {
-            self.subscriptions_generic.remove(&cmd.data_type);
+        if self.subscriptions_custom.contains(&cmd.data_type) {
+            self.subscriptions_custom.remove(&cmd.data_type);
             self.client.unsubscribe(cmd)?;
         }
         Ok(())
@@ -1134,11 +1134,11 @@ mod adapter_tests {
             None,
         ));
         adapter.execute_subscribe(&sub);
-        assert!(adapter.subscriptions_generic.contains(&data_type));
+        assert!(adapter.subscriptions_custom.contains(&data_type));
 
         // Idempotency check
         adapter.execute_subscribe(&sub);
-        assert_eq!(adapter.subscriptions_generic.len(), 1);
+        assert_eq!(adapter.subscriptions_custom.len(), 1);
 
         let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
             Some(client_id),
@@ -1150,7 +1150,7 @@ mod adapter_tests {
         ));
         adapter.execute_unsubscribe(&unsub);
 
-        assert!(!adapter.subscriptions_generic.contains(&data_type));
+        assert!(!adapter.subscriptions_custom.contains(&data_type));
     }
 
     #[rstest]
