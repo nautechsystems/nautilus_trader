@@ -267,9 +267,8 @@ cdef class TrailingStopLimitOrder(Order):
         elif self.side == OrderSide.SELL:
             self.slippage = self.price.as_f64_c() - self.avg_px
 
-    cdef void set_activated(self, Price activation_price):
-        # NOTE:
-        # In current design, 'activated' is not considered a state change.
+    cdef void set_activated_c(self, Price activation_price):
+        # NOTE: In current design, 'activated' is not considered a state change,
         # 'activated' is just included in ACCEPTED state.
 
         Condition.is_false(self.is_activated, "set_activated() is invoked when already activated", RuntimeError)

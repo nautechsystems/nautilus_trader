@@ -684,7 +684,7 @@ cdef class OrderMatchingEngine:
         if (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.TRADING):
             self.market_status = MarketStatus.OPEN
         elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.PRE_OPEN):
-            # Nothing to do on pre-market open.
+            # Do nothing on pre-market open.
             self.market_status = MarketStatus.OPEN
         # elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatusAction.PAUSE):
         #     # Opening auction period, run auction match on pre-open auction orderbook
@@ -1263,7 +1263,7 @@ cdef class OrderMatchingEngine:
                     f"no BID or ASK price for {order.instrument_id} "
                     f"(add quotes or use bars)",
                 )
-            order.set_activated(market_price)
+            order.set_activated_c(market_price)
         else:
             # If activation price is given,
             # the activation price should not be in the market, like if_touched orders.
@@ -1279,7 +1279,7 @@ cdef class OrderMatchingEngine:
                     )
                     return  # Invalid price
                 # if we cannot reject the order, we activate it
-                order.set_activated(None)
+                order.set_activated_c(None)
 
         if order.is_activated:
             if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
@@ -1512,11 +1512,11 @@ cdef class OrderMatchingEngine:
                         f"no BID or ASK price for {order.instrument_id} "
                         f"(add quotes or use bars)",
                     )
-                order.set_activated(market_price)
+                order.set_activated_c(market_price)
             elif self._core.is_touch_triggered(order.side, order.activation_price):
-                order.set_activated(None)
+                order.set_activated_c(None)
             else:
-                return  # nothing to do
+                return  # Do nothing
 
         cdef tuple output = TrailingStopCalculator.calculate(
             price_increment=self.instrument.price_increment,
