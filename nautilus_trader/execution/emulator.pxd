@@ -73,4 +73,4 @@ cdef class OrderEmulator(Actor):
     cpdef void _fill_limit_order(self, Order order)
 
     cdef void _iterate_orders(self, MatchingCore matching_core)
-    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order)
+    cdef void _trail_stop_order(self, MatchingCore matching_core, Order order)

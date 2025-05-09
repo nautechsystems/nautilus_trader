@@ -391,7 +391,7 @@ cdef class OrderEmulator(Actor):
 
         # Update trailing stop
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
-            self._update_trailing_stop_order(matching_core, order)
+            self._trail_stop_order(matching_core, order)
             if order.trigger_price is None:
                 self._log.error(
                     "Cannot handle trailing stop order with no `trigger_price` and no market updates",
@@ -866,9 +866,9 @@ cdef class OrderEmulator(Actor):
 
             # Manage trailing stop
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                self._update_trailing_stop_order(matching_core, order)
+                self._trail_stop_order(matching_core, order)
 
-    cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order):
+    cdef void _trail_stop_order(self, MatchingCore matching_core, Order order):
         # TODO: Improve efficiency of this ---------------------------------
         cdef Price bid = None
         cdef Price ask = None
