@@ -144,7 +144,7 @@ cdef class Order:
     cpdef str tif_string(self)
     cpdef dict to_dict(self)
 
-    cdef void set_activated(self, Price activation_price)
+    cdef void set_activated_c(self, Price activation_price)
     cdef void set_triggered_price_c(self, Price triggered_price)
     cdef Price get_triggered_price_c(self)
     cdef OrderStatus status_c(self)

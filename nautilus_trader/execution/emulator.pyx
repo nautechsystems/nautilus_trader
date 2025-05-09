@@ -905,11 +905,11 @@ cdef class OrderEmulator(Actor):
                         f"no BID or ASK price for {order.instrument_id} "
                         f"(add quotes or use bars)",
                     )
-                order.set_activated(market_price)
+                order.set_activated_c(market_price)
             elif matching_core.is_touch_triggered(order.side, order.activation_price):
-                order.set_activated(None)
+                order.set_activated_c(None)
             else:
-                return  # nothing to do
+                return  # Do nothing
 
         cdef tuple output
         try:

@@ -319,16 +319,15 @@ cdef class Order:
         """
         raise NotImplementedError("method `to_dict` must be implemented in the subclass")  # pragma: no cover
 
+    cdef void set_activated_c(self, Price activation_price):
+        raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
+
     cdef void set_triggered_price_c(self, Price triggered_price):
         Condition.not_none(triggered_price, "triggered_price")
         self._triggered_price = triggered_price
 
     cdef Price get_triggered_price_c(self):
         return self._triggered_price
-
-    cdef void set_activated(self, Price activation_price):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
 
     cdef OrderStatus status_c(self):
         return <OrderStatus>self._fsm.state
