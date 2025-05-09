@@ -1616,3 +1616,67 @@ class TestSimulatedExchange:
         assert trailing_stop.status == OrderStatus.FILLED
         assert trailing_stop.liquidity_side == LiquiditySide.MAKER
         assert trailing_stop.filled_qty == 200_000
+
+    #
+    # Tests a various scenario of modifying a sell-side trailing stop limit order
+    #
+    def test_trailing_stop_limit_order_modify(
+        self,
+    ) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=13.0,
+            ask_price=14.0,
+        )
+        self.exchange.process_quote_tick(tick)
+        self.data_engine.process(tick)
+        self.portfolio.update_quote_tick(tick)
+
+        trailing_stop = self.strategy.order_factory.trailing_stop_limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200_000),
+            activation_price=None,
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trailing_offset=Decimal("1.0"),
+            limit_offset=Decimal("1.0"),
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+        self.exchange.process(0)
+
+        # When activation_price is set to None, it defaults to the bid price,
+        # and trigger_price is set by applying trailing_offset.
+        assert trailing_stop.is_activated
+        assert trailing_stop.activation_price == Price.from_str("13.000")
+        assert trailing_stop.trigger_price == Price.from_str("12.000")
+        assert not trailing_stop.is_triggered
+        assert trailing_stop.status == OrderStatus.ACCEPTED
+
+        # NOTE:
+        # Currently, modifying `activation_price`, `trailing_offset`, or `limit_offset` is not supported.
+        # Passing `price` or `trigger_price` to the `modify_order()` method raises an exception.
+        # Therefore, only `quantity` can be modified.
+
+        # Modify the order quantity (currently the only supported modification)
+        new_quantity = Quantity.from_int(100_000)
+        self.strategy.modify_order(trailing_stop, new_quantity)
+        self.exchange.process(0)
+
+        assert trailing_stop.quantity == new_quantity
+
+        # Add quote to trigger and fill the order
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=12.0,
+            ask_price=13.0,
+            bid_size=200_000,
+            ask_size=200_000,
+        )
+        self.exchange.process_quote_tick(tick)
+
+        # When the market bid price moves down and reaches the order's limit price,
+        # the order should be filled up to the modified quantity.
+        assert trailing_stop.status == OrderStatus.FILLED
+        assert trailing_stop.filled_qty == 100_000
