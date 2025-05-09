@@ -438,7 +438,7 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    /// Handles a received custom/generic data point.
+    /// Handles a received custom data point.
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 

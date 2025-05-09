@@ -425,7 +425,7 @@ impl DataEngine {
     /// Returns all custom data types currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_custom_data(&self) -> Vec<DataType> {
-        self.collect_subscriptions(|client| &client.subscriptions_generic)
+        self.collect_subscriptions(|client| &client.subscriptions_custom)
     }
 
     /// Returns all instrument IDs currently subscribed across all clients.
