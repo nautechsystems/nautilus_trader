@@ -203,9 +203,15 @@ cdef extern from "../includes/common.h":
 
     void test_clock_drop(TestClock_API clock);
 
+    # Registers the default callback handler for TestClock.
+    #
     # # Safety
     #
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Panics
+    #
+    # Panics if the `callback_ptr` is null or represents the Python `None` object.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
     void test_clock_set_time(const TestClock_API *clock, uint64_t to_time_ns);
@@ -226,6 +232,10 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Panics
+    #
+    # Panics if `callback_ptr` is null or if setting the timer fails.
     void test_clock_set_time_alert(TestClock_API *clock,
                                    const char *name_ptr,
                                    uint64_t alert_time_ns,
@@ -236,6 +246,10 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `name_ptr` is a valid C string pointer.
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Panics
+    #
+    # Panics if `callback_ptr` is null or represents the Python `None` object.
     void test_clock_set_timer(TestClock_API *clock,
                               const char *name_ptr,
                               uint64_t interval_ns,
@@ -270,6 +284,10 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+    #
+    # # Panics
+    #
+    # Panics if `callback_ptr` is null or represents the Python `None` object.
     void live_clock_register_default_handler(LiveClock_API *clock, PyObject *callback_ptr);
 
     double live_clock_timestamp(LiveClock_API *clock);
@@ -391,13 +409,17 @@ cdef extern from "../includes/common.h":
     #
     # # Safety
     #
-    # Should only be called once during an applications run, ideally at the
+    # Should only be called once during an application's run, ideally at the
     # beginning of the run.
     #
-    # - Assume `directory_ptr` is either NULL or a valid C string pointer.
-    # - Assume `file_name_ptr` is either NULL or a valid C string pointer.
-    # - Assume `file_format_ptr` is either NULL or a valid C string pointer.
-    # - Assume `component_level_ptr` is either NULL or a valid C string pointer.
+    # - Assumes `directory_ptr` is either NULL or a valid C string pointer.
+    # - Assumes `file_name_ptr` is either NULL or a valid C string pointer.
+    # - Assumes `file_format_ptr` is either NULL or a valid C string pointer.
+    # - Assumes `component_level_ptr` is either NULL or a valid C string pointer.
+    #
+    # # Panics
+    #
+    # Panics if initializing the Rust logger fails.
     LogGuard_API logging_init(TraderId_t trader_id,
                               UUID4_t instance_id,
                               LogLevel level_stdout,

@@ -162,6 +162,10 @@ impl TestClock {
     ///
     /// The method processes active timers, advancing them to `to_time_ns`, and collects any `TimeEvent`
     /// objects that are triggered as a result. Only timers that are not expired are processed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `to_time_ns` is less than the current internal clock time.
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should be non-decreasing
         assert!(
@@ -193,6 +197,10 @@ impl TestClock {
     /// Pushes the [`TimeEvent`]s on the heap to ensure ordering
     ///
     /// Note: `set_time` is not used but present to keep backward compatible api call
+    ///
+    /// # Panics
+    ///
+    /// Panics if `to_time_ns` is less than the current internal clock time.
     pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
         // Time should be non-decreasing
         assert!(
@@ -218,6 +226,10 @@ impl TestClock {
     /// This function takes an `events` vector of `TimeEvent` objects, assumes they are already sorted
     /// by their `ts_event`, and matches them with the appropriate callback handler from the internal
     /// registry of callbacks. If no specific callback is found for an event, the default callback is used.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the default callback is not set for the clock when matching handlers.
     #[must_use]
     pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
         events

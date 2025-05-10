@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// Under development
-// TODO: Remove once error documentation is complete
-#![allow(clippy::missing_errors_doc)]
-
 //! In-memory cache for market and execution data, with optional persistent backing.
 //!
 //! Provides methods to load, query, and update cached data such as instruments, orders, and prices.
@@ -41,8 +37,7 @@ use index::CacheIndex;
 use nautilus_core::{
     UUID4, UnixNanos,
     correctness::{
-        FAILED, check_key_not_in_map, check_predicate_false, check_slice_not_empty,
-        check_valid_string,
+        check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
     },
     datetime::secs_to_nanos,
 };
@@ -480,6 +475,10 @@ impl Cache {
     ///
     /// All data should be loaded from the database prior to this call.
     /// If an error is found then a log error message will also be produced.
+    ///
+    /// # Panics
+    ///
+    /// Panics if failure calling system clock.
     #[must_use]
     pub fn check_integrity(&mut self) -> bool {
         let mut error_count = 0;
@@ -1068,6 +1067,10 @@ impl Cache {
     }
 
     /// Dispose of the cache which will close any underlying database adapter.
+    ///
+    /// # Panics
+    ///
+    /// Panics if closing the database connection fails.
     pub fn dispose(&mut self) {
         if let Some(database) = &mut self.database {
             database.close().expect("Failed to close database");
@@ -1075,6 +1078,10 @@ impl Cache {
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
+    ///
+    /// # Panics
+    ///
+    /// Panics if flushing the database connection fails.
     pub fn flush_db(&mut self) {
         if let Some(database) = &mut self.database {
             database.flush().expect("Failed to flush database");
@@ -1089,8 +1096,8 @@ impl Cache {
     ///
     /// Returns an error if persisting the entry to the backing database fails.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string(key, stringify!(key)).expect(FAILED);
-        check_predicate_false(value.is_empty(), stringify!(value)).expect(FAILED);
+        check_valid_string(key, stringify!(key))?;
+        check_predicate_false(value.is_empty(), stringify!(value))?;
 
         log::debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
@@ -1132,6 +1139,10 @@ impl Cache {
     }
 
     /// Adds the given `mark_price` update for the given `instrument_id` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the mark price to the backing database fails.
     pub fn add_mark_price(&mut self, mark_price: MarkPriceUpdate) -> anyhow::Result<()> {
         log::debug!("Adding `MarkPriceUpdate` for {}", mark_price.instrument_id);
 
@@ -1148,6 +1159,10 @@ impl Cache {
     }
 
     /// Adds the given `index_price` update for the given `instrument_id` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the index price to the backing database fails.
     pub fn add_index_price(&mut self, index_price: IndexPriceUpdate) -> anyhow::Result<()> {
         log::debug!(
             "Adding `IndexPriceUpdate` for {}",
@@ -1167,6 +1182,10 @@ impl Cache {
     }
 
     /// Adds the given `quote` tick to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the quote tick to the backing database fails.
     pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
         log::debug!("Adding `QuoteTick` {}", quote.instrument_id);
 
@@ -1185,8 +1204,12 @@ impl Cache {
     }
 
     /// Adds the given `quotes` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the quote ticks to the backing database fails.
     pub fn add_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
-        check_slice_not_empty(quotes, stringify!(quotes)).unwrap();
+        check_slice_not_empty(quotes, stringify!(quotes))?;
 
         let instrument_id = quotes[0].instrument_id;
         log::debug!("Adding `QuoteTick`[{}] {instrument_id}", quotes.len());
@@ -1194,7 +1217,7 @@ impl Cache {
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
                 for quote in quotes {
-                    database.add_quote(quote).unwrap();
+                    database.add_quote(quote)?;
                 }
             }
         }
@@ -1211,6 +1234,10 @@ impl Cache {
     }
 
     /// Adds the given `trade` tick to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the trade tick to the backing database fails.
     pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
         log::debug!("Adding `TradeTick` {}", trade.instrument_id);
 
@@ -1229,8 +1256,12 @@ impl Cache {
     }
 
     /// Adds the give `trades` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the trade ticks to the backing database fails.
     pub fn add_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
-        check_slice_not_empty(trades, stringify!(trades)).unwrap();
+        check_slice_not_empty(trades, stringify!(trades))?;
 
         let instrument_id = trades[0].instrument_id;
         log::debug!("Adding `TradeTick`[{}] {instrument_id}", trades.len());
@@ -1238,7 +1269,7 @@ impl Cache {
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
                 for trade in trades {
-                    database.add_trade(trade).unwrap();
+                    database.add_trade(trade)?;
                 }
             }
         }
@@ -1255,6 +1286,10 @@ impl Cache {
     }
 
     /// Adds the given `bar` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the bar to the backing database fails.
     pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
         log::debug!("Adding `Bar` {}", bar.bar_type);
 
@@ -1273,8 +1308,12 @@ impl Cache {
     }
 
     /// Adds the given `bars` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the bars to the backing database fails.
     pub fn add_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
-        check_slice_not_empty(bars, stringify!(bars)).unwrap();
+        check_slice_not_empty(bars, stringify!(bars))?;
 
         let bar_type = bars[0].bar_type;
         log::debug!("Adding `Bar`[{}] {bar_type}", bars.len());
@@ -1282,7 +1321,7 @@ impl Cache {
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
                 for bar in bars {
-                    database.add_bar(bar).unwrap();
+                    database.add_bar(bar)?;
                 }
             }
         }
@@ -1299,6 +1338,10 @@ impl Cache {
     }
 
     /// Adds the given `greeks` data to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the greeks data to the backing database fails.
     pub fn add_greeks(&mut self, greeks: GreeksData) -> anyhow::Result<()> {
         log::debug!("Adding `GreeksData` {}", greeks.instrument_id);
 
@@ -1318,6 +1361,10 @@ impl Cache {
     }
 
     /// Adds the given `yield_curve` data to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the yield curve data to the backing database fails.
     pub fn add_yield_curve(&mut self, yield_curve: YieldCurveData) -> anyhow::Result<()> {
         log::debug!("Adding `YieldCurveData` {}", yield_curve.curve_name);
 
@@ -1342,6 +1389,10 @@ impl Cache {
     }
 
     /// Adds the given `currency` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the currency to the backing database fails.
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
         log::debug!("Adding `Currency` {}", currency.code);
 
@@ -1354,6 +1405,10 @@ impl Cache {
     }
 
     /// Adds the given `instrument` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the instrument to the backing database fails.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         log::debug!("Adding `Instrument` {}", instrument.id());
 
@@ -1366,6 +1421,10 @@ impl Cache {
     }
 
     /// Adds the given `synthetic` instrument to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the synthetic instrument to the backing database fails.
     pub fn add_synthetic(&mut self, synthetic: SyntheticInstrument) -> anyhow::Result<()> {
         log::debug!("Adding `SyntheticInstrument` {}", synthetic.id);
 
@@ -1378,6 +1437,10 @@ impl Cache {
     }
 
     /// Adds the given `account` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the account to the backing database fails.
     pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         log::debug!("Adding `Account` {}", account.id());
 
@@ -1396,6 +1459,9 @@ impl Cache {
     /// Indexes the given `client_order_id` with the given `venue_order_id`.
     ///
     /// The `overwrite` parameter determines whether to overwrite any existing cached identifier.
+    /// # Errors
+    ///
+    /// Returns an error if the existing venue order ID conflicts and overwrite is false.
     pub fn add_venue_order_id(
         &mut self,
         client_order_id: &ClientOrderId,
@@ -1455,29 +1521,7 @@ impl Cache {
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
-            )
-            .expect(FAILED);
-            check_key_not_in_map(
-                &client_order_id,
-                &self.orders,
-                stringify!(client_order_id),
-                stringify!(orders),
-            )
-            .expect(FAILED);
-            check_key_not_in_map(
-                &client_order_id,
-                &self.orders,
-                stringify!(client_order_id),
-                stringify!(orders),
-            )
-            .expect(FAILED);
-            check_key_not_in_map(
-                &client_order_id,
-                &self.orders,
-                stringify!(client_order_id),
-                stringify!(orders),
-            )
-            .expect(FAILED);
+            )?;
         }
 
         log::debug!("Adding {order:?}");
@@ -1510,7 +1554,8 @@ impl Cache {
             .insert(client_order_id);
 
         // Update exec_algorithm -> orders index
-        if let Some(exec_algorithm_id) = exec_algorithm_id {
+        // Update exec_algorithm -> orders index
+        if let (Some(exec_algorithm_id), Some(exec_spawn_id)) = (exec_algorithm_id, exec_spawn_id) {
             self.index.exec_algorithms.insert(exec_algorithm_id);
 
             self.index
@@ -1521,7 +1566,7 @@ impl Cache {
 
             self.index
                 .exec_spawn_orders
-                .entry(exec_spawn_id.expect("`exec_spawn_id` is guaranteed to exist"))
+                .entry(exec_spawn_id)
                 .or_default()
                 .insert(client_order_id);
         }
@@ -1566,6 +1611,10 @@ impl Cache {
     }
 
     /// Indexes the given `position_id` with the other given IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if indexing position ID in the backing database fails.
     pub fn add_position_id(
         &mut self,
         position_id: &PositionId,
@@ -1612,6 +1661,10 @@ impl Cache {
     }
 
     /// Adds the given `position` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the position to the backing database fails.
     pub fn add_position(&mut self, position: Position, _oms_type: OmsType) -> anyhow::Result<()> {
         self.positions.insert(position.id, position.clone());
         self.index.positions.insert(position.id);
@@ -2682,7 +2735,7 @@ impl Cache {
     ///
     /// Returns an error if the `key` is invalid.
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string(key, stringify!(key)).expect(FAILED);
+        check_valid_string(key, stringify!(key))?;
 
         Ok(self.general.get(key))
     }
@@ -3003,10 +3056,10 @@ impl Cache {
     /// Returns references to all instrument IDs for the given `venue`.
     #[must_use]
     pub fn instrument_ids(&self, venue: Option<&Venue>) -> Vec<&InstrumentId> {
-        self.instruments
-            .keys()
-            .filter(|i| venue.is_none() || &i.venue == venue.unwrap())
-            .collect()
+        match venue {
+            Some(v) => self.instruments.keys().filter(|i| &i.venue == v).collect(),
+            None => self.instruments.keys().collect(),
+        }
     }
 
     /// Returns references to all instruments for the given `venue`.

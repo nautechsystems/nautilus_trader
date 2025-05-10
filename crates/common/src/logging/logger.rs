@@ -258,6 +258,9 @@ impl LogLineWrapper {
     /// This method serializes the log line and its associated metadata
     /// (timestamp, trader ID, etc.) into a JSON string format. This is useful
     /// for structured logging or when logs need to be stored in a JSON format.
+    /// # Panics
+    ///
+    /// Panics if serialization of the log event to JSON fails.
     #[must_use]
     pub fn get_json(&self) -> String {
         let json_string =

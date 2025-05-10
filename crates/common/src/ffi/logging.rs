@@ -73,13 +73,17 @@ impl DerefMut for LogGuard_API {
 ///
 /// # Safety
 ///
-/// Should only be called once during an applications run, ideally at the
+/// Should only be called once during an application's run, ideally at the
 /// beginning of the run.
 ///
-/// - Assume `directory_ptr` is either NULL or a valid C string pointer.
-/// - Assume `file_name_ptr` is either NULL or a valid C string pointer.
-/// - Assume `file_format_ptr` is either NULL or a valid C string pointer.
-/// - Assume `component_level_ptr` is either NULL or a valid C string pointer.
+/// - Assumes `directory_ptr` is either NULL or a valid C string pointer.
+/// - Assumes `file_name_ptr` is either NULL or a valid C string pointer.
+/// - Assumes `file_format_ptr` is either NULL or a valid C string pointer.
+/// - Assumes `component_level_ptr` is either NULL or a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if initializing the Rust logger fails.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_init(
     trader_id: TraderId,

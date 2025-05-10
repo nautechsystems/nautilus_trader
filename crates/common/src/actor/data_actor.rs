@@ -986,6 +986,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Sends a shutdown command to the system with an optional reason.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered or has no trader ID.
     pub fn shutdown_system(&self, reason: Option<String>) {
         self.check_registered();
 

@@ -91,6 +91,9 @@ where
     }
 }
 
+/// # Panics
+///
+/// Panics if the timeout duration is exceeded without the condition being met.
 pub async fn wait_until_async<F, Fut>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> Fut,

@@ -27,6 +27,9 @@ use crate::{
 
 pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the global clock is uninitialized.
 #[must_use]
 pub fn get_global_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
@@ -39,6 +42,9 @@ pub fn get_global_clock() -> Rc<RefCell<dyn Clock>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the global clock is already set.
 pub fn set_global_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
@@ -50,6 +56,9 @@ pub fn set_global_clock(c: Rc<RefCell<dyn Clock>>) {
 pub type DataCommandQueue = Rc<RefCell<VecDeque<DataCommand>>>;
 
 /// Get globally shared message bus command queue
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed.
 #[must_use]
 pub fn get_data_cmd_queue() -> DataCommandQueue {
     DATA_CMD_QUEUE
@@ -72,6 +81,9 @@ impl DataQueue for SyncDataQueue {
     }
 }
 
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the data event queue is uninitialized.
 #[must_use]
 pub fn get_data_evt_queue() -> Rc<RefCell<dyn DataQueue>> {
     DATA_EVT_QUEUE
@@ -83,6 +95,9 @@ pub fn get_data_evt_queue() -> Rc<RefCell<dyn DataQueue>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the global data event queue is already set.
 pub fn set_data_evt_queue(dq: Rc<RefCell<dyn DataQueue>>) {
     DATA_EVT_QUEUE
         .try_with(|deque| {

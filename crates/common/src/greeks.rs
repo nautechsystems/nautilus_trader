@@ -63,10 +63,15 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
-    #[allow(clippy::too_many_arguments)]
+    ///
     /// # Errors
     ///
     /// Returns an error if the instrument definition is not found or greeks calculation fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument has no underlying identifier.
+    #[allow(clippy::too_many_arguments)]
     pub fn instrument_greeks(
         &self,
         instrument_id: InstrumentId,
@@ -397,10 +402,11 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
-    #[allow(clippy::too_many_arguments)]
+    ///
     /// # Errors
     ///
     /// Returns an error if any underlying greeks calculation fails.
+    #[allow(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,
         underlyings: Option<Vec<String>>,
