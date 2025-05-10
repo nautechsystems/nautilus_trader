@@ -31,6 +31,7 @@ None
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0 (now stable)
+- Upgraded `redis` crate to v0.31.0
 - Upgraded `tokio` crate to v1.45.0
 
 ### Fixes
