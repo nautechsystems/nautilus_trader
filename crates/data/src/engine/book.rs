@@ -43,6 +43,7 @@ pub struct BookSnapshotInfo {
     pub interval_ms: NonZeroUsize,
 }
 
+#[derive(Debug)]
 pub struct BookUpdater {
     pub id: Ustr,
     pub instrument_id: InstrumentId,
@@ -88,6 +89,7 @@ impl MessageHandler for BookUpdater {
     }
 }
 
+#[derive(Debug)]
 pub struct BookSnapshotter {
     pub id: Ustr,
     pub timer_name: Ustr,

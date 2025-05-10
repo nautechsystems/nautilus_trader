@@ -22,6 +22,7 @@ use ustr::Ustr;
 use crate::aggregation::BarAggregator;
 
 // Quote ticks -> bar aggregator
+#[derive(Debug)]
 pub struct BarQuoteHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
     bar_type: BarType,
@@ -53,6 +54,7 @@ impl MessageHandler for BarQuoteHandler {
 }
 
 // Trade ticks -> bar aggregator
+#[derive(Debug)]
 pub struct BarTradeHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
     bar_type: BarType,
@@ -84,6 +86,7 @@ impl MessageHandler for BarTradeHandler {
 }
 
 // Composite bars -> bar aggregator
+#[derive(Debug)]
 pub struct BarBarHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
     bar_type: BarType,

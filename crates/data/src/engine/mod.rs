@@ -93,6 +93,7 @@ use crate::{
 };
 
 /// Provides a high-performance `DataEngine` for all environments.
+#[derive(Debug)]
 pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,

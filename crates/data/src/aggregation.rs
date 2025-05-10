@@ -18,7 +18,7 @@
 //! Defines the `BarAggregator` trait and core aggregation types (tick, volume, value, time),
 //! along with the `BarBuilder` and `BarAggregatorCore` helpers for constructing bars.
 
-use std::{any::Any, cell::RefCell, ops::Add, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, ops::Add, rc::Rc};
 
 use chrono::TimeDelta;
 use nautilus_common::{
@@ -42,7 +42,7 @@ use nautilus_model::{
 /// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
 ///
 /// Implementors receive updates and produce completed bars via handlers, with support for partial and batch updates.
-pub trait BarAggregator: Any {
+pub trait BarAggregator: Any + Debug {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
@@ -102,6 +102,7 @@ impl dyn BarAggregator {
 }
 
 /// Provides a generic bar builder for aggregation.
+#[derive(Debug)]
 pub struct BarBuilder {
     bar_type: BarType,
     price_precision: u8,
@@ -318,6 +319,18 @@ where
     batch_mode: bool,
 }
 
+impl<H: FnMut(Bar)> Debug for BarAggregatorCore<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BarAggregatorCore))
+            .field("bar_type", &self.bar_type)
+            .field("builder", &self.builder)
+            .field("await_partial", &self.await_partial)
+            .field("is_running", &self.is_running)
+            .field("batch_mode", &self.batch_mode)
+            .finish()
+    }
+}
+
 impl<H> BarAggregatorCore<H>
 where
     H: FnMut(Bar),
@@ -415,6 +428,15 @@ where
 {
     core: BarAggregatorCore<H>,
     cum_value: f64,
+}
+
+impl<H: FnMut(Bar)> Debug for TickBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TickBarAggregator")
+            .field("core", &self.core)
+            .field("cum_value", &self.cum_value)
+            .finish()
+    }
 }
 
 impl<H> TickBarAggregator<H>
@@ -533,6 +555,14 @@ where
     H: FnMut(Bar),
 {
     core: BarAggregatorCore<H>,
+}
+
+impl<H: FnMut(Bar)> Debug for VolumeBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VolumeBarAggregator")
+            .field("core", &self.core)
+            .finish()
+    }
 }
 
 impl<H> VolumeBarAggregator<H>
@@ -667,6 +697,15 @@ where
 {
     core: BarAggregatorCore<H>,
     cum_value: f64,
+}
+
+impl<H: FnMut(Bar)> Debug for ValueBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValueBarAggregator")
+            .field("core", &self.core)
+            .field("cum_value", &self.cum_value)
+            .finish()
+    }
 }
 
 impl<H> ValueBarAggregator<H>
@@ -826,7 +865,22 @@ where
     skip_first_non_full_bar: bool,
 }
 
-#[derive(Clone)]
+impl<H: FnMut(Bar)> Debug for TimeBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TimeBarAggregator))
+            .field("core", &self.core)
+            .field("build_with_no_updates", &self.build_with_no_updates)
+            .field("timestamp_on_close", &self.timestamp_on_close)
+            .field("is_left_open", &self.is_left_open)
+            .field("timer_name", &self.timer_name)
+            .field("interval_ns", &self.interval_ns)
+            .field("composite_bar_build_delay", &self.composite_bar_build_delay)
+            .field("skip_first_non_full_bar", &self.skip_first_non_full_bar)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct NewBarCallback<H: FnMut(Bar)> {
     aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
 }
