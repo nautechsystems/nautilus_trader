@@ -16,6 +16,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    fmt::Debug,
     rc::Rc,
     sync::{
         Arc,
@@ -30,10 +31,17 @@ use uuid::Uuid;
 use crate::msgbus::{ShareableMessageHandler, handler::MessageHandler};
 
 // Stub message handler which logs the data it receives
-#[allow(missing_debug_implementations)]
 pub struct StubMessageHandler {
     id: Ustr,
     callback: Arc<dyn Fn(Message) + Send>,
+}
+
+impl Debug for StubMessageHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StubMessageHandler")
+            .field("id", &self.id)
+            .finish()
+    }
 }
 
 impl MessageHandler for StubMessageHandler {

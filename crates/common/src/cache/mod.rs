@@ -27,6 +27,7 @@ mod tests;
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -63,7 +64,6 @@ use ustr::Ustr;
 use crate::xrate::get_exchange_rate;
 
 /// A common in-memory `Cache` for market and execution related data.
-#[allow(missing_debug_implementations)]
 pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
@@ -87,6 +87,34 @@ pub struct Cache {
     order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Bytes>,
+}
+
+impl Debug for Cache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cache")
+            .field("config", &self.config)
+            .field("index", &self.index)
+            .field("general", &self.general)
+            .field("currencies", &self.currencies)
+            .field("instruments", &self.instruments)
+            .field("synthetics", &self.synthetics)
+            .field("books", &self.books)
+            .field("own_books", &self.own_books)
+            .field("quotes", &self.quotes)
+            .field("trades", &self.trades)
+            .field("mark_xrates", &self.mark_xrates)
+            .field("mark_prices", &self.mark_prices)
+            .field("index_prices", &self.index_prices)
+            .field("bars", &self.bars)
+            .field("greeks", &self.greeks)
+            .field("yield_curves", &self.yield_curves)
+            .field("accounts", &self.accounts)
+            .field("orders", &self.orders)
+            .field("order_lists", &self.order_lists)
+            .field("positions", &self.positions)
+            .field("position_snapshots", &self.position_snapshots)
+            .finish()
+    }
 }
 
 impl Default for Cache {

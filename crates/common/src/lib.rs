@@ -30,13 +30,10 @@
 //! - `stubs`: Enables type stubs for use in testing scenarios.
 #![warn(rustc::all)]
 #![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
+#![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
-
-// Uncomment once we've added trivial `Debug` impls everywhere
-// #![warn(missing_debug_implementations)]
 
 pub mod actor;
 pub mod cache;
