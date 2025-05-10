@@ -213,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1302  # UNIX
+        assert result == 1330  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -234,7 +234,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 975  # UNIX
+        assert len(raw) == 995  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -255,7 +255,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 2154
+        assert result == 2182
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -263,7 +263,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "4f32604ec447b05be0c7a38746a01295b96a29f647638c385d4f668d01dacecc"
+        assert token == "c03d01fe1145ca971b9835dd4430f647f64b50d24a744334b09d380c32f58f8f"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(

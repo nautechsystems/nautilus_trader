@@ -33,6 +33,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.live.config import LiveDataClientConfig
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -41,7 +42,7 @@ from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.config import NautilusKernelConfig
 
 
-def parse_filters_expr(s: str | None):
+def parse_filters_expr(s: str | None) -> Any:
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
     Parse a pyarrow.dataset filter expression from a string.
@@ -406,6 +407,8 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     end : datetime or str or int, optional
         The end datetime (UTC) for the backtest run.
         If ``None`` engine runs to the end of the data.
+    data_clients : dict[str, LiveDataClientConfig], optional
+        The data clients configuration for the backtest run.
 
     Notes
     -----
@@ -423,6 +426,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     dispose_on_completion: bool = True
     start: str | int | None = None
     end: str | int | None = None
+    data_clients: dict[str, LiveDataClientConfig] | None = None
 
 
 class SimulationModuleConfig(ActorConfig, frozen=True):

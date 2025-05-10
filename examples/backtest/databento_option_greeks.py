@@ -58,8 +58,9 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
+# Set the data path for Databento data
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from option_trader import DATA_PATH # personal library, use your own value here
+# DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
 catalog_folder = "options_catalog"
@@ -73,7 +74,7 @@ option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 start_time = "2024-05-09T10:00"
 end_time = "2024-05-09T10:05"
 
-# a valid databento key can be entered here (or as an env variable of the same name)
+# A valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
 # db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
@@ -272,7 +273,7 @@ engine_config = BacktestEngineConfig(
 # BacktestRunConfig
 
 data = [
-    # TODO using instrument_id and bar_spec only, or instrument_ids and bar_spec only, or bar_types only
+    # # TODO using instrument_id and bar_spec only, or instrument_ids and bar_spec only, or bar_types only
     BacktestDataConfig(
         data_cls=Bar,
         catalog_path=catalog.path,

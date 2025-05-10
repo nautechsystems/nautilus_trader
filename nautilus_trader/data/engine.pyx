@@ -227,6 +227,18 @@ cdef class DataEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
+    @property
+    def routing_map(self) -> dict[Venue, DataClient]:
+        """
+        Return the default data client registered with the engine.
+
+        Returns
+        -------
+        ClientId or ``None``
+
+        """
+        return self._routing_map
+
     def connect(self) -> None:
         """
         Connect the engine by calling connect on all registered clients.
@@ -730,12 +742,20 @@ cdef class DataEngine(Component):
             return
 
         cdef Venue venue = command.venue
-        cdef DataClient client = self._clients.get(command.client_id)
+        cdef DataClient client
+
+        # In a backtest context, we never want to subscribe to live data
+        if type(self._default_client) is BacktestMarketDataClient:
+            client = self._default_client
+        else:
+            client = self._clients.get(command.client_id)
+
         if venue is not None and venue.is_synthetic():
             # No further check as no client needed
             pass
         elif client is None:
             client = self._routing_map.get(command.venue, self._default_client)
+
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
@@ -1327,34 +1347,6 @@ cdef class DataEngine(Component):
             client.unsubscribe_instrument_close(command)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
-
-    cpdef tuple[datetime, object] _catalogs_timestamp_bound(
-        self,
-        type data_cls,
-        InstrumentId instrument_id = None,
-        BarType bar_type = None,
-        str ts_column = "ts_init",
-        bint is_last = True,
-    ):
-        cdef datetime timestamp_bound = None
-        cdef datetime prev_timestamp_bound = None
-        timestamp_bound_catalog = None
-
-        for catalog in self._catalogs.values():
-            prev_timestamp_bound = timestamp_bound
-
-            timestamp_bound = (max_date if is_last else min_date)(
-                timestamp_bound,
-                catalog.query_timestamp_bound(data_cls, instrument_id, bar_type, ts_column, is_last)
-            )
-
-            if (timestamp_bound is not None and
-                (prev_timestamp_bound is None or
-                 (is_last and timestamp_bound > prev_timestamp_bound)
-                  or (timestamp_bound < prev_timestamp_bound))):
-                timestamp_bound_catalog = catalog
-
-        return timestamp_bound, timestamp_bound_catalog
 
     cpdef void _handle_request(self, RequestData request):
         if self.debug:
@@ -2079,6 +2071,34 @@ cdef class DataEngine(Component):
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)
         else:
             self._log.warning("No catalog available for appending data.")
+
+    cpdef tuple[datetime, object] _catalogs_timestamp_bound(
+            self,
+            type data_cls,
+            InstrumentId instrument_id = None,
+            BarType bar_type = None,
+            str ts_column = "ts_init",
+            bint is_last = True,
+    ):
+        cdef datetime timestamp_bound = None
+        cdef datetime prev_timestamp_bound = None
+        timestamp_bound_catalog = None
+
+        for catalog in self._catalogs.values():
+            prev_timestamp_bound = timestamp_bound
+
+            timestamp_bound = (max_date if is_last else min_date)(
+                timestamp_bound,
+                catalog.query_timestamp_bound(data_cls, instrument_id, bar_type, ts_column, is_last)
+            )
+
+            if (timestamp_bound is not None and
+                    (prev_timestamp_bound is None or
+                     (is_last and timestamp_bound > prev_timestamp_bound)
+                     or (timestamp_bound < prev_timestamp_bound))):
+                timestamp_bound_catalog = catalog
+
+        return timestamp_bound, timestamp_bound_catalog
 
     cpdef void _handle_instruments(self, list instruments, update_catalog_mode: CatalogWriteMode | None = None):
         cdef Instrument instrument

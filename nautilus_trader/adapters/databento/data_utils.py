@@ -209,6 +209,7 @@ def databento_data(
             data = load_databento_data(data_file) if load_databento_files_if_exist else None
     else:
         data = None
+        data_file = None
 
     result = {
         "symbols": symbols,
@@ -226,7 +227,7 @@ def databento_data(
         del result["databento_data_file"]
         del result["databento_data"]
 
-    if to_catalog and schema != "definition":
+    if to_catalog:
         catalog_data = save_data_to_catalog(
             *folders,
             definition_file=definition_file,

@@ -770,8 +770,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=2)
         end = end or available_end
+        start = start or end - pd.Timedelta(days=1)
 
         self._log.info(
             f"Requesting {instrument_id} instrument status: "
@@ -803,8 +803,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=2)
         end = end or available_end
+        start = start or end - pd.Timedelta(days=1)
 
         self._log.info(
             f"Requesting {instrument_id} imbalance: "
@@ -834,8 +834,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = start or available_end - pd.Timedelta(days=2)
         end = end or available_end
+        start = start or end - pd.Timedelta(days=1)
 
         self._log.info(
             f"Requesting {instrument_id} statistics: "
@@ -861,8 +861,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = request.start or available_end - pd.Timedelta(days=2)
+        # NOTE: instruments are "published" every day at midnight
         end = request.end or available_end
+        start = request.start or end - pd.Timedelta(days=1)
 
         self._log.info(
             f"Requesting {request.instrument_id} instrument definition: "
@@ -891,8 +892,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = request.start or available_end - pd.Timedelta(days=2)
         end = request.end or available_end
+        start = request.start or end - pd.Timedelta(days=1)
 
         self._log.info(
             f"Requesting {request.venue} instrument definitions: "
@@ -921,8 +922,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = request.start or available_end - pd.Timedelta(days=1)
         end = request.end or available_end
+        start = request.start or end - pd.Timedelta(days=1)
 
         if request.limit > 0:
             self._log.warning(
@@ -959,8 +960,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = request.start or available_end - pd.Timedelta(days=1)
         end = request.end or available_end
+        start = request.start or end - pd.Timedelta(days=1)
 
         if request.limit > 0:
             self._log.warning(
@@ -987,8 +988,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
 
-        start = request.start or available_end - pd.Timedelta(days=1)
         end = request.end or available_end
+        start = request.start or end - pd.Timedelta(days=1)
 
         if request.limit > 0:
             self._log.warning(

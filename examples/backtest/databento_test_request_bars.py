@@ -49,8 +49,9 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
+# Set the data path for Databento data
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from option_trader import DATA_PATH # personal library, use your own value here
+# DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
 catalog_folder = "historical_bars_catalog"
@@ -63,7 +64,7 @@ future_symbols = ["ESU4"]
 start_time = "2024-07-01T23:40"
 end_time = "2024-07-02T00:10"
 
-# a valid databento key can be entered here (or as an env variable of the same name)
+# A valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
 # db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
