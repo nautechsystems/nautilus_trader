@@ -15,7 +15,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
-- Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
+- Added `activation_price` str and repr tests for trailing stop orders (#2620), thanks @hope2see
 - Improved fill behavior for limit orders in `L1_MBP` books, will now fill entire size when marketable as `TAKER` or market moves through limit as `MAKER`
 - Improved validations for `LimitOrder` in Rust (#2613), thanks @nicolad
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
@@ -27,6 +27,7 @@ None
 - Improved orders initialize and display tests in Rust (#2617), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
+- Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `tokio` crate to v1.45.0
