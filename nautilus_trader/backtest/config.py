@@ -394,6 +394,8 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     chunk_size : int, optional
         The number of data points to process in each chunk during streaming mode.
         If `None`, the backtest will run without streaming, loading all data at once.
+    raise_exception : bool, default False
+        If exceptions during an engine build or run should be raised to interrupt the nodes process.
     dispose_on_completion : bool, default True
         If the backtest engine should be disposed on completion of the run.
         If True, then will drop data and all state.
@@ -417,6 +419,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     data: list[BacktestDataConfig]
     engine: BacktestEngineConfig | None = None
     chunk_size: int | None = None
+    raise_exception: bool = False
     dispose_on_completion: bool = True
     start: str | int | None = None
     end: str | int | None = None

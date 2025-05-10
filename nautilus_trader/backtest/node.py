@@ -218,7 +218,9 @@ class BacktestNode:
                     data_configs=config.data,
                 )
             except Exception as e:
-                # Log any exceptions without halting the build process
+                if config.raise_exception:
+                    raise e
+
                 self.log_backtest_exception(e, config)
 
     def _create_engine(
@@ -310,6 +312,9 @@ class BacktestNode:
                 )
                 results.append(result)
             except Exception as e:
+                if config.raise_exception:
+                    raise e
+
                 self.log_backtest_exception(e, config)
 
         return results
