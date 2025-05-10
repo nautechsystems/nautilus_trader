@@ -15,6 +15,7 @@
 
 use std::{
     cell::{RefCell, UnsafeCell},
+    fmt::Debug,
     rc::Rc,
     sync::OnceLock,
 };
@@ -24,9 +25,18 @@ use ustr::Ustr;
 
 use super::Actor;
 
-#[allow(missing_debug_implementations)]
 pub struct ActorRegistry {
     actors: RefCell<HashMap<Ustr, Rc<UnsafeCell<dyn Actor>>>>,
+}
+
+impl Debug for ActorRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let actors_ref = self.actors.borrow();
+        let keys: Vec<&Ustr> = actors_ref.keys().collect();
+        f.debug_struct(stringify!(ActorRegistry))
+            .field("actors", &keys)
+            .finish()
+    }
 }
 
 impl Default for ActorRegistry {

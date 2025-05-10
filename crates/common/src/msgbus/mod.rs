@@ -51,7 +51,7 @@ use crate::messages::data::DataResponse;
 // Re-exports
 pub use crate::msgbus::message::BusMessage;
 
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct ShareableMessageBus(Rc<RefCell<MessageBus>>);
 
 unsafe impl Send for ShareableMessageBus {}

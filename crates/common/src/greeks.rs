@@ -45,7 +45,7 @@ use crate::{cache::Cache, clock::Clock, msgbus};
 ///
 /// Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
 #[allow(dead_code)]
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct GreeksCalculator {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
