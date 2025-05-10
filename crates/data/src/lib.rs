@@ -31,12 +31,10 @@
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
-
-// Uncomment once we've added trivial debug impls everywhere
-// #![deny(missing_debug_implementations)]
 
 pub mod aggregation;
 pub mod client;
