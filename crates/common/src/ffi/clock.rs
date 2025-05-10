@@ -72,9 +72,15 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
     drop(clock); // Memory freed here
 }
 
+/// Registers the default callback handler for TestClock.
+///
 /// # Safety
 ///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+///
+/// # Panics
+///
+/// Panics if the `callback_ptr` is null or represents the Python `None` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_register_default_handler(
     clock: &mut TestClock_API,
@@ -130,6 +136,10 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+///
+/// # Panics
+///
+/// Panics if `callback_ptr` is null or if setting the timer fails.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_time_alert(
     clock: &mut TestClock_API,
@@ -158,6 +168,10 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+///
+/// # Panics
+///
+/// Panics if `callback_ptr` is null or represents the Python `None` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_timer(
     clock: &mut TestClock_API,
@@ -294,6 +308,10 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 /// # Safety
 ///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+///
+/// # Panics
+///
+/// Panics if `callback_ptr` is null or represents the Python `None` object.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_register_default_handler(
     clock: &mut LiveClock_API,

@@ -340,9 +340,15 @@ struct TestClock_API test_clock_new(void);
 void test_clock_drop(struct TestClock_API clock);
 
 /**
+ * Registers the default callback handler for TestClock.
+ *
  * # Safety
  *
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if the `callback_ptr` is null or represents the Python `None` object.
  */
 void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
@@ -365,6 +371,10 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
  *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or if setting the timer fails.
  */
 void test_clock_set_time_alert(struct TestClock_API *clock,
                                const char *name_ptr,
@@ -377,6 +387,10 @@ void test_clock_set_time_alert(struct TestClock_API *clock,
  *
  * - Assumes `name_ptr` is a valid C string pointer.
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or represents the Python `None` object.
  */
 void test_clock_set_timer(struct TestClock_API *clock,
                           const char *name_ptr,
@@ -419,6 +433,10 @@ void live_clock_drop(struct LiveClock_API clock);
  * # Safety
  *
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or represents the Python `None` object.
  */
 void live_clock_register_default_handler(struct LiveClock_API *clock, PyObject *callback_ptr);
 
@@ -558,13 +576,17 @@ enum LogColor log_color_from_cstr(const char *ptr);
  *
  * # Safety
  *
- * Should only be called once during an applications run, ideally at the
+ * Should only be called once during an application's run, ideally at the
  * beginning of the run.
  *
- * - Assume `directory_ptr` is either NULL or a valid C string pointer.
- * - Assume `file_name_ptr` is either NULL or a valid C string pointer.
- * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
- * - Assume `component_level_ptr` is either NULL or a valid C string pointer.
+ * - Assumes `directory_ptr` is either NULL or a valid C string pointer.
+ * - Assumes `file_name_ptr` is either NULL or a valid C string pointer.
+ * - Assumes `file_format_ptr` is either NULL or a valid C string pointer.
+ * - Assumes `component_level_ptr` is either NULL or a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if initializing the Rust logger fails.
  */
 struct LogGuard_API logging_init(TraderId_t trader_id,
                                  UUID4_t instance_id,

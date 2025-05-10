@@ -150,6 +150,9 @@ impl<T, F> Throttler<T, F> {
     /// Typically used to register callbacks:
     /// - to process buffered messages
     /// - to stop buffering
+    /// # Panics
+    ///
+    /// Panics if setting the time alert on the internal clock fails.
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();

@@ -18,8 +18,6 @@
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// TODO: Remove once error documentation is complete
-#![allow(clippy::missing_errors_doc)]
 
 use std::collections::HashMap;
 
@@ -408,53 +406,110 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if adding an order book fails.
     fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding a signal fails.
     fn add_signal(&self, signal: &Signal) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding custom data fails.
     fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding a quote tick fails.
     fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding a trade tick fails.
     fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding a bar fails.
     fn add_bar(&self, bar: &Bar) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if adding greeks data fails.
     fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if adding yield curve data fails.
     fn add_yield_curve(&self, yield_curve: &YieldCurveData) -> anyhow::Result<()> {
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if deleting actor state fails.
     fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if deleting strategy state fails.
     fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if indexing venue order ID fails.
     fn index_venue_order_id(
         &self,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if indexing order-position mapping fails.
     fn index_order_position(
         &self,
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if updating actor state fails.
     fn update_actor(&self) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if updating strategy state fails.
     fn update_strategy(&self) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if updating an account fails.
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if updating an order fails.
     fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if updating a position fails.
     fn update_position(&self, position: &Position) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if snapshotting order state fails.
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if snapshotting position state fails.
     fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
 
+    /// # Errors
+    ///
+    /// Returns an error if heartbeat recording fails.
     fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()>;
 }

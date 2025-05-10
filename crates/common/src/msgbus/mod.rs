@@ -71,6 +71,10 @@ pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
 }
 
 /// Gets the global message bus.
+///
+/// # Panics
+///
+/// Panics if the global message bus is uninitialized.
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     if MESSAGE_BUS.get().is_none() {
         // Initialize default message bus
