@@ -602,6 +602,18 @@ cdef class Order:
         return self.has_trigger_price_c()
 
     @property
+    def has_activation_price(self):
+        """
+        Return whether the order has a `activation_price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_activation_price_c()
+
+    @property
     def is_buy(self):
         """
         Return whether the order side is ``BUY``.
