@@ -317,7 +317,7 @@ cdef class TrailingStopLimitOrder(Order):
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
-            f"{'@ ' + str(self.activation_price.to_formatted_str()) + '-ACTIVATION ' if self.activation_price else ''}"
+            f"{'@ ' + self.activation_price.to_formatted_str() + '-ACTIVATION ' if self.activation_price else ''}"
             f"{'@ ' + self.trigger_price.to_formatted_str() + '-STOP ' if self.trigger_price else ''}"
             f"[{trigger_type_to_str(self.trigger_type)}] {self.price.to_formatted_str() if self.price else None}-LIMIT "
             f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
