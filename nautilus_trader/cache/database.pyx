@@ -634,7 +634,10 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef bytes event_bytes
         cdef OrderEvent event
         for event_bytes in result:
-            event = self._serializer.deserialize(event_bytes)
+            try:
+                event = self._serializer.deserialize(event_bytes)
+            except ValueError as e:
+                raise RuntimeError(f"Error deserializing event for {client_order_id!r}: {e!r}") from e
 
             # Check event integrity
             if event in order._events:
