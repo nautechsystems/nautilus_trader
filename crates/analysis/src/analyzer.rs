@@ -194,6 +194,14 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates total `PnL` including unrealized `PnL` if provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -229,6 +237,14 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates total `PnL` as a percentage of starting balance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -272,6 +288,14 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets all PnL-related performance statistics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL calculations fail, for example due to:
+    ///
+    /// - No currency specified for a multi-currency portfolio.
+    /// - Unrealized PnL currency not matching the specified currency.
+    /// - Specified currency not found in account balances.
     pub fn get_performance_stats_pnls(
         &self,
         currency: Option<&Currency>,
@@ -338,6 +362,10 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets formatted `PnL` statistics as strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL statistics calculation fails.
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,

@@ -123,6 +123,13 @@ pub struct SimulatedExchange {
 
 impl SimulatedExchange {
     /// Creates a new [`SimulatedExchange`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - `starting_balances` is empty.
+    /// - `base_currency` is `Some` but `starting_balances` contains multiple currencies.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,
@@ -213,6 +220,13 @@ impl SimulatedExchange {
         self.generate_fresh_account_state();
     }
 
+    /// Adds an instrument to the simulated exchange and initializes its matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         check_equal(
             &instrument.id().venue,

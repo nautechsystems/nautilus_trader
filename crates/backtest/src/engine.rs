@@ -178,6 +178,14 @@ impl BacktestEngine {
         todo!("implement change_fill_model")
     }
 
+    /// Adds an instrument to the backtest engine for the specified venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - The instrument's associated venue has not been added via `add_venue`.
+    /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
