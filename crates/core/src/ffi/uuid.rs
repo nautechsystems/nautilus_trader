@@ -30,7 +30,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///

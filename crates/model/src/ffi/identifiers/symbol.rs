@@ -23,7 +23,7 @@ use crate::identifiers::Symbol;
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
     let value = unsafe { cstr_as_str(ptr) };

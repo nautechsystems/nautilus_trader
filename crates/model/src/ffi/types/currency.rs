@@ -23,8 +23,9 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::Currency};
 ///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is a valid C string pointer.
-/// - Assumes `name_ptr` is a valid C string pointer.
+/// This function assumes:
+/// - `code_ptr` is a valid C string pointer.
+/// - `name_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *const c_char,
@@ -83,7 +84,7 @@ pub extern "C" fn currency_register(currency: Currency) {
 ///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+/// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
     let code = unsafe { cstr_as_str(code_ptr) };
@@ -98,7 +99,7 @@ pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
 ///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+/// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
     let code = unsafe { cstr_as_str(code_ptr) };

@@ -30,7 +30,7 @@ use crate::{
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -72,7 +72,7 @@ pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -100,7 +100,7 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -128,7 +128,7 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -156,7 +156,7 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///

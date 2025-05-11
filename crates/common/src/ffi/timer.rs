@@ -57,7 +57,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn time_event_new(
     name_ptr: *const c_char,

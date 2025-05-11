@@ -115,7 +115,7 @@ const char *unix_nanos_to_iso8601_millis_cstr(uint64_t timestamp_ns);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -128,7 +128,7 @@ uint8_t precision_from_cstr(const char *ptr);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -156,7 +156,7 @@ struct UUID4_t uuid4_new(void);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *

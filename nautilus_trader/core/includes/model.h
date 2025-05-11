@@ -1938,7 +1938,7 @@ enum AggregationSource bar_type_aggregation_source(const struct BarType_t *bar_t
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 const char *bar_type_check_parsing(const char *ptr);
 
@@ -1947,7 +1947,7 @@ const char *bar_type_check_parsing(const char *ptr);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct BarType_t bar_type_from_cstr(const char *ptr);
 
@@ -2032,8 +2032,10 @@ void orderbook_deltas_vec_drop(CVec v);
 /**
  * # Safety
  *
- * - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
- * - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+ * This function assumes:
+ * - `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+ * - `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+ *
  * # Panics
  *
  * Panics if any input pointer is null or if slice conversion for bids or asks fails.
@@ -2144,7 +2146,7 @@ const char *account_type_to_cstr(enum AccountType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2159,7 +2161,7 @@ const char *aggregation_source_to_cstr(enum AggregationSource value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2174,7 +2176,7 @@ const char *aggressor_side_to_cstr(enum AggressorSide value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2189,7 +2191,7 @@ const char *asset_class_to_cstr(enum AssetClass value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2204,7 +2206,7 @@ const char *instrument_class_to_cstr(enum InstrumentClass value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2219,7 +2221,7 @@ const char *bar_aggregation_to_cstr(uint8_t value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2234,7 +2236,7 @@ const char *book_action_to_cstr(enum BookAction value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2249,7 +2251,7 @@ const char *book_type_to_cstr(enum BookType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2264,7 +2266,7 @@ const char *contingency_type_to_cstr(enum ContingencyType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2279,7 +2281,7 @@ const char *currency_type_to_cstr(enum CurrencyType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2292,7 +2294,7 @@ enum CurrencyType currency_type_from_cstr(const char *ptr);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2309,7 +2311,8 @@ const char *liquidity_side_to_cstr(enum LiquiditySide value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `LiquiditySide` variant.
@@ -2323,7 +2326,7 @@ const char *market_status_to_cstr(enum MarketStatus value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -2338,7 +2341,8 @@ const char *market_status_action_to_cstr(enum MarketStatusAction value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
@@ -2352,7 +2356,8 @@ const char *oms_type_to_cstr(enum OmsType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `OmsType` variant.
@@ -2366,7 +2371,8 @@ const char *option_kind_to_cstr(enum OptionKind value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `OptionKind` variant.
@@ -2380,7 +2386,8 @@ const char *order_side_to_cstr(enum OrderSide value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `OrderSide` variant.
@@ -2394,7 +2401,8 @@ const char *order_status_to_cstr(enum OrderStatus value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `OrderStatus` variant.
@@ -2408,7 +2416,8 @@ const char *order_type_to_cstr(enum OrderType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `OrderType` variant.
@@ -2422,7 +2431,8 @@ const char *position_side_to_cstr(enum PositionSide value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `PositionSide` variant.
@@ -2436,7 +2446,8 @@ const char *price_type_to_cstr(enum PriceType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `PriceType` variant.
@@ -2450,7 +2461,8 @@ const char *record_flag_to_cstr(enum RecordFlag value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `RecordFlag` variant.
@@ -2464,7 +2476,8 @@ const char *time_in_force_to_cstr(enum TimeInForce value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `TimeInForce` variant.
@@ -2478,7 +2491,8 @@ const char *trading_state_to_cstr(enum TradingState value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `TradingState` variant.
@@ -2492,7 +2506,8 @@ const char *trailing_offset_type_to_cstr(enum TrailingOffsetType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
@@ -2506,7 +2521,8 @@ const char *trigger_type_to_cstr(enum TriggerType value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
  * # Panics
  *
  * Panics if the C string does not correspond to a valid `TriggerType` variant.
@@ -2516,7 +2532,7 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
 /**
  * # Safety
  *
- * - Assumes `reason_ptr` is a valid C string pointer.
+ * Assumes `reason_ptr` is a valid C string pointer.
  */
 struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       struct StrategyId_t strategy_id,
@@ -2567,7 +2583,7 @@ struct OrderAccepted_t order_accepted_new(struct TraderId_t trader_id,
 /**
  * # Safety
  *
- * - Assumes `reason_ptr` is a valid C string pointer.
+ * Assumes `reason_ptr` is a valid C string pointer.
  */
 struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
                                           struct StrategyId_t strategy_id,
@@ -2585,7 +2601,7 @@ struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct AccountId_t account_id_new(const char *ptr);
 
@@ -2596,7 +2612,7 @@ uint64_t account_id_hash(const struct AccountId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct ClientId_t client_id_new(const char *ptr);
 
@@ -2607,7 +2623,7 @@ uint64_t client_id_hash(const struct ClientId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct ClientOrderId_t client_order_id_new(const char *ptr);
 
@@ -2618,7 +2634,7 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct ComponentId_t component_id_new(const char *ptr);
 
@@ -2629,7 +2645,7 @@ uint64_t component_id_hash(const struct ComponentId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
@@ -2642,7 +2658,7 @@ struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t v
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 const char *instrument_id_check_parsing(const char *ptr);
 
@@ -2651,7 +2667,7 @@ const char *instrument_id_check_parsing(const char *ptr);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
@@ -2669,7 +2685,7 @@ uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct OrderListId_t order_list_id_new(const char *ptr);
 
@@ -2680,7 +2696,7 @@ uint64_t order_list_id_hash(const struct OrderListId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct PositionId_t position_id_new(const char *ptr);
 
@@ -2691,7 +2707,7 @@ uint64_t position_id_hash(const struct PositionId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct StrategyId_t strategy_id_new(const char *ptr);
 
@@ -2702,7 +2718,7 @@ uint64_t strategy_id_hash(const struct StrategyId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct Symbol_t symbol_new(const char *ptr);
 
@@ -2719,7 +2735,7 @@ const char *symbol_topic(const struct Symbol_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct TradeId_t trade_id_new(const char *ptr);
 
@@ -2732,7 +2748,7 @@ const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct TraderId_t trader_id_new(const char *ptr);
 
@@ -2743,7 +2759,7 @@ uint64_t trader_id_hash(const struct TraderId_t *id);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct Venue_t venue_new(const char *ptr);
 
@@ -2756,7 +2772,7 @@ uint8_t venue_is_synthetic(const struct Venue_t *venue);
  *
  * # Safety
  *
- * - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+ * Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
  *
  * # Panics
  *
@@ -2769,7 +2785,7 @@ uint8_t venue_code_exists(const char *code_ptr);
  *
  * # Safety
  *
- * - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+ * Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
  *
  * # Panics
  *
@@ -2782,7 +2798,7 @@ struct Venue_t venue_from_cstr_code(const char *code_ptr);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
  */
 struct VenueOrderId_t venue_order_id_new(const char *ptr);
 
@@ -2797,8 +2813,9 @@ uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
  *
  * # Safety
  *
- * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
- * - Assumes `formula_ptr` is a valid C string pointer.
+ * This function assumes:
+ * - `components_ptr` is a valid C string pointer of a JSON format list of strings.
+ * - `formula_ptr` is a valid C string pointer.
  */
 struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
                                                         uint8_t price_precision,
@@ -2828,7 +2845,7 @@ uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synt
 /**
  * # Safety
  *
- * - Assumes `formula_ptr` is a valid C string pointer.
+ * Assumes `formula_ptr` is a valid C string pointer.
  */
 uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_API *synth,
                                               const char *formula_ptr);
@@ -2836,7 +2853,7 @@ uint8_t synthetic_instrument_is_valid_formula(const struct SyntheticInstrument_A
 /**
  * # Safety
  *
- * - Assumes `formula_ptr` is a valid C string pointer.
+ * Assumes `formula_ptr` is a valid C string pointer.
  *
  * # Panics
  *
@@ -3006,8 +3023,9 @@ void vec_orders_drop(CVec v);
  *
  * # Safety
  *
- * - Assumes `code_ptr` is a valid C string pointer.
- * - Assumes `name_ptr` is a valid C string pointer.
+ * This function assumes:
+ * - `code_ptr` is a valid C string pointer.
+ * - `name_ptr` is a valid C string pointer.
  */
 struct Currency_t currency_from_py(const char *code_ptr,
                                    uint8_t precision,
@@ -3041,7 +3059,7 @@ void currency_register(struct Currency_t currency);
  *
  * # Safety
  *
- * - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+ * Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
  */
 uint8_t currency_exists(const char *code_ptr);
 
@@ -3054,7 +3072,7 @@ uint8_t currency_exists(const char *code_ptr);
  *
  * # Safety
  *
- * - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+ * Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
  */
 struct Currency_t currency_from_cstr(const char *code_ptr);
 

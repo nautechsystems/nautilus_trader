@@ -1098,14 +1098,14 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     const char *bar_type_check_parsing(const char *ptr);
 
     # Returns a [`BarType`] from a C string pointer.
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     BarType_t bar_type_from_cstr(const char *ptr);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
@@ -1182,8 +1182,10 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
-    # - Assumes `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
-    # - Assumes `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+    # This function assumes:
+    # - `bids` and `asks` are valid pointers to arrays of `BookOrder` of length 10.
+    # - `bid_counts` and `ask_counts` are valid pointers to arrays of `u32` of length 10.
+    #
     # # Panics
     #
     # Panics if any input pointer is null or if slice conversion for bids or asks fails.
@@ -1280,7 +1282,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1293,7 +1295,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1306,7 +1308,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1319,7 +1321,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1332,7 +1334,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1345,7 +1347,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1358,7 +1360,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1371,7 +1373,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1384,7 +1386,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1397,7 +1399,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1408,7 +1410,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1423,7 +1425,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `LiquiditySide` variant.
@@ -1435,7 +1438,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -1448,7 +1451,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
@@ -1460,7 +1464,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `OmsType` variant.
@@ -1472,7 +1477,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `OptionKind` variant.
@@ -1484,7 +1490,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `OrderSide` variant.
@@ -1496,7 +1503,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `OrderStatus` variant.
@@ -1508,7 +1516,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `OrderType` variant.
@@ -1520,7 +1529,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `PositionSide` variant.
@@ -1532,7 +1542,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `PriceType` variant.
@@ -1544,7 +1555,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `RecordFlag` variant.
@@ -1556,7 +1568,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `TimeInForce` variant.
@@ -1568,7 +1581,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `TradingState` variant.
@@ -1580,7 +1594,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
@@ -1592,7 +1607,8 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
+    #
     # # Panics
     #
     # Panics if the C string does not correspond to a valid `TriggerType` variant.
@@ -1600,7 +1616,7 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
-    # - Assumes `reason_ptr` is a valid C string pointer.
+    # Assumes `reason_ptr` is a valid C string pointer.
     OrderDenied_t order_denied_new(TraderId_t trader_id,
                                    StrategyId_t strategy_id,
                                    InstrumentId_t instrument_id,
@@ -1649,7 +1665,7 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
-    # - Assumes `reason_ptr` is a valid C string pointer.
+    # Assumes `reason_ptr` is a valid C string pointer.
     OrderRejected_t order_rejected_new(TraderId_t trader_id,
                                        StrategyId_t strategy_id,
                                        InstrumentId_t instrument_id,
@@ -1665,7 +1681,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     AccountId_t account_id_new(const char *ptr);
 
     uint64_t account_id_hash(const AccountId_t *id);
@@ -1674,7 +1690,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     ClientId_t client_id_new(const char *ptr);
 
     uint64_t client_id_hash(const ClientId_t *id);
@@ -1683,7 +1699,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     ClientOrderId_t client_order_id_new(const char *ptr);
 
     uint64_t client_order_id_hash(const ClientOrderId_t *id);
@@ -1692,7 +1708,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     ComponentId_t component_id_new(const char *ptr);
 
     uint64_t component_id_hash(const ComponentId_t *id);
@@ -1701,7 +1717,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
     uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *id);
@@ -1712,14 +1728,14 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     const char *instrument_id_check_parsing(const char *ptr);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
     # Returns an [`InstrumentId`] as a C string pointer.
@@ -1733,7 +1749,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     OrderListId_t order_list_id_new(const char *ptr);
 
     uint64_t order_list_id_hash(const OrderListId_t *id);
@@ -1742,7 +1758,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     PositionId_t position_id_new(const char *ptr);
 
     uint64_t position_id_hash(const PositionId_t *id);
@@ -1751,7 +1767,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     StrategyId_t strategy_id_new(const char *ptr);
 
     uint64_t strategy_id_hash(const StrategyId_t *id);
@@ -1760,7 +1776,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     Symbol_t symbol_new(const char *ptr);
 
     uint64_t symbol_hash(const Symbol_t *id);
@@ -1775,7 +1791,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     TradeId_t trade_id_new(const char *ptr);
 
     uint64_t trade_id_hash(const TradeId_t *id);
@@ -1786,7 +1802,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     TraderId_t trader_id_new(const char *ptr);
 
     uint64_t trader_id_hash(const TraderId_t *id);
@@ -1795,7 +1811,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     Venue_t venue_new(const char *ptr);
 
     uint64_t venue_hash(const Venue_t *id);
@@ -1806,7 +1822,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    # Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     #
     # # Panics
     #
@@ -1817,7 +1833,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    # Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     #
     # # Panics
     #
@@ -1828,7 +1844,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `ptr` is a valid C string pointer.
+    # Assumes `ptr` is a valid C string pointer.
     VenueOrderId_t venue_order_id_new(const char *ptr);
 
     uint64_t venue_order_id_hash(const VenueOrderId_t *id);
@@ -1841,8 +1857,9 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
-    # - Assumes `formula_ptr` is a valid C string pointer.
+    # This function assumes:
+    # - `components_ptr` is a valid C string pointer of a JSON format list of strings.
+    # - `formula_ptr` is a valid C string pointer.
     SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
                                                      uint8_t price_precision,
                                                      const char *components_ptr,
@@ -1870,13 +1887,13 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
-    # - Assumes `formula_ptr` is a valid C string pointer.
+    # Assumes `formula_ptr` is a valid C string pointer.
     uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
                                                   const char *formula_ptr);
 
     # # Safety
     #
-    # - Assumes `formula_ptr` is a valid C string pointer.
+    # Assumes `formula_ptr` is a valid C string pointer.
     #
     # # Panics
     #
@@ -2025,8 +2042,9 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `code_ptr` is a valid C string pointer.
-    # - Assumes `name_ptr` is a valid C string pointer.
+    # This function assumes:
+    # - `code_ptr` is a valid C string pointer.
+    # - `name_ptr` is a valid C string pointer.
     Currency_t currency_from_py(const char *code_ptr,
                                 uint8_t precision,
                                 uint16_t iso4217,
@@ -2056,7 +2074,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    # Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     uint8_t currency_exists(const char *code_ptr);
 
     # Converts a C string pointer to a `Currency` for FFI.
@@ -2067,7 +2085,7 @@ cdef extern from "../includes/model.h":
     #
     # # Safety
     #
-    # - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+    # Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
     Currency_t currency_from_cstr(const char *code_ptr);
 
     Money_t money_new(double amount, Currency_t currency);

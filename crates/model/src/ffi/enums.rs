@@ -34,7 +34,7 @@ pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -55,7 +55,7 @@ pub extern "C" fn aggregation_source_to_cstr(value: AggregationSource) -> *const
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -76,7 +76,7 @@ pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char 
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -97,7 +97,7 @@ pub extern "C" fn asset_class_to_cstr(value: AssetClass) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -118,7 +118,7 @@ pub extern "C" fn instrument_class_to_cstr(value: InstrumentClass) -> *const c_c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -139,7 +139,7 @@ pub extern "C" fn bar_aggregation_to_cstr(value: BarAggregation) -> *const c_cha
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -160,7 +160,7 @@ pub extern "C" fn book_action_to_cstr(value: BookAction) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -181,7 +181,7 @@ pub extern "C" fn book_type_to_cstr(value: BookType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -202,7 +202,7 @@ pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -223,7 +223,7 @@ pub extern "C" fn currency_type_to_cstr(value: CurrencyType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -268,7 +268,8 @@ pub extern "C" fn liquidity_side_to_cstr(value: LiquiditySide) -> *const c_char 
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `LiquiditySide` variant.
@@ -288,7 +289,7 @@ pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -309,7 +310,8 @@ pub extern "C" fn market_status_action_to_cstr(value: MarketStatusAction) -> *co
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
@@ -329,7 +331,8 @@ pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `OmsType` variant.
@@ -349,7 +352,8 @@ pub extern "C" fn option_kind_to_cstr(value: OptionKind) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `OptionKind` variant.
@@ -369,7 +373,8 @@ pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `OrderSide` variant.
@@ -389,7 +394,8 @@ pub extern "C" fn order_status_to_cstr(value: OrderStatus) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `OrderStatus` variant.
@@ -409,7 +415,8 @@ pub extern "C" fn order_type_to_cstr(value: OrderType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `OrderType` variant.
@@ -429,7 +436,8 @@ pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `PositionSide` variant.
@@ -449,7 +457,8 @@ pub extern "C" fn price_type_to_cstr(value: PriceType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `PriceType` variant.
@@ -469,7 +478,8 @@ pub extern "C" fn record_flag_to_cstr(value: RecordFlag) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `RecordFlag` variant.
@@ -489,7 +499,8 @@ pub extern "C" fn time_in_force_to_cstr(value: TimeInForce) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `TimeInForce` variant.
@@ -509,7 +520,8 @@ pub extern "C" fn trading_state_to_cstr(value: TradingState) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `TradingState` variant.
@@ -529,7 +541,8 @@ pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *co
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
@@ -549,7 +562,8 @@ pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
 /// # Panics
 ///
 /// Panics if the C string does not correspond to a valid `TriggerType` variant.
