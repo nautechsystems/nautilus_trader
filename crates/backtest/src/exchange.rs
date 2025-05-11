@@ -121,6 +121,12 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
 }
 
+impl std::fmt::Debug for SimulatedExchange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SimulatedExchange)).finish()
+    }
+}
+
 impl SimulatedExchange {
     /// Creates a new [`SimulatedExchange`] instance.
     ///

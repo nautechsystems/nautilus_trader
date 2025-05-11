@@ -23,6 +23,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -63,6 +64,12 @@ pub struct BacktestEngine {
     run_finished: Option<UnixNanos>,
     backtest_start: Option<UnixNanos>,
     backtest_end: Option<UnixNanos>,
+}
+
+impl Debug for BacktestEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BacktestEngine)).finish()
+    }
 }
 
 impl BacktestEngine {
