@@ -128,6 +128,11 @@ where
     }
 }
 
+/// Extracts the host name from the request URI.
+///
+/// # Panics
+///
+/// Panics if the request URI has no host component.
 fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets

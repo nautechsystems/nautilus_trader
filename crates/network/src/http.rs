@@ -203,6 +203,10 @@ pub struct HttpClient {
 
 impl HttpClient {
     /// Creates a new [`HttpClient`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any header key or value is invalid, or if building the underlying `reqwest::Client` fails.
     #[must_use]
     pub fn new(
         headers: HashMap<String, String>,
