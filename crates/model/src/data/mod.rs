@@ -225,6 +225,7 @@ impl From<InstrumentClose> for Data {
 // i128 and u128 is now FFI compatible. However, since the clippy lint
 // hasn't been removed yet. We'll suppress with #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn data_clone(data: &Data) -> Data {
     // Dummy function for cbindgen to export types

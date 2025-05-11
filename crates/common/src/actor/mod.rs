@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(unsafe_code)]
+
 use std::any::Any;
 
 use ustr::Ustr;

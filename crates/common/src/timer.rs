@@ -181,7 +181,9 @@ impl From<PyObject> for TimeEventCallback {
 }
 
 // SAFETY: Message handlers cannot be sent across thread boundaries
+#[allow(unsafe_code)]
 unsafe impl Send for TimeEventCallback {}
+#[allow(unsafe_code)]
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]

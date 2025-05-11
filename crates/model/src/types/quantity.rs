@@ -44,6 +44,7 @@ pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.

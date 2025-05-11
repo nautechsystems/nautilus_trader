@@ -44,10 +44,12 @@ pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
 
 /// The sentinel value for an unset or null price.
