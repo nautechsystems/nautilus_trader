@@ -28,6 +28,14 @@ pub fn hmac_signature(secret: &str, data: &str) -> String {
     hex::encode(signature.as_ref())
 }
 
+/// Signs `data` using RSA PKCS#1 v1.5 SHA-256 with the provided private key in PEM format.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty.
+/// - `private_key_pem` is not a valid PEM-encoded PKCS#8 RSA private key or cannot be parsed.
+/// - Signature generation fails due to key or cryptographic errors.
 pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String> {
     if data.is_empty() {
         anyhow::bail!("Query string cannot be empty");
@@ -46,6 +54,11 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
     Ok(BASE64_STANDARD.encode(&signature))
 }
 
+/// Signs `data` using Ed25519 with the provided private key seed.
+///
+/// # Errors
+///
+/// Returns an error if the provided private key seed is invalid or signature creation fails.
 pub fn ed25519_signature(private_key: &[u8], data: &str) -> anyhow::Result<String> {
     let key_pair =
         Ed25519KeyPair::from_seed_unchecked(private_key).map_err(|e| anyhow::anyhow!("{e:?}"))?;
