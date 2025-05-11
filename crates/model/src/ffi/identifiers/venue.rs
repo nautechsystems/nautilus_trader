@@ -23,7 +23,7 @@ use crate::{identifiers::Venue, venues::VENUE_MAP};
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
     let value = unsafe { cstr_as_str(ptr) };
@@ -44,7 +44,7 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 ///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+/// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 ///
 /// # Panics
 ///
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn venue_code_exists(code_ptr: *const c_char) -> u8 {
 ///
 /// # Safety
 ///
-/// - Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
+/// Assumes `code_ptr` is a valid NUL-terminated UTF-8 C string pointer.
 ///
 /// # Panics
 ///

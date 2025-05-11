@@ -76,7 +76,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 ///
 /// # Safety
 ///
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// Assumes `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -134,8 +134,9 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// This function assumes:
+/// - `name_ptr` is a valid C string pointer.
+/// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -166,8 +167,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// This function assumes:
+/// - `name_ptr` is a valid C string pointer.
+/// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -211,7 +213,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
 
 /// # Safety
 ///
-/// - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
+/// Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_advance_time(
     clock: &mut TestClock_API,
@@ -240,7 +242,7 @@ pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
+/// Assumes `name_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_next_time(
     clock: &mut TestClock_API,
@@ -252,7 +254,7 @@ pub unsafe extern "C" fn test_clock_next_time(
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
+/// Assumes `name_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_cancel_timer(
     clock: &mut TestClock_API,
@@ -307,7 +309,7 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 
 /// # Safety
 ///
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// Assumes `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -360,8 +362,9 @@ pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// This function assumes:
+/// - `name_ptr` is a valid C string pointer.
+/// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -394,8 +397,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+/// This function assumes:
+/// - `name_ptr` is a valid C string pointer.
+/// - `callback_ptr` is a valid `PyCallable` pointer.
 ///
 /// # Panics
 ///
@@ -442,7 +446,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
+/// Assumes `name_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_next_time(
     clock: &mut LiveClock_API,
@@ -454,7 +458,7 @@ pub unsafe extern "C" fn live_clock_next_time(
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is a valid C string pointer.
+/// Assumes `name_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_cancel_timer(
     clock: &mut LiveClock_API,

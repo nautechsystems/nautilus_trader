@@ -76,10 +76,11 @@ impl DerefMut for LogGuard_API {
 /// Should only be called once during an application's run, ideally at the
 /// beginning of the run.
 ///
-/// - Assumes `directory_ptr` is either NULL or a valid C string pointer.
-/// - Assumes `file_name_ptr` is either NULL or a valid C string pointer.
-/// - Assumes `file_format_ptr` is either NULL or a valid C string pointer.
-/// - Assumes `component_level_ptr` is either NULL or a valid C string pointer.
+/// This function assumes:
+/// - `directory_ptr` is either NULL or a valid C string pointer.
+/// - `file_name_ptr` is either NULL or a valid C string pointer.
+/// - `file_format_ptr` is either NULL or a valid C string pointer.
+/// - `component_level_ptr` is either NULL or a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -143,8 +144,9 @@ pub unsafe extern "C" fn logging_init(
 ///
 /// # Safety
 ///
-/// - Assumes `component_ptr` is a valid C string pointer.
-/// - Assumes `message_ptr` is a valid C string pointer.
+/// This function assumes:
+/// - `component_ptr` is a valid C string pointer.
+/// - `message_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn logger_log(
     level: LogLevel,
@@ -162,8 +164,9 @@ pub unsafe extern "C" fn logger_log(
 ///
 /// # Safety
 ///
-/// - Assumes `machine_id_ptr` is a valid C string pointer.
-/// - Assumes `component_ptr` is a valid C string pointer.
+/// This function assumes:
+/// - `machine_id_ptr` is a valid C string pointer.
+/// - `component_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_log_header(
     trader_id: TraderId,
@@ -180,7 +183,7 @@ pub unsafe extern "C" fn logging_log_header(
 ///
 /// # Safety
 ///
-/// - Assumes `component_ptr` is a valid C string pointer.
+/// Assumes `component_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn logging_log_sysinfo(component_ptr: *const c_char) {
     let component = unsafe { cstr_to_ustr(component_ptr) };

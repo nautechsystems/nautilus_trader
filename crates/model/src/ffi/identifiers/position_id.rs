@@ -23,7 +23,7 @@ use crate::identifiers::position_id::PositionId;
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
     let value = unsafe { cstr_as_str(ptr) };

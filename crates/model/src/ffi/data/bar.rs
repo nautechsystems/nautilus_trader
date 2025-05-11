@@ -163,7 +163,7 @@ pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> Aggregation
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_char {
     let value = unsafe { cstr_as_str(ptr) };
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_from_cstr(ptr: *const c_char) -> BarType {
     let value = unsafe { cstr_as_str(ptr) };

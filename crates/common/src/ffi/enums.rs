@@ -28,7 +28,7 @@ pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_cha
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -49,7 +49,7 @@ pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -70,7 +70,7 @@ pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
@@ -91,7 +91,7 @@ pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///

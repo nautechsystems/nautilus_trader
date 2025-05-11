@@ -27,7 +27,7 @@ use crate::{
 
 /// # Safety
 ///
-/// - Assumes `reason_ptr` is a valid C string pointer.
+/// Assumes `reason_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_denied_new(
     trader_id: TraderId,
@@ -148,7 +148,7 @@ pub extern "C" fn order_accepted_new(
 
 /// # Safety
 ///
-/// - Assumes `reason_ptr` is a valid C string pointer.
+/// Assumes `reason_ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_rejected_new(
     trader_id: TraderId,
