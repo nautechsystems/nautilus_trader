@@ -17,6 +17,7 @@ use nautilus_common::{clock::TestClock, timer::TimeEventHandlerV2};
 use nautilus_core::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
+#[derive(Debug)]
 pub struct TimeEventAccumulator {
     event_handlers: Vec<TimeEventHandlerV2>,
 }

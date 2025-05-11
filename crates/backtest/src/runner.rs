@@ -93,6 +93,7 @@ pub trait Runner {
     fn run(&mut self, engine: &mut DataEngine);
 }
 
+#[derive(Debug)]
 pub struct SyncRunner {
     pub clock: Rc<RefCell<TestClock>>,
 }

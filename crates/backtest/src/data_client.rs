@@ -38,6 +38,7 @@ use nautilus_common::{
 use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
+#[derive(Debug)]
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
