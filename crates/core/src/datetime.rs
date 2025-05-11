@@ -14,12 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Common data and time functions.
+
 #![allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )]
-
 use std::convert::TryFrom;
 
 use chrono::{DateTime, Datelike, NaiveDate, SecondsFormat, TimeDelta, Utc, Weekday};
@@ -49,6 +49,7 @@ pub const WEEKDAYS: [Weekday; 5] = [
 
 /// Converts seconds to nanoseconds (ns).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
     let nanos = secs * NANOSECONDS_IN_SECOND as f64;
@@ -58,6 +59,7 @@ pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
 
 /// Converts seconds to milliseconds (ms).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
     let millis = secs * MILLISECONDS_IN_SECOND as f64;
@@ -67,6 +69,7 @@ pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
     let nanos = millis * NANOSECONDS_IN_MILLISECOND as f64;
@@ -76,6 +79,7 @@ pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
 
 /// Converts microseconds (μs) to nanoseconds (ns).
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
     let nanos = micros * NANOSECONDS_IN_MICROSECOND as f64;
@@ -85,6 +89,7 @@ pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
 
 /// Converts nanoseconds (ns) to seconds.
 #[allow(clippy::cast_precision_loss)]
+#[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
     let seconds = nanos / NANOSECONDS_IN_SECOND;
@@ -95,12 +100,14 @@ pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub const extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }

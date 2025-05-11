@@ -54,7 +54,10 @@ pub use crate::msgbus::message::BusMessage;
 #[derive(Debug)]
 pub struct ShareableMessageBus(Rc<RefCell<MessageBus>>);
 
+// SAFETY: Cannot be sent across thread boundaries
+#[allow(unsafe_code)]
 unsafe impl Send for ShareableMessageBus {}
+#[allow(unsafe_code)]
 unsafe impl Sync for ShareableMessageBus {}
 
 static MESSAGE_BUS: OnceLock<ShareableMessageBus> = OnceLock::new();
@@ -343,7 +346,9 @@ pub struct MessageBus {
 }
 
 // SAFETY: Message bus is not meant to be passed between threads
+#[allow(unsafe_code)]
 unsafe impl Send for MessageBus {}
+#[allow(unsafe_code)]
 unsafe impl Sync for MessageBus {}
 
 impl MessageBus {

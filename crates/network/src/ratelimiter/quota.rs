@@ -174,6 +174,7 @@ impl Quota {
     /// This is useful mainly for [`crate::middleware::RateLimitingMiddleware`]
     /// where custom code may want to construct information based on
     /// the amount of burst balance remaining.
+    #[allow(unsafe_code)]
     pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
         // Safety assurance: As we're calling this from this crate
         // only, and we do not allow creating a Gcra from 0
