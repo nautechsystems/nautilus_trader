@@ -92,6 +92,11 @@ impl LinearRegression {
         }
     }
 
+    /// Updates the linear regression with a new data point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is insufficient data to compute the regression (empty history).
     pub fn update_raw(&mut self, close: f64) {
         self.inputs.push(close);
 
