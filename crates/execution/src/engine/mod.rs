@@ -25,6 +25,7 @@ pub mod config;
 use std::{
     cell::{RefCell, RefMut},
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
     time::SystemTime,
 };
@@ -73,6 +74,12 @@ pub struct ExecutionEngine {
     external_order_claims: HashMap<InstrumentId, StrategyId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
+}
+
+impl Debug for ExecutionEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ExecutionEngine").finish()
+    }
 }
 
 impl ExecutionEngine {

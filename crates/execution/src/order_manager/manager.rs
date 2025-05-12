@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
@@ -48,6 +48,12 @@ pub struct OrderManager {
     cancel_order_handler: Option<CancelOrderHandlerAny>,
     modify_order_handler: Option<ModifyOrderHandlerAny>,
     submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
+}
+
+impl Debug for OrderManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrderManager").finish()
+    }
 }
 
 impl OrderManager {

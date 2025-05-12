@@ -99,6 +99,7 @@ pub trait ModifyOrderHandler {
     fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity);
 }
 
+#[derive(Debug)]
 pub enum ModifyOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

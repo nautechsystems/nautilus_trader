@@ -22,6 +22,7 @@ use std::{
     cell::RefCell,
     cmp::min,
     collections::HashMap,
+    fmt::Debug,
     ops::{Add, Sub},
     rc::Rc,
 };
@@ -101,6 +102,12 @@ pub struct OrderMatchingEngine {
     account_ids: HashMap<TraderId, AccountId>,
     cached_filled_qty: HashMap<ClientOrderId, Quantity>,
     ids_generator: IdsGenerator,
+}
+
+impl Debug for OrderMatchingEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrderMatchingEngine").finish()
+    }
 }
 
 impl OrderMatchingEngine {

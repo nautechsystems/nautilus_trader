@@ -21,6 +21,7 @@ use ustr::Ustr;
 
 use crate::{messages::TradingCommand, order_emulator::emulator::OrderEmulator};
 
+#[derive(Debug)]
 pub struct OrderEmulatorExecuteHandler {
     pub id: Ustr,
     pub emulator: Rc<RefCell<OrderEmulator>>,
@@ -45,6 +46,7 @@ impl MessageHandler for OrderEmulatorExecuteHandler {
     }
 }
 
+#[derive(Debug)]
 pub struct OrderEmulatorOnEventHandler {
     pub id: Ustr,
     pub emulator: Rc<RefCell<OrderEmulator>>,

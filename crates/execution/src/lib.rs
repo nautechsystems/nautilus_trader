@@ -31,11 +31,9 @@
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
 // #![deny(clippy::missing_errors_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
-
-// Uncomment once we've added trivial debug impls everywhere
-// #![deny(missing_debug_implementations)]
 
 pub mod client;
 pub mod engine;
