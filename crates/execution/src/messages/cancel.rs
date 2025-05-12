@@ -79,6 +79,7 @@ pub trait CancelOrderHandler {
     fn handle_cancel_order(&self, order: &OrderAny);
 }
 
+#[derive(Debug)]
 pub enum CancelOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

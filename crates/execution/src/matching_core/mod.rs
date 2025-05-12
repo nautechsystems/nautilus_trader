@@ -34,7 +34,7 @@ use crate::matching_core::handlers::{
 };
 
 /// A generic order matching core.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrderMatchingCore {
     /// The instrument ID for the matching core.
     pub instrument_id: InstrumentId,

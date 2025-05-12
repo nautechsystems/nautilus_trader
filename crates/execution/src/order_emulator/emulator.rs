@@ -16,6 +16,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -60,6 +61,12 @@ pub struct OrderEmulator {
     subscribed_strategies: HashSet<StrategyId>,
     monitored_positions: HashSet<PositionId>,
     on_event_handler: Option<ShareableMessageHandler>,
+}
+
+impl Debug for OrderEmulator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OrderEmulator").finish()
+    }
 }
 
 impl OrderEmulator {

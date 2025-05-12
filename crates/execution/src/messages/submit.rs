@@ -93,6 +93,7 @@ pub trait SubmitOrderHandler {
     fn handle_submit_order(&self, command: SubmitOrder);
 }
 
+#[derive(Debug)]
 pub enum SubmitOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

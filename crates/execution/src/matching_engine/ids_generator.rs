@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::cache::Cache;
 use nautilus_model::{
@@ -33,6 +33,12 @@ pub struct IdsGenerator {
     position_count: usize,
     order_count: usize,
     execution_count: usize,
+}
+
+impl Debug for IdsGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IdsGenerator").finish()
+    }
 }
 
 impl IdsGenerator {

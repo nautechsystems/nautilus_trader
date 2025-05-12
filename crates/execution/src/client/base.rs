@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
@@ -59,6 +59,12 @@ pub struct BaseExecutionClient {
     pub is_connected: bool,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+}
+
+impl Debug for BaseExecutionClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BaseExecutionClient").finish()
+    }
 }
 
 impl BaseExecutionClient {
