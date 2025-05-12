@@ -31,8 +31,9 @@
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_debug_implementations)]
 // #![deny(clippy::missing_errors_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod arrow;
 pub mod enums;
