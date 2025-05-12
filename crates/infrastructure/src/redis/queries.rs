@@ -59,6 +59,7 @@ const INDEX_POSITIONS: &str = "index:positions";
 const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
 const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
+#[derive(Debug)]
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {

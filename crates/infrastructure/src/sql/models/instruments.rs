@@ -35,17 +35,40 @@ use ustr::Ustr;
 
 use crate::sql::models::enums::AssetClassModel;
 
+#[derive(Debug)]
 pub struct InstrumentAnyModel(pub InstrumentAny);
+
+#[derive(Debug)]
 pub struct BettingInstrumentModel(pub BettingInstrument);
+
+#[derive(Debug)]
 pub struct BinaryOptionModel(pub BinaryOption);
+
+#[derive(Debug)]
 pub struct CryptoFutureModel(pub CryptoFuture);
+
+#[derive(Debug)]
 pub struct CryptoOptionModel(pub CryptoOption);
+
+#[derive(Debug)]
 pub struct CryptoPerpetualModel(pub CryptoPerpetual);
+
+#[derive(Debug)]
 pub struct CurrencyPairModel(pub CurrencyPair);
+
+#[derive(Debug)]
 pub struct EquityModel(pub Equity);
+
+#[derive(Debug)]
 pub struct FuturesContractModel(pub FuturesContract);
+
+#[derive(Debug)]
 pub struct FuturesSpreadModel(pub FuturesSpread);
+
+#[derive(Debug)]
 pub struct OptionContractModel(pub OptionContract);
+
+#[derive(Debug)]
 pub struct OptionSpreadModel(pub OptionSpread);
 
 impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {

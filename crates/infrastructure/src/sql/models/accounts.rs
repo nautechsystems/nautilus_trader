@@ -21,6 +21,7 @@ use nautilus_model::{
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
+#[derive(Debug)]
 pub struct AccountEventModel(pub AccountState);
 
 impl<'r> FromRow<'r, PgRow> for AccountEventModel {
