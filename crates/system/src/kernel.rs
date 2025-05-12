@@ -33,6 +33,7 @@ use ustr::Ustr;
 use crate::config::NautilusKernelConfig;
 
 /// Provides the core Nautilus system kernel.
+#[derive(Debug)]
 pub struct NautilusKernel {
     pub name: Ustr,
     pub instance_id: UUID4,

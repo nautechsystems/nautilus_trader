@@ -32,6 +32,13 @@ use serde_json::Value;
 ///
 /// If the file does not exist, it downloads the file from the specified `url` and updates the
 /// checksums file (if provided) with the calculated SHA-256 checksum of the downloaded file.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The HTTP request cannot be sent or returns a non-success status code.
+/// - Any I/O operation fails during file creation, reading, or writing.
+/// - Checksum verification or JSON parsing fails.
 pub fn ensure_file_exists_or_download_http(
     filepath: &Path,
     url: &str,
