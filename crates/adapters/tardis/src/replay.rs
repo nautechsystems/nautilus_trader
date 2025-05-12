@@ -417,7 +417,7 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
+    match write_batch_to_parquet(batch, &filepath, None, None) {
         Ok(()) => tracing::info!("File written: {filepath:?}"),
         Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }
@@ -450,7 +450,7 @@ fn write_batch(
     path: &Path,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
+    match write_batch_to_parquet(batch, &filepath, None, None) {
         Ok(()) => tracing::info!("File written: {filepath:?}"),
         Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }

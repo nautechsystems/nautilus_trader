@@ -1060,12 +1060,6 @@ class OrderType(Enum):
     TRAILING_STOP_MARKET = "TRAILING_STOP_MARKET"
     TRAILING_STOP_LIMIT = "TRAILING_STOP_LIMIT"
 
-class ParquetWriteMode(Enum):
-    APPEND = "APPEND"
-    PREPEND = "PREPEND"
-    OVERWRITE = "OVERWRITE"
-    NEWFILE = "NEWFILE"
-
 class PositionSide(Enum):
     FLAT = "FLAT"
     LONG = "LONG"
@@ -3617,42 +3611,75 @@ class ParquetDataCatalogV2:
     def __init__(self, base_path: str, batch_size: int | None = None) -> None: ...
     def write_quote_ticks(
         self,
-        data: list[QuoteTick],
-        write_mode: ParquetWriteMode | None = None
+        data: list[QuoteTick]
     ) -> str: ...
     def write_trade_ticks(
         self,
-        data: list[TradeTick],
-        write_mode: ParquetWriteMode | None = None
+        data: list[TradeTick]
     ) -> str: ...
     def write_order_book_deltas(
         self,
-        data: list[OrderBookDelta],
-        write_mode: ParquetWriteMode | None = None
+        data: list[OrderBookDelta]
     ) -> str: ...
     def write_bars(
         self,
-        data: list[Bar],
-        write_mode: ParquetWriteMode | None = None
+        data: list[Bar]
     ) -> str: ...
     def write_order_book_depths(
         self,
-        data: list[OrderBookDepth10],
-        write_mode: ParquetWriteMode | None = None
+        data: list[OrderBookDepth10]
     ) -> str: ...
-    def consolidate_catalog(self) -> None: ...
-    def consolidate_data(self, type_name: str, instrument_id: str | None = None) -> None: ...
-    def query_timestamp_bound(
+    def write_mark_price_updates(
+        self,
+        data: list[MarkPriceUpdate]
+    ) -> str: ...
+    def write_index_price_updates(
+        self,
+        data: list[IndexPriceUpdate]
+    ) -> str: ...
+    def consolidate_catalog(self, start: int | None = None, end: int | None = None) -> None: ...
+    def consolidate_data(
+        self,
+        type_name: str,
+        instrument_id: str | None = None,
+        start: int | None = None,
+        end: int | None = None
+    ) -> None: ...
+    def query_last_timestamp(
+        self,
+        data_cls: str,
+        instrument_id: str | None = None
+    ) -> int | None: ...
+    def query_files(
+        self,
+        type_name: str,
+        instrument_ids: list[str] | None = None
+    ) -> list[str]: ...
+    def get_intervals(
+        self,
+        data_cls: str,
+        instrument_id: str | None = None
+    ) -> list[tuple[int, int]]: ...
+    def get_missing_intervals_for_request(
+        self,
+        start: int,
+        end: int,
+        data_cls: str,
+        instrument_id: str | None = None
+    ) -> list[tuple[int, int]]: ...
+    def reset_data_file_names(
+        self,
+        data_cls: str,
+        instrument_id: str | None = None
+    ) -> None: ...
+    def reset_catalog_file_names(self) -> None: ...
+    def extend_file_name(
         self,
         data_cls: str,
         instrument_id: str | None = None,
-        is_last: bool = True
-    ) -> int | None: ...
-    def query_parquet_files(
-        self,
-        type_name: str,
-        instrument_id: str | None = None
-    ) -> list[str]: ...
+        start: int | None = None,
+        end: int | None = None
+    ) -> None: ...
 
 ###################################################################################################
 # Network

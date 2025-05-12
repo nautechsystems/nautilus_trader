@@ -37,7 +37,6 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod arrow;
-pub mod enums;
 pub mod parquet;
 
 #[cfg(feature = "python")]

@@ -280,7 +280,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
             chunk = list(single_type)
-
             self._write_chunk(
                 data=chunk,
                 data_cls=name_to_cls[cls_name],
@@ -593,7 +592,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             return
 
         for file in parquet_files:
-            interval = self._parse_filename_timestamps(file)
+            interval = _parse_filename_timestamps(file)
 
             if (
                 interval
@@ -975,10 +974,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         glob_path = f"{self.path}/data/{file_prefix}/**/*.parquet"
         files: list[str] = self.fs.glob(glob_path)
 
-        if self.show_query_paths:
-            for file in files:
-                print(file)
-
         instrument_ids = instrument_ids or bar_types
 
         if instrument_ids:
@@ -991,7 +986,11 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         used_start: pd.Timestamp | None = time_object_to_dt(start)
         used_end: pd.Timestamp | None = time_object_to_dt(end)
-        files = [fn for fn in files if self._query_intersects_filename(fn, used_start, used_end)]
+        files = [fn for fn in files if _query_intersects_filename(fn, used_start, used_end)]
+
+        if self.show_query_paths:
+            for file in files:
+                print(file)
 
         return files
 
@@ -1004,6 +1003,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = pa.Table.from_pandas(table)
 
         data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
+
         # TODO (bm/cs) remove when pyo3 objects are used everywhere.
         module = data[0].__class__.__module__
 
@@ -1030,10 +1030,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         for cls in subclasses:
             intervals = self.get_intervals(cls, instrument_id)
 
-            if not intervals:
-                continue
-
-            return time_object_to_dt(intervals[-1][1])
+            if intervals:
+                return time_object_to_dt(intervals[-1][1])
 
         return None
 
@@ -1128,7 +1126,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         intervals = []
 
         for file in parquet_files:
-            interval = self._parse_filename_timestamps(file)
+            interval = _parse_filename_timestamps(file)
 
             if interval:
                 intervals.append(interval)
@@ -1136,35 +1134,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         intervals.sort(key=lambda x: x[0])
 
         return intervals
-
-    def _query_intersects_filename(
-        self,
-        filename: str,
-        start: pd.Timestamp | None,
-        end: pd.Timestamp | None,
-    ) -> bool:
-        file_interval = self._parse_filename_timestamps(filename)
-
-        if not file_interval:
-            return True
-
-        file_start, file_end = file_interval
-
-        return (start is None or start.value <= file_end) and (
-            end is None or file_start <= end.value
-        )
-
-    def _parse_filename_timestamps(self, filename: str) -> tuple[int, int] | None:
-        base_filename = os.path.splitext(os.path.basename(filename))[0]
-        match = re.match(r"(\d+)-(\d+)", base_filename)
-
-        if not match:
-            return None
-
-        first_ts = int(match.group(1))
-        last_ts = int(match.group(2))
-
-        return (first_ts, last_ts)
 
     def _make_path(
         self,
@@ -1403,6 +1372,34 @@ class ParquetDataCatalog(BaseDataCatalog):
         all_data.sort(key=lambda x: x.ts_init)
         used_catalog = self if other_catalog is None else other_catalog
         used_catalog.write_data(all_data)
+
+
+def _query_intersects_filename(
+    filename: str,
+    start: pd.Timestamp | None,
+    end: pd.Timestamp | None,
+) -> bool:
+    file_interval = _parse_filename_timestamps(filename)
+
+    if not file_interval:
+        return True
+
+    file_start, file_end = file_interval
+
+    return (start is None or start.value <= file_end) and (end is None or file_start <= end.value)
+
+
+def _parse_filename_timestamps(filename: str) -> tuple[int, int] | None:
+    base_filename = os.path.splitext(os.path.basename(filename))[0]
+    match = re.match(r"(\d+)-(\d+)", base_filename)
+
+    if not match:
+        return None
+
+    first_ts = int(match.group(1))
+    last_ts = int(match.group(2))
+
+    return (first_ts, last_ts)
 
 
 def _min_max_from_parquet_metadata(file_path: str, column_name: str) -> tuple[int, int]:

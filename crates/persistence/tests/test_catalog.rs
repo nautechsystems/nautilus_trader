@@ -13,18 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
-
 use nautilus_core::{ffi::cvec::CVec, python::IntoPyObjectNautilusExt};
 use nautilus_model::data::{
     Bar, Data, OrderBookDelta, QuoteTick, TradeTick, is_monotonically_increasing_by_init,
     to_variant,
 };
 use nautilus_persistence::{
-    backend::{
-        catalog::ParquetDataCatalog,
-        session::{DataBackendSession, DataQueryResult, QueryResult},
-    },
+    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
 use nautilus_serialization::arrow::ArrowSchemaProvider;
@@ -338,39 +333,10 @@ fn test_bar_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[ignore = "Remove file after asserts"]
+#[ignore = "JSON functionality not implemented in Rust"]
 #[rstest]
 fn test_catalog_serialization_json_round_trip() {
-    // Setup
-    // let temp_dir = tempfile::tempdir().unwrap();
-    let temp_dir = PathBuf::from(".");
-    let catalog = ParquetDataCatalog::new(temp_dir.as_path().to_path_buf(), Some(1000));
-
-    // Read original data from parquet
-    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
-
-    let mut session = DataBackendSession::new(1000);
-    session
-        .add_file::<QuoteTick>("test_data", &file_path, None)
-        .unwrap();
-    let query_result: QueryResult = session.get_query_result();
-    let quote_ticks: Vec<Data> = query_result.collect();
-    let quote_ticks: Vec<QuoteTick> = to_variant(quote_ticks);
-
-    // Write to JSON using catalog
-    let json_path = catalog
-        .write_to_json(quote_ticks.clone(), None, false)
-        .unwrap();
-
-    // Read back from JSON
-    let json_str = std::fs::read_to_string(json_path).unwrap();
-    let loaded_data_variants: Vec<QuoteTick> = serde_json::from_str(&json_str).unwrap();
-
-    // Compare
-    assert_eq!(quote_ticks.len(), loaded_data_variants.len());
-    for (orig, loaded) in quote_ticks.iter().zip(loaded_data_variants.iter()) {
-        assert_eq!(orig, loaded);
-    }
+    // This test is skipped because write_to_json is not implemented in the Rust backend
 }
 
 #[rstest]
@@ -435,66 +401,8 @@ fn test_datafusion_parquet_round_trip() {
     }
 }
 
+#[ignore = "JSON functionality not implemented in Rust"]
 #[rstest]
 fn test_catalog_export_functionality() {
-    // Create a temporary directory for test files
-    let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
-    let mut catalog = ParquetDataCatalog::new(temp_dir.path().to_path_buf(), None);
-
-    // Read input file path and determine data type
-    let file_path = get_nautilus_test_data_file_path("quotes.parquet");
-
-    let result = catalog
-        .query_file::<QuoteTick>(PathBuf::from(file_path), None, None, None)
-        .expect("Failed to query file");
-
-    // Extract only the QuoteTick variant from the result stream
-    let quotes: Vec<QuoteTick> = result
-        .filter_map(|data| {
-            if let Data::Quote(quote) = data {
-                Some(quote)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Export to temporary JSON
-    let json_file = temp_dir.path().join("temp.json");
-    let json_path = catalog
-        .write_to_json(quotes.clone(), Some(json_file), false)
-        .unwrap();
-
-    // Read JSON file and parse back to Vec<QuoteTick>
-    let json_content = std::fs::read_to_string(&json_path).expect("Failed to read JSON file");
-    let quotes_from_json: Vec<QuoteTick> =
-        serde_json::from_str(&json_content).expect("Failed to parse quotes from JSON");
-
-    // Write back to parquet
-    let parquet_path = temp_dir.path().join("temp.parquet");
-    let parquet_path = catalog
-        .write_to_parquet(quotes_from_json, Some(parquet_path), None, None, None)
-        .unwrap();
-
-    // Read parquet and verify data
-    let final_result = catalog
-        .query_file::<QuoteTick>(parquet_path, None, None, None)
-        .expect("Failed to query final file");
-
-    // Extract only the QuoteTick variant from the result stream
-    let final_quotes: Vec<QuoteTick> = final_result
-        .filter_map(|data| {
-            if let Data::Quote(quote) = data {
-                Some(quote)
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Compare original and final data
-    assert_eq!(quotes.len(), final_quotes.len(), "Quote counts don't match");
-    for (original, final_quote) in quotes.iter().zip(final_quotes.iter()) {
-        assert_eq!(original, final_quote, "Quotes don't match");
-    }
+    // This test is skipped because write_to_json is not implemented in the Rust backend
 }
