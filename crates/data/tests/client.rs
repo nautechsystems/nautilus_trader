@@ -24,8 +24,11 @@ use nautilus_common::{
     messages::{
         SubscribeCommand, UnsubscribeCommand,
         data::{
+            DataCommand,
             // Request commands
             RequestBars,
+            RequestBookSnapshot,
+            RequestCommand,
             RequestData,
             RequestInstrument,
             RequestInstruments,
@@ -1373,18 +1376,32 @@ fn test_request_data(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let data_type = DataType::new("ReqType", None);
     let req = RequestData {
         client_id,
-        data_type: data_type,
+        data_type,
         request_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
     };
     adapter.request_data(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Data(req.clone()))
+    );
 }
 
 #[rstest]
@@ -1394,7 +1411,14 @@ fn test_request_instrument(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1408,6 +1432,13 @@ fn test_request_instrument(
         None,
     );
     adapter.request_instrument(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Instrument(req.clone()))
+    );
 }
 
 #[rstest]
@@ -1417,7 +1448,15 @@ fn test_request_instruments(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    // record request commands sent to the client
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let req = RequestInstruments::new(
@@ -1430,6 +1469,49 @@ fn test_request_instruments(
         None,
     );
     adapter.request_instruments(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Instruments(req.clone()))
+    );
+}
+
+#[rstest]
+fn test_request_book_snapshot(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let inst_id = audusd_sim().id;
+    let req = RequestBookSnapshot::new(
+        inst_id,
+        None, // depth
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    adapter.request_book_snapshot(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::BookSnapshot(req.clone()))
+    );
 }
 
 #[rstest]
@@ -1439,7 +1521,14 @@ fn test_request_quotes(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1454,6 +1543,13 @@ fn test_request_quotes(
         None,
     );
     adapter.request_quotes(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Quotes(req.clone()))
+    );
 }
 
 #[rstest]
@@ -1463,7 +1559,14 @@ fn test_request_trades(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let inst_id = audusd_sim().id;
@@ -1478,6 +1581,13 @@ fn test_request_trades(
         None,
     );
     adapter.request_trades(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Trades(req.clone()))
+    );
 }
 
 #[rstest]
@@ -1487,7 +1597,14 @@ fn test_request_bars(
     client_id: ClientId,
     venue: Venue,
 ) {
-    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock.clone(),
+        cache.clone(),
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let bar_type: BarType = "AUDUSD.SIM-1-MINUTE-LAST-INTERNAL".into();
@@ -1502,4 +1619,11 @@ fn test_request_bars(
         None,
     );
     adapter.request_bars(&req).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::Bars(req.clone()))
+    );
 }
