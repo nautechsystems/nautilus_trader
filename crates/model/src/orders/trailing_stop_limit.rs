@@ -613,6 +613,9 @@ impl From<OrderInitialized> for TrailingStopLimitOrder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+    use rust_decimal_macros::dec;
+
     use super::*;
     use crate::{
         enums::{TimeInForce, TrailingOffsetType, TriggerType},
@@ -622,8 +625,6 @@ mod tests {
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
-    use rstest::rstest;
-    use rust_decimal_macros::dec;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
@@ -753,7 +754,6 @@ mod tests {
         assert_eq!(accepted_order.quantity(), updated_quantity);
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
     }
-
 
     #[test]
     fn test_trailing_stop_limit_order_trigger_instrument_id() {

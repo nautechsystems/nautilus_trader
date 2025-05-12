@@ -589,6 +589,10 @@ impl From<OrderInitialized> for TrailingStopMarketOrder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+
     use super::*;
     use crate::{
         enums::{TimeInForce, TrailingOffsetType, TriggerType},
@@ -598,9 +602,6 @@ mod tests {
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
-    use rstest::rstest;
-    use rust_decimal::Decimal;
-    use rust_decimal_macros::dec;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {

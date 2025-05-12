@@ -287,6 +287,8 @@ impl PartialEq for StopOrderAny {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rust_decimal::Decimal;
+
     use super::*;
     use crate::{
         enums::{OrderType, TrailingOffsetType},
@@ -295,7 +297,6 @@ mod tests {
         orders::builder::OrderTestBuilder,
         types::{Price, Quantity},
     };
-    use rust_decimal::Decimal;
 
     #[test]
     fn test_order_any_equality() {

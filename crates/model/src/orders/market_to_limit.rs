@@ -560,6 +560,8 @@ impl From<OrderInitialized> for MarketToLimitOrder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
@@ -569,7 +571,6 @@ mod tests {
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
-    use rstest::rstest;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {

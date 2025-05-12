@@ -586,6 +586,9 @@ impl Display for StopLimitOrder {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         enums::{OrderSide, TimeInForce, TriggerType},
@@ -595,8 +598,6 @@ mod tests {
         orders::{OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
-    use nautilus_core::UnixNanos;
-    use rstest::rstest;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {

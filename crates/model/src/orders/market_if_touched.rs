@@ -556,6 +556,8 @@ impl Display for MarketIfTouchedOrder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce, TriggerType},
@@ -565,7 +567,6 @@ mod tests {
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
-    use rstest::rstest;
 
     #[rstest]
     fn test_initialize(_audusd_sim: CurrencyPair) {
