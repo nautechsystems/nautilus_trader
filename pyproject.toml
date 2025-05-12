@@ -102,7 +102,7 @@ dev = [
     "cython==3.1.0",
     "setuptools>=75",
     "black>=25.1.0,<26.0.0",
-    "docformatter>=1.7.6,<2.0.0",
+    "docformatter>=1.7.7,<2.0.0",
     "mypy>=1.15.0,<2.0.0",
     "pandas-stubs>=2.2.2,<3.0.0",
     "pre-commit>=4.2.0,<5.0.0",
