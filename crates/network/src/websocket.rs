@@ -29,6 +29,7 @@
 //! - Controller task manages lifecycle
 
 use std::{
+    fmt::Debug,
     sync::{
         Arc,
         atomic::{AtomicU8, Ordering},
@@ -586,6 +587,12 @@ pub struct WebSocketClient {
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+}
+
+impl Debug for WebSocketClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(WebSocketClient)).finish()
+    }
 }
 
 impl WebSocketClient {

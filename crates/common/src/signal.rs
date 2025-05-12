@@ -15,8 +15,6 @@
 
 //! A user signal type.
 
-use std::fmt::Debug;
-
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;

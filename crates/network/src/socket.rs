@@ -29,6 +29,7 @@
 //! - Controller task manages lifecycle
 
 use std::{
+    fmt::Debug,
     path::Path,
     sync::{
         Arc,
@@ -535,6 +536,12 @@ pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+}
+
+impl Debug for SocketClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SocketClient)).finish()
+    }
 }
 
 impl SocketClient {
