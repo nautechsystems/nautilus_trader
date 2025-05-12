@@ -246,6 +246,12 @@ class BybitExecutionClient(LiveExecutionClient):
             self._order_single_client = self._http_account
             self._order_batch_client = self._http_account
 
+        self._is_order_single_client_ws = isinstance(
+            self._order_single_client,
+            BybitWebSocketClient,
+        )
+        self._is_order_batch_client_ws = isinstance(self._order_batch_client, BybitWebSocketClient)
+
         # Order submission
         self._submit_order_methods = {
             OrderType.MARKET: self._submit_market_order,
@@ -789,11 +795,15 @@ class BybitExecutionClient(LiveExecutionClient):
                         )
 
                 if response:
+                    if self._is_order_batch_client_ws:
+                        resp_data_list = response.data.list
+                    else:
+                        resp_data_list = response.result.list
                     for idx, ret_info in enumerate(response.retExtInfo.list):
                         ret_code = ret_info.code
                         if ret_code != 0:
                             order = self._cache.order(
-                                ClientOrderId(response.data.list[idx].orderLinkId),
+                                ClientOrderId(resp_data_list[idx].orderLinkId),
                             )
                             if order is None or order.is_closed:
                                 continue
@@ -986,10 +996,14 @@ class BybitExecutionClient(LiveExecutionClient):
                         )
 
                 if response:
+                    if self._is_order_batch_client_ws:
+                        resp_data_list = response.data.list
+                    else:
+                        resp_data_list = response.result.list
                     for idx, ret_info in enumerate(response.retExtInfo.list):
                         if ret_info.code != 0:
                             order = self._cache.order(
-                                ClientOrderId(response.data.list[idx].orderLinkId),
+                                ClientOrderId(resp_data_list[idx].orderLinkId),
                             )
                             if order is None:
                                 continue
