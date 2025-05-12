@@ -22,6 +22,7 @@ mod nanos;
 pub mod quota;
 
 use std::{
+    fmt::Debug,
     hash::Hash,
     num::NonZeroU64,
     sync::atomic::{AtomicU64, Ordering},
@@ -47,7 +48,7 @@ use self::{
 ///
 /// Internally, the number tracked here is the theoretical arrival time (a GCRA term) in number of
 /// nanoseconds since the rate limiter was created.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct InMemoryState(AtomicU64);
 
 impl InMemoryState {
@@ -144,6 +145,16 @@ where
     gcra: DashMap<K, Gcra>,
     clock: C,
     start: C::Instant,
+}
+
+impl<K, C> Debug for RateLimiter<K, C>
+where
+    K: Debug,
+    C: Clock,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RateLimiter)).finish()
+    }
 }
 
 impl<K> RateLimiter<K, MonotonicClock>

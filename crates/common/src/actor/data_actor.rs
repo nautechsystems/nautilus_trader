@@ -2155,7 +2155,7 @@ fn log_error(e: &anyhow::Error) {
 
 fn log_not_running<T>(msg: &T)
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     // TODO: Potentially temporary for development? drop level at some stage
     log::warn!("Received message when not running - skipping {msg:?}");
@@ -2163,7 +2163,7 @@ where
 
 fn log_received<T>(msg: &T)
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     log::debug!("{RECV} {msg:?}");
 }

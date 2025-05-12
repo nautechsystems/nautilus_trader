@@ -22,6 +22,7 @@
 use std::{
     cell::RefCell,
     collections::{BinaryHeap, HashMap, VecDeque},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -121,7 +122,7 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
 }
 
-impl std::fmt::Debug for SimulatedExchange {
+impl Debug for SimulatedExchange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(SimulatedExchange))
             .field("id", &self.id)
