@@ -39,23 +39,58 @@ use ustr::Ustr;
 
 use crate::sql::models::enums::TrailingOffsetTypeModel;
 
+#[derive(Debug)]
 pub struct OrderEventAnyModel(pub OrderEventAny);
+
+#[derive(Debug)]
 pub struct OrderAcceptedModel(pub OrderAccepted);
+
+#[derive(Debug)]
 pub struct OrderCancelRejectedModel(pub OrderCancelRejected);
+
+#[derive(Debug)]
 pub struct OrderCanceledModel(pub OrderCanceled);
+
+#[derive(Debug)]
 pub struct OrderDeniedModel(pub OrderDenied);
+
+#[derive(Debug)]
 pub struct OrderEmulatedModel(pub OrderEmulated);
+
+#[derive(Debug)]
 pub struct OrderExpiredModel(pub OrderExpired);
+
+#[derive(Debug)]
 pub struct OrderFilledModel(pub OrderFilled);
+
+#[derive(Debug)]
 pub struct OrderInitializedModel(pub OrderInitialized);
+
+#[derive(Debug)]
 pub struct OrderModifyRejectedModel(pub OrderModifyRejected);
+
+#[derive(Debug)]
 pub struct OrderPendingCancelModel(pub OrderPendingCancel);
+
+#[derive(Debug)]
 pub struct OrderPendingUpdateModel(pub OrderPendingUpdate);
+
+#[derive(Debug)]
 pub struct OrderRejectedModel(pub OrderRejected);
+
+#[derive(Debug)]
 pub struct OrderReleasedModel(pub OrderReleased);
+
+#[derive(Debug)]
 pub struct OrderSubmittedModel(pub OrderSubmitted);
+
+#[derive(Debug)]
 pub struct OrderTriggeredModel(pub OrderTriggered);
+
+#[derive(Debug)]
 pub struct OrderUpdatedModel(pub OrderUpdated);
+
+#[derive(Debug)]
 pub struct OrderSnapshotModel(pub OrderSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {

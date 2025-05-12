@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -69,6 +70,15 @@ pub struct RedisMessageBusDatabase {
     stream_signal: Arc<AtomicBool>,
     heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
     heartbeat_signal: Arc<AtomicBool>,
+}
+
+impl Debug for RedisMessageBusDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RedisMessageBusDatabase))
+            .field("trader_id", &self.trader_id)
+            .field("instance_id", &self.instance_id)
+            .finish()
+    }
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {

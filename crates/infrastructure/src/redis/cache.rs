@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     time::{Duration, Instant},
 };
 
@@ -139,6 +140,15 @@ pub struct RedisCacheDatabase {
     handle: tokio::task::JoinHandle<()>,
     trader_key: String,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
+}
+
+impl Debug for RedisCacheDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RedisCacheDatabase))
+            .field("trader_id", &self.trader_id)
+            .field("encoding", &self.encoding)
+            .finish()
+    }
 }
 
 impl RedisCacheDatabase {
@@ -600,6 +610,7 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
 }
 
 #[allow(dead_code)] // Under development
+#[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     database: RedisCacheDatabase,
