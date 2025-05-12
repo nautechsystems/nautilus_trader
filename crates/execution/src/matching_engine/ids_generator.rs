@@ -37,7 +37,10 @@ pub struct IdsGenerator {
 
 impl Debug for IdsGenerator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IdsGenerator").finish()
+        f.debug_struct(stringify!(IdsGenerator))
+            .field("venue", &self.venue)
+            .field("raw_id", &self.raw_id)
+            .finish()
     }
 }
 

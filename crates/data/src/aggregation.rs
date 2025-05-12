@@ -432,7 +432,7 @@ where
 
 impl<H: FnMut(Bar)> Debug for TickBarAggregator<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TickBarAggregator")
+        f.debug_struct(stringify!(TickBarAggregator))
             .field("core", &self.core)
             .field("cum_value", &self.cum_value)
             .finish()
@@ -559,7 +559,7 @@ where
 
 impl<H: FnMut(Bar)> Debug for VolumeBarAggregator<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VolumeBarAggregator")
+        f.debug_struct(stringify!(VolumeBarAggregator))
             .field("core", &self.core)
             .finish()
     }
@@ -701,7 +701,7 @@ where
 
 impl<H: FnMut(Bar)> Debug for ValueBarAggregator<H> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ValueBarAggregator")
+        f.debug_struct(stringify!(ValueBarAggregator))
             .field("core", &self.core)
             .field("cum_value", &self.cum_value)
             .finish()

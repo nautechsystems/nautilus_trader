@@ -65,7 +65,10 @@ pub struct OrderEmulator {
 
 impl Debug for OrderEmulator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OrderEmulator").finish()
+        f.debug_struct(stringify!(OrderEmulator))
+            .field("cores", &self.matching_cores.len())
+            .field("subscribed_quotes", &self.subscribed_quotes.len())
+            .finish()
     }
 }
 

@@ -68,7 +68,11 @@ pub struct BacktestEngine {
 
 impl Debug for BacktestEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BacktestEngine)).finish()
+        f.debug_struct(stringify!(BacktestEngine))
+            .field("instance_id", &self.instance_id)
+            .field("run_config_id", &self.run_config_id)
+            .field("run_id", &self.run_id)
+            .finish()
     }
 }
 

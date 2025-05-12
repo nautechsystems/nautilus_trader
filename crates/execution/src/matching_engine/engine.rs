@@ -106,7 +106,10 @@ pub struct OrderMatchingEngine {
 
 impl Debug for OrderMatchingEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OrderMatchingEngine").finish()
+        f.debug_struct(stringify!(OrderMatchingEngine))
+            .field("venue", &self.venue)
+            .field("instrument", &self.instrument.id())
+            .finish()
     }
 }
 
