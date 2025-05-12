@@ -79,7 +79,6 @@ from nautilus_trader.model.objects import Quantity
 
 
 if TYPE_CHECKING:
-
     from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
     from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
     from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
