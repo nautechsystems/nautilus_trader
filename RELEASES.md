@@ -25,6 +25,8 @@ None
 - Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
 - Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
 - Improved orders initialize and display tests in Rust (#2617), thanks @nicolad
+- Improved testing for Rust orders module (#2578), thanks @dakshbtc
+- Improved AMA (Adaptive Moving Average) indicator parity with Cython (#2626), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved exception on deserializing order from cache database
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
@@ -36,11 +38,12 @@ None
 
 ### Fixes
 - Fixed position snapshot cache access for `ExecutionEngine`
+- Fixed authentication for Redis when password provided with no username
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
-- Fixed authentication for Redis when password provided with no username
+- Fixed HTTP batch order operations for Bybit (#2627), thanks @sunlei
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
