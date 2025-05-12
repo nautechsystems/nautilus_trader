@@ -582,12 +582,15 @@ impl From<OrderInitialized> for LimitOrder {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
+        events::{OrderEventAny, OrderUpdated},
+        identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
-        orders::{Order, builder::OrderTestBuilder},
+        orders::{Order, OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
 
@@ -651,5 +654,113 @@ mod tests {
             .quantity(Quantity::from(1))
             .time_in_force(TimeInForce::Gtd)
             .build();
+    }
+
+    #[test]
+    fn test_limit_order_creation() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .side(OrderSide::Buy)
+            .time_in_force(TimeInForce::Gtc)
+            .build();
+
+        assert_eq!(order.price(), Some(Price::new(100.0, 2)));
+        assert_eq!(order.quantity(), Quantity::from(10));
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+        assert_eq!(order.order_side(), OrderSide::Buy);
+    }
+
+    #[test]
+    fn test_limit_order_with_expire_time() {
+        let expire_time = UnixNanos::from(1_700_000_000_000_000);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(expire_time)
+            .build();
+
+        assert_eq!(order.expire_time(), Some(expire_time));
+        assert_eq!(order.time_in_force(), TimeInForce::Gtd);
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    fn test_limit_order_missing_expire_time() {
+        let _ = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .time_in_force(TimeInForce::Gtd)
+            .build();
+    }
+
+    #[test]
+    fn test_limit_order_post_only() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .post_only(true)
+            .build();
+
+        assert!(order.is_post_only());
+    }
+
+    #[test]
+    fn test_limit_order_display_quantity() {
+        let display_qty = Quantity::from(5);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .display_qty(display_qty)
+            .build();
+
+        assert_eq!(order.display_qty(), Some(display_qty));
+    }
+
+    #[test]
+    fn test_limit_order_update() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        let updated_price = Price::new(105.0, 2);
+        let updated_quantity = Quantity::from(5);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            price: Some(updated_price),
+            quantity: updated_quantity,
+            ..Default::default()
+        };
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        assert_eq!(accepted_order.quantity(), updated_quantity);
+        assert_eq!(accepted_order.price(), Some(updated_price));
+    }
+
+    #[test]
+    fn test_limit_order_expire_time() {
+        let expire_time = UnixNanos::from(1_700_000_000_000_000);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(expire_time)
+            .build();
+
+        assert_eq!(order.expire_time(), Some(expire_time));
     }
 }
