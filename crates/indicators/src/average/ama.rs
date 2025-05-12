@@ -107,9 +107,9 @@ impl AdaptiveMovingAverage {
     /// Creates a new [`AdaptiveMovingAverage`] instance.
     ///
     /// # Panics
-    /// * If `period_efficiency_ratio` == 0  
-    /// * If `period_fast` == 0  
-    /// * If `period_slow` == 0  
+    /// * If `period_efficiency_ratio` == 0
+    /// * If `period_fast` == 0
+    /// * If `period_slow` == 0
     /// * If `period_slow` ≤ `period_fast`
     #[must_use]
     pub fn new(
