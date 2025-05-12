@@ -792,7 +792,7 @@ impl OrderEmulator {
             let emulation_trigger = TriggerType::NoTrigger;
 
             // Transform order
-            let mut transformed = if let Ok(transformed) = LimitOrder::new(
+            let mut transformed = if let Ok(transformed) = LimitOrder::new_checked(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),

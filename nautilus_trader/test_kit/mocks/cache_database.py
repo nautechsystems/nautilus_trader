@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
+import pandas as pd
+
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.facade import CacheDatabaseFacade
 from nautilus_trader.model.identifiers import AccountId
@@ -24,6 +28,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy
@@ -44,6 +49,9 @@ class MockCacheDatabase(CacheDatabaseFacade):
         self.accounts: dict[AccountId, Account] = {}
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
+        self.order_states: dict[ClientOrderId, dict[str, Any]] = {}
+        self.position_states: dict[PositionId, dict[str, Any]] = {}
+        self.last_heartbeat: int = 0
         self._index_order_position: dict[ClientOrderId, PositionId] = {}
         self._index_order_client: dict[ClientOrderId, ClientId] = {}
 
@@ -55,6 +63,9 @@ class MockCacheDatabase(CacheDatabaseFacade):
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
+        self.order_states.clear()
+        self.position_states.clear()
+        self.last_heartbeat = 0
         self._index_order_position.clear()
         self._index_order_client.clear()
 
@@ -158,3 +169,24 @@ class MockCacheDatabase(CacheDatabaseFacade):
 
     def update_strategy(self, strategy: Strategy) -> None:
         pass  # Would persist the user state dict
+
+    def snapshot_order_state(self, order: Order) -> None:
+        self.order_states[order.client_order_id] = order.to_dict()
+
+    def snapshot_position_state(
+        self,
+        position: Position,
+        ts_snapshot: int,
+        unrealized_pnl: Money | None = None,
+    ) -> None:
+        position_state = position.to_dict()
+
+        if unrealized_pnl is not None:
+            position_state["unrealized_pnl"] = str(unrealized_pnl)
+
+        position_state["ts_snapshot"] = ts_snapshot
+
+        self.order_states[position.id] = position_state
+
+    def heartbeat(self, timestamp: pd.Timestamp) -> None:
+        self.last_heartbeat = timestamp.value

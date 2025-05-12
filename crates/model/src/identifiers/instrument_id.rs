@@ -56,6 +56,9 @@ impl InstrumentId {
 }
 
 impl InstrumentId {
+    /// # Errors
+    ///
+    /// Returns an error if parsing the string fails or string is invalid.
     pub fn from_as_ref<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         Self::from_str(value.as_ref())
     }

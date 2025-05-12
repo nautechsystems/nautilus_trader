@@ -765,14 +765,11 @@ fn test_not_enough_quantity_filled_fok_order(
     assert_eq!(saved_messages.len(), 1);
     let first_message = saved_messages.first().unwrap();
     assert_eq!(first_message.event_type(), OrderEventType::Canceled);
-    let order_rejected = match first_message {
-        OrderEventAny::Canceled(order_rejected) => order_rejected,
+    let canceled = match first_message {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in first message"),
     };
-    assert_eq!(
-        order_rejected.client_order_id,
-        market_order.client_order_id()
-    );
+    assert_eq!(canceled.client_order_id, market_order.client_order_id());
 }
 
 #[rstest]
@@ -827,21 +824,21 @@ fn test_valid_market_buy(
     // We need to test that two Order filled events were generated where with correct prices and quantities
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_filled_first = match order_event_first {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let event1 = saved_messages.first().unwrap();
+    let fill1 = match event1 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in first message"),
     };
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_filled_second = match order_event_second {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let event2 = saved_messages.get(1).unwrap();
+    let fill2 = match event2 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in second message"),
     };
     // Check correct prices and quantities
-    assert_eq!(order_filled_first.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled_first.last_qty, Quantity::from("1.000"));
-    assert_eq!(order_filled_second.last_px, Price::from("1510.00"));
-    assert_eq!(order_filled_second.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill1.last_px, Price::from("1500.00"));
+    assert_eq!(fill1.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill2.last_px, Price::from("1510.00"));
+    assert_eq!(fill2.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -888,12 +885,12 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
     assert_eq!(saved_messages.len(), 1);
     let first_message = saved_messages.first().unwrap();
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
-    let order_rejected = match first_message {
-        OrderEventAny::Rejected(order_rejected) => order_rejected,
+    let rejected = match first_message {
+        OrderEventAny::Rejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
     assert_eq!(
-        order_rejected.reason,
+        rejected.reason,
         Ustr::from(
             "POST_ONLY LIMIT BUY order limit px of 1501.00 would have been a TAKER: bid=None, ask=1500.00"
         )
@@ -942,18 +939,18 @@ fn test_process_limit_order_not_matched_and_canceled_fok_order(
     // Check we have received OrderAccepted and then OrderCanceled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_rejected = match order_event_second {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let rejected = match event2 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in second message"),
     };
-    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -995,20 +992,20 @@ fn test_process_limit_order_matched_immediate_fill(
     // Check we have received first OrderAccepted and then OrderFilled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_filled = match order_event_second {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let fill = match event2 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in second message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -1059,14 +1056,14 @@ fn test_process_stop_market_order_triggered_rejected(
     // Check we have received OrderRejected event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_event = saved_messages.first().unwrap();
-    let order_rejected = match order_event {
-        OrderEventAny::Rejected(order_rejected) => order_rejected,
+    let event = saved_messages.first().unwrap();
+    let rejected = match event {
+        OrderEventAny::Rejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
-    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(
-        order_rejected.reason,
+        rejected.reason,
         Ustr::from(
             "STOP_MARKET BUY order stop px of 1495.00 was in the market: bid=None, ask=1500.00, but rejected because of configuration"
         )
@@ -1114,14 +1111,14 @@ fn test_process_stop_market_order_valid_trigger_filled(
     // Check we have received OrderFilled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_filled = saved_messages.first().unwrap();
-    let order_filled = match order_filled {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let fill = saved_messages.first().unwrap();
+    let fill = match fill {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in first message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -1164,12 +1161,12 @@ fn test_process_stop_market_order_valid_not_triggered_accepted(
     // Check we have received OrderAccepted event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_event = saved_messages.first().unwrap();
-    let order_accepted = match order_event {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event = saved_messages.first().unwrap();
+    let accepted = match event {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
+    assert_eq!(accepted.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -1214,18 +1211,18 @@ fn test_process_stop_limit_order_triggered_not_filled(
     // Check we have received OrderAccepted and OrderTriggered
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_triggered = match order_event_second {
-        OrderEventAny::Triggered(order_triggered) => order_triggered,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let triggered = match event2 {
+        OrderEventAny::Triggered(triggered) => triggered,
         _ => panic!("Expected OrderTriggered event in second message"),
     };
-    assert_eq!(order_triggered.client_order_id, client_order_id);
+    assert_eq!(triggered.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -1271,26 +1268,26 @@ fn test_process_stop_limit_order_triggered_filled(
     // Check we have received OrderAccepted, OrderTriggered and finally OrderFilled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 3);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_triggered = match order_event_second {
-        OrderEventAny::Triggered(order_triggered) => order_triggered,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let order_triggered = match event2 {
+        OrderEventAny::Triggered(triggered) => triggered,
         _ => panic!("Expected OrderTriggered event in second message"),
     };
     assert_eq!(order_triggered.client_order_id, client_order_id);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_filled = match order_event_third {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let event3 = saved_messages.get(2).unwrap();
+    let fill = match event3 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in third message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -1347,18 +1344,18 @@ fn test_process_cancel_command_valid(
     // Check we have received OrderAccepted and then OrderCanceled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_canceled = match order_event_second {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let canceled = match event2 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in second message"),
     };
-    assert_eq!(order_canceled.client_order_id, client_order_id);
+    assert_eq!(canceled.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -1395,14 +1392,14 @@ fn test_process_cancel_command_order_not_found(
     // Check we have received OrderCancelRejected event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_event = saved_messages.first().unwrap();
-    let order_rejected = match order_event {
-        OrderEventAny::CancelRejected(order_rejected) => order_rejected,
+    let event = saved_messages.first().unwrap();
+    let rejected = match event {
+        OrderEventAny::CancelRejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
-    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(
-        order_rejected.reason,
+        rejected.reason,
         Ustr::from(format!("Order {client_order_id} not found").as_str())
     );
 }
@@ -1506,43 +1503,40 @@ fn test_process_cancel_all_command(
     // Check we have received 3 OrderAccepted and 2 OrderCanceled events
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 5);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_1);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_accepted = match order_event_second {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    assert_eq!(accepted.client_order_id, client_order_id_1);
+    let event2 = saved_messages.get(1).unwrap();
+    let accepted = match event2 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in second message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_2);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_accepted = match order_event_third {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    assert_eq!(accepted.client_order_id, client_order_id_2);
+    let event3 = saved_messages.get(2).unwrap();
+    let accepted = match event3 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in third message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_3);
-    let order_event_fourth = saved_messages.get(3).unwrap();
-    let order_canceled_1 = match order_event_fourth {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    assert_eq!(accepted.client_order_id, client_order_id_3);
+    let event4 = saved_messages.get(3).unwrap();
+    let canceled1 = match event4 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in fourth message"),
     };
-    let order_event_fifth = saved_messages.get(4).unwrap();
-    let order_canceled_2 = match order_event_fifth {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    let event5 = saved_messages.get(4).unwrap();
+    let canceled2 = match event5 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in fifth message"),
     };
     // Because of nondeterministic order of events we need to check both client order ids
-    let ids = [
-        order_canceled_1.client_order_id,
-        order_canceled_2.client_order_id,
-    ];
+    let ids = [canceled1.client_order_id, canceled2.client_order_id];
     assert!(ids.contains(&client_order_id_1));
-    assert_eq!(order_canceled_1.instrument_id, instrument_eth_usdt.id());
+    assert_eq!(canceled1.instrument_id, instrument_eth_usdt.id());
     assert!(ids.contains(&client_order_id_2));
-    assert_eq!(order_canceled_2.instrument_id, instrument_eth_usdt.id());
+    assert_eq!(canceled2.instrument_id, instrument_eth_usdt.id());
 }
 
 #[rstest]
@@ -1633,29 +1627,29 @@ fn test_process_batch_cancel_command(
     // Check we have received 2 OrderAccepted and 2 OrderCanceled events
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 4);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_1);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_accepted = match order_event_second {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    assert_eq!(accepted.client_order_id, client_order_id_1);
+    let event2 = saved_messages.get(1).unwrap();
+    let accepted = match event2 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in second message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_2);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_canceled_1 = match order_event_third {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    assert_eq!(accepted.client_order_id, client_order_id_2);
+    let event3 = saved_messages.get(2).unwrap();
+    let canceled1 = match event3 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in third message"),
     };
-    let order_event_fourth = saved_messages.get(3).unwrap();
-    let _order_canceled_2 = match order_event_fourth {
-        OrderEventAny::Canceled(order_canceled) => order_canceled,
+    let event4 = saved_messages.get(3).unwrap();
+    let _canceled2 = match event4 {
+        OrderEventAny::Canceled(canceled) => canceled,
         _ => panic!("Expected OrderCanceled event in fourth message"),
     };
-    assert_eq!(order_canceled_1.client_order_id, client_order_id_1);
+    assert_eq!(canceled1.client_order_id, client_order_id_1);
 }
 
 #[rstest]
@@ -1730,18 +1724,18 @@ fn test_expire_order(
     // Check we have received OrderAccepted and then OrderExpired event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_expired = match order_event_second {
-        OrderEventAny::Expired(order_expired) => order_expired,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let expired = match event2 {
+        OrderEventAny::Expired(expired) => expired,
         _ => panic!("Expected OrderExpired event in second message"),
     };
-    assert_eq!(order_expired.client_order_id, client_order_id);
+    assert_eq!(expired.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -1779,12 +1773,12 @@ fn test_process_modify_order_rejected_not_found(
     // Check if we have received OrderModifyRejected event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_event = saved_messages.first().unwrap();
-    let order_rejected = match order_event {
-        OrderEventAny::ModifyRejected(order_rejected) => order_rejected,
+    let event = saved_messages.first().unwrap();
+    let rejected = match event {
+        OrderEventAny::ModifyRejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
-    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
 }
 
 #[rstest]
@@ -1846,20 +1840,20 @@ fn test_update_limit_order_post_only_matched(
     // Check that we have received OrderAccepted and then OrderModifyRejected event because of post only
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_rejected = match order_event_second {
-        OrderEventAny::ModifyRejected(order_rejected) => order_rejected,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let rejected = match event2 {
+        OrderEventAny::ModifyRejected(rejected) => rejected,
         _ => panic!("Expected OrderModifyRejected event in second message"),
     };
-    assert_eq!(order_rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(
-        order_rejected.reason,
+        rejected.reason,
         Ustr::from(
             "POST_ONLY LIMIT BUY order with new limit px of 1500.00 would have been a TAKER: bid=None, ask=1500.00"
         )
@@ -1926,27 +1920,27 @@ fn test_update_limit_order_valid(
     // and then OrderFilled as limit order was matched immediately
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 3);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.price.unwrap(), new_limit_price);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_filled = match order_event_third {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.price.unwrap(), new_limit_price);
+    let event3 = saved_messages.get(2).unwrap();
+    let fill = match event3 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in third message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, new_limit_price);
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, new_limit_price);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -2008,19 +2002,19 @@ fn test_update_stop_market_order_valid(
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.trigger_price.unwrap(), new_trigger_price);
 }
 
 #[rstest]
@@ -2071,19 +2065,19 @@ fn test_update_stop_limit_order_valid_update_not_triggered(
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.trigger_price.unwrap(), new_trigger_price);
 }
 
 #[rstest]
@@ -2127,14 +2121,14 @@ fn test_process_market_if_touched_order_already_triggered(
     // Check that order was filled immediately with correct price and quantity
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 1);
-    let order_event = saved_messages.first().unwrap();
-    let order_filled = match order_event {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    let event = saved_messages.first().unwrap();
+    let fill = match event {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in first message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -2184,19 +2178,19 @@ fn test_update_market_if_touched_order_valid(
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.trigger_price.unwrap(), new_trigger_price);
 }
 
 #[rstest]
@@ -2244,26 +2238,26 @@ fn test_process_limit_if_touched_order_immediate_trigger_and_fill(
     // We should receive OrderAccepted, OrderTriggered and OrderFilled event
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 3);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_triggered = match order_event_second {
-        OrderEventAny::Triggered(order_triggered) => order_triggered,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let triggered = match event2 {
+        OrderEventAny::Triggered(triggered) => triggered,
         _ => panic!("Expected OrderTriggered event in second message"),
     };
-    assert_eq!(order_triggered.client_order_id, client_order_id);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_filled = match order_event_third {
-        OrderEventAny::Filled(order_filled) => order_filled,
+    assert_eq!(triggered.client_order_id, client_order_id);
+    let event3 = saved_messages.get(2).unwrap();
+    let fill = match event3 {
+        OrderEventAny::Filled(fill) => fill,
         _ => panic!("Expected OrderFilled event in third message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
 }
 
 #[rstest]
@@ -2326,19 +2320,19 @@ fn test_update_limit_if_touched_order_valid(
     // Check that we have received OrderAccepted and then OrderUpdated
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.trigger_price.unwrap(), new_trigger_price);
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.trigger_price.unwrap(), new_trigger_price);
 }
 
 #[rstest]
@@ -2387,27 +2381,27 @@ fn test_process_market_to_limit_orders_not_fully_filled(
     // 3. OrderAccepted - remaining quantity of market order is accepted as limit order
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 3);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_updated = match order_event_first {
+    let event1 = saved_messages.first().unwrap();
+    let updated = match event1 {
         OrderEventAny::Updated(order) => order,
         _ => panic!("Expected OrderUpdated event in first message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_filled = match order_event_second {
+    assert_eq!(updated.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let fill = match event2 {
         OrderEventAny::Filled(order) => order,
         _ => panic!("Expected OrderFilled event in second message"),
     };
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_accepted = match order_event_third {
+    assert_eq!(fill.client_order_id, client_order_id);
+    let event3 = saved_messages.get(2).unwrap();
+    let accepted = match event3 {
         OrderEventAny::Accepted(order) => order,
         _ => panic!("Expected OrderFilled event in third message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    assert_eq!(order_filled.client_order_id, client_order_id);
-    assert_eq!(order_filled.last_px, Price::from("1500.00"));
-    assert_eq!(order_filled.last_qty, Quantity::from("1.000"));
+    assert_eq!(accepted.client_order_id, client_order_id);
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.last_px, Price::from("1500.00"));
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
     // Check that we have one resting limit order in the matching core
     let resting_orders = engine_l2.core.get_orders();
     assert_eq!(resting_orders.len(), 1);
@@ -2475,22 +2469,22 @@ fn test_process_trailing_stop_orders_rejeceted_and_valid(
     // and OrderAccepted for TrailingStopLimit order
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_rejected = match order_event_first {
-        OrderEventAny::Rejected(order_rejected) => order_rejected,
+    let event1 = saved_messages.first().unwrap();
+    let rejected = match event1 {
+        OrderEventAny::Rejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
     assert_eq!(
-        order_rejected.client_order_id,
+        rejected.client_order_id,
         client_order_id_trailing_stop_market
     );
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_accepted = match order_event_second {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event2 = saved_messages.get(1).unwrap();
+    let accepted = match event2 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in second message"),
     };
     assert_eq!(
-        order_accepted.client_order_id,
+        accepted.client_order_id,
         client_order_id_trailing_stop_limit
     );
 }
@@ -2551,19 +2545,19 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
     // with new trigger price of 1481.00 because of trailing offset of 1
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 2);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_updated = match order_event_second {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let event2 = saved_messages.get(1).unwrap();
+    let updated = match event2 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in second message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id);
-    assert_eq!(order_updated.trigger_price.unwrap(), Price::from("1481.00"));
+    assert_eq!(updated.client_order_id, client_order_id);
+    assert_eq!(updated.trigger_price.unwrap(), Price::from("1481.00"));
 }
 
 #[rstest]
@@ -2662,30 +2656,30 @@ fn test_updating_of_contingent_orders(
     // 4. OrderUpdated for contingent stop market order with new quantity of 2.000
     let saved_messages = get_order_event_handler_messages(order_event_handler);
     assert_eq!(saved_messages.len(), 4);
-    let order_event_first = saved_messages.first().unwrap();
-    let order_accepted = match order_event_first {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    let event1 = saved_messages.first().unwrap();
+    let accepted = match event1 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in first message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_primary);
-    let order_event_second = saved_messages.get(1).unwrap();
-    let order_accepted = match order_event_second {
-        OrderEventAny::Accepted(order_accepted) => order_accepted,
+    assert_eq!(accepted.client_order_id, client_order_id_primary);
+    let event2 = saved_messages.get(1).unwrap();
+    let accepted = match event2 {
+        OrderEventAny::Accepted(accepted) => accepted,
         _ => panic!("Expected OrderAccepted event in second message"),
     };
-    assert_eq!(order_accepted.client_order_id, client_order_id_contingent);
-    let order_event_third = saved_messages.get(2).unwrap();
-    let order_updated = match order_event_third {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(accepted.client_order_id, client_order_id_contingent);
+    let event3 = saved_messages.get(2).unwrap();
+    let updated = match event3 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in third message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id_primary);
-    assert_eq!(order_updated.quantity, Quantity::from("2.000"));
-    let order_event_fourth = saved_messages.get(3).unwrap();
-    let order_updated = match order_event_fourth {
-        OrderEventAny::Updated(order_updated) => order_updated,
+    assert_eq!(updated.client_order_id, client_order_id_primary);
+    assert_eq!(updated.quantity, Quantity::from("2.000"));
+    let event4 = saved_messages.get(3).unwrap();
+    let updated = match event4 {
+        OrderEventAny::Updated(updated) => updated,
         _ => panic!("Expected OrderUpdated event in fourth message"),
     };
-    assert_eq!(order_updated.client_order_id, client_order_id_contingent);
-    assert_eq!(order_updated.quantity, Quantity::from("2.000"));
+    assert_eq!(updated.client_order_id, client_order_id_contingent);
+    assert_eq!(updated.quantity, Quantity::from("2.000"));
 }

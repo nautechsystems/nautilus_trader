@@ -53,14 +53,14 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--all-features", "--", "-D", "warnings"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
         pass_filenames: false
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors.
         entry: cargo doc
         language: system
-        args: ["--all-features", "--no-deps", "--workspace"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
         pass_filenames: false
 
   ##############################################################################
@@ -82,7 +82,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.7
+    rev: v0.11.9
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -97,7 +97,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
-    rev: 06907d0267368b49b9180eed423fae5697c1e909
+    rev: v1.7.6
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]
@@ -128,7 +128,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.0  # uv version
+    rev: 0.7.3  # uv version
     hooks:
       - id: uv-lock
 

@@ -1484,7 +1484,6 @@ class MarketIfTouchedOrder:
         init_id: UUID4,
         ts_init: int,
         expire_time: int | None = None,
-        display_qty: Quantity | None = None,
         emulation_trigger: TriggerType | None = None,
         trigger_instrument_id: InstrumentId | None = None,
         contingency_type: ContingencyType | None = None,
@@ -3789,6 +3788,7 @@ class NautilusDataType(Enum):
     QuoteTick = 3
     TradeTick = 4
     Bar = 5
+    MarkPriceUpdate = 6
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 10_000) -> None: ...

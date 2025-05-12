@@ -66,7 +66,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The configuration for streaming to feather files.
     catalogs : list[DataCatalogConfig], optional
         The list of data catalog configurations.
-        We assume that catalogs have no duplicate data.
     actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
@@ -95,6 +94,12 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The timeout (seconds) after stopping the node to await residual events before final shutdown.
     timeout_shutdown : PositiveFloat, default 5
         The timeout (seconds) to await pending tasks cancellation during shutdown.
+
+    Notes
+    -----
+    We assume that catalogs have no duplicate data in time series.
+    Also, if some time series are contained in several catalogs (one per month for example), ensure that
+    the DataCatalogConfig list passed to BacktestEngineConfig is ordered in ascending chronological order.
 
     """
 

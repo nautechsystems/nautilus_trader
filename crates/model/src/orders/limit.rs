@@ -19,12 +19,12 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore};
+use super::{Order, OrderAny, OrderCore, check_display_qty, check_time_in_force};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -60,9 +60,10 @@ impl LimitOrder {
     ///
     /// Returns an error if:
     /// - The `quantity` is not positive.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
     /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new_checked(
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
@@ -90,16 +91,8 @@ impl LimitOrder {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_positive_quantity(quantity, stringify!(quantity))?;
-        if time_in_force == TimeInForce::Gtd {
-            if expire_time.is_none() {
-                anyhow::bail!("Condition failed: `expire_time` is required for `GTD` order")
-            }
-            if let Some(time) = expire_time {
-                if time == 0 {
-                    anyhow::bail!("`expire_time` for `GTD` Limit order should be higher then 0")
-                }
-            }
-        }
+        check_display_qty(display_qty, quantity)?;
+        check_time_in_force(time_in_force, expire_time)?;
 
         let init_order = OrderInitialized::new(
             trader_id,
@@ -145,6 +138,69 @@ impl LimitOrder {
             display_qty,
             trigger_instrument_id,
         })
+    }
+
+    /// Creates a new [`LimitOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any order validation fails (see [`LimitOrder::new_checked`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            time_in_force,
+            expire_time,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 }
 
@@ -518,7 +574,6 @@ impl From<OrderInitialized> for LimitOrder {
             event.event_id,
             event.ts_event,
         )
-        .unwrap()
     }
 }
 
@@ -538,6 +593,25 @@ mod tests {
         orders::{Order, OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
+
+    #[rstest]
+    fn test_initialize(_audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(_audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("0.68000"))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.time_in_force(), TimeInForce::Gtc);
+
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(1));
+
+        assert_eq!(order.display_qty(), None);
+        assert_eq!(order.trigger_instrument_id(), None);
+        assert_eq!(order.order_list_id(), None);
+    }
 
     #[rstest]
     fn test_display(audusd_sim: CurrencyPair) {

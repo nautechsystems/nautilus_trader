@@ -76,8 +76,7 @@ impl LimitOrder {
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
-        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
-        Self::new(
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -98,7 +97,7 @@ impl LimitOrder {
             linked_order_ids,
             parent_order_id,
             exec_algorithm_id,
-            exec_algorithm_params,
+            exec_algorithm_params.map(str_indexmap_to_ustr),
             exec_spawn_id,
             tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
             init_id,
@@ -570,7 +569,8 @@ impl LimitOrder {
             .map(|x| x.extract::<&str>().unwrap().parse::<UUID4>().ok())?
             .unwrap();
         let ts_init = dict.get_item("ts_init")?.extract::<u64>()?;
-        let limit_order = Self::new(
+
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -597,8 +597,7 @@ impl LimitOrder {
             init_id,
             ts_init.into(),
         )
-        .unwrap();
-        Ok(limit_order)
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "to_dict")]

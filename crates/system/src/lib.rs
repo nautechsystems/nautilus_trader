@@ -27,5 +27,9 @@
 //!
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+
 pub mod config;
 pub mod kernel;

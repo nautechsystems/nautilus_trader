@@ -84,6 +84,11 @@ impl TraderId {
         self.0.as_str()
     }
 
+    /// Returns the numerical tag portion of the trader ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal ID string does not contain a '-' separator.
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated

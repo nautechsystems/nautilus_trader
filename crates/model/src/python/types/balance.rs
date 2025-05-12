@@ -46,8 +46,20 @@ impl AccountBalance {
         self.to_string()
     }
 
+    /// Constructs an [`AccountBalance`] from a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if parsing or conversion fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
+    /// # Panics
+    ///
+    /// Panics if numeric parsing via `unwrap()` fails due to invalid format.
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let dict = values.as_ref();
         let currency: String = dict.get_item("currency")?.extract()?;
@@ -66,6 +78,11 @@ impl AccountBalance {
         .map_err(to_pyvalue_err)
     }
 
+    /// Converts this [`AccountBalance`] into a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
@@ -121,6 +138,15 @@ impl MarginBalance {
         self.to_string()
     }
 
+    /// Constructs a [`MarginBalance`] from a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if parsing or conversion fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
@@ -140,6 +166,15 @@ impl MarginBalance {
         Ok(account_balance)
     }
 
+    /// Converts this [`MarginBalance`] into a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

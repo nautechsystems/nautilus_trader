@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.217.0"
+version = "1.218.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [
     {name = "Nautech Systems", email = "info@nautechsystems.io"},
@@ -26,7 +26,7 @@ license = {text = "LGPL-3.0-or-later"}
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "click>=8.1.8,<9.0.0",
+    "click>=8.2.0,<9.0.0",
     "fsspec>=2025.2.0,<2026.0.0",
     "msgspec>=0.19.0,<1.0.0",
     "numpy>=1.26.4",
@@ -45,10 +45,10 @@ docs = "https://nautilustrader.io/docs"
 # For now we use the poetry build backend until uv supports custom build scripts
 [build-system]
 requires = [
-    "setuptools>=78",
+    "setuptools>=80",
     "poetry-core>=2.0.1",
     "numpy>=1.26.4",
-    "cython==3.1.0b1",
+    "cython==3.1.0",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -99,15 +99,15 @@ polymarket = [
 
 [dependency-groups]
 dev = [
-    "cython==3.1.0b1",
+    "cython==3.1.0",
     "setuptools>=75",
     "black>=25.1.0,<26.0.0",
-    "docformatter>=1.7.5,<2.0.0",
+    "docformatter>=1.7.6,<2.0.0",
     "mypy>=1.15.0,<2.0.0",
     "pandas-stubs>=2.2.2,<3.0.0",
     "pre-commit>=4.2.0,<5.0.0",
     "requests>=2.32.3,<3.0.0",
-    "ruff>=0.11.7,<1.0.0",
+    "ruff>=0.11.9,<1.0.0",
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",

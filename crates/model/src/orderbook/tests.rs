@@ -2097,7 +2097,7 @@ fn test_own_book_level_add_update_delete() {
     assert_eq!(level.len(), 1);
 
     // Update the order to a new size
-    let order_updated = OwnBookOrder::new(
+    let updated = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-1"),
         Some(VenueOrderId::from("1")),
@@ -2112,7 +2112,7 @@ fn test_own_book_level_add_update_delete() {
         UnixNanos::default(),
         UnixNanos::default(),
     );
-    level.update(order_updated);
+    level.update(updated);
     let orders = level.get_orders();
     assert_eq!(orders[0].size, Quantity::from("15"));
 
@@ -2423,7 +2423,7 @@ fn test_status_filtering_bids_as_map() {
     let mut book = OwnOrderBook::new(instrument_id);
 
     // Create orders with different statuses
-    let order_submitted = OwnBookOrder::new(
+    let submitted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-1"),
         None,
@@ -2439,7 +2439,7 @@ fn test_status_filtering_bids_as_map() {
         UnixNanos::default(),
     );
 
-    let order_accepted = OwnBookOrder::new(
+    let accepted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-2"),
         Some(VenueOrderId::from("2")),
@@ -2455,7 +2455,7 @@ fn test_status_filtering_bids_as_map() {
         UnixNanos::default(),
     );
 
-    let order_canceled = OwnBookOrder::new(
+    let canceled = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-3"),
         Some(VenueOrderId::from("3")),
@@ -2471,9 +2471,9 @@ fn test_status_filtering_bids_as_map() {
         UnixNanos::default(),
     );
 
-    book.add(order_submitted);
-    book.add(order_accepted);
-    book.add(order_canceled);
+    book.add(submitted);
+    book.add(accepted);
+    book.add(canceled);
 
     // Test with no filter (should include all orders)
     let all_orders = book.bids_as_map(None, None, None);
@@ -2518,7 +2518,7 @@ fn test_status_filtering_asks_as_map() {
     let mut book = OwnOrderBook::new(instrument_id);
 
     // Create orders with different statuses
-    let order_submitted = OwnBookOrder::new(
+    let submitted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-1"),
         None,
@@ -2534,7 +2534,7 @@ fn test_status_filtering_asks_as_map() {
         UnixNanos::default(),
     );
 
-    let order_accepted = OwnBookOrder::new(
+    let accepted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-2"),
         Some(VenueOrderId::from("2")),
@@ -2550,8 +2550,8 @@ fn test_status_filtering_asks_as_map() {
         UnixNanos::default(),
     );
 
-    book.add(order_submitted);
-    book.add(order_accepted);
+    book.add(submitted);
+    book.add(accepted);
 
     // Test with no filter (should include all orders)
     let all_orders = book.asks_as_map(None, None, None);
@@ -2576,7 +2576,7 @@ fn test_status_filtering_bid_quantity() {
     let mut book = OwnOrderBook::new(instrument_id);
 
     // Create orders with different statuses at same price
-    let order_submitted = OwnBookOrder::new(
+    let submitted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-1"),
         None,
@@ -2592,7 +2592,7 @@ fn test_status_filtering_bid_quantity() {
         UnixNanos::default(),
     );
 
-    let order_accepted = OwnBookOrder::new(
+    let accepted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-2"),
         Some(VenueOrderId::from("2")),
@@ -2608,7 +2608,7 @@ fn test_status_filtering_bid_quantity() {
         UnixNanos::default(),
     );
 
-    let order_canceled = OwnBookOrder::new(
+    let canceled = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-3"),
         Some(VenueOrderId::from("3")),
@@ -2624,9 +2624,9 @@ fn test_status_filtering_bid_quantity() {
         UnixNanos::default(),
     );
 
-    book.add(order_submitted);
-    book.add(order_accepted);
-    book.add(order_canceled);
+    book.add(submitted);
+    book.add(accepted);
+    book.add(canceled);
 
     // Test with no filter (should include all orders)
     let all_quantities = book.bid_quantity(None, None, None);
@@ -2665,7 +2665,7 @@ fn test_status_filtering_ask_quantity() {
     let mut book = OwnOrderBook::new(instrument_id);
 
     // Create orders with different statuses
-    let order_submitted = OwnBookOrder::new(
+    let submitted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-1"),
         None,
@@ -2681,7 +2681,7 @@ fn test_status_filtering_ask_quantity() {
         UnixNanos::default(),
     );
 
-    let order_accepted = OwnBookOrder::new(
+    let accepted = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-2"),
         Some(VenueOrderId::from("2")),
@@ -2697,7 +2697,7 @@ fn test_status_filtering_ask_quantity() {
         UnixNanos::default(),
     );
 
-    let order_canceled = OwnBookOrder::new(
+    let canceled = OwnBookOrder::new(
         TraderId::from("TRADER-001"),
         ClientOrderId::from("O-3"),
         Some(VenueOrderId::from("3")),
@@ -2713,9 +2713,9 @@ fn test_status_filtering_ask_quantity() {
         UnixNanos::default(),
     );
 
-    book.add(order_submitted);
-    book.add(order_accepted);
-    book.add(order_canceled);
+    book.add(submitted);
+    book.add(accepted);
+    book.add(canceled);
 
     // Test with no filter (should include all orders)
     let all_quantities = book.ask_quantity(None, None, None);

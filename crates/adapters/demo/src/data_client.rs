@@ -17,7 +17,9 @@ use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
 use nautilus_common::{
-    messages::data::{self, CustomDataResponse, DataResponse, RequestData},
+    messages::data::{
+        CustomDataResponse, DataResponse, RequestData, SubscribeData, UnsubscribeData,
+    },
     runtime,
 };
 use nautilus_core::UnixNanos;
@@ -125,12 +127,13 @@ impl MockDataClient {
                 .parse::<i32>()
                 .unwrap();
             println!("Received positive value: {value}");
+
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));
@@ -165,9 +168,9 @@ impl MockDataClient {
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));
@@ -181,19 +184,19 @@ impl DataClient for MockDataClient {
         ClientId::new("mock_data_client")
     }
 
-    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
         if request.data_type.type_name() == "get" {
             println!("Received get data request");
-            self.get_request(&request);
+            self.get_request(request);
         } else if request.data_type.type_name() == "skip" {
             println!("Received skip data request");
-            self.skip_request(&request);
+            self.skip_request(request);
         }
 
         Ok(())
     }
 
-    fn subscribe(&mut self, _cmd: data::SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: &SubscribeData) -> anyhow::Result<()> {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
@@ -202,7 +205,7 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, _cmd: data::UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
@@ -215,13 +218,29 @@ impl DataClient for MockDataClient {
         None
     }
 
-    fn start(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn stop(&self) {}
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn reset(&self) {}
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn dispose(&self) {}
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn is_connected(&self) -> bool {
         true

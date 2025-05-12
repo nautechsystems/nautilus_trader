@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, collections::HashMap, num::NonZeroUsize, sync::Arc};
+use std::{any::Any, num::NonZeroUsize, sync::Arc};
 
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{Bar, BarType, DataType, QuoteTick, TradeTick},
@@ -25,7 +26,7 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
     Request(RequestCommand),
     Subscribe(SubscribeCommand),
@@ -56,7 +57,36 @@ pub enum SubscribeCommand {
     InstrumentClose(SubscribeInstrumentClose),
 }
 
+impl PartialEq for SubscribeCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.command_id() == other.command_id()
+    }
+}
+
 impl SubscribeCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn command_id(&self) -> UUID4 {
+        match self {
+            Self::Data(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
+            Self::Instrument(cmd) => cmd.command_id,
+            Self::BookDeltas(cmd) => cmd.command_id,
+            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookSnapshots(cmd) => cmd.command_id,
+            Self::Quotes(cmd) => cmd.command_id,
+            Self::Trades(cmd) => cmd.command_id,
+            Self::Bars(cmd) => cmd.command_id,
+            Self::MarkPrices(cmd) => cmd.command_id,
+            Self::IndexPrices(cmd) => cmd.command_id,
+            Self::InstrumentStatus(cmd) => cmd.command_id,
+            Self::InstrumentClose(cmd) => cmd.command_id,
+        }
+    }
+
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
@@ -90,6 +120,24 @@ impl SubscribeCommand {
             Self::Bars(cmd) => cmd.venue.as_ref(),
             Self::InstrumentStatus(cmd) => cmd.venue.as_ref(),
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
+            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookSnapshots(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::MarkPrices(cmd) => cmd.ts_init,
+            Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
+            Self::InstrumentStatus(cmd) => cmd.ts_init,
+            Self::InstrumentClose(cmd) => cmd.ts_init,
         }
     }
 }
@@ -111,7 +159,36 @@ pub enum UnsubscribeCommand {
     InstrumentClose(UnsubscribeInstrumentClose),
 }
 
+impl PartialEq for UnsubscribeCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.command_id() == other.command_id()
+    }
+}
+
 impl UnsubscribeCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn command_id(&self) -> UUID4 {
+        match self {
+            Self::Data(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
+            Self::Instrument(cmd) => cmd.command_id,
+            Self::BookDeltas(cmd) => cmd.command_id,
+            Self::BookDepth10(cmd) => cmd.command_id,
+            Self::BookSnapshots(cmd) => cmd.command_id,
+            Self::Quotes(cmd) => cmd.command_id,
+            Self::Trades(cmd) => cmd.command_id,
+            Self::Bars(cmd) => cmd.command_id,
+            Self::MarkPrices(cmd) => cmd.command_id,
+            Self::IndexPrices(cmd) => cmd.command_id,
+            Self::InstrumentStatus(cmd) => cmd.command_id,
+            Self::InstrumentClose(cmd) => cmd.command_id,
+        }
+    }
+
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
@@ -147,6 +224,24 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
         }
     }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookDeltas(cmd) => cmd.ts_init,
+            Self::BookDepth10(cmd) => cmd.ts_init,
+            Self::BookSnapshots(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::MarkPrices(cmd) => cmd.ts_init,
+            Self::IndexPrices(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
+            Self::InstrumentStatus(cmd) => cmd.ts_init,
+            Self::InstrumentClose(cmd) => cmd.ts_init,
+        }
+    }
 }
 
 fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>) {
@@ -163,7 +258,7 @@ pub struct SubscribeData {
     pub data_type: DataType,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeData {
@@ -173,7 +268,7 @@ impl SubscribeData {
         data_type: DataType,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -193,7 +288,7 @@ pub struct SubscribeInstruments {
     pub venue: Venue,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeInstruments {
@@ -202,7 +297,7 @@ impl SubscribeInstruments {
         venue: Venue,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             client_id,
@@ -221,7 +316,7 @@ pub struct SubscribeInstrument {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeInstrument {
@@ -231,7 +326,7 @@ impl SubscribeInstrument {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -255,7 +350,7 @@ pub struct SubscribeBookDeltas {
     pub ts_init: UnixNanos,
     pub depth: Option<NonZeroUsize>,
     pub managed: bool,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeBookDeltas {
@@ -269,7 +364,7 @@ impl SubscribeBookDeltas {
         ts_init: UnixNanos,
         depth: Option<NonZeroUsize>,
         managed: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -296,7 +391,7 @@ pub struct SubscribeBookDepth10 {
     pub ts_init: UnixNanos,
     pub depth: Option<NonZeroUsize>,
     pub managed: bool,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeBookDepth10 {
@@ -310,7 +405,7 @@ impl SubscribeBookDepth10 {
         ts_init: UnixNanos,
         depth: Option<NonZeroUsize>,
         managed: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -337,7 +432,7 @@ pub struct SubscribeBookSnapshots {
     pub ts_init: UnixNanos,
     pub depth: Option<NonZeroUsize>,
     pub interval_ms: NonZeroUsize,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeBookSnapshots {
@@ -351,7 +446,7 @@ impl SubscribeBookSnapshots {
         ts_init: UnixNanos,
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -375,7 +470,7 @@ pub struct SubscribeQuotes {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeQuotes {
@@ -385,7 +480,7 @@ impl SubscribeQuotes {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -406,7 +501,7 @@ pub struct SubscribeTrades {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeTrades {
@@ -416,7 +511,7 @@ impl SubscribeTrades {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -438,7 +533,7 @@ pub struct SubscribeBars {
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub await_partial: bool,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeBars {
@@ -449,7 +544,7 @@ impl SubscribeBars {
         command_id: UUID4,
         ts_init: UnixNanos,
         await_partial: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -471,7 +566,7 @@ pub struct SubscribeMarkPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeMarkPrices {
@@ -481,7 +576,7 @@ impl SubscribeMarkPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -502,7 +597,7 @@ pub struct SubscribeIndexPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeIndexPrices {
@@ -512,7 +607,7 @@ impl SubscribeIndexPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -533,7 +628,7 @@ pub struct SubscribeInstrumentStatus {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeInstrumentStatus {
@@ -543,7 +638,7 @@ impl SubscribeInstrumentStatus {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -564,7 +659,7 @@ pub struct SubscribeInstrumentClose {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl SubscribeInstrumentClose {
@@ -574,7 +669,7 @@ impl SubscribeInstrumentClose {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -595,7 +690,7 @@ pub struct UnsubscribeData {
     pub data_type: DataType,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeData {
@@ -605,7 +700,7 @@ impl UnsubscribeData {
         data_type: DataType,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -626,7 +721,7 @@ pub struct UnsubscribeInstruments {
     pub venue: Venue,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeInstruments {
@@ -635,7 +730,7 @@ impl UnsubscribeInstruments {
         venue: Venue,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             client_id,
@@ -654,7 +749,7 @@ pub struct UnsubscribeInstrument {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeInstrument {
@@ -664,7 +759,7 @@ impl UnsubscribeInstrument {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -685,7 +780,7 @@ pub struct UnsubscribeBookDeltas {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeBookDeltas {
@@ -696,7 +791,7 @@ impl UnsubscribeBookDeltas {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -717,7 +812,7 @@ pub struct UnsubscribeBookDepth10 {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeBookDepth10 {
@@ -728,7 +823,7 @@ impl UnsubscribeBookDepth10 {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -749,7 +844,7 @@ pub struct UnsubscribeBookSnapshots {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeBookSnapshots {
@@ -760,7 +855,7 @@ impl UnsubscribeBookSnapshots {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -781,7 +876,7 @@ pub struct UnsubscribeQuotes {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeQuotes {
@@ -792,7 +887,7 @@ impl UnsubscribeQuotes {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -813,7 +908,7 @@ pub struct UnsubscribeTrades {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeTrades {
@@ -824,7 +919,7 @@ impl UnsubscribeTrades {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -845,7 +940,7 @@ pub struct UnsubscribeBars {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeBars {
@@ -856,7 +951,7 @@ impl UnsubscribeBars {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -877,7 +972,7 @@ pub struct UnsubscribeMarkPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeMarkPrices {
@@ -888,7 +983,7 @@ impl UnsubscribeMarkPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -909,7 +1004,7 @@ pub struct UnsubscribeIndexPrices {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeIndexPrices {
@@ -920,7 +1015,7 @@ impl UnsubscribeIndexPrices {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -941,7 +1036,7 @@ pub struct UnsubscribeInstrumentStatus {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeInstrumentStatus {
@@ -952,7 +1047,7 @@ impl UnsubscribeInstrumentStatus {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -973,7 +1068,7 @@ pub struct UnsubscribeInstrumentClose {
     pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl UnsubscribeInstrumentClose {
@@ -984,7 +1079,7 @@ impl UnsubscribeInstrumentClose {
         venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -1007,6 +1102,12 @@ pub enum RequestCommand {
     Quotes(RequestQuotes),
     Trades(RequestTrades),
     Bars(RequestBars),
+}
+
+impl PartialEq for RequestCommand {
+    fn eq(&self, other: &Self) -> bool {
+        self.request_id() == other.request_id()
+    }
 }
 
 impl RequestCommand {
@@ -1054,6 +1155,18 @@ impl RequestCommand {
             },
         }
     }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
+            Self::Instrument(cmd) => cmd.ts_init,
+            Self::BookSnapshot(cmd) => cmd.ts_init,
+            Self::Quotes(cmd) => cmd.ts_init,
+            Self::Trades(cmd) => cmd.ts_init,
+            Self::Bars(cmd) => cmd.ts_init,
+        }
+    }
 }
 
 // Request data structures
@@ -1065,7 +1178,7 @@ pub struct RequestInstrument {
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -1074,7 +1187,7 @@ pub struct RequestData {
     pub data_type: DataType,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestInstrument {
@@ -1086,7 +1199,7 @@ impl RequestInstrument {
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             instrument_id,
@@ -1108,7 +1221,7 @@ pub struct RequestInstruments {
     pub venue: Option<Venue>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestInstruments {
@@ -1120,7 +1233,7 @@ impl RequestInstruments {
         venue: Option<Venue>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         check_client_id_or_venue(&client_id, &venue);
         Self {
@@ -1142,7 +1255,7 @@ pub struct RequestBookSnapshot {
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestBookSnapshot {
@@ -1153,7 +1266,7 @@ impl RequestBookSnapshot {
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             instrument_id,
@@ -1175,7 +1288,7 @@ pub struct RequestQuotes {
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestQuotes {
@@ -1188,7 +1301,7 @@ impl RequestQuotes {
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             instrument_id,
@@ -1212,7 +1325,7 @@ pub struct RequestTrades {
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestTrades {
@@ -1225,7 +1338,7 @@ impl RequestTrades {
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             instrument_id,
@@ -1249,7 +1362,7 @@ pub struct RequestBars {
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl RequestBars {
@@ -1262,7 +1375,7 @@ impl RequestBars {
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             bar_type,
@@ -1280,6 +1393,7 @@ impl RequestBars {
 #[derive(Clone, Debug)]
 pub enum DataResponse {
     Data(CustomDataResponse),
+    Instrument(Box<InstrumentResponse>),
     Instruments(InstrumentsResponse),
     Book(BookResponse),
     Quotes(QuotesResponse),
@@ -1296,6 +1410,7 @@ impl DataResponse {
     pub fn correlation_id(&self) -> &UUID4 {
         match self {
             Self::Data(resp) => &resp.correlation_id,
+            Self::Instrument(resp) => &resp.correlation_id,
             Self::Instruments(resp) => &resp.correlation_id,
             Self::Book(resp) => &resp.correlation_id,
             Self::Quotes(resp) => &resp.correlation_id,
@@ -1311,22 +1426,22 @@ pub type Payload = Arc<dyn Any + Send + Sync>;
 pub struct CustomDataResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
-    pub venue: Venue,
+    pub venue: Option<Venue>,
     pub data_type: DataType,
     pub data: Payload,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl CustomDataResponse {
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,
-        venue: Venue,
+        venue: Option<Venue>,
         data_type: DataType,
         data: T,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
@@ -1338,16 +1453,56 @@ impl CustomDataResponse {
             params,
         }
     }
+
+    /// Converts the response to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct InstrumentResponse {
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub instrument_id: InstrumentId,
+    pub data: InstrumentAny,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
+}
+
+impl InstrumentResponse {
+    /// Converts to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn new(
+        correlation_id: UUID4,
+        client_id: ClientId,
+        instrument_id: InstrumentId,
+        data: InstrumentAny,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            correlation_id,
+            client_id,
+            instrument_id,
+            data,
+            ts_init,
+            params,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct InstrumentsResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
-    pub instrument_id: InstrumentId,
+    pub venue: Venue,
     pub data: Vec<InstrumentAny>,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl InstrumentsResponse {
@@ -1359,15 +1514,15 @@ impl InstrumentsResponse {
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
-        instrument_id: InstrumentId,
+        venue: Venue,
         data: Vec<InstrumentAny>,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
             client_id,
-            instrument_id,
+            venue,
             data,
             ts_init,
             params,
@@ -1382,7 +1537,7 @@ pub struct BookResponse {
     pub instrument_id: InstrumentId,
     pub data: OrderBook,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl BookResponse {
@@ -1397,7 +1552,7 @@ impl BookResponse {
         instrument_id: InstrumentId,
         data: OrderBook,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
@@ -1417,7 +1572,7 @@ pub struct QuotesResponse {
     pub instrument_id: InstrumentId,
     pub data: Vec<QuoteTick>,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl QuotesResponse {
@@ -1432,7 +1587,7 @@ impl QuotesResponse {
         instrument_id: InstrumentId,
         data: Vec<QuoteTick>,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
@@ -1452,7 +1607,7 @@ pub struct TradesResponse {
     pub instrument_id: InstrumentId,
     pub data: Vec<TradeTick>,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl TradesResponse {
@@ -1467,7 +1622,7 @@ impl TradesResponse {
         instrument_id: InstrumentId,
         data: Vec<TradeTick>,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,
@@ -1487,7 +1642,7 @@ pub struct BarsResponse {
     pub bar_type: BarType,
     pub data: Vec<Bar>,
     pub ts_init: UnixNanos,
-    pub params: Option<HashMap<String, String>>,
+    pub params: Option<IndexMap<String, String>>,
 }
 
 impl BarsResponse {
@@ -1502,7 +1657,7 @@ impl BarsResponse {
         bar_type: BarType,
         data: Vec<Bar>,
         ts_init: UnixNanos,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> Self {
         Self {
             correlation_id,

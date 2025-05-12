@@ -77,6 +77,8 @@ pub fn get_atomic_clock_static() -> &'static AtomicTime {
 
 /// Returns the duration since the UNIX epoch based on [`SystemTime::now()`].
 ///
+/// # Panics
+///
 /// Panics if the system time is set before the UNIX epoch.
 #[inline(always)]
 #[must_use]
@@ -87,8 +89,13 @@ pub fn duration_since_unix_epoch() -> Duration {
 }
 
 /// Returns the current UNIX time in nanoseconds, based on [`SystemTime::now()`].
+///
+/// # Panics
+///
+/// Panics if the duration in nanoseconds exceeds `u64::MAX`.
 #[inline(always)]
 #[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn nanos_since_unix_epoch() -> u64 {
     duration_since_unix_epoch().as_nanos() as u64
 }
@@ -173,6 +180,7 @@ impl AtomicTime {
 
     /// Return the current time as seconds.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn get_time(&self) -> f64 {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
@@ -357,6 +365,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
         let system_ns = duration_since_unix_epoch().as_nanos() as u64;

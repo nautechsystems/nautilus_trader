@@ -178,6 +178,14 @@ impl BacktestEngine {
         todo!("implement change_fill_model")
     }
 
+    /// Adds an instrument to the backtest engine for the specified venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - The instrument's associated venue has not been added via `add_venue`.
+    /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
@@ -308,6 +316,7 @@ impl BacktestEngine {
         todo!("implement add_data_client_if_not_exists")
     }
 
+    // TODO: We might want venue to be optional for multi-venue clients
     pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
         let client_id = ClientId::from(venue.as_str());
         if !self
@@ -320,11 +329,10 @@ impl BacktestEngine {
                 BacktestDataClient::new(client_id, venue, self.kernel.cache.clone());
             let data_client_adapter = DataClientAdapter::new(
                 client_id,
-                venue,
+                Some(venue), // TBD
                 false,
                 false,
                 Box::new(backtest_client),
-                self.kernel.clock.clone(),
             );
             self.kernel
                 .data_engine
@@ -351,7 +359,7 @@ mod tests {
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
-        let config = config.unwrap_or(BacktestEngineConfig::default());
+        let config = config.unwrap_or_default();
         let mut engine = BacktestEngine::new(config);
         engine.add_venue(
             Venue::from("BINANCE"),
@@ -410,6 +418,6 @@ mod tests {
                 .data_engine
                 .registered_clients()
                 .contains(&client_id)
-        )
+        );
     }
 }

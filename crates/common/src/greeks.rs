@@ -45,7 +45,7 @@ use crate::{cache::Cache, clock::Clock, msgbus};
 ///
 /// Also note that for ease of implementation we consider that american options (for stock options for example) are european for the computation of greeks.
 #[allow(dead_code)]
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct GreeksCalculator {
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<dyn Clock>>,
@@ -63,6 +63,14 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of the instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument definition is not found or greeks calculation fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument has no underlying identifier.
     #[allow(clippy::too_many_arguments)]
     pub fn instrument_greeks(
         &self,
@@ -394,6 +402,10 @@ impl GreeksCalculator {
     /// - Apply shocks to the spot value of an instrument's underlying, implied volatility or time to expiry.
     /// - Compute percent greeks.
     /// - Compute beta-weighted delta and gamma with respect to an index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any underlying greeks calculation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,

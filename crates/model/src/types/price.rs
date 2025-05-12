@@ -44,10 +44,12 @@ pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
 
 /// The sentinel value for an unset or null price.
@@ -468,10 +470,10 @@ impl<'de> Deserialize<'de> for Price {
 /// Returns an error if the validation check fails.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
     if value.raw == PRICE_UNDEF {
-        anyhow::bail!("{FAILED}: invalid `Price` for '{param}', was PRICE_UNDEF")
+        anyhow::bail!("invalid `Price` for '{param}', was PRICE_UNDEF")
     }
     if !value.is_positive() {
-        anyhow::bail!("{FAILED}: invalid `Price` for '{param}' not positive, was {value}")
+        anyhow::bail!("invalid `Price` for '{param}' not positive, was {value}")
     }
     Ok(())
 }

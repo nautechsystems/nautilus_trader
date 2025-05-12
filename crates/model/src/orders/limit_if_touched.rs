@@ -13,15 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, correctness::FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Order, OrderAny, OrderCore, OrderError};
+use super::{Order, OrderAny, OrderCore, check_display_qty, check_time_in_force};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
@@ -32,7 +35,8 @@ use crate::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
-    types::{Currency, Money, Price, Quantity},
+    orders::OrderError,
+    types::{Currency, Money, Price, Quantity, quantity::check_positive_quantity},
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -53,6 +57,7 @@ pub struct LimitIfTouchedOrder {
     core: OrderCore,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl LimitIfTouchedOrder {
     /// Creates a new [`LimitIfTouchedOrder`] instance.
     ///
@@ -60,8 +65,10 @@ impl LimitIfTouchedOrder {
     ///
     /// Returns an error if:
     /// - The `quantity` is not positive.
+    /// - The `display_qty` (when provided) exceeds `quantity`.
+    /// - The `time_in_force` is GTD and the `expire_time` is `None` or zero.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub fn new_checked(
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
@@ -89,8 +96,21 @@ impl LimitIfTouchedOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> Self {
-        // TODO: Implement new_checked and check quantity positive, add error docs.
+    ) -> anyhow::Result<Self> {
+        check_positive_quantity(quantity, stringify!(quantity))?;
+        check_display_qty(display_qty, quantity)?;
+        check_time_in_force(time_in_force, expire_time)?;
+
+        match order_side {
+            OrderSide::Buy if trigger_price > price => {
+                anyhow::bail!("BUY Limit-If-Touched must have `trigger_price` <= `price`")
+            }
+            OrderSide::Sell if trigger_price < price => {
+                anyhow::bail!("SELL Limit-If-Touched must have `trigger_price` >= `price`")
+            }
+            _ => {}
+        }
+
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -126,8 +146,8 @@ impl LimitIfTouchedOrder {
             exec_spawn_id,
             tags,
         );
-        Self {
-            core: OrderCore::new(init_order),
+
+        Ok(Self {
             price,
             trigger_price,
             trigger_type,
@@ -137,7 +157,75 @@ impl LimitIfTouchedOrder {
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
-        }
+            core: OrderCore::new(init_order),
+        })
+    }
+
+    /// Creates a new [`LimitIfTouchedOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any order validation fails (see [`LimitIfTouchedOrder::new_checked`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
+        time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
+        trigger_instrument_id: Option<InstrumentId>,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            price,
+            trigger_price,
+            trigger_type,
+            time_in_force,
+            expire_time,
+            post_only,
+            reduce_only,
+            quote_quantity,
+            display_qty,
+            emulation_trigger,
+            trigger_instrument_id,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+            init_id,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 }
 
@@ -421,7 +509,7 @@ impl Order for LimitIfTouchedOrder {
     }
 
     fn set_liquidity_side(&mut self, liquidity_side: LiquiditySide) {
-        self.liquidity_side = Some(liquidity_side)
+        self.liquidity_side = Some(liquidity_side);
     }
 
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
@@ -430,6 +518,23 @@ impl Order for LimitIfTouchedOrder {
 
     fn previous_status(&self) -> Option<OrderStatus> {
         self.core.previous_status
+    }
+}
+
+impl Display for LimitIfTouchedOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LimitIfTouchedOrder({} {} {} @ {} / trigger {} ({:?}) {}, status={})",
+            self.side,
+            self.quantity.to_formatted_string(),
+            self.instrument_id,
+            self.price,
+            self.trigger_price,
+            self.trigger_type,
+            self.time_in_force,
+            self.status
+        )
     }
 }
 
@@ -485,29 +590,107 @@ mod tests {
         enums::{TimeInForce, TriggerType},
         events::order::{filled::OrderFilledBuilder, initialized::OrderInitializedBuilder},
         identifiers::InstrumentId,
+        instruments::{CurrencyPair, stubs::*},
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
+    use rstest::rstest;
 
-    #[test]
-    fn test_limit_if_touched_order_creation() {
-        // Create a limit-if-touched order with specific parameters
+    #[rstest]
+    fn test_initialize(_audusd_sim: CurrencyPair) {
         let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
-            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
-            .quantity(Quantity::from(10))
-            .price(Price::new(100.0, 2))
-            .trigger_price(Price::new(95.0, 2))
-            .trigger_type(TriggerType::Default)
+            .instrument_id(_audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("0.68000"))
+            .trigger_price(Price::from("0.68000"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
             .build();
 
-        // Assert that the limit-if-touched specific fields are correctly set
-        assert_eq!(order.price(), Some(Price::new(100.0, 2)));
-        assert_eq!(order.trigger_price(), Some(Price::new(95.0, 2)));
-        assert_eq!(order.trigger_type(), Some(TriggerType::Default));
+        assert_eq!(order.trigger_price(), Some(Price::from("0.68000")));
+        assert_eq!(order.price(), Some(Price::from("0.68000")));
+
         assert_eq!(order.time_in_force(), TimeInForce::Gtc);
 
-        // Verify order type
-        assert_eq!(order.order_type(), OrderType::LimitIfTouched);
+        assert_eq!(order.is_triggered(), Some(false));
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(1));
+
+        assert_eq!(order.display_qty(), None);
+        assert_eq!(order.trigger_instrument_id(), None);
+        assert_eq!(order.order_list_id(), None);
+    }
+
+    #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("30200"))
+            .price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(
+            order.to_string(),
+            "LimitIfTouchedOrder(BUY 1 AUD/USD.SIM @ 30200 / trigger 30200 (LastPrice) GTC, status=INITIALIZED)"
+        );
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
+    fn test_quantity_zero(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(0))
+            .build();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
+    fn test_gtd_without_expire(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("30000"))
+            .trigger_price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .time_in_force(TimeInForce::Gtd)
+            .build();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "BUY Limit-If-Touched must have `trigger_price` <= `price`")]
+    fn test_buy_trigger_gt_price(audusd_sim: CurrencyPair) {
+        OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("30300")) // Invalid trigger > price
+            .price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "SELL Limit-If-Touched must have `trigger_price` >= `price`")]
+    fn test_sell_trigger_lt_price(audusd_sim: CurrencyPair) {
+        OrderTestBuilder::new(OrderType::LimitIfTouched)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("30100")) // Invalid trigger < price
+            .price(Price::from("30200"))
+            .trigger_type(TriggerType::LastPrice)
+            .quantity(Quantity::from(1))
+            .build();
     }
 
     #[test]
@@ -543,23 +726,6 @@ mod tests {
         assert_eq!(accepted_order.price(), Some(updated_price));
         assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
         assert_eq!(accepted_order.quantity(), updated_quantity);
-    }
-
-    #[test]
-    fn test_limit_if_touched_order_expire_time() {
-        // Create a new LimitIfTouchedOrder with an expire time
-        let expire_time = UnixNanos::from(1234567890);
-        let order = OrderTestBuilder::new(OrderType::LimitIfTouched)
-            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
-            .quantity(Quantity::from(10))
-            .price(Price::new(100.0, 2))
-            .trigger_price(Price::new(95.0, 2))
-            .trigger_type(TriggerType::Default)
-            .expire_time(expire_time)
-            .build();
-
-        // Assert that the expire time is set correctly
-        assert_eq!(order.expire_time(), Some(expire_time));
     }
 
     #[test]

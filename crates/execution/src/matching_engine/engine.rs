@@ -1462,7 +1462,10 @@ impl OrderMatchingEngine {
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
-                OrderType::Market | OrderType::MarketIfTouched | OrderType::StopMarket
+                OrderType::Market
+                    | OrderType::MarketIfTouched
+                    | OrderType::StopMarket
+                    | OrderType::TrailingStopMarket
             )
         {
             // Exhausted simulated book volume (continue aggressive filling into next level)

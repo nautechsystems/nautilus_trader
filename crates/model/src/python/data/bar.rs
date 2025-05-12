@@ -169,6 +169,11 @@ impl BarType {
 }
 
 impl Bar {
+    /// Creates a Rust `Bar` instance from a Python object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if retrieving any attribute or converting types fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let bar_type_obj: Bound<'_, PyAny> = obj.getattr("bar_type")?.extract()?;
         let bar_type_str: String = bar_type_obj.call_method0("__str__")?.extract()?;

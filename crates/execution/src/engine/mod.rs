@@ -227,13 +227,13 @@ impl ExecutionEngine {
         self.handle_event(event);
     }
 
-    pub fn execute(&self, command: TradingCommand) {
+    pub fn execute(&self, command: &TradingCommand) {
         self.execute_command(command);
     }
 
     // -- COMMAND HANDLERS ------------------------------------------------------------------------
 
-    fn execute_command(&self, command: TradingCommand) {
+    fn execute_command(&self, command: &TradingCommand) {
         if self.config.debug {
             log::debug!("{RECV}{CMD} {command:?}");
         }
@@ -269,8 +269,8 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_submit_order(&self, client: Rc<dyn ExecutionClient>, command: SubmitOrder) {
-        let mut order = command.order.clone();
+    fn handle_submit_order(&self, client: Rc<dyn ExecutionClient>, cmd: &SubmitOrder) {
+        let mut order = cmd.order.clone();
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
 
@@ -279,12 +279,9 @@ impl ExecutionEngine {
             // Add order to cache in a separate scope to drop the mutable borrow
             {
                 let mut cache = self.cache.borrow_mut();
-                if let Err(e) = cache.add_order(
-                    order.clone(),
-                    command.position_id,
-                    Some(command.client_id),
-                    true,
-                ) {
+                if let Err(e) =
+                    cache.add_order(order.clone(), cmd.position_id, Some(cmd.client_id), true)
+                {
                     log::error!("Error adding order to cache: {e}");
                     return;
                 }
@@ -302,7 +299,7 @@ impl ExecutionEngine {
                 instrument.clone()
             } else {
                 log::error!(
-                    "Cannot handle submit order: no instrument found for {instrument_id}, {command}",
+                    "Cannot handle submit order: no instrument found for {instrument_id}, {cmd}",
                 );
                 return;
             }
@@ -330,33 +327,25 @@ impl ExecutionEngine {
         }
 
         // Send the order to the execution client
-        // TODO: Avoid this clone
-        if let Err(e) = client.submit_order(command.clone()) {
+        if let Err(e) = client.submit_order(cmd) {
             log::error!("Error submitting order to client: {e}");
             self.deny_order(
-                &command.order,
+                &cmd.order,
                 &format!("failed-to-submit-order-to-client: {e}"),
             );
         }
     }
 
-    fn handle_submit_order_list(
-        &self,
-        client: Rc<dyn ExecutionClient>,
-        mut command: SubmitOrderList,
-    ) {
-        let orders = command.order_list.orders.clone();
+    fn handle_submit_order_list(&self, client: Rc<dyn ExecutionClient>, cmd: &SubmitOrderList) {
+        let orders = cmd.order_list.orders.clone();
 
         // Cache orders
         let mut cache = self.cache.borrow_mut();
         for order in &orders {
             if !cache.order_exists(&order.client_order_id()) {
-                if let Err(e) = cache.add_order(
-                    order.clone(),
-                    command.position_id,
-                    Some(command.client_id),
-                    true,
-                ) {
+                if let Err(e) =
+                    cache.add_order(order.clone(), cmd.position_id, Some(cmd.client_id), true)
+                {
                     log::error!("Error adding order to cache: {e}");
                     return;
                 }
@@ -370,50 +359,51 @@ impl ExecutionEngine {
 
         // Get instrument from cache
         let cache = self.cache.borrow();
-        let instrument = if let Some(instrument) = cache.instrument(&command.instrument_id) {
+        let instrument = if let Some(instrument) = cache.instrument(&cmd.instrument_id) {
             instrument
         } else {
             log::error!(
-                "Cannot handle submit order list: no instrument found for {}, {command}",
-                command.instrument_id,
+                "Cannot handle submit order list: no instrument found for {}, {cmd}",
+                cmd.instrument_id,
             );
             return;
         };
 
         // Check if converting quote quantity
-        if !instrument.is_inverse() && command.order_list.orders[0].is_quote_quantity() {
+        if !instrument.is_inverse() && cmd.order_list.orders[0].is_quote_quantity() {
             let mut quote_qty = None;
-            let mut last_px = None;
+            let mut _last_px = None;
 
-            for order in &mut command.order_list.orders {
+            for order in &cmd.order_list.orders {
                 if !order.is_quote_quantity() {
                     continue; // Base quantity already set
                 }
 
                 if Some(order.quantity()) != quote_qty {
-                    last_px =
+                    _last_px =
                         self.last_px_for_conversion(&order.instrument_id(), order.order_side());
                     quote_qty = Some(order.quantity());
                 }
 
-                if let Some(px) = last_px {
-                    let base_qty = instrument.get_base_quantity(order.quantity(), px);
-                    self.set_order_base_qty(order, base_qty);
-                } else {
-                    for order in &command.order_list.orders {
-                        self.deny_order(
-                            order,
-                            &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
-                        );
-                    }
-                    return; // Denied
-                }
+                // TODO: Pull order out of cache to modify
+                // if let Some(px) = last_px {
+                //     let base_qty = instrument.get_base_quantity(order.quantity(), px);
+                //     self.set_order_base_qty(order, base_qty);
+                // } else {
+                //     for order in &cmd.order_list.orders {
+                //         self.deny_order(
+                //             order,
+                //             &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
+                //         );
+                //     }
+                //     return; // Denied
+                // }
             }
         }
 
         if self.config.manage_own_order_books {
-            let mut own_book = self.get_or_init_own_order_book(&command.instrument_id);
-            for order in &command.order_list.orders {
+            let mut own_book = self.get_or_init_own_order_book(&cmd.instrument_id);
+            for order in &cmd.order_list.orders {
                 if should_handle_own_book_order(order) {
                     own_book.add(order.to_own_book_order());
                 }
@@ -421,7 +411,7 @@ impl ExecutionEngine {
         }
 
         // Send to execution client
-        if let Err(e) = client.submit_order_list(command) {
+        if let Err(e) = client.submit_order_list(cmd) {
             log::error!("Error submitting order list to client: {e}");
             for order in &orders {
                 self.deny_order(
@@ -432,36 +422,32 @@ impl ExecutionEngine {
         }
     }
 
-    fn handle_modify_order(&self, client: Rc<dyn ExecutionClient>, command: ModifyOrder) {
-        if let Err(e) = client.modify_order(command) {
+    fn handle_modify_order(&self, client: Rc<dyn ExecutionClient>, cmd: &ModifyOrder) {
+        if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
         }
     }
 
-    fn handle_cancel_order(&self, client: Rc<dyn ExecutionClient>, command: CancelOrder) {
-        if let Err(e) = client.cancel_order(command) {
+    fn handle_cancel_order(&self, client: Rc<dyn ExecutionClient>, cmd: &CancelOrder) {
+        if let Err(e) = client.cancel_order(cmd) {
             log::error!("Error canceling order: {e}");
         }
     }
 
-    fn handle_cancel_all_orders(&self, client: Rc<dyn ExecutionClient>, command: CancelAllOrders) {
-        if let Err(e) = client.cancel_all_orders(command) {
+    fn handle_cancel_all_orders(&self, client: Rc<dyn ExecutionClient>, cmd: &CancelAllOrders) {
+        if let Err(e) = client.cancel_all_orders(cmd) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
-    fn handle_batch_cancel_orders(
-        &self,
-        client: Rc<dyn ExecutionClient>,
-        command: BatchCancelOrders,
-    ) {
-        if let Err(e) = client.batch_cancel_orders(command) {
+    fn handle_batch_cancel_orders(&self, client: Rc<dyn ExecutionClient>, cmd: &BatchCancelOrders) {
+        if let Err(e) = client.batch_cancel_orders(cmd) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
-    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, command: QueryOrder) {
-        if let Err(e) = client.query_order(command) {
+    fn handle_query_order(&self, client: Rc<dyn ExecutionClient>, cmd: &QueryOrder) {
+        if let Err(e) = client.query_order(cmd) {
             log::error!("Error querying order: {e}");
         }
     }
@@ -552,18 +538,18 @@ impl ExecutionEngine {
 
         drop(cache);
         match event {
-            OrderEventAny::Filled(order_filled) => {
-                let oms_type = self.determine_oms_type(order_filled);
-                let position_id = self.determine_position_id(*order_filled, oms_type);
+            OrderEventAny::Filled(fill) => {
+                let oms_type = self.determine_oms_type(fill);
+                let position_id = self.determine_position_id(*fill, oms_type);
 
                 // Create a new fill with the determined position ID
-                let mut order_filled = *order_filled;
-                if order_filled.position_id.is_none() {
-                    order_filled.position_id = Some(position_id);
+                let mut fill = *fill;
+                if fill.position_id.is_none() {
+                    fill.position_id = Some(position_id);
                 }
 
-                self.apply_event_to_order(&mut order, OrderEventAny::Filled(order_filled));
-                self.handle_order_fill(&order, order_filled, oms_type);
+                self.apply_event_to_order(&mut order, OrderEventAny::Filled(fill));
+                self.handle_order_fill(&order, fill, oms_type);
             }
             _ => {
                 self.apply_event_to_order(&mut order, event.clone());

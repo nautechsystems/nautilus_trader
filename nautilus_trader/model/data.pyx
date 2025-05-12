@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport Data_t
 from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
+from nautilus_trader.core.rust.model cimport MarkPriceUpdate_t
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport PriceRaw
@@ -90,6 +91,10 @@ from nautilus_trader.core.rust.model cimport book_order_hash
 from nautilus_trader.core.rust.model cimport book_order_new
 from nautilus_trader.core.rust.model cimport book_order_signed_size
 from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
+from nautilus_trader.core.rust.model cimport mark_price_update_eq
+from nautilus_trader.core.rust.model cimport mark_price_update_hash
+from nautilus_trader.core.rust.model cimport mark_price_update_new
+from nautilus_trader.core.rust.model cimport mark_price_update_to_cstr
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
@@ -194,6 +199,12 @@ cdef inline Bar bar_from_mem_c(Bar_t mem):
     return bar
 
 
+cdef inline MarkPriceUpdate mark_price_from_mem_c(MarkPriceUpdate_t mem):
+    cdef MarkPriceUpdate obj = MarkPriceUpdate.__new__(MarkPriceUpdate)
+    obj._mem = mem
+    return obj
+
+
 # SAFETY: Do NOT deallocate the capsule here
 cpdef list capsule_to_list(capsule):
     cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
@@ -214,6 +225,8 @@ cpdef list capsule_to_list(capsule):
             objects.append(trade_from_mem_c(ptr[i].trade))
         elif ptr[i].tag == Data_t_Tag.BAR:
             objects.append(bar_from_mem_c(ptr[i].bar))
+        elif ptr[i].tag == Data_t_Tag.MARK_PRICE_UPDATE:
+            objects.append(mark_price_from_mem_c(ptr[i].mark_price_update))
 
     return objects
 
@@ -4873,16 +4886,18 @@ cdef class MarkPriceUpdate(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ) -> None:
-        self.instrument_id = instrument_id
-        self.value = value
-        self.ts_event = ts_event
-        self.ts_init = ts_init
+        self._mem = mark_price_update_new(
+            instrument_id._mem,
+            value._mem,
+            ts_event,
+            ts_init,
+        )
 
     def __eq__(self, MarkPriceUpdate other) -> bool:
-        return self.to_str() == other.to_str()
+        return mark_price_update_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return mark_price_update_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()
@@ -4891,7 +4906,55 @@ cdef class MarkPriceUpdate(Data):
         return f"{type(self).__name__}({self.to_str()})"
 
     cdef str to_str(self):
-        return f"{self.instrument_id},{self.value},{self.ts_event},{self.ts_init}"
+        return cstr_to_pystr(mark_price_update_to_cstr(&self._mem))
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the instrument ID.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def value(self) -> Price:
+        """
+        The mark price.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_raw_c(self._mem.value.raw, self._mem.value.precision)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the data event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
 
     @staticmethod
     cdef MarkPriceUpdate from_dict_c(dict values):

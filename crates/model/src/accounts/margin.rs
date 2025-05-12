@@ -106,6 +106,11 @@ impl MarginAccount {
         maintenance_margins
     }
 
+    /// Updates the initial margin for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_initial_margin(&mut self, instrument_id: InstrumentId, margin_init: Money) {
         let margin_balance = self.margins.get(&instrument_id);
         if margin_balance.is_none() {
@@ -126,6 +131,11 @@ impl MarginAccount {
         self.recalculate_balance(margin_init.currency);
     }
 
+    /// Returns the initial margin amount for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no margin balance exists for the given `instrument_id`.
     #[must_use]
     pub fn initial_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
@@ -136,6 +146,11 @@ impl MarginAccount {
         margin_balance.unwrap().initial
     }
 
+    /// Updates the maintenance margin for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an existing margin balance is found but cannot be unwrapped.
     pub fn update_maintenance_margin(
         &mut self,
         instrument_id: InstrumentId,
@@ -160,6 +175,11 @@ impl MarginAccount {
         self.recalculate_balance(margin_maintenance.currency);
     }
 
+    /// Returns the maintenance margin amount for the specified instrument.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no margin balance exists for the given `instrument_id`.
     #[must_use]
     pub fn maintenance_margin(&self, instrument_id: InstrumentId) -> Money {
         let margin_balance = self.margins.get(&instrument_id);
@@ -170,6 +190,11 @@ impl MarginAccount {
         margin_balance.unwrap().maintenance
     }
 
+    /// Calculates the initial margin amount for the specified instrument and quantity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails, or if `instrument.base_currency()` is `None` for inverse instruments.
     pub fn calculate_initial_margin<T: Instrument>(
         &mut self,
         instrument: T,
@@ -195,6 +220,11 @@ impl MarginAccount {
         }
     }
 
+    /// Calculates the maintenance margin amount for the specified instrument and quantity.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails, or if `instrument.base_currency()` is `None` for inverse instruments.
     pub fn calculate_maintenance_margin<T: Instrument>(
         &mut self,
         instrument: T,
@@ -220,6 +250,13 @@ impl MarginAccount {
         }
     }
 
+    /// Recalculates the account balance for the specified currency based on current margins.
+    ///
+    /// # Panics
+    ///
+    /// The function panics:
+    /// - If no starting balance exists for the given `currency`.
+    /// - If total free margin would be negative.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => balance,

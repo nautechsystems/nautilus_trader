@@ -804,7 +804,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO: Implement
-                self._log.warning(f"Cannot yet handle OCO conditional orders, {order}")
+                self._log.error(f"Cannot yet handle OCO conditional orders, {order}")
+                return
+
             await self._submit_order_inner(order, position_side)
 
     async def _submit_stop_market_order(

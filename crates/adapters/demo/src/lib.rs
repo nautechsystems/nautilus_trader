@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
-
 use std::{cell::RefCell, net::SocketAddr, pin::Pin, rc::Rc};
 
 use data_client::MockDataClient;
@@ -24,15 +20,15 @@ use futures::{Stream, stream::SelectAll};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, LiveClock},
-    messages::data::DataResponse,
+    messages::data::{DataCommand, DataResponse},
     msgbus::{
-        handler::{MessageHandler, ShareableMessageHandler},
-        register,
+        self,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
 use nautilus_data::{
     client::{DataClient, DataClientAdapter},
-    engine::{DataEngine, SubscriptionCommandHandler},
+    engine::DataEngine,
 };
 use nautilus_model::identifiers::Venue;
 use tokio_stream::StreamExt;
@@ -57,25 +53,21 @@ pub async fn init_data_engine(
 
     let adapter = DataClientAdapter::new(
         client.client_id(),
-        Venue::from_str_unchecked("yooohooo"),
+        Some(Venue::from_str_unchecked("DEMO")),
         false,
         false,
         client,
-        clock.clone(),
     );
     let cache = Rc::new(RefCell::new(Cache::new(None, None)));
 
-    let mut engine = DataEngine::new(clock, cache, None);
-    engine.register_client(adapter, None);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+    data_engine.register_client(adapter, None);
+    let data_engine = Rc::new(RefCell::new(data_engine));
 
-    let engine = Rc::new(RefCell::new(engine));
-    let handler = SubscriptionCommandHandler {
-        id: Ustr::from("data_engine_handler"),
-        engine_ref: engine,
-    };
-
-    let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-    register("data_engine", handler);
+    let data_engine_clone = data_engine;
+    let _handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+        move |cmd: &DataCommand| data_engine_clone.borrow_mut().execute(cmd),
+    )));
 
     (http_stream, websocket_stream)
 }
@@ -106,12 +98,12 @@ impl LiveRunner {
                     if let Some(DataResponse::Data(custom_data_response)) = data_response {
                             println!("Received custom data response: {custom_data_response:?}");
                             let value = custom_data_response.data.downcast_ref::<i32>().copied().unwrap();
-                            nautilus_common::msgbus::response(&custom_data_response.correlation_id, &value);
+                            msgbus::response(&custom_data_response.correlation_id, &value);
                     }
                 }
                 message = self.message_stream.next() => {
                     if let Some(message) = message {
-                        nautilus_common::msgbus::send(&Ustr::from("negative_stream"), &message);
+                        msgbus::send(&Ustr::from("negative_stream"), &message);
                     }
                 }
             }

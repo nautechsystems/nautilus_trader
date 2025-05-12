@@ -161,4 +161,5 @@ impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
 }
 
 // SAFETY: Message handlers cannot be sent across thread boundaries
+#[allow(unsafe_code)]
 unsafe impl Send for ShareableMessageHandler {}

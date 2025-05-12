@@ -123,6 +123,13 @@ pub struct SimulatedExchange {
 
 impl SimulatedExchange {
     /// Creates a new [`SimulatedExchange`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - `starting_balances` is empty.
+    /// - `base_currency` is `Some` but `starting_balances` contains multiple currencies.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,
@@ -213,6 +220,13 @@ impl SimulatedExchange {
         self.generate_fresh_account_state();
     }
 
+    /// Adds an instrument to the simulated exchange and initializes its matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///
+    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         check_equal(
             &instrument.id().venue,
@@ -804,7 +818,7 @@ mod tests {
             TraderId::default(),
             AccountId::default(),
             exchange.clone(),
-            cache.clone(),
+            cache,
             Rc::new(RefCell::new(clock)),
             None,
             None,
@@ -1354,7 +1368,7 @@ mod tests {
         assert_eq!(exchange.borrow().inflight_queue.len(), 2);
         // First inflight command should have timestamp at 100 and 200 insert latency
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(300)
         );
         // Second inflight command should have timestamp at 150 and 200 insert latency
@@ -1368,7 +1382,7 @@ mod tests {
         assert_eq!(exchange.borrow().message_queue.len(), 0);
         assert_eq!(exchange.borrow().inflight_queue.len(), 1);
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(350)
         );
     }

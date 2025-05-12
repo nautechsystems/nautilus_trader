@@ -18,6 +18,10 @@
 use std::path::PathBuf;
 
 /// Returns the workspace root directory path.
+///
+/// # Panics
+///
+/// Panics if the `CARGO_MANIFEST_DIR` environment variable is not set or its parent directory cannot be determined.
 #[must_use]
 pub fn get_workspace_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -27,6 +31,10 @@ pub fn get_workspace_root_path() -> PathBuf {
 }
 
 /// Returns the project root directory path.
+///
+/// # Panics
+///
+/// Panics if the workspace root path cannot be determined or its parent directory is missing.
 #[must_use]
 pub fn get_project_root_path() -> PathBuf {
     get_workspace_root_path()

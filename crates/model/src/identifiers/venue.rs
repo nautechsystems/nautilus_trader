@@ -91,6 +91,9 @@ impl Venue {
         Self(s)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the venue code is unknown or lock on venue map fails.
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
         let map_guard = VENUE_MAP
             .lock()

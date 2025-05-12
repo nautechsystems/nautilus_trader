@@ -99,6 +99,9 @@ impl BinaryOption {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (e.g., invalid precision or increments).
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -169,8 +172,11 @@ impl BinaryOption {
         })
     }
 
-    /// Creates a new [`BinaryOption`] instance.
+    /// Creates a new [`BinaryOption`] instance by validating parameters.
     #[allow(clippy::too_many_arguments)]
+    /// # Panics
+    ///
+    /// Panics if parameter validation fails during `new_checked`.
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,

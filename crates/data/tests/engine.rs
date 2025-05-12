@@ -13,35 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Tests module for `DataEngine`.
+mod common;
 
-use std::{
-    any::Any,
-    cell::{OnceCell, RefCell},
-    num::NonZeroUsize,
-    rc::Rc,
-};
+use std::{any::Any, cell::RefCell, num::NonZeroUsize, rc::Rc};
 
+use common::mocks::MockDataClient;
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeData, UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestData,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
+        SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
-        handler::ShareableMessageHandler,
+        handler::{ShareableMessageHandler, TypedMessageHandler},
         stubs::{get_message_saving_handler, get_saved_messages},
         switchboard::{self, MessagingSwitchboard},
     },
     testing::init_logger_for_testing,
 };
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10,
@@ -55,12 +53,6 @@ use nautilus_model::{
     types::Price,
 };
 use rstest::*;
-
-use crate::{
-    client::DataClientAdapter,
-    engine::{DataEngine, SubscriptionCommandHandler},
-    mocks::MockDataClient,
-};
 
 #[fixture]
 fn client_id() -> ClientId {
@@ -79,10 +71,6 @@ fn clock() -> Rc<RefCell<TestClock>> {
 
 #[fixture]
 fn cache() -> Rc<RefCell<Cache>> {
-    // Ensure there is only ever one instance of the cache *per test*
-    thread_local! {
-        static CACHE: OnceCell<Rc<RefCell<Cache>>> = const { OnceCell::new() };
-    }
     Rc::new(RefCell::new(Cache::default()))
 }
 
@@ -96,8 +84,17 @@ fn data_engine(
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
 ) -> Rc<RefCell<DataEngine>> {
-    let data_engine = DataEngine::new(clock, cache, None);
-    Rc::new(RefCell::new(data_engine))
+    let data_engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, None)));
+
+    let data_engine_clone = data_engine.clone();
+    let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+        move |cmd: &DataCommand| data_engine_clone.borrow_mut().execute(cmd),
+    )));
+
+    let endpoint = MessagingSwitchboard::data_engine_execute();
+    msgbus::register(endpoint, handler);
+
+    data_engine
 }
 
 #[fixture]
@@ -107,9 +104,179 @@ fn data_client(
     cache: Rc<RefCell<Cache>>,
     clock: Rc<RefCell<TestClock>>,
 ) -> DataClientAdapter {
-    let client = Box::new(MockDataClient::new(cache, client_id, venue));
-    DataClientAdapter::new(client_id, venue, true, true, client, clock)
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    DataClientAdapter::new(client_id, Some(venue), true, true, client)
 }
+
+// ------------------------------------------------------------------------------------------------
+// Client registration & routing tests
+// ------------------------------------------------------------------------------------------------
+
+#[rstest]
+#[should_panic]
+fn test_register_default_client_twice_panics(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id = ClientId::new("DUPLICATE");
+
+    let data_client1 = DataClientAdapter::new(
+        client_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id,
+            Some(Venue::default()),
+        )),
+    );
+    let data_client2 = DataClientAdapter::new(
+        client_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock,
+            cache,
+            client_id,
+            Some(Venue::default()),
+        )),
+    );
+
+    data_engine.register_default_client(data_client1);
+    data_engine.register_default_client(data_client2);
+}
+
+#[rstest]
+#[should_panic]
+fn test_register_client_duplicate_id_panics(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id = ClientId::new("DUPLICATE");
+    let venue = Venue::default();
+
+    let data_client1 = DataClientAdapter::new(
+        client_id,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id,
+            Some(Venue::default()),
+        )),
+    );
+    let data_client2 = DataClientAdapter::new(
+        client_id,
+        Some(venue),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock,
+            cache,
+            client_id,
+            Some(Venue::default()),
+        )),
+    );
+
+    data_engine.register_client(data_client1, None);
+    data_engine.register_client(data_client2, None);
+}
+
+#[rstest]
+fn test_register_and_deregister_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let client_id1 = ClientId::new("C1");
+    let venue1 = Venue::default();
+
+    let data_client1 = DataClientAdapter::new(
+        client_id1,
+        Some(venue1),
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock.clone(),
+            cache.clone(),
+            client_id1,
+            Some(venue1),
+        )),
+    );
+
+    data_engine.register_client(data_client1, Some(venue1));
+
+    let client_id2 = ClientId::new("C2");
+    let data_client2 = DataClientAdapter::new(
+        client_id2,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(clock, cache, client_id2, Some(venue1))),
+    );
+
+    data_engine.register_client(data_client2, None);
+
+    // Both present
+    assert_eq!(
+        data_engine.registered_clients(),
+        vec![client_id1, client_id2]
+    );
+
+    // Deregister first client
+    data_engine.deregister_client(&client_id1);
+    assert_eq!(data_engine.registered_clients(), vec![client_id2]);
+
+    // Routing for deregistered venue now yields no client
+    assert!(data_engine.get_client(None, Some(&venue1)).is_none());
+}
+
+#[rstest]
+fn test_register_default_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let default_id = ClientId::new("DEFAULT");
+    let default_client = DataClientAdapter::new(
+        default_id,
+        None,
+        true,
+        true,
+        Box::new(MockDataClient::new(
+            clock,
+            cache,
+            default_id,
+            Some(Venue::default()),
+        )),
+    );
+    data_engine.register_default_client(default_client);
+
+    assert_eq!(data_engine.registered_clients(), vec![default_id]);
+    assert_eq!(
+        data_engine.get_client(None, None).unwrap().client_id(),
+        default_id
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// Subscription and data flow tests
+// ------------------------------------------------------------------------------------------------
 
 #[rstest]
 fn test_execute_subscribe_custom_data(
@@ -120,17 +287,10 @@ fn test_execute_subscribe_custom_data(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let data_type = DataType::new(stringify!(String), None);
     let cmd = SubscribeData::new(
         Some(client_id),
-        Some(venue),
+        venue,
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
@@ -138,6 +298,7 @@ fn test_execute_subscribe_custom_data(
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Data(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -149,7 +310,7 @@ fn test_execute_subscribe_custom_data(
 
     let cmd = UnsubscribeData::new(
         Some(client_id),
-        Some(venue),
+        venue,
         data_type.clone(),
         UUID4::new(),
         UnixNanos::default(),
@@ -177,18 +338,11 @@ fn test_execute_subscribe_book_deltas(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeBookDeltas::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -197,6 +351,7 @@ fn test_execute_subscribe_book_deltas(
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -209,7 +364,7 @@ fn test_execute_subscribe_book_deltas(
     let cmd = UnsubscribeBookDeltas::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -237,18 +392,11 @@ fn test_execute_subscribe_book_snapshots(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeBookSnapshots::new(
         audusd_sim.id,
         BookType::L2_MBP,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -257,6 +405,7 @@ fn test_execute_subscribe_book_snapshots(
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -269,7 +418,7 @@ fn test_execute_subscribe_book_snapshots(
     let cmd = UnsubscribeBookSnapshots::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -296,23 +445,17 @@ fn test_execute_subscribe_instrument(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeInstrument::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -325,7 +468,7 @@ fn test_execute_subscribe_instrument(
     let cmd = UnsubscribeInstrument::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -352,23 +495,17 @@ fn test_execute_subscribe_quotes(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -381,7 +518,7 @@ fn test_execute_subscribe_quotes(
     let cmd = UnsubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -408,23 +545,17 @@ fn test_execute_subscribe_trades(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -437,7 +568,7 @@ fn test_execute_subscribe_trades(
     let cmd = UnsubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -462,13 +593,6 @@ fn test_execute_subscribe_bars(
 ) {
     init_logger_for_testing(None).unwrap(); // TODO: Remove once initial development completed
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     data_engine.borrow_mut().process(&audusd_sim as &dyn Any);
 
@@ -481,7 +605,7 @@ fn test_execute_subscribe_bars(
     let cmd = SubscribeBars::new(
         bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         false,
@@ -489,6 +613,7 @@ fn test_execute_subscribe_bars(
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
@@ -496,7 +621,7 @@ fn test_execute_subscribe_bars(
     let cmd = UnsubscribeBars::new(
         bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -519,23 +644,17 @@ fn test_execute_subscribe_mark_prices(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -548,7 +667,7 @@ fn test_execute_subscribe_mark_prices(
     let cmd = UnsubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -575,23 +694,17 @@ fn test_execute_subscribe_index_prices(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
-
     let cmd = SubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     assert!(
@@ -604,7 +717,7 @@ fn test_execute_subscribe_index_prices(
     let cmd = UnsubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -632,23 +745,18 @@ fn test_process_instrument(
     data_engine.borrow_mut().register_client(data_client, None);
 
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-    let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
 
     let cmd = SubscribeInstrument::new(
         audusd_sim.id(),
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
     );
     let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(cmd));
 
+    let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
@@ -682,7 +790,7 @@ fn test_process_book_delta(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -692,11 +800,6 @@ fn test_process_book_delta(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let delta = stub_delta();
@@ -726,7 +829,7 @@ fn test_process_book_deltas(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -736,11 +839,6 @@ fn test_process_book_deltas(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     // TODO: Using FFI API wrapper temporarily until Cython gone
@@ -772,7 +870,7 @@ fn test_process_book_depth10(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -782,11 +880,6 @@ fn test_process_book_depth10(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let depth = stub_depth10();
@@ -816,7 +909,7 @@ fn test_process_quote_tick(
     let cmd = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -824,11 +917,6 @@ fn test_process_quote_tick(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let quote = QuoteTick::default();
@@ -859,7 +947,7 @@ fn test_process_trade_tick(
     let cmd = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -867,11 +955,6 @@ fn test_process_trade_tick(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let trade = TradeTick::default();
@@ -902,7 +985,7 @@ fn test_process_mark_price(
     let cmd = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -910,11 +993,6 @@ fn test_process_mark_price(
     let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let mark_price = MarkPriceUpdate::new(
@@ -961,7 +1039,7 @@ fn test_process_index_price(
     let cmd = SubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -969,11 +1047,6 @@ fn test_process_index_price(
     let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let index_price = IndexPriceUpdate::new(
@@ -1014,7 +1087,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     let cmd = SubscribeBars::new(
         bar.bar_type,
         Some(client_id),
-        Some(venue),
+        venue,
         UUID4::new(),
         UnixNanos::default(),
         false,
@@ -1023,11 +1096,6 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(cmd));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus::register(endpoint, handler);
     msgbus::send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<Bar>(None);
@@ -1042,4 +1110,254 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     assert_eq!(cache.bar(&bar.bar_type), Some(bar).as_ref());
     assert_eq!(messages.len(), 1);
     assert!(messages.contains(&bar));
+}
+
+/// Helper to setup engine with a recorder client and send a request command.
+fn send_request_cmd(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    data_engine: &mut DataEngine,
+    cmd: DataCommand,
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) {
+    let rec = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(rec));
+    data_engine.register_client(adapter, None);
+    data_engine.execute(&cmd);
+}
+
+#[rstest]
+fn test_request_data(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestData {
+        client_id,
+        data_type: DataType::new("X", None),
+        request_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+    };
+    let cmd = DataCommand::Request(RequestCommand::Data(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_instrument(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestInstrument::new(
+        audusd_sim.id,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Request(RequestCommand::Instrument(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_instruments(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestInstruments::new(
+        None,
+        None,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Request(RequestCommand::Instruments(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_book_snapshot(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestBookSnapshot::new(
+        audusd_sim.id,
+        None, // depth
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::BookSnapshot(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_quotes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestQuotes::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Quotes(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_trades(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestTrades::new(
+        audusd_sim.id,
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Trades(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
+fn test_request_bars(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut eng = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let req = RequestBars::new(
+        BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL"),
+        None, // start
+        None, // end
+        None, // limit
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None, // params
+    );
+    let cmd = DataCommand::Request(RequestCommand::Bars(req));
+    send_request_cmd(
+        clock,
+        cache,
+        client_id,
+        venue,
+        &mut eng,
+        cmd.clone(),
+        &recorder,
+    );
+    assert_eq!(recorder.borrow()[0], cmd);
 }

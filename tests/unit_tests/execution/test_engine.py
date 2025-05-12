@@ -113,7 +113,12 @@ class TestExecutionEngine:
             clock=self.clock,
         )
 
-        config = ExecEngineConfig(debug=True)
+        config = ExecEngineConfig(
+            snapshot_orders=True,
+            snapshot_positions=True,
+            snapshot_positions_interval_secs=10,
+            debug=True,
+        )
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,

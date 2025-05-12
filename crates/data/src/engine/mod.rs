@@ -28,27 +28,23 @@
 //! Alternative implementations can be written on top of the generic engine - which
 //! just need to override the `execute`, `process`, `send` and `receive` methods.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_assignments)]
-
 pub mod book;
 pub mod config;
-
-#[cfg(test)]
-mod tests;
+mod handlers;
 
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet},
+    collections::hash_map::Entry,
+    fmt::Display,
     num::NonZeroUsize,
     rc::Rc,
 };
 
+use ahash::{AHashMap, AHashSet};
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
+use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
@@ -62,14 +58,16 @@ use nautilus_common::{
     },
     msgbus::{
         self, get_message_bus,
-        handler::{MessageHandler, ShareableMessageHandler},
+        handler::ShareableMessageHandler,
         switchboard::{self},
     },
     timer::TimeEventCallback,
 };
 use nautilus_core::{
-    correctness::{FAILED, check_key_in_index_map, check_key_not_in_index_map},
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, millis_to_nanos},
+    correctness::{
+        FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
+    },
+    datetime::millis_to_nanos,
 };
 use nautilus_model::{
     data::{
@@ -83,6 +81,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
 };
+use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 use ustr::Ustr;
 
 use crate::{
@@ -94,20 +93,23 @@ use crate::{
 };
 
 /// Provides a high-performance `DataEngine` for all environments.
+#[derive(Debug)]
 pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
-    external_clients: HashSet<ClientId>,
+    external_clients: AHashSet<ClientId>,
+    catalogs: AHashMap<Ustr, ParquetDataCatalog>,
     routing_map: IndexMap<Venue, ClientId>,
-    book_intervals: HashMap<NonZeroUsize, HashSet<InstrumentId>>,
-    book_updaters: HashMap<InstrumentId, Rc<BookUpdater>>,
-    book_snapshotters: HashMap<InstrumentId, Rc<BookSnapshotter>>,
-    bar_aggregators: HashMap<BarType, Box<dyn BarAggregator>>,
-    synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
+    book_intervals: AHashMap<NonZeroUsize, AHashSet<InstrumentId>>,
+    book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
+    book_snapshotters: AHashMap<InstrumentId, Rc<BookSnapshotter>>,
+    bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
+    bar_aggregator_handlers: AHashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
+    _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
+    buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
     msgbus_priority: u8,
     config: DataEngineConfig,
 }
@@ -120,230 +122,394 @@ impl DataEngine {
         cache: Rc<RefCell<Cache>>,
         config: Option<DataEngineConfig>,
     ) -> Self {
+        let config = config.unwrap_or_default();
+
+        let external_clients: AHashSet<ClientId> = config
+            .external_clients
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
+
         Self {
             clock,
             cache,
             clients: IndexMap::new(),
             default_client: None,
-            external_clients: HashSet::new(),
+            external_clients,
+            catalogs: AHashMap::new(),
             routing_map: IndexMap::new(),
-            book_intervals: HashMap::new(),
-            book_updaters: HashMap::new(),
-            book_snapshotters: HashMap::new(),
-            bar_aggregators: HashMap::new(),
-            synthetic_quote_feeds: HashMap::new(),
-            synthetic_trade_feeds: HashMap::new(),
-            buffered_deltas_map: HashMap::new(),
+            book_intervals: AHashMap::new(),
+            book_updaters: AHashMap::new(),
+            book_snapshotters: AHashMap::new(),
+            bar_aggregators: AHashMap::new(),
+            bar_aggregator_handlers: AHashMap::new(),
+            _synthetic_quote_feeds: AHashMap::new(),
+            _synthetic_trade_feeds: AHashMap::new(),
+            buffered_deltas_map: AHashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
-            config: config.unwrap_or_default(),
+            config,
         }
     }
 
-    /// Provides read-only access to the cache.
+    /// Returns a read-only reference to the engines clock.
+    #[must_use]
+    pub fn get_clock(&self) -> Ref<'_, dyn Clock> {
+        self.clock.borrow()
+    }
+
+    /// Returns a read-only reference to the engines cache.
     #[must_use]
     pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
     }
 
-    // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
+    /// Registers the `catalog` with the engine with an optional specific `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a catalog with the same `name` has already been registered.
+    pub fn register_catalog(&mut self, catalog: ParquetDataCatalog, name: Option<String>) {
+        let name = Ustr::from(&name.unwrap_or("catalog_0".to_string()));
 
-    /// Registers the given data `client` with the engine as the default routing client.
+        check_key_not_in_map(&name, &self.catalogs, "name", "catalogs").expect(FAILED);
+
+        self.catalogs.insert(name, catalog);
+        log::info!("Registered catalog <{name}>");
+    }
+
+    /// Registers the `client` with the engine with an optional venue `routing`.
+    ///
+    ///
+    /// # Panics
+    ///
+    /// Panics if a client with the same client ID has already been registered.
+    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
+        let client_id = client.client_id();
+
+        if let Some(default_client) = &self.default_client {
+            check_predicate_false(
+                default_client.client_id() == client.client_id(),
+                "client_id already registered as default client",
+            )
+            .expect(FAILED);
+        }
+
+        check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
+
+        if let Some(routing) = routing {
+            self.routing_map.insert(routing, client_id);
+            log::info!("Set client {client_id} routing for {routing}");
+        }
+
+        if client.venue.is_none() && self.default_client.is_none() {
+            self.default_client = Some(client);
+            log::info!("Registered client {client_id} for default routing");
+        } else {
+            self.clients.insert(client_id, client);
+            log::info!("Registered client {client_id}");
+        }
+    }
+
+    /// Deregisters the client for the `client_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the client ID has not been registered.
+    pub fn deregister_client(&mut self, client_id: &ClientId) {
+        check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
+
+        self.clients.shift_remove(client_id);
+        log::info!("Deregistered client {client_id}");
+    }
+
+    /// Registers the data `client` with the engine as the default routing client.
     ///
     /// When a specific venue routing cannot be found, this client will receive messages.
     ///
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
-    /// TODO: change this to suit message bus behaviour
+    ///
+    /// # Panics
+    ///
+    /// Panics if a default client has already been registered.
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
-        log::info!("Registered default client {}", client.client_id());
+        check_predicate_true(
+            self.default_client.is_none(),
+            "default client already registered",
+        )
+        .expect(FAILED);
+
+        let client_id = client.client_id();
+
         self.default_client = Some(client);
+        log::info!("Registered default client {client_id}");
     }
 
-    pub fn start(self) {
-        self.clients.values().for_each(|client| client.start());
+    /// Starts all registered data clients.
+    pub fn start(&self) {
+        for client in self.get_clients() {
+            if let Err(e) = client.start() {
+                log::error!("{e}");
+            }
+        }
     }
 
-    pub fn stop(self) {
-        self.clients.values().for_each(|client| client.stop());
+    /// Stops all registered data clients.
+    pub fn stop(&self) {
+        for client in self.get_clients() {
+            if let Err(e) = client.stop() {
+                log::error!("{e}");
+            }
+        }
     }
 
-    pub fn reset(self) {
-        self.clients.values().for_each(|client| client.reset());
+    /// Resets all registered data clients to their initial state.
+    pub fn reset(&self) {
+        for client in self.get_clients() {
+            if let Err(e) = client.reset() {
+                log::error!("{e}");
+            }
+        }
     }
 
-    pub fn dispose(self) {
-        self.clients.values().for_each(|client| client.dispose());
+    /// Disposes the engine, stopping all clients and cancelling any timers.
+    pub fn dispose(&self) {
+        for client in self.get_clients() {
+            if let Err(e) = client.dispose() {
+                log::error!("{e}");
+            }
+        }
+
         self.clock.borrow_mut().cancel_timers();
     }
 
+    /// Connects all registered data clients.
     pub fn connect(&self) {
-        todo!() //  Implement actual client connections for a live/sandbox context
+        let clients = self.get_clients();
+
+        if clients.is_empty() {
+            log::warn!("No clients to connect");
+        } else {
+            log::info!("Connecting all clients...");
+        }
+
+        for client in clients {
+            if let Err(e) = client.connect() {
+                log::error!("{e}");
+            }
+        }
     }
 
+    /// Disconnects all registered data clients.
     pub fn disconnect(&self) {
-        todo!() // Implement actual client connections for a live/sandbox context
+        let clients = self.get_clients();
+
+        if clients.is_empty() {
+            log::warn!("No clients to disconnect");
+        } else {
+            log::info!("Disconnecting all clients...");
+        }
+
+        for client in clients {
+            if let Err(e) = client.disconnect() {
+                log::error!("{e}");
+            }
+        }
     }
 
+    /// Returns `true` if all registered data clients are currently connected.
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|client| client.is_connected())
+        self.get_clients()
+            .iter()
+            .all(|client| client.is_connected())
     }
 
+    /// Returns `true` if all registered data clients are currently disconnected.
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|client| !client.is_connected())
+        self.get_clients()
+            .iter()
+            .all(|client| !client.is_connected())
     }
 
+    /// Returns a list of all registered client IDs, including the default client if set.
     #[must_use]
     pub fn registered_clients(&self) -> Vec<ClientId> {
-        self.clients.keys().copied().collect()
+        self.get_clients()
+            .into_iter()
+            .map(|client| client.client_id())
+            .collect()
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
     fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
     where
-        F: Fn(&DataClientAdapter) -> &HashSet<T>,
+        F: Fn(&DataClientAdapter) -> &AHashSet<T>,
         T: Clone,
     {
-        let mut subs = Vec::new();
-        for client in self.clients.values() {
-            subs.extend(get_subs(client).iter().cloned());
-        }
-        subs
+        self.get_clients()
+            .into_iter()
+            .flat_map(get_subs)
+            .cloned()
+            .collect()
     }
 
-    fn get_client(
+    pub fn get_client(
         &mut self,
         client_id: Option<&ClientId>,
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         if let Some(client_id) = client_id {
-            // Try to get client directly from clients map
-            if self.clients.contains_key(client_id) {
+            // Explicit ID: first look in registered clients
+            if let Some(client) = self.clients.get_mut(client_id) {
+                return Some(client);
+            }
+
+            // Then check if it matches the default client
+            if let Some(default) = self.default_client.as_mut() {
+                if default.client_id() == *client_id {
+                    return Some(default);
+                }
+            }
+
+            // Unknown explicit client
+            return None;
+        }
+
+        if let Some(v) = venue {
+            // Route by venue if mapped client still registered
+            if let Some(client_id) = self.routing_map.get(v) {
                 return self.clients.get_mut(client_id);
             }
         }
 
-        if let Some(venue) = venue {
-            // If not found, try to get client_id from routing map
-            if let Some(mapped_client_id) = self.routing_map.get(venue) {
-                return self.clients.get_mut(mapped_client_id);
-            }
-        }
+        // Fallback to default client
+        self.get_default_client()
+    }
 
-        None
+    const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
+        self.default_client.as_mut()
     }
 
     #[must_use]
-    pub fn subscribed_custom_data(&self) -> Vec<DataType> {
-        self.collect_subscriptions(|client| &client.subscriptions_generic)
+    pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
+        let (default_opt, clients_map) = (&self.default_client, &self.clients);
+
+        let mut out: Vec<&DataClientAdapter> = clients_map.values().collect();
+
+        if let Some(default) = default_opt {
+            out.push(default);
+        }
+
+        out
     }
 
+    #[allow(dead_code)] // Under development
+    fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
+        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
+
+        let mut out: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
+
+        if let Some(default) = default_opt {
+            out.push(default);
+        }
+
+        out
+    }
+
+    /// Returns all custom data types currently subscribed across all clients.
+    #[must_use]
+    pub fn subscribed_custom_data(&self) -> Vec<DataType> {
+        self.collect_subscriptions(|client| &client.subscriptions_custom)
+    }
+
+    /// Returns all instrument IDs currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_instruments(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument)
     }
 
+    /// Returns all instrument IDs for which book delta subscriptions exist.
     #[must_use]
     pub fn subscribed_book_deltas(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_book_deltas)
     }
 
+    /// Returns all instrument IDs for which book snapshot subscriptions exist.
     #[must_use]
     pub fn subscribed_book_snapshots(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_book_snapshots)
     }
 
+    /// Returns all instrument IDs for which quote subscriptions exist.
     #[must_use]
     pub fn subscribed_quotes(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_quotes)
     }
 
+    /// Returns all instrument IDs for which trade subscriptions exist.
     #[must_use]
     pub fn subscribed_trades(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_trades)
     }
 
+    /// Returns all bar types currently subscribed across all clients.
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
         self.collect_subscriptions(|client| &client.subscriptions_bars)
     }
 
+    /// Returns all instrument IDs for which mark price subscriptions exist.
     #[must_use]
     pub fn subscribed_mark_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_mark_prices)
     }
 
+    /// Returns all instrument IDs for which index price subscriptions exist.
     #[must_use]
     pub fn subscribed_index_prices(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_index_prices)
     }
 
+    /// Returns all instrument IDs for which status subscriptions exist.
     #[must_use]
     pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
     }
 
+    /// Returns all instrument IDs for which instrument close subscriptions exist.
     #[must_use]
     pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
-    pub fn on_start(self) {
-        todo!()
-    }
+    // -- COMMANDS --------------------------------------------------------------------------------
 
-    pub fn on_stop(self) {
-        todo!()
-    }
-
-    /// Registers a new [`DataClientAdapter`]
+    /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
     ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If a client with the same client ID has already been registered.
-    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
-        check_key_not_in_index_map(&client.client_id, &self.clients, "client_id", "clients")
-            .expect(FAILED);
-
-        if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id());
-            log::info!("Set client {} routing for {routing}", client.client_id());
-        }
-
-        log::info!("Registered client {}", client.client_id());
-        self.clients.insert(client.client_id, client);
-    }
-
-    /// Deregisters a [`DataClientAdapter`]
-    ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If a client with the same client ID has not been registered.
-    pub fn deregister_client(&mut self, client_id: &ClientId) {
-        check_key_in_index_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
-
-        self.clients.shift_remove(client_id);
-        log::info!("Deregistered client {client_id}");
-    }
-
-    pub fn execute(&mut self, cmd: DataCommand) {
-        let result = match cmd {
-            DataCommand::Subscribe(cmd) => self.execute_subscribe(cmd),
-            DataCommand::Unsubscribe(cmd) => self.execute_unsubscribe(cmd),
-            DataCommand::Request(cmd) => self.execute_request(cmd),
-        };
-
-        if let Err(e) = result {
+    /// Errors during execution are logged.
+    pub fn execute(&mut self, cmd: &DataCommand) {
+        if let Err(e) = match cmd {
+            DataCommand::Subscribe(c) => self.execute_subscribe(c),
+            DataCommand::Unsubscribe(c) => self.execute_unsubscribe(c),
+            DataCommand::Request(c) => self.execute_request(c),
+        } {
             log::error!("{e}");
         }
     }
 
-    pub fn execute_subscribe(&mut self, cmd: SubscribeCommand) -> anyhow::Result<()> {
+    /// Handles a subscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
+    /// or if the underlying client operation fails.
+    pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) -> anyhow::Result<()> {
+        // Update internal engine state
         match &cmd {
             SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd)?,
             SubscribeCommand::BookDepth10(cmd) => self.subscribe_book_depth10(cmd)?,
@@ -352,8 +518,16 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_subscribe_command(cmd.clone());
+            client.execute_subscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -365,7 +539,12 @@ impl DataEngine {
         Ok(())
     }
 
-    pub fn execute_unsubscribe(&mut self, cmd: UnsubscribeCommand) -> anyhow::Result<()> {
+    /// Handles an unsubscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client operation fails.
+    pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) -> anyhow::Result<()> {
         match &cmd {
             UnsubscribeCommand::BookDeltas(cmd) => self.unsubscribe_book_deltas(cmd)?,
             UnsubscribeCommand::BookDepth10(cmd) => self.unsubscribe_book_depth10(cmd)?,
@@ -374,8 +553,16 @@ impl DataEngine {
             _ => {} // Do nothing else
         }
 
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
-            client.execute_unsubscribe_command(cmd.clone());
+            client.execute_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -387,8 +574,19 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Sends a [`RequestCommand`] to an endpoint that must be a data client implementation.
-    pub fn execute_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+    /// Sends a [`RequestCommand`] to a suitable data client implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is found for the given client ID or venue,
+    /// or if the client fails to process the request.
+    pub fn execute_request(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
+        // Skip requests for external clients
+        if let Some(cid) = req.client_id() {
+            if self.external_clients.contains(cid) {
+                return Ok(());
+            }
+        }
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {
             match req {
                 RequestCommand::Data(req) => client.request_data(req),
@@ -408,6 +606,9 @@ impl DataEngine {
         }
     }
 
+    /// Processes a dynamically-typed data message.
+    ///
+    /// Currently supports `InstrumentAny`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
@@ -417,6 +618,7 @@ impl DataEngine {
         }
     }
 
+    /// Processes a `Data` enum instance, dispatching to appropriate handlers.
     pub fn process_data(&mut self, data: Data) {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
@@ -431,10 +633,14 @@ impl DataEngine {
         }
     }
 
+    /// Processes a `DataResponse`, handling and publishing the response message.
     pub fn response(&self, resp: DataResponse) {
         log::debug!("{RECV}{RES} {resp:?}");
 
         match &resp {
+            DataResponse::Instrument(resp) => {
+                self.handle_instrument_response(resp.data.clone());
+            }
             DataResponse::Instruments(resp) => {
                 self.handle_instruments(&resp.data);
             }
@@ -456,31 +662,31 @@ impl DataEngine {
             .borrow_mut()
             .add_instrument(instrument.clone())
         {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_instrument_topic(instrument.id());
-        msgbus::publish(&topic, &instrument as &dyn Any); // TODO: Optimize
+        msgbus::publish(&topic, &instrument as &dyn Any);
     }
 
     fn handle_delta(&mut self, delta: OrderBookDelta) {
         let deltas = if self.config.buffer_deltas {
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .entry(delta.instrument_id)
-                .or_default();
-            buffer_deltas.push(delta);
+            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&delta.instrument_id) {
+                buffered_deltas.deltas.push(delta);
+            } else {
+                let buffered_deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
+                self.buffered_deltas_map
+                    .insert(delta.instrument_id, buffered_deltas);
+            }
 
             if !RecordFlag::F_LAST.matches(delta.flags) {
                 return; // Not the last delta for event
             }
 
             // SAFETY: We know the deltas exists already
-            let deltas = self
-                .buffered_deltas_map
+            self.buffered_deltas_map
                 .remove(&delta.instrument_id)
-                .unwrap();
-            OrderBookDeltas::new(delta.instrument_id, deltas)
+                .unwrap()
         } else {
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
@@ -491,17 +697,20 @@ impl DataEngine {
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
         let deltas = if self.config.buffer_deltas {
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .entry(deltas.instrument_id)
-                .or_default();
-            buffer_deltas.extend(deltas.deltas);
-
             let mut is_last_delta = false;
-            for delta in buffer_deltas.iter_mut() {
+            for delta in &deltas.deltas {
                 if RecordFlag::F_LAST.matches(delta.flags) {
                     is_last_delta = true;
+                    break;
                 }
+            }
+
+            let instrument_id = deltas.instrument_id;
+
+            if let Some(buffered_deltas) = self.buffered_deltas_map.get_mut(&instrument_id) {
+                buffered_deltas.deltas.extend(deltas.deltas);
+            } else {
+                self.buffered_deltas_map.insert(instrument_id, deltas);
             }
 
             if !is_last_delta {
@@ -509,11 +718,7 @@ impl DataEngine {
             }
 
             // SAFETY: We know the deltas exists already
-            let buffer_deltas = self
-                .buffered_deltas_map
-                .remove(&deltas.instrument_id)
-                .unwrap();
-            OrderBookDeltas::new(deltas.instrument_id, buffer_deltas)
+            self.buffered_deltas_map.remove(&instrument_id).unwrap()
         } else {
             deltas
         };
@@ -529,7 +734,7 @@ impl DataEngine {
 
     fn handle_quote(&mut self, quote: QuoteTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_quote(quote) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         // TODO: Handle synthetics
@@ -540,7 +745,7 @@ impl DataEngine {
 
     fn handle_trade(&mut self, trade: TradeTick) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trade(trade) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         // TODO: Handle synthetics
@@ -572,7 +777,7 @@ impl DataEngine {
         }
 
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_bars_topic(bar.bar_type);
@@ -581,7 +786,7 @@ impl DataEngine {
 
     fn handle_mark_price(&mut self, mark_price: MarkPriceUpdate) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_mark_price(mark_price) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
@@ -595,7 +800,7 @@ impl DataEngine {
             .borrow_mut()
             .add_index_price(index_price)
         {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
 
         let topic = switchboard::get_index_price_topic(index_price.instrument_id);
@@ -614,13 +819,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        self.setup_order_book(
-            &cmd.instrument_id,
-            cmd.book_type,
-            cmd.depth,
-            true,
-            cmd.managed,
-        )?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, true, cmd.managed)?;
 
         Ok(())
     }
@@ -630,13 +829,7 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth10` data");
         }
 
-        self.setup_order_book(
-            &cmd.instrument_id,
-            cmd.book_type,
-            cmd.depth, // TODO
-            false,
-            cmd.managed,
-        )?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, cmd.managed)?;
 
         Ok(())
     }
@@ -650,50 +843,60 @@ impl DataEngine {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        {
-            if !self.book_intervals.contains_key(&cmd.interval_ms) {
-                let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
-                let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id);
-
-                let snap_info = BookSnapshotInfo {
-                    instrument_id: cmd.instrument_id,
-                    venue: cmd.instrument_id.venue,
-                    is_composite: cmd.instrument_id.symbol.is_composite(),
-                    root: Ustr::from(cmd.instrument_id.symbol.root()),
-                    topic,
-                    interval_ms: cmd.interval_ms,
-                };
-
-                let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-                let mut start_time_ns = now_ns - (now_ns % interval_ns);
-
-                if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
-                    start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
-                }
-
-                let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
-                self.book_snapshotters
-                    .insert(cmd.instrument_id, snapshotter.clone());
-                let timer_name = snapshotter.timer_name;
-
-                let callback =
-                    TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
-
-                self.clock
-                    .borrow_mut()
-                    .set_timer_ns(
-                        &timer_name,
-                        interval_ns,
-                        start_time_ns.into(),
-                        None,
-                        Some(callback),
-                        None,
-                    )
-                    .expect(FAILED);
+        // Track snapshot intervals per instrument, and set up timer on first subscription
+        let first_for_interval = match self.book_intervals.entry(cmd.interval_ms) {
+            Entry::Vacant(e) => {
+                let mut set = AHashSet::new();
+                set.insert(cmd.instrument_id);
+                e.insert(set);
+                true
             }
+            Entry::Occupied(mut e) => {
+                e.get_mut().insert(cmd.instrument_id);
+                false
+            }
+        };
+
+        if first_for_interval {
+            // Initialize snapshotter and schedule its timer
+            let interval_ns = millis_to_nanos(cmd.interval_ms.get() as f64);
+            let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id);
+
+            let snap_info = BookSnapshotInfo {
+                instrument_id: cmd.instrument_id,
+                venue: cmd.instrument_id.venue,
+                is_composite: cmd.instrument_id.symbol.is_composite(),
+                root: Ustr::from(cmd.instrument_id.symbol.root()),
+                topic,
+                interval_ms: cmd.interval_ms,
+            };
+
+            // Schedule the first snapshot at the next interval boundary
+            let now_ns = self.clock.borrow().timestamp_ns().as_u64();
+            let start_time_ns = now_ns - (now_ns % interval_ns) + interval_ns;
+
+            let snapshotter = Rc::new(BookSnapshotter::new(snap_info, self.cache.clone()));
+            self.book_snapshotters
+                .insert(cmd.instrument_id, snapshotter.clone());
+            let timer_name = snapshotter.timer_name;
+
+            let callback =
+                TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
+
+            self.clock
+                .borrow_mut()
+                .set_timer_ns(
+                    &timer_name,
+                    interval_ns,
+                    start_time_ns.into(),
+                    None,
+                    Some(callback),
+                    None,
+                )
+                .expect(FAILED);
         }
 
-        self.setup_order_book(&cmd.instrument_id, cmd.book_type, cmd.depth, false, true)?;
+        self.setup_order_book(&cmd.instrument_id, cmd.book_type, false, true)?;
 
         Ok(())
     }
@@ -759,6 +962,18 @@ impl DataEngine {
             return Ok(());
         }
 
+        // Remove instrument from interval tracking, and drop empty intervals
+        let mut to_remove = Vec::new();
+        for (interval, set) in &mut self.book_intervals {
+            if set.remove(&cmd.instrument_id) && set.is_empty() {
+                to_remove.push(*interval);
+            }
+        }
+
+        for interval in to_remove {
+            self.book_intervals.remove(&interval);
+        }
+
         let topics = vec![
             switchboard::get_book_deltas_topic(cmd.instrument_id),
             switchboard::get_book_depth10_topic(cmd.instrument_id),
@@ -771,8 +986,17 @@ impl DataEngine {
         Ok(())
     }
 
-    const fn unsubscribe_bars(&mut self, command: &UnsubscribeBars) -> anyhow::Result<()> {
-        // TODO: Handle aggregators
+    /// Unsubscribe internal bar aggregator for the given bar type.
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        // If we have an internal aggregator for this bar type, stop and remove it
+        let bar_type = cmd.bar_type;
+        if self.bar_aggregators.contains_key(&bar_type.standard()) {
+            if let Err(err) = self.stop_bar_aggregator(bar_type) {
+                log::error!("Error stopping bar aggregator for {bar_type}: {err}");
+            }
+            self.bar_aggregators.remove(&bar_type.standard());
+            log::debug!("Removed bar aggregator for {bar_type}");
+        }
         Ok(())
     }
 
@@ -820,31 +1044,38 @@ impl DataEngine {
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
+    fn handle_instrument_response(&self, instrument: InstrumentAny) {
+        let mut cache = self.cache.as_ref().borrow_mut();
+        if let Err(e) = cache.add_instrument(instrument) {
+            log_error_on_cache_insert(&e);
+        }
+    }
+
     fn handle_instruments(&self, instruments: &[InstrumentAny]) {
         // TODO: Improve by adding bulk update methods to cache and database
         let mut cache = self.cache.as_ref().borrow_mut();
         for instrument in instruments {
             if let Err(e) = cache.add_instrument(instrument.clone()) {
-                log::error!("Error on cache insert: {e}");
+                log_error_on_cache_insert(&e);
             }
         }
     }
 
     fn handle_quotes(&self, quotes: &[QuoteTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(quotes) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
     fn handle_trades(&self, trades: &[TradeTick]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(trades) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
     fn handle_bars(&self, bars: &[Bar]) {
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(bars) {
-            log::error!("Error on cache insert: {e}");
+            log_error_on_cache_insert(&e);
         }
     }
 
@@ -855,7 +1086,6 @@ impl DataEngine {
         &mut self,
         instrument_id: &InstrumentId,
         book_type: BookType,
-        depth: Option<NonZeroUsize>,
         only_deltas: bool,
         managed: bool,
     ) -> anyhow::Result<()> {
@@ -894,7 +1124,7 @@ impl DataEngine {
 
         let handler = move |bar: Bar| {
             if let Err(e) = cache.as_ref().borrow_mut().add_bar(bar) {
-                log::error!("Error on cache insert: {e}");
+                log_error_on_cache_insert(&e);
             }
 
             let topic = switchboard::get_bars_topic(bar.bar_type);
@@ -954,6 +1184,7 @@ impl DataEngine {
     }
 
     fn start_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+        // Get the instrument for this bar type
         let instrument = {
             let cache = self.cache.borrow();
             cache
@@ -967,17 +1198,56 @@ impl DataEngine {
                 .clone()
         };
 
-        let aggregator = if let Some(aggregator) = self.bar_aggregators.get_mut(&bar_type) {
-            aggregator
+        // Use standard form of bar type as key
+        let bar_key = bar_type.standard();
+
+        // Create or retrieve aggregator in Rc<RefCell>
+        let aggregator = if let Some(rc) = self.bar_aggregators.get(&bar_key) {
+            rc.clone()
         } else {
-            let aggregator = self.create_bar_aggregator(&instrument, bar_type);
-            self.bar_aggregators.insert(bar_type, aggregator);
-            self.bar_aggregators.get_mut(&bar_type).unwrap()
+            let agg = self.create_bar_aggregator(&instrument, bar_type);
+            let rc = Rc::new(RefCell::new(agg));
+            self.bar_aggregators.insert(bar_key, rc.clone());
+            rc
         };
 
-        // TODO: Subscribe to data
+        // Subscribe to underlying data topics
+        let mut handlers = Vec::new();
 
-        aggregator.set_is_running(true);
+        if bar_type.is_composite() {
+            let topic = switchboard::get_bars_topic(bar_type.composite());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarBarHandler::new(aggregator.clone(), bar_key)));
+
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+
+            handlers.push((topic, handler));
+        } else if bar_type.spec().price_type == PriceType::Last {
+            let topic = switchboard::get_trades_topic(bar_type.instrument_id());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarTradeHandler::new(aggregator.clone(), bar_key)));
+
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+
+            handlers.push((topic, handler));
+        } else {
+            let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
+            let handler =
+                ShareableMessageHandler(Rc::new(BarQuoteHandler::new(aggregator.clone(), bar_key)));
+
+            if !msgbus::is_subscribed(topic, handler.clone()) {
+                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+
+            handlers.push((topic, handler));
+        }
+
+        self.bar_aggregator_handlers.insert(bar_key, handlers);
+        aggregator.borrow_mut().set_is_running(true);
 
         Ok(())
     }
@@ -990,49 +1260,23 @@ impl DataEngine {
                 anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
             })?;
 
-        // TODO: If its a `TimeBarAggregator` then call `.stop()`
-        // if let Some(aggregator) = (aggregator as &dyn BarAggregator)
-        //     .as_any()
-        //     .downcast_ref::<TimeBarAggregator<_, _>>()
-        // {
-        //     aggregator.stop();
-        // };
+        aggregator.borrow_mut().stop();
 
-        if bar_type.is_composite() {
-            let composite_bar_type = bar_type.composite();
-            // TODO: Unsubscribe the `aggregator.handle_bar`
-        } else if bar_type.spec().price_type == PriceType::Last {
-            // TODO: Unsubscribe `aggregator.handle_trade_tick`
-            todo!()
-        } else {
-            // TODO: Unsubscribe `aggregator.handle_quote_tick`
-            todo!()
+        // Unsubscribe any registered message handlers
+        let bar_key = bar_type.standard();
+        if let Some(subs) = self.bar_aggregator_handlers.remove(&bar_key) {
+            for (topic, handler) in subs {
+                if msgbus::is_subscribed(topic, handler.clone()) {
+                    msgbus::unsubscribe(topic, handler);
+                }
+            }
         }
 
         Ok(())
     }
 }
 
-// TODO: Rename to Data command handler
-pub struct SubscriptionCommandHandler {
-    pub id: Ustr,
-    pub engine_ref: Rc<RefCell<DataEngine>>,
-}
-
-impl MessageHandler for SubscriptionCommandHandler {
-    fn id(&self) -> Ustr {
-        self.id
-    }
-
-    fn handle(&self, msg: &dyn Any) {
-        if let Some(cmd) = msg.downcast_ref::<DataCommand>() {
-            self.engine_ref.borrow_mut().execute(cmd.clone());
-        } else {
-            log::error!("Expected DataCommand message for data engine command handler: {msg:?}");
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+#[inline(always)]
+fn log_error_on_cache_insert<T: Display>(e: &T) {
+    log::error!("Error on cache insert: {e}");
 }

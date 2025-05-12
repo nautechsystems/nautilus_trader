@@ -38,6 +38,10 @@ pub struct TimeEventHandler {
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler {
+    /// # Panics
+    ///
+    /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
+    /// since only Python callbacks are supported by the legacy `TimeEventHandler`.
     fn from(value: TimeEventHandlerV2) -> Self {
         Self {
             event: value.event,
@@ -53,7 +57,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
 
 /// # Safety
 ///
-/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn time_event_new(
     name_ptr: *const c_char,

@@ -319,6 +319,9 @@ cdef class Order:
         """
         raise NotImplementedError("method `to_dict` must be implemented in the subclass")  # pragma: no cover
 
+    cdef void set_activated_c(self, Price activation_price):
+        raise NotImplementedError("method `set_activated` must be implemented in the subclass")  # pragma: no cover
+
     cdef void set_triggered_price_c(self, Price triggered_price):
         Condition.not_none(triggered_price, "triggered_price")
         self._triggered_price = triggered_price
@@ -361,6 +364,9 @@ cdef class Order:
 
     cdef bint has_price_c(self):
         raise NotImplementedError("method `has_price_c` must be implemented in subclass")  # pragma: no cover
+
+    cdef bint has_activation_price_c(self):
+        return False
 
     cdef bint has_trigger_price_c(self):
         raise NotImplementedError("method `has_trigger_price_c` must be implemented in subclass")  # pragma: no cover
@@ -594,6 +600,18 @@ cdef class Order:
 
         """
         return self.has_trigger_price_c()
+
+    @property
+    def has_activation_price(self):
+        """
+        Return whether the order has a `activation_price` property.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.has_activation_price_c()
 
     @property
     def is_buy(self):

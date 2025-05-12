@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(clippy::missing_errors_doc)] // Under development
-
 //! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor)
 //!
 //! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193)
@@ -53,6 +51,11 @@ use self::{
 pub struct InMemoryState(AtomicU64);
 
 impl InMemoryState {
+    /// Measures and updates the GCRA's state atomically, retrying on concurrent modifications.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided closure returns an error.
     pub(crate) fn measure_and_replace_one<T, F, E>(&self, mut f: F) -> Result<T, E>
     where
         F: FnMut(Option<Nanos>) -> Result<(T, Nanos), E>,
@@ -106,6 +109,10 @@ pub trait StateStore {
     /// It is `measure_and_replace`'s job then to safely replace the value at the key - it must
     /// only update the value if the value hasn't changed. The implementations in this
     /// crate use `AtomicU64` operations for this.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(E)` if the closure returns an error or the request is rate-limited.
     fn measure_and_replace<T, F, E>(&self, key: &Self::Key, f: F) -> Result<T, E>
     where
         F: Fn(Option<Nanos>) -> Result<(T, Nanos), E>;
@@ -175,6 +182,11 @@ where
         self.gcra.insert(key, Gcra::new(value));
     }
 
+    /// Checks if the given key is allowed under the rate limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(NotUntil)` if the key is rate-limited, indicating when it will be allowed.
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),

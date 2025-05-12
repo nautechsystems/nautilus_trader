@@ -16,7 +16,7 @@ FROM base AS builder
 
 # Install build deps
 RUN apt-get update && \
-    apt-get install -y curl clang git libssl-dev make pkg-config && \
+    apt-get install -y curl clang git libssl-dev make pkg-config capnproto libcapnp-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

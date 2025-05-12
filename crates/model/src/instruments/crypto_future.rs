@@ -103,6 +103,9 @@ impl CryptoFuture {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -178,6 +181,9 @@ impl CryptoFuture {
     }
 
     /// Creates a new [`CryptoFuture`] instance.
+    /// # Panics
+    ///
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

@@ -340,6 +340,7 @@ Finally, the node is built and run.
 You can find additional examples here: <https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers>
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
@@ -355,8 +356,8 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
-    data_clients={"IB": data_client_config},
-    exec_clients={"IB": exec_client_config},
+    data_clients={IB: data_client_config},
+    exec_clients={IB: exec_client_config},
     data_engine=LiveDataEngineConfig(
         time_bars_timestamp_on_close=False,  # Use opening time as `ts_event`, as per IB standard
         validate_data_sequence=True,         # Discards bars received out of sequence
@@ -364,8 +365,8 @@ config_node = TradingNodeConfig(
 )
 
 node = TradingNode(config=config_node)
-node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 node.portfolio.set_specific_venue(IB_VENUE)
 

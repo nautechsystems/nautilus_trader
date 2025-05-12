@@ -23,6 +23,8 @@ from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class TrailingStopMarketOrder(Order):
+    cdef readonly Price activation_price
+    """The order activation price (STOP).\n\n:returns: `Price` or ``None``"""
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price` or ``None``"""
     cdef readonly TriggerType trigger_type
@@ -33,6 +35,8 @@ cdef class TrailingStopMarketOrder(Order):
     """The trailing offset type.\n\n:returns: `TrailingOffsetType`"""
     cdef readonly uint64_t expire_time_ns
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
+    cdef readonly bint is_activated
+    """If the order has been activated.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef TrailingStopMarketOrder create_c(OrderInitialized init)

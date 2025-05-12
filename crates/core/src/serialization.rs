@@ -77,6 +77,7 @@ impl Visitor<'_> for BoolVisitor {
         Ok(u8::from(value))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,

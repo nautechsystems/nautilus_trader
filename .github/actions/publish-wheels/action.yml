@@ -1,5 +1,10 @@
 name: Publish wheels (R2)
 description: Publish wheels to Cloudflare R2
+inputs:
+  cleanup-local-dist:
+    description: 'Cleanup local dist directory after publishing to R2'
+    required: false
+    default: 'true'
 
 runs:
   using: "composite"
@@ -55,7 +60,8 @@ runs:
       run: |
         bash ./scripts/ci/publish-wheels-r2-verify-files.sh
 
-    - name: Clean up local artifacts
+    - name: Clean up local dist directory
+      if: ${{ inputs.cleanup-local-dist == 'true' }}
       shell: bash
       run: |
         set -euo pipefail

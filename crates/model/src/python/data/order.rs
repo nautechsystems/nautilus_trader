@@ -104,7 +104,11 @@ impl BookOrder {
         self.signed_size()
     }
 
-    /// Returns a new object from the given dictionary representation.
+    /// Constructs a `BookOrder` from its dictionary representation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if deserialization from the Python dict fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -123,7 +127,11 @@ impl BookOrder {
         Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
     }
 
-    /// Return a dictionary representation of the object.
+    /// Converts the `BookOrder` into a Python dict representation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "as_dict")]
     pub fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         to_dict_pyo3(py, self)

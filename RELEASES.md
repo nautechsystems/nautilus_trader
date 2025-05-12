@@ -1,3 +1,57 @@
+# NautilusTrader 1.218.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added support for `FillModel`, `LatencyModel` and `FeeModel` in BacktestNode (#2601), thanks @faysou
+- Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
+- Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
+- Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
+- Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
+- Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
+- Introduce HyperSync client to blockchain adapter (#2606), thanks @filipmacek
+
+### Breaking Changes
+None
+
+### Internal Improvements
+- Added `activation_price` str and repr tests for trailing stop orders (#2620), thanks @hope2see
+- Improved fill behavior for limit orders in `L1_MBP` books, will now fill entire size when marketable as `TAKER` or market moves through limit as `MAKER`
+- Improved validations for `LimitOrder` in Rust (#2613), thanks @nicolad
+- Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
+- Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
+- Improved validations for `MarketToLimitOrder` in Rust (#2584), thanks @nicolad
+- Improved validations for `StopLimitOrder` in Rust (#2593), thanks @nicolad
+- Improved validations for `StopMarketOrder` in Rust (#2596), thanks @nicolad
+- Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
+- Improved orders initialize and display tests in Rust (#2617), thanks @nicolad
+- Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
+- Improved exception on deserializing order from cache database
+- Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
+- Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
+- Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
+- Upgraded Cython to v3.1.0 (now stable)
+- Upgraded `redis` crate to v0.31.0
+- Upgraded `tokio` crate to v1.45.0
+
+### Fixes
+- Fixed position snapshot cache access for `ExecutionEngine`
+- Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
+- Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
+- Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
+- Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
+- Fixed authentication for Redis when password provided with no username
+- Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
+
+### Documentation Updates
+- Added errors and panics docs for `common` crate
+- Added errors and panics docs for `model` crate
+
+### Deprecations
+None
+
+---
+
 # NautilusTrader 1.217.0 Beta
 
 Released on 30th April 2025 (UTC).

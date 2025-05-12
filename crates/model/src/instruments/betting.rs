@@ -122,6 +122,9 @@ impl BettingInstrument {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (precision mismatches or non-positive increments).
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -214,8 +217,11 @@ impl BettingInstrument {
         })
     }
 
-    /// Creates a new [`BettingInstrument`] instance.
+    /// Creates a new [`BettingInstrument`] instance by parsing and validating input parameters.
     #[allow(clippy::too_many_arguments)]
+    /// # Panics
+    ///
+    /// Panics if any required parameter is invalid or parsing fails during `new_checked`.
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,

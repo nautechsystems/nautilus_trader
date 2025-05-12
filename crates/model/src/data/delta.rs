@@ -95,8 +95,7 @@ impl OrderBookDelta {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    /// Panics if `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,

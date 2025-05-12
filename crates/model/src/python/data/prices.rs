@@ -43,7 +43,11 @@ use crate::{
 };
 
 impl MarkPriceUpdate {
-    /// Create a new [`MarkPriceUpdate`] extracted from the given [`PyAny`].
+    /// Creates a new [`MarkPriceUpdate`] from a Python object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if attribute extraction or type conversion fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
@@ -251,7 +255,11 @@ impl MarkPriceUpdate {
 }
 
 impl IndexPriceUpdate {
-    /// Create a new [`IndexPriceUpdate`] extracted from the given [`PyAny`].
+    /// Creates a new [`IndexPriceUpdate`] from a Python object.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if attribute extraction or type conversion fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;

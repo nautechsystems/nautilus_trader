@@ -16,15 +16,25 @@ You can configure the required environment variables in two ways:
 2. **Providing variables directly in the command line:**
 
    ```
-   CHAIN=Ethereum RPC_WSS_URL=wss://your-node-endpoint cargo run --bin live_blocks
+   CHAIN=Ethereum RPC_WSS_URL=wss://your-node-endpoint cargo run --bin live_blocks_rpc
    ```
 
 ### Watch live blocks
 
-The script will connect to the specified blockchain and log information about each new block received.
+The scripts will connect to the specified blockchain and log information about each new block received for both the RPC version and only Hypersync.
 
 ```
-Running `target/debug/live_blocks`
+cargo run --bin live_blocks_rpc
+```
+
+```
+cargo run --bin live_blocks_hypersync
+```
+
+For RPC example, the output should be:
+
+```
+Running `target/debug/live_blocks_rpc`
 2025-04-25T14:54:41.394620000Z [INFO] TRADER-001.nautilus_blockchain::rpc::core: Subscribing to new blocks on chain Ethereum
 2025-04-25T14:54:48.951608000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346765, timestamp=2025-04-25T14:54:47+00:00, hash=0x18a3c9f1e3eec06b45edc1f632565e5c23089dc4ad0892b00fda9e4ffcc9bf91)
 2025-04-25T14:55:00.646992000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346766, timestamp=2025-04-25T14:54:59+00:00, hash=0x110436e41463daeacd1501fe53d38c310573abc136672a12054e1f33797ffeb9)

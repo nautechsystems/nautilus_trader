@@ -53,6 +53,86 @@ pub struct MarketOrder {
 
 impl MarketOrder {
     /// Creates a new [`MarketOrder`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The `quantity` is not positive.
+    /// - The `time_in_force` is GTD (invalid for market orders).
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+        reduce_only: bool,
+        quote_quantity: bool,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<Vec<Ustr>>,
+    ) -> anyhow::Result<Self> {
+        check_positive_quantity(quantity, stringify!(quantity))?;
+        check_predicate_false(
+            time_in_force == TimeInForce::Gtd,
+            "GTD not supported for Market orders",
+        )?;
+
+        let init_order = OrderInitialized::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            OrderType::Market,
+            quantity,
+            time_in_force,
+            false,
+            reduce_only,
+            quote_quantity,
+            false,
+            init_id,
+            ts_init,
+            ts_init,
+            None,
+            None,
+            Some(TriggerType::NoTrigger),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
+            exec_spawn_id,
+            tags,
+        );
+
+        Ok(Self {
+            core: OrderCore::new(init_order),
+        })
+    }
+
+    /// Creates a new [`MarketOrder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any order validation fails (see [`MarketOrder::new_checked`]).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -97,81 +177,6 @@ impl MarketOrder {
             tags,
         )
         .expect(FAILED)
-    }
-
-    /// Creates a new [`MarketOrder`] instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - The `quantity` is not positive.
-    /// - The `time_in_force` is GTD (invalid for market orders).
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_checked(
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        quantity: Quantity,
-        time_in_force: TimeInForce,
-        init_id: UUID4,
-        ts_init: UnixNanos,
-        reduce_only: bool,
-        quote_quantity: bool,
-        contingency_type: Option<ContingencyType>,
-        order_list_id: Option<OrderListId>,
-        linked_order_ids: Option<Vec<ClientOrderId>>,
-        parent_order_id: Option<ClientOrderId>,
-        exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<IndexMap<Ustr, Ustr>>,
-        exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<Vec<Ustr>>,
-    ) -> anyhow::Result<Self> {
-        check_positive_quantity(quantity, stringify!(quantity))?;
-        check_predicate_false(
-            time_in_force == TimeInForce::Gtd,
-            "GTD not supported for Market orders",
-        )?;
-        let init_order = OrderInitialized::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            order_side,
-            OrderType::Market,
-            quantity,
-            time_in_force,
-            false,
-            reduce_only,
-            quote_quantity,
-            false,
-            init_id,
-            ts_init,
-            ts_init,
-            None,
-            None,
-            Some(TriggerType::NoTrigger),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            contingency_type,
-            order_list_id,
-            linked_order_ids,
-            parent_order_id,
-            exec_algorithm_id,
-            exec_algorithm_params,
-            exec_spawn_id,
-            tags,
-        );
-
-        Ok(Self {
-            core: OrderCore::new(init_order),
-        })
     }
 }
 

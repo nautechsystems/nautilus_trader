@@ -20,9 +20,10 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = []
+hypersync = ["hypersync-client", "hypersync-schema"]
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["defi", "python"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -45,11 +46,19 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
+ustr = { workspace = true }
+hypersync-client = { version = "0.18.1", optional = true }
+hypersync-schema = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
 
 [[bin]]
-name = "live_blocks"
-path = "bin/watch_live_blocks.rs"
-required-features = ["python"]  # TODO: Untangle python feature
+name = "live_blocks_rpc"
+path = "bin/watch_rpc_live_blocks.rs"
+required-features = ["hypersync"]
+
+[[bin]]
+name = "live_blocks_hypersync"
+path = "bin/watch_hypersync_live_blocks.rs"
+required-features = ["hypersync"]

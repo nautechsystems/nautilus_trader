@@ -54,18 +54,21 @@ static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
 
 /// Returns whether the core logger is enabled.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_is_initialized() -> u8 {
     u8::from(LOGGING_INITIALIZED.load(Ordering::Relaxed))
 }
 
 /// Sets the logging system to bypass mode.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
 /// Shuts down the logging system.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_shutdown() {
     // Flush any buffered logs and mark logging as uninitialized
     log::logger().flush();
@@ -74,24 +77,28 @@ pub extern "C" fn logging_shutdown() {
 
 /// Returns whether the core logger is using ANSI colors.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_is_colored() -> u8 {
     u8::from(LOGGING_COLORED.load(Ordering::Relaxed))
 }
 
 /// Sets the global logging clock to real-time mode.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock to static mode.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns.into());
@@ -137,6 +144,15 @@ pub fn init_tracing() -> anyhow::Result<()> {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+/// Initialize logging.
+///
+/// Logging should be used for Python and sync Rust logic which is most of
+/// the components in the `nautilus_trader` package.
+/// Logging can be configured via the `NAUTILUS_LOG` environment variable.
+///
+/// # Errors
+///
+/// Returns an error if the logging subsystem fails to initialize.
 pub fn init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -160,6 +176,11 @@ pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     }
 }
 
+/// Parses a string into a [`LevelFilter`].
+///
+/// # Panics
+///
+/// Panics if the provided string is not a valid `LevelFilter`.
 #[must_use]
 pub fn parse_level_filter_str(s: &str) -> LevelFilter {
     let mut log_level_str = s.to_string().to_uppercase();
@@ -171,6 +192,11 @@ pub fn parse_level_filter_str(s: &str) -> LevelFilter {
 }
 
 #[must_use]
+/// Parses component-specific log levels from a JSON value map.
+///
+/// # Panics
+///
+/// Panics if a JSON value in the map is not a string representing a log level.
 pub fn parse_component_levels(
     original_map: Option<HashMap<String, serde_json::Value>>,
 ) -> HashMap<Ustr, LevelFilter> {

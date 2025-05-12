@@ -51,13 +51,13 @@ pub trait ExecutionClient {
     ) -> anyhow::Result<()>;
     fn start(&mut self) -> anyhow::Result<()>;
     fn stop(&mut self) -> anyhow::Result<()>;
-    fn submit_order(&self, command: SubmitOrder) -> anyhow::Result<()>;
-    fn submit_order_list(&self, command: SubmitOrderList) -> anyhow::Result<()>;
-    fn modify_order(&self, command: ModifyOrder) -> anyhow::Result<()>;
-    fn cancel_order(&self, command: CancelOrder) -> anyhow::Result<()>;
-    fn cancel_all_orders(&self, command: CancelAllOrders) -> anyhow::Result<()>;
-    fn batch_cancel_orders(&self, command: BatchCancelOrders) -> anyhow::Result<()>;
-    fn query_order(&self, command: QueryOrder) -> anyhow::Result<()>;
+    fn submit_order(&self, cmd: &SubmitOrder) -> anyhow::Result<()>;
+    fn submit_order_list(&self, cmd: &SubmitOrderList) -> anyhow::Result<()>;
+    fn modify_order(&self, cmd: &ModifyOrder) -> anyhow::Result<()>;
+    fn cancel_order(&self, cmd: &CancelOrder) -> anyhow::Result<()>;
+    fn cancel_all_orders(&self, cmd: &CancelAllOrders) -> anyhow::Result<()>;
+    fn batch_cancel_orders(&self, cmd: &BatchCancelOrders) -> anyhow::Result<()>;
+    fn query_order(&self, cmd: &QueryOrder) -> anyhow::Result<()>;
 }
 
 pub trait LiveExecutionClient: ExecutionClient {
@@ -65,17 +65,17 @@ pub trait LiveExecutionClient: ExecutionClient {
     fn disconnect(&self) -> anyhow::Result<()>;
     fn generate_order_status_report(
         &self,
-        report: GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>>;
     fn generate_order_status_reports(
         &self,
-        report: GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Vec<OrderStatusReport>>;
     fn generate_fill_reports(&self, report: GenerateFillReports)
     -> anyhow::Result<Vec<FillReport>>;
     fn generate_position_status_reports(
         &self,
-        report: GeneratePositionReports,
+        cmd: &GeneratePositionReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>>;
     fn generate_mass_status(
         &self,

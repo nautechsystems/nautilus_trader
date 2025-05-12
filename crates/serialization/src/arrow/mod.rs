@@ -43,6 +43,7 @@ use nautilus_model::{
     },
     types::{price::PriceRaw, quantity::QuantityRaw},
 };
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -57,6 +58,7 @@ pub enum DataStreamingError {
     IoError(#[from] io::Error),
     #[error("Arrow error: {0}")]
     ArrowError(#[from] arrow::error::ArrowError),
+    #[cfg(feature = "python")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
 }

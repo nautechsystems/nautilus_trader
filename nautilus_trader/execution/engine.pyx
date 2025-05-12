@@ -1070,7 +1070,7 @@ cdef class ExecutionEngine(Component):
                 msg=pos_event,
             )
             if self.snapshot_positions:
-                position = self.cache.position(pos_event.position_id)
+                position = self._cache.position(pos_event.position_id)
                 self._create_position_state_snapshot(
                     position,
                     open_only=isinstance(pos_event, PositionOpened),

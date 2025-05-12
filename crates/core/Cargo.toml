@@ -28,6 +28,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+ahash = { workspace = true }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }

@@ -324,12 +324,22 @@ impl OrderBook {
     }
 }
 
+/// Updates the `OrderBook` with a [`QuoteTick`].
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the update operation fails.
 #[pyfunction()]
 #[pyo3(name = "update_book_with_quote_tick")]
 pub fn py_update_book_with_quote_tick(book: &mut OrderBook, quote: &QuoteTick) -> PyResult<()> {
     book.update_quote_tick(quote).map_err(to_pyvalue_err)
 }
 
+/// Updates the `OrderBook` with a [`TradeTick`].
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the update operation fails.
 #[pyfunction()]
 #[pyo3(name = "update_book_with_trade_tick")]
 pub fn py_update_book_with_trade_tick(book: &mut OrderBook, trade: &TradeTick) -> PyResult<()> {

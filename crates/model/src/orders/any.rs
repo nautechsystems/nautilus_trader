@@ -48,6 +48,10 @@ impl OrderAny {
     /// Returns an error if:
     /// - The `events` is empty.
     /// - The first event is not `OrderInitialized`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `events` is empty or when applying events via `order.apply`, which may panic on invalid transitions.
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
             anyhow::bail!("No order events provided to create OrderAny");
@@ -89,14 +93,14 @@ impl Display for OrderAny {
             "{}",
             match self {
                 Self::Limit(order) => order.to_string(),
-                Self::LimitIfTouched(order) => format!("{order:?}"), // TODO: Implement
+                Self::LimitIfTouched(order) => order.to_string(),
                 Self::Market(order) => order.to_string(),
-                Self::MarketIfTouched(order) => format!("{order:?}"), // TODO: Implement
-                Self::MarketToLimit(order) => format!("{order:?}"),   // TODO: Implement
+                Self::MarketIfTouched(order) => order.to_string(),
+                Self::MarketToLimit(order) => order.to_string(),
                 Self::StopLimit(order) => order.to_string(),
-                Self::StopMarket(order) => format!("{order:?}"), // TODO: Implement
-                Self::TrailingStopLimit(order) => format!("{order:?}"), // TODO: Implement
-                Self::TrailingStopMarket(order) => format!("{order:?}"), // TODO: Implement
+                Self::StopMarket(order) => order.to_string(),
+                Self::TrailingStopLimit(order) => order.to_string(),
+                Self::TrailingStopMarket(order) => order.to_string(),
             }
         )
     }
@@ -215,6 +219,9 @@ pub enum LimitOrderAny {
 
 impl LimitOrderAny {
     #[must_use]
+    /// # Panics
+    ///
+    /// Panics if called on a `MarketToLimit` variant when the inner `price` is `None`.
     pub fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,

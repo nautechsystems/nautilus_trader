@@ -48,6 +48,9 @@ impl StrategyId {
     ///
     /// This function panics:
     /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// # Errors
+    ///
+    /// Returns an error if `value` is not a valid strategy format or missing '-' separator.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
@@ -96,6 +99,11 @@ impl StrategyId {
         self.0 == EXTERNAL_STRATEGY_ID
     }
 
+    /// Returns the numerical tag portion of the strategy ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal ID does not contain a '-' separator.
     #[must_use]
     pub fn get_tag(&self) -> &str {
         // SAFETY: Unwrap safe as value previously validated

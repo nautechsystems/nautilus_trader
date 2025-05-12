@@ -29,19 +29,14 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
+#![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
-#![deny(rustdoc::broken_intra_doc_links)]
 #![deny(clippy::missing_errors_doc)]
-#![allow(
-    clippy::inline_always,
-    clippy::needless_continue,
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::redundant_pattern_matching,
-    clippy::option_if_let_else
-)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod collections;
 pub mod consts;
 pub mod correctness;
 pub mod datetime;
