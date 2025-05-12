@@ -67,6 +67,7 @@ pub enum MovingAverageType {
     Hull,
 }
 
+#[derive(Debug)]
 pub struct MovingAverageFactory;
 
 impl MovingAverageFactory {
