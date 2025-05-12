@@ -660,15 +660,15 @@ wheels = [
 
 [[package]]
 name = "docformatter"
-version = "1.7.6"
+version = "1.7.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "charset-normalizer" },
     { name = "untokenize" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/31/9f59948a4df1c107b4c9cdf6afcc06f3b95e03490d1e858f5377f4234e2a/docformatter-1.7.6.tar.gz", hash = "sha256:911f03dd302d0045739dd4daf6a007ce26256db693494b19a4ccdc9136a59dbb", size = 26357, upload-time = "2025-05-07T20:37:05.142Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/7b/ee08cb5fe2627ed0b6f0cc4a1c6be6c9c71de5a3e9785de8174273fc3128/docformatter-1.7.7.tar.gz", hash = "sha256:ea0e1e8867e5af468dfc3f9e947b92230a55be9ec17cd1609556387bffac7978", size = 26587, upload-time = "2025-05-11T04:54:04.356Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/55/1e/238937fd00555b7915c4c3ee3447224b167c2f83b9e2c32f16e2d1bdda2a/docformatter-1.7.6-py3-none-any.whl", hash = "sha256:3259698c29b411fc53ac363c5f90b5e1c0ccb7224b166df33224b85d98f2e540", size = 33285, upload-time = "2025-05-07T20:37:04.108Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/b4/a7ec1eaee86761a9dbfd339732b4706db3c6b65e970c12f0f56cfcce3dcf/docformatter-1.7.7-py3-none-any.whl", hash = "sha256:7af49f8a46346a77858f6651f431b882c503c2f4442c8b4524b920c863277834", size = 33525, upload-time = "2025-05-11T04:54:03.353Z" },
 ]
 
 [[package]]
@@ -1430,7 +1430,7 @@ provides-extras = ["betfair", "ib", "docker", "dydx", "polymarket"]
 dev = [
     { name = "black", specifier = ">=25.1.0,<26.0.0" },
     { name = "cython", specifier = "==3.1.0" },
-    { name = "docformatter", specifier = ">=1.7.6,<2.0.0" },
+    { name = "docformatter", specifier = ">=1.7.7,<2.0.0" },
     { name = "mypy", specifier = ">=1.15.0,<2.0.0" },
     { name = "pandas-stubs", specifier = ">=2.2.2,<3.0.0" },
     { name = "pre-commit", specifier = ">=4.2.0,<5.0.0" },
