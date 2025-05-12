@@ -826,7 +826,8 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
         events::order::{
-            accepted::OrderAcceptedBuilder, denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
+            accepted::OrderAcceptedBuilder, canceled::OrderCanceledBuilder,
+            denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
             initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
         },
         orders::MarketOrder,
@@ -941,5 +942,112 @@ mod tests {
         assert!(order.is_closed());
         assert_eq!(order.commission(&Currency::USD()), None);
         assert_eq!(order.commissions(), &IndexMap::new());
+    }
+
+    #[rstest]
+    fn test_order_state_transition_to_canceled() {
+        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let canceled = OrderCanceledBuilder::default().build().unwrap();
+
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Canceled(canceled)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Canceled);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+    }
+
+    #[rstest]
+    fn test_order_life_cycle_to_partially_filled() {
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let filled = OrderFilledBuilder::default()
+            .last_qty(Quantity::from(50_000))
+            .build()
+            .unwrap();
+
+        let mut order: MarketOrder = init.clone().into();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+
+        assert_eq!(order.client_order_id, init.client_order_id);
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(50_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(50_000));
+        assert!(order.is_open());
+        assert!(!order.is_closed());
+    }
+
+    #[rstest]
+    fn test_order_commission_calculation() {
+        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
+        order
+            .commissions
+            .insert(Currency::USD(), Money::new(10.0, Currency::USD()));
+
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::new(10.0, Currency::USD()))
+        );
+        assert_eq!(
+            order.commissions_vec(),
+            vec![Money::new(10.0, Currency::USD())]
+        );
+    }
+
+    #[rstest]
+    fn test_order_is_primary() {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .exec_algorithm_id(Some(ExecAlgorithmId::from("ALGO-001")))
+            .exec_spawn_id(Some(ClientOrderId::from("O-001")))
+            .client_order_id(ClientOrderId::from("O-001"))
+            .build()
+            .unwrap()
+            .into();
+
+        assert!(order.is_primary());
+        assert!(!order.is_secondary());
+    }
+
+    #[rstest]
+    fn test_order_is_secondary() {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .exec_algorithm_id(Some(ExecAlgorithmId::from("ALGO-001")))
+            .exec_spawn_id(Some(ClientOrderId::from("O-002")))
+            .client_order_id(ClientOrderId::from("O-001"))
+            .build()
+            .unwrap()
+            .into();
+
+        assert!(!order.is_primary());
+        assert!(order.is_secondary());
+    }
+
+    #[rstest]
+    fn test_order_is_contingency() {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .contingency_type(Some(ContingencyType::Oto))
+            .build()
+            .unwrap()
+            .into();
+
+        assert!(order.is_contingency());
+        assert!(order.is_parent_order());
+        assert!(!order.is_child_order());
+    }
+
+    #[rstest]
+    fn test_order_is_child_order() {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .parent_order_id(Some(ClientOrderId::from("PARENT-001")))
+            .build()
+            .unwrap()
+            .into();
+
+        assert!(order.is_child_order());
+        assert!(!order.is_parent_order());
     }
 }

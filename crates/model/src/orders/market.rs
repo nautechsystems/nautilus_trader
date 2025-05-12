@@ -545,8 +545,9 @@ mod tests {
 
     use crate::{
         enums::{OrderSide, OrderType, TimeInForce},
+        events::{OrderEventAny, OrderUpdated, order::initialized::OrderInitializedBuilder},
         instruments::{CurrencyPair, stubs::*},
-        orders::builder::OrderTestBuilder,
+        orders::{MarketOrder, Order, builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::Quantity,
     };
 
@@ -571,5 +572,105 @@ mod tests {
             .quantity(Quantity::from(100))
             .time_in_force(TimeInForce::Gtd)
             .build();
+    }
+    #[rstest]
+    fn test_market_order_creation(audusd_sim: CurrencyPair) {
+        // Create a MarketOrder with specific parameters
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy)
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+
+        // Assert that the MarketOrder-specific fields are correctly set
+        assert_eq!(order.time_in_force(), TimeInForce::Ioc);
+        assert_eq!(order.order_type(), OrderType::Market);
+        assert!(order.price().is_none());
+    }
+
+    #[rstest]
+    fn test_market_order_update(audusd_sim: CurrencyPair) {
+        // Create and accept a basic MarketOrder
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy)
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Update with new values
+        let updated_quantity = Quantity::from(5);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            quantity: updated_quantity,
+            ..Default::default()
+        };
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        // Verify updates were applied correctly
+        assert_eq!(accepted_order.quantity(), updated_quantity);
+    }
+
+    #[rstest]
+    fn test_market_order_from_order_initialized(audusd_sim: CurrencyPair) {
+        // Create an OrderInitialized event with all required fields for a MarketOrder
+        let order_initialized = OrderInitializedBuilder::default()
+            .order_type(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .order_side(OrderSide::Buy)
+            .build()
+            .unwrap();
+
+        // Convert the OrderInitialized event into a MarketOrder
+        let order: MarketOrder = order_initialized.clone().into();
+
+        // Assert essential fields match the OrderInitialized fields
+        assert_eq!(order.trader_id(), order_initialized.trader_id);
+        assert_eq!(order.strategy_id(), order_initialized.strategy_id);
+        assert_eq!(order.instrument_id(), order_initialized.instrument_id);
+        assert_eq!(order.client_order_id(), order_initialized.client_order_id);
+        assert_eq!(order.order_side(), order_initialized.order_side);
+        assert_eq!(order.quantity(), order_initialized.quantity);
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Condition failed: invalid `Quantity` for 'quantity' not positive, was 0"
+    )]
+    fn test_market_order_invalid_quantity(audusd_sim: CurrencyPair) {
+        let _ = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(0))
+            .side(OrderSide::Buy)
+            .build();
+    }
+
+    #[rstest]
+    fn test_display(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy)
+            .build();
+
+        // Assert that the display method returns a string representation of the order
+        assert_eq!(
+            order.to_string(),
+            format!(
+                "MarketOrder({} {} {} @ {} {}, status=INITIALIZED, client_order_id={}, venue_order_id=None, position_id=None, exec_algorithm_id=None, exec_spawn_id=None, tags=None)",
+                order.order_side(),
+                order.quantity().to_formatted_string(),
+                order.instrument_id(),
+                order.order_type(),
+                order.time_in_force(),
+                order.client_order_id()
+            )
+        );
     }
 }

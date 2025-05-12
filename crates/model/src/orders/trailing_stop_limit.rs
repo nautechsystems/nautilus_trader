@@ -616,10 +616,13 @@ mod tests {
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
+    use super::*;
     use crate::{
-        enums::{OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+        enums::{TimeInForce, TrailingOffsetType, TriggerType},
+        events::order::initialized::OrderInitializedBuilder,
+        identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},
-        orders::{Order, builder::OrderTestBuilder},
+        orders::{OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
 
@@ -716,5 +719,103 @@ mod tests {
             .time_in_force(TimeInForce::Gtd)
             .quantity(Quantity::from(1))
             .build();
+    }
+
+    #[test]
+    fn test_trailing_stop_limit_order_update() {
+        // Create and accept a basic trailing stop limit order
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .limit_offset(dec!(2.0))
+            .trailing_offset(dec!(1.0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+
+        // Update with new values
+        let updated_trigger_price = Price::new(90.0, 2);
+        let updated_quantity = Quantity::from(5);
+
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            trigger_price: Some(updated_trigger_price),
+            quantity: updated_quantity,
+            ..Default::default()
+        };
+
+        accepted_order.apply(OrderEventAny::Updated(event)).unwrap();
+
+        // Verify updates were applied correctly
+        assert_eq!(accepted_order.quantity(), updated_quantity);
+        assert_eq!(accepted_order.trigger_price(), Some(updated_trigger_price));
+    }
+
+    #[test]
+    fn test_trailing_stop_limit_order_trigger_instrument_id() {
+        // Create a new TrailingStopLimitOrder with a trigger instrument ID
+        let trigger_instrument_id = InstrumentId::from("ETH-USDT.BINANCE");
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
+            .quantity(Quantity::from(10))
+            .price(Price::new(100.0, 2))
+            .trigger_price(Price::new(95.0, 2))
+            .limit_offset(dec!(2.0))
+            .trailing_offset(dec!(1.0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .trigger_instrument_id(trigger_instrument_id.clone())
+            .build();
+
+        // Assert that the trigger instrument ID is set correctly
+        assert_eq!(order.trigger_instrument_id(), Some(trigger_instrument_id));
+    }
+
+    #[test]
+    fn test_trailing_stop_limit_order_from_order_initialized() {
+        // Create an OrderInitialized event with all required fields for a TrailingStopLimitOrder
+        let order_initialized = OrderInitializedBuilder::default()
+            .order_type(OrderType::TrailingStopLimit)
+            .price(Some(Price::new(100.0, 2)))
+            .trigger_price(Some(Price::new(95.0, 2)))
+            .trigger_type(Some(TriggerType::Default))
+            .limit_offset(Some(dec!(2.0)))
+            .trailing_offset(Some(dec!(1.0)))
+            .trailing_offset_type(Some(TrailingOffsetType::Price))
+            .build()
+            .unwrap();
+
+        // Convert the OrderInitialized event into a TrailingStopLimitOrder
+        let order: TrailingStopLimitOrder = order_initialized.clone().into();
+
+        // Assert essential fields match the OrderInitialized fields
+        assert_eq!(order.trader_id(), order_initialized.trader_id);
+        assert_eq!(order.strategy_id(), order_initialized.strategy_id);
+        assert_eq!(order.instrument_id(), order_initialized.instrument_id);
+        assert_eq!(order.client_order_id(), order_initialized.client_order_id);
+        assert_eq!(order.order_side(), order_initialized.order_side);
+        assert_eq!(order.quantity(), order_initialized.quantity);
+
+        // Assert specific fields for TrailingStopLimitOrder
+        assert_eq!(order.price, order_initialized.price.unwrap());
+        assert_eq!(
+            order.trigger_price,
+            order_initialized.trigger_price.unwrap()
+        );
+        assert_eq!(order.trigger_type, order_initialized.trigger_type.unwrap());
+        assert_eq!(order.limit_offset, order_initialized.limit_offset.unwrap());
+        assert_eq!(
+            order.trailing_offset,
+            order_initialized.trailing_offset.unwrap()
+        );
+        assert_eq!(
+            order.trailing_offset_type,
+            order_initialized.trailing_offset_type.unwrap()
+        );
+        assert_eq!(order.time_in_force(), order_initialized.time_in_force);
+        assert_eq!(order.expire_time(), order_initialized.expire_time);
     }
 }

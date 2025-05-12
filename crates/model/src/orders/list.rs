@@ -135,4 +135,107 @@ mod tests {
             "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders="
         ));
     }
+
+    #[rstest]
+    #[should_panic(expected = "assertion `left == right` failed")]
+    fn test_order_list_creation_with_mismatched_instrument_id(audusd_sim: CurrencyPair) {
+        let order1 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        let order2 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("EUR/USD.SIM"))
+            .side(OrderSide::Sell)
+            .price(Price::from("1.01000"))
+            .quantity(Quantity::from(50_000))
+            .build();
+
+        let orders = vec![order1, order2];
+
+        // This should panic because the instrument IDs do not match
+        OrderList::new(
+            OrderListId::from("OL-003"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders,
+            UnixNanos::default(),
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "called `Result::unwrap()` on an `Err` value: the 'orders' slice")]
+    fn test_order_list_creation_with_empty_orders(audusd_sim: CurrencyPair) {
+        let orders: Vec<OrderAny> = vec![];
+
+        // This should panic because the orders list is empty
+        OrderList::new(
+            OrderListId::from("OL-004"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders,
+            UnixNanos::default(),
+        );
+    }
+
+    #[rstest]
+    fn test_order_list_equality(audusd_sim: CurrencyPair) {
+        let order1 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let orders = vec![order1];
+
+        let order_list1 = OrderList::new(
+            OrderListId::from("OL-006"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders.clone(),
+            UnixNanos::default(),
+        );
+
+        let order_list2 = OrderList::new(
+            OrderListId::from("OL-006"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(order_list1, order_list2);
+    }
+
+    #[rstest]
+    fn test_order_list_inequality(audusd_sim: CurrencyPair) {
+        let order1 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let orders = vec![order1];
+
+        let order_list1 = OrderList::new(
+            OrderListId::from("OL-007"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders.clone(),
+            UnixNanos::default(),
+        );
+
+        let order_list2 = OrderList::new(
+            OrderListId::from("OL-008"),
+            audusd_sim.id,
+            StrategyId::default(),
+            orders,
+            UnixNanos::default(),
+        );
+
+        assert_ne!(order_list1, order_list2);
+    }
 }
