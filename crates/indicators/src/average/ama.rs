@@ -41,7 +41,7 @@ pub struct AdaptiveMovingAverage {
     pub period_efficiency_ratio: usize,
     /// The period for the fast smoothing constant (> 0).
     pub period_fast: usize,
-    /// The period for the slow smoothing constant (> 0 < `period_fast`).
+    /// The period for the slow smoothing constant (> period_fast).
     pub period_slow: usize,
     /// The price type used for calculations.
     pub price_type: PriceType,
@@ -105,6 +105,12 @@ impl Indicator for AdaptiveMovingAverage {
 
 impl AdaptiveMovingAverage {
     /// Creates a new [`AdaptiveMovingAverage`] instance.
+    ///
+    /// # Panics
+    /// * If `period_efficiency_ratio` == 0
+    /// * If `period_fast` == 0
+    /// * If `period_slow` == 0
+    /// * If `period_slow` ≤ `period_fast`
     #[must_use]
     pub fn new(
         period_efficiency_ratio: usize,
@@ -112,6 +118,18 @@ impl AdaptiveMovingAverage {
         period_slow: usize,
         price_type: Option<PriceType>,
     ) -> Self {
+        assert!(
+            period_efficiency_ratio > 0,
+            "period_efficiency_ratio must be a positive integer"
+        );
+        assert!(period_fast > 0, "period_fast must be a positive integer");
+        assert!(period_slow > 0, "period_slow must be a positive integer");
+        assert!(
+            period_slow > period_fast,
+            "period_slow ({}) must be greater than period_fast ({})",
+            period_slow,
+            period_fast
+        );
         Self {
             period_efficiency_ratio,
             period_fast,
@@ -152,6 +170,8 @@ impl MovingAverage for AdaptiveMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
+        self.count += 1;
+
         if !self.has_inputs {
             self.prior_value = Some(value);
             self.efficiency_ratio.update_raw(value);
@@ -159,6 +179,7 @@ impl MovingAverage for AdaptiveMovingAverage {
             self.has_inputs = true;
             return;
         }
+
         self.efficiency_ratio.update_raw(value);
         self.prior_value = Some(self.value);
 
@@ -173,6 +194,7 @@ impl MovingAverage for AdaptiveMovingAverage {
         // TODO: Remove unwraps
         self.value = smoothing_constant
             .mul_add(value - self.prior_value.unwrap(), self.prior_value.unwrap());
+
         if self.efficiency_ratio.initialized() {
             self.initialized = true;
         }
@@ -233,6 +255,7 @@ mod tests {
         assert!(!indicator_ama_10.initialized);
         assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
+        assert_eq!(indicator_ama_10.count, 0);
     }
 
     #[rstest]
@@ -247,11 +270,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_count_increments(mut indicator_ama_10: AdaptiveMovingAverage) {
+        assert_eq!(indicator_ama_10.count(), 0);
+        indicator_ama_10.update_raw(1.0);
+        assert_eq!(indicator_ama_10.count(), 1);
+        indicator_ama_10.update_raw(2.0);
+        indicator_ama_10.update_raw(3.0);
+        assert_eq!(indicator_ama_10.count(), 3);
+    }
+
+    #[rstest]
     fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, stub_quote: QuoteTick) {
         indicator_ama_10.handle_quote(&stub_quote);
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1501.0);
+        assert_eq!(indicator_ama_10.count(), 1);
     }
 
     #[rstest]
@@ -263,6 +297,7 @@ mod tests {
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1500.0);
+        assert_eq!(indicator_ama_10.count(), 1);
     }
 
     #[rstest]
@@ -274,5 +309,46 @@ mod tests {
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1522.0);
+        assert_eq!(indicator_ama_10.count(), 1);
+    }
+
+    #[rstest]
+    fn new_panics_when_slow_not_greater_than_fast() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = AdaptiveMovingAverage::new(10, 20, 20, None);
+        });
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn new_panics_when_er_is_zero() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = AdaptiveMovingAverage::new(0, 2, 30, None);
+        });
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn new_panics_when_fast_is_zero() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = AdaptiveMovingAverage::new(10, 0, 30, None);
+        });
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn new_panics_when_slow_is_zero() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = AdaptiveMovingAverage::new(10, 2, 0, None);
+        });
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn new_panics_when_slow_less_than_fast() {
+        let result = std::panic::catch_unwind(|| {
+            let _ = AdaptiveMovingAverage::new(10, 20, 5, None);
+        });
+        assert!(result.is_err());
     }
 }
