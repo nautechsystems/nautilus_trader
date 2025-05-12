@@ -15,7 +15,7 @@
 
 //! Provides a generic `ExecutionEngine` for all environments.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use config::RiskEngineConfig;
 use nautilus_common::{
@@ -55,6 +55,12 @@ pub struct RiskEngine {
     max_notional_per_order: HashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
+}
+
+impl Debug for RiskEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RiskEngine)).finish()
+    }
 }
 
 impl RiskEngine {

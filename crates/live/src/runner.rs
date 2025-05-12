@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use futures::StreamExt;
 use nautilus_common::{
@@ -26,6 +26,12 @@ use nautilus_data::engine::DataEngine;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub struct AsyncDataQueue(UnboundedSender<DataEvent>);
+
+impl Debug for AsyncDataQueue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(AsyncDataQueue)).finish()
+    }
+}
 
 impl DataQueue for AsyncDataQueue {
     fn push(&mut self, event: DataEvent) {
@@ -44,6 +50,14 @@ pub trait Runner {
 pub struct AsyncRunner {
     pub clock: Rc<RefCell<LiveClock>>,
     data_rx: UnboundedReceiver<DataEvent>,
+}
+
+impl Debug for AsyncRunner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(AsyncRunner))
+            .field("clock_set", &true)
+            .finish()
+    }
 }
 
 impl Runner for AsyncRunner {

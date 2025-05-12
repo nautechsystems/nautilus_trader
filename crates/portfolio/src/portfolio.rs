@@ -20,6 +20,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -89,6 +90,12 @@ pub struct Portfolio {
     pub(crate) cache: Rc<RefCell<Cache>>,
     inner: Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
+}
+
+impl Debug for Portfolio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(Portfolio)).finish()
+    }
 }
 
 impl Portfolio {
@@ -552,6 +559,11 @@ impl Portfolio {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    /// Initializes account margin based on existing open orders.
+    ///
+    /// # Panics
+    ///
+    /// Panics if updating the cache with a mutated account fails.
     pub fn initialize_orders(&mut self) {
         let mut initialized = true;
         let orders_and_instruments = {
@@ -628,6 +640,11 @@ impl Portfolio {
         self.inner.borrow_mut().initialized = initialized;
     }
 
+    /// Initializes account margin based on existing open positions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if calculation of PnL or updating the cache with a mutated account fails.
     pub fn initialize_positions(&mut self) {
         self.inner.borrow_mut().unrealized_pnls.clear();
         self.inner.borrow_mut().realized_pnls.clear();
