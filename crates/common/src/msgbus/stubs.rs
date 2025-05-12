@@ -38,7 +38,7 @@ pub struct StubMessageHandler {
 
 impl Debug for StubMessageHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StubMessageHandler")
+        f.debug_struct(stringify!(StubMessageHandler))
             .field("id", &self.id)
             .finish()
     }

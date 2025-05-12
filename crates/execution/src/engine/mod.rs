@@ -78,7 +78,9 @@ pub struct ExecutionEngine {
 
 impl Debug for ExecutionEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ExecutionEngine").finish()
+        f.debug_struct(stringify!(ExecutionEngine))
+            .field("client_count", &self.clients.len())
+            .finish()
     }
 }
 

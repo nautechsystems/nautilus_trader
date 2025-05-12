@@ -63,7 +63,9 @@ pub struct BaseExecutionClient {
 
 impl Debug for BaseExecutionClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BaseExecutionClient").finish()
+        f.debug_struct(stringify!(BaseExecutionClient))
+            .field("client_id", &self.client_id)
+            .finish()
     }
 }
 

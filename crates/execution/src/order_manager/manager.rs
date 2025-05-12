@@ -52,7 +52,9 @@ pub struct OrderManager {
 
 impl Debug for OrderManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OrderManager").finish()
+        f.debug_struct(stringify!(OrderManager))
+            .field("pending_commands", &self.submit_order_commands.len())
+            .finish()
     }
 }
 

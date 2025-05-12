@@ -123,7 +123,10 @@ pub struct SimulatedExchange {
 
 impl std::fmt::Debug for SimulatedExchange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(SimulatedExchange)).finish()
+        f.debug_struct(stringify!(SimulatedExchange))
+            .field("id", &self.id)
+            .field("account_type", &self.account_type)
+            .finish()
     }
 }
 

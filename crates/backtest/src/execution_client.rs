@@ -51,7 +51,10 @@ pub struct BacktestExecutionClient {
 
 impl Debug for BacktestExecutionClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(BacktestExecutionClient)).finish()
+        f.debug_struct(stringify!(BacktestExecutionClient))
+            .field("client_id", &self.base.client_id)
+            .field("routing", &self.routing)
+            .finish()
     }
 }
 
