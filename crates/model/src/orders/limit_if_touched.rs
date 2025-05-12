@@ -766,8 +766,8 @@ mod tests {
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))
             .quantity(Quantity::from(10))
             .side(OrderSide::Buy) // Explicitly setting Buy side
-            .price(Price::new(90.0, 2)) // Limit price
-            .trigger_price(Price::new(95.0, 2)) // Trigger price LOWER than fill price
+            .price(Price::new(95.0, 2)) // Limit price
+            .trigger_price(Price::new(90.0, 2)) // Trigger price LOWER than fill price
             .trigger_type(TriggerType::Default)
             .build();
 
@@ -800,7 +800,7 @@ mod tests {
         assert!(accepted_order.slippage().is_some());
 
         // We can also check the actual slippage value
-        let expected_slippage = 98.50 - 90.0; // For buy order: execution price - trigger price
+        let expected_slippage = 98.50 - 95.0;
         let actual_slippage = accepted_order.slippage().unwrap();
 
         assert!(
