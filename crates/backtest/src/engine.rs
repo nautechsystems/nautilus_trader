@@ -100,6 +100,9 @@ impl BacktestEngine {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if initializing the simulated exchange for the venue fails.
     #[allow(clippy::too_many_arguments)]
     pub fn add_venue(
         &mut self,
@@ -127,7 +130,7 @@ impl BacktestEngine {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
-    ) {
+    ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
                 Decimal::from(10)
@@ -160,8 +163,7 @@ impl BacktestEngine {
             use_random_ids,
             use_reduce_only,
             use_message_queue,
-        )
-        .unwrap();
+        )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
 
@@ -178,11 +180,11 @@ impl BacktestEngine {
         let exec_client = Rc::new(exec_client);
 
         exchange.borrow_mut().register_client(exec_client.clone());
-        self.kernel
-            .exec_engine
-            .register_client(exec_client)
-            .unwrap();
+        self.kernel.exec_engine.register_client(exec_client)?;
+
         log::info!("Adding exchange {venue} to engine");
+
+        Ok(())
     }
 
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
@@ -197,6 +199,9 @@ impl BacktestEngine {
     ///
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
+    /// # Panics
+    ///
+    /// Panics if adding the instrument to the simulated exchange fails.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
@@ -369,35 +374,38 @@ mod tests {
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
+    #[allow(clippy::missing_panics_doc)] // OK for testing
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
         let config = config.unwrap_or_default();
         let mut engine = BacktestEngine::new(config);
-        engine.add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L2_MBP,
-            vec![Money::from("1000000 USD")],
-            None,
-            None,
-            HashMap::new(),
-            vec![],
-            FillModel::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        engine
+            .add_venue(
+                Venue::from("BINANCE"),
+                OmsType::Netting,
+                AccountType::Margin,
+                BookType::L2_MBP,
+                vec![Money::from("1_000_000 USD")],
+                None,
+                None,
+                HashMap::new(),
+                vec![],
+                FillModel::default(),
+                FeeModelAny::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
         engine
     }
 

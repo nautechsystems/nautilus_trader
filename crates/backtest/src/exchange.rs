@@ -237,6 +237,9 @@ impl SimulatedExchange {
     /// Returns an error if:
     ///
     /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    /// # Panics
+    ///
+    /// Panics if the instrument cannot be added to the exchange.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         check_equal(
             &instrument.id().venue,
@@ -374,12 +377,18 @@ impl SimulatedExchange {
     }
 
     #[must_use]
+    /// # Panics
+    ///
+    /// Panics if retrieving the account from the execution client fails.
     pub fn get_account(&self) -> Option<AccountAny> {
         self.exec_client
             .as_ref()
             .map(|client| client.get_account().unwrap())
     }
 
+    /// # Panics
+    ///
+    /// Panics if generating account state fails during adjustment.
     pub fn adjust_account(&mut self, adjustment: Money) {
         if self.frozen_account {
             // Nothing to adjust
@@ -437,6 +446,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the command is invalid when generating inflight command.
     pub fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
         if let Some(latency_model) = &self.latency_model {
             let ts = match command {
@@ -466,6 +478,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during delta processing fails.
     pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
         for module in &self.modules {
             module.pre_process(Data::Delta(delta));
@@ -494,6 +509,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during deltas processing fails.
     pub fn process_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
         for module in &self.modules {
             module.pre_process(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
@@ -522,6 +540,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during quote tick processing fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
             module.pre_process(Data::Quote(quote.to_owned()));
@@ -550,6 +571,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during trade tick processing fails.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         for module in &self.modules {
             module.pre_process(Data::Trade(trade.to_owned()));
@@ -578,6 +602,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during bar processing fails.
     pub fn process_bar(&mut self, bar: Bar) {
         for module in &self.modules {
             module.pre_process(Data::Bar(bar));
@@ -606,6 +633,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during instrument status processing fails.
     pub fn process_instrument_status(&mut self, status: InstrumentStatus) {
         // TODO add module preprocessing
 
@@ -632,6 +662,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if popping an inflight command fails during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
@@ -667,6 +700,9 @@ impl SimulatedExchange {
         log::info!("Resetting exchange state");
     }
 
+    /// # Panics
+    ///
+    /// Panics if execution client is uninitialized when processing trading command.
     pub fn process_trading_command(&mut self, command: TradingCommand) {
         if let Some(matching_engine) = self.matching_engines.get_mut(&command.instrument_id()) {
             let account_id = if let Some(exec_client) = &self.exec_client {
@@ -702,6 +738,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if generating fresh account state fails.
     pub fn generate_fresh_account_state(&self) {
         let balances: Vec<AccountBalance> = self
             .starting_balances

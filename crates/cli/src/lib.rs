@@ -17,6 +17,9 @@
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
 #![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 mod database;
 pub mod opt;
@@ -26,6 +29,11 @@ use crate::{
     opt::{Commands, NautilusCli},
 };
 
+/// Runs the Nautilus CLI based on the provided options.
+///
+/// # Errors
+///
+/// Returns an error if execution of the specified command fails.
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {
         Commands::Database(database_opt) => run_database_command(database_opt).await?,
