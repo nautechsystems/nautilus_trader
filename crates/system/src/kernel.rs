@@ -19,11 +19,11 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use nautilus_common::msgbus::{MessageBus, set_message_bus};
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::{Clock, LiveClock, TestClock},
     enums::Environment,
+    msgbus::{MessageBus, set_message_bus},
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::DataEngine;
@@ -99,78 +99,92 @@ impl NautilusKernel {
     }
 
     /// Return the kernel's environment context (Backtest, Sandbox, Live).
-    pub fn environment(&self) -> Environment {
+    #[must_use]
+    pub const fn environment(&self) -> Environment {
         self.config.environment
     }
 
     /// Return the kernel's name.
-    pub fn name(&self) -> Ustr {
+    #[must_use]
+    pub const fn name(&self) -> Ustr {
         self.name
     }
 
     /// Return the kernel's trader ID.
-    pub fn trader_id(&self) -> TraderId {
+    #[must_use]
+    pub const fn trader_id(&self) -> TraderId {
         self.config.trader_id
     }
 
     /// Return the kernel's machine ID.
+    #[must_use]
     pub fn machine_id(&self) -> &str {
         &self.machine_id
     }
 
     /// Return the kernel's instance ID.
-    pub fn instance_id(&self) -> UUID4 {
+    #[must_use]
+    pub const fn instance_id(&self) -> UUID4 {
         self.instance_id
     }
 
     /// Return the UNIX timestamp (ns) when the kernel was created.
-    pub fn ts_created(&self) -> u64 {
+    #[must_use]
+    pub const fn ts_created(&self) -> u64 {
         self.ts_created
     }
 
     /// Return the UNIX timestamp (ns) when the kernel was last started.
-    pub fn ts_started(&self) -> Option<u64> {
+    #[must_use]
+    pub const fn ts_started(&self) -> Option<u64> {
         self.ts_started
     }
 
     /// Return the UNIX timestamp (ns) when the kernel was last shutdown.
-    pub fn ts_shutdown(&self) -> Option<u64> {
+    #[must_use]
+    pub const fn ts_shutdown(&self) -> Option<u64> {
         self.ts_shutdown
     }
 
     /// Return whether the kernel has been configured to load state.
-    pub fn load_state(&self) -> bool {
+    #[must_use]
+    pub const fn load_state(&self) -> bool {
         self.config.load_state
     }
 
     /// Return whether the kernel has been configured to save state.
-    pub fn save_state(&self) -> bool {
+    #[must_use]
+    pub const fn save_state(&self) -> bool {
         self.config.save_state
     }
 
     /// Return the kernel's clock.
+    #[must_use]
     pub fn clock(&self) -> Rc<RefCell<dyn Clock>> {
         self.clock.clone()
     }
 
     /// Return the kernel's cache.
+    #[must_use]
     pub fn cache(&self) -> Rc<RefCell<Cache>> {
         self.cache.clone()
     }
 
     /// Return the kernel's data engine.
-    pub fn data_engine(&self) -> &DataEngine {
+    #[must_use]
+    pub const fn data_engine(&self) -> &DataEngine {
         &self.data_engine
     }
 
     /// Return the kernel's execution engine.
-    pub fn exec_engine(&self) -> &ExecutionEngine {
+    #[must_use]
+    pub const fn exec_engine(&self) -> &ExecutionEngine {
         &self.exec_engine
     }
 
     /// Initialize the shared clock based on the environment.
     ///
-    /// Uses a TestClock for backtest, or LiveClock for live/sandbox.
+    /// Uses a `TestClock` for backtest, or `LiveClock` for live/sandbox.
     fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
         match environment {
             Environment::Backtest => {
@@ -226,7 +240,7 @@ impl NautilusKernel {
     /// Cancel all tasks currently running under the kernel.
     ///
     /// Intended for cleanup during shutdown.
-    fn cancel_all_tasks(&self) {
+    const fn cancel_all_tasks(&self) {
         // TODO: implement task cancellation logic for async contexts
     }
 
@@ -236,7 +250,7 @@ impl NautilusKernel {
         self.data_engine.start();
     }
 
-    fn register_executor(&self) {
+    const fn register_executor(&self) {
         // TODO: register executors for actors and strategies when supported
     }
 
@@ -262,50 +276,50 @@ impl NautilusKernel {
     }
 
     /// Initialize the portfolio (orders & positions).
-    fn initialize_portfolio(&self) {
+    const fn initialize_portfolio(&self) {
         // TODO: Placeholder: portfolio initialization to be implemented in next pass
     }
 
     /// Await engine clients to connect and initialize.
     ///
     /// Blocks until connected or timeout.
-    fn await_engines_connected(&self) {
+    const fn await_engines_connected(&self) {
         // TODO: await engine connections with timeout
     }
 
     /// Await execution engine state reconciliation.
     ///
     /// Blocks until executions are reconciled or timeout.
-    fn await_execution_reconciliation(&self) {
+    const fn await_execution_reconciliation(&self) {
         // TODO: await execution reconciliation with timeout
     }
 
     /// Await portfolio initialization (e.g., positions & PnL).
     ///
     /// Blocks until portfolio is initialized or timeout.
-    fn await_portfolio_initialized(&self) {
+    const fn await_portfolio_initialized(&self) {
         // TODO: await portfolio initialization with timeout
     }
 
     /// Await post-stop trader residual events.
     ///
     /// Allows final cleanup before full shutdown.
-    fn await_trader_residuals(&self) {
+    const fn await_trader_residuals(&self) {
         // TODO: await trader residual events after stop
     }
 
     /// Check if engine clients are connected.
-    fn check_engines_connected(&self) {
+    const fn check_engines_connected(&self) {
         // TODO: check engine connection status
     }
 
     /// Check if engine clients are disconnected.
-    fn check_engines_disconnected(&self) {
+    const fn check_engines_disconnected(&self) {
         // TODO: check engine disconnection status
     }
 
     /// Check if the portfolio has been initialized.
-    fn check_portfolio_initialized(&self) {
+    const fn check_portfolio_initialized(&self) {
         // TODO: check portfolio initialized status
     }
 
@@ -313,7 +327,7 @@ impl NautilusKernel {
         self.clock.borrow_mut().cancel_timers();
     }
 
-    fn flush_writer(&self) {
+    const fn flush_writer(&self) {
         // TODO: No writer in this kernel version; placeholder for future streaming
     }
 }

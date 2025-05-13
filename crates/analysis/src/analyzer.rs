@@ -168,7 +168,7 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Records a trade's `PnL`.
+    /// Records a trade's PnL.
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
@@ -183,7 +183,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
-    /// Retrieves realized `PnLs` for a specific currency.
+    /// Retrieves realized PnLs for a specific currency.
     #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
@@ -193,7 +193,7 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
-    /// Calculates total `PnL` including unrealized `PnL` if provided.
+    /// Calculates total PnL including unrealized PnL if provided.
     ///
     /// # Errors
     ///
@@ -236,7 +236,7 @@ impl PortfolioAnalyzer {
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
-    /// Calculates total `PnL` as a percentage of starting balance.
+    /// Calculates total PnL as a percentage of starting balance.
     ///
     /// # Errors
     ///
@@ -361,7 +361,7 @@ impl PortfolioAnalyzer {
         self.statistics.keys().map(String::len).max().unwrap_or(0)
     }
 
-    /// Gets formatted `PnL` statistics as strings.
+    /// Gets formatted PnL statistics as strings.
     ///
     /// # Errors
     ///

@@ -118,8 +118,8 @@ fn register_mock_client(
     data_engine: &mut DataEngine,
 ) {
     let client = MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -309,8 +309,8 @@ fn test_execute_subscribe_custom_data(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -362,8 +362,8 @@ fn test_execute_subscribe_book_deltas(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -425,8 +425,8 @@ fn test_execute_subscribe_book_snapshots(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -491,8 +491,8 @@ fn test_execute_subscribe_instrument(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -551,8 +551,8 @@ fn test_execute_subscribe_quotes(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -603,8 +603,8 @@ fn test_execute_subscribe_trades(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -655,8 +655,8 @@ fn test_execute_subscribe_bars(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -714,8 +714,8 @@ fn test_execute_subscribe_mark_prices(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -774,8 +774,8 @@ fn test_execute_subscribe_index_prices(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -839,8 +839,8 @@ fn test_execute_request_data(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -873,8 +873,8 @@ fn test_execute_request_instrument(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -908,8 +908,8 @@ fn test_execute_request_instruments(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -944,8 +944,8 @@ fn test_execute_request_book_snapshot(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -979,8 +979,8 @@ fn test_execute_request_quotes(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -1016,8 +1016,8 @@ fn test_execute_request_trades(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
@@ -1052,8 +1052,8 @@ fn test_execute_request_bars(
     let mut data_engine = data_engine.borrow_mut();
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         venue,
         None,
