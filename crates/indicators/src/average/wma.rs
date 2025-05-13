@@ -63,6 +63,11 @@ impl WeightedMovingAverage {
         Self::new_checked(period, weights, price_type).expect(FAILED)
     }
 
+    /// Creates a new [`WeightedMovingAverage`] instance with the given period and weights.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` does not equal the length of `weights`.
     pub fn new_checked(
         period: usize,
         weights: Vec<f64>,
