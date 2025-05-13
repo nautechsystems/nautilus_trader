@@ -33,6 +33,7 @@ use nautilus_serialization::{
     parquet::{combine_parquet_files, min_max_from_parquet_metadata, write_batches_to_parquet},
 };
 use regex::Regex;
+use serde::Serialize;
 use unbounded_interval_tree::interval_tree::IntervalTree;
 
 use super::session::{self, DataBackendSession, QueryResult, build_query};
@@ -152,6 +153,7 @@ impl ParquetDataCatalog {
         let batches = self.data_to_record_batches(data)?;
         let schema = batches.first().expect("Batches are empty.").schema();
         let instrument_id = schema.metadata.get("instrument_id").cloned();
+
         let directory = self.make_path(T::path_prefix(), instrument_id)?;
         let filename = format!("{}-{}.parquet", start_ts.as_u64(), end_ts.as_u64());
         let path = directory.join(&filename);
@@ -161,6 +163,7 @@ impl ParquetDataCatalog {
             "Writing {} batches of {type_name} data to {path:?}",
             batches.len()
         );
+
         write_batches_to_parquet(
             &batches,
             &path,
@@ -174,6 +177,48 @@ impl ParquetDataCatalog {
         }
 
         Ok(path)
+    }
+
+    pub fn write_to_json<T>(
+        &self,
+        data: Vec<T>,
+        path: Option<PathBuf>,
+        write_metadata: bool,
+    ) -> anyhow::Result<PathBuf>
+    where
+        T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
+    {
+        if data.is_empty() {
+            return Ok(PathBuf::new());
+        }
+
+        let type_name = std::any::type_name::<T>().to_snake_case();
+        Self::check_ascending_timestamps(&data, &type_name);
+
+        let start_ts = data.first().unwrap().ts_init();
+        let end_ts = data.last().unwrap().ts_init();
+
+        let directory = path.unwrap_or(self.make_path(T::path_prefix(), None)?);
+        let filename = format!("{}-{}.json", start_ts.as_u64(), end_ts.as_u64());
+        let json_path = directory.join(&filename);
+
+        info!(
+            "Writing {} records of {type_name} data to {json_path:?}",
+            data.len()
+        );
+
+        if write_metadata {
+            let metadata = T::chunk_metadata(&data);
+            let metadata_path = json_path.with_extension("metadata.json");
+            info!("Writing metadata to {metadata_path:?}");
+            let metadata_file = std::fs::File::create(&metadata_path)?;
+            serde_json::to_writer_pretty(metadata_file, &metadata)?;
+        }
+
+        let file = std::fs::File::create(&json_path)?;
+        serde_json::to_writer_pretty(file, &serde_json::to_value(data)?)?;
+
+        Ok(json_path)
     }
 
     fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) {
