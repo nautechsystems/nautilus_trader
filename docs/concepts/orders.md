@@ -136,7 +136,7 @@ of the stop price based on the offset from the *market* (bid, ask or last price 
 
 More advanced relationships can be specified between orders such as assigning child order(s) which will only
 trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
-contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).
+contingent on each other. More documentation for these options can be found in the [advanced order guide](#advanced-orders).
 
 ## Order factory
 
@@ -173,7 +173,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import MarketOrder
+from nautilus_trader.model.orders import MarketOrder
 
 order: MarketOrder = self.order_factory.market(
     instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
@@ -203,7 +203,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import LimitOrder
+from nautilus_trader.model.orders import LimitOrder
 
 order: LimitOrder = self.order_factory.limit(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -239,7 +239,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import StopMarketOrder
+from nautilus_trader.model.orders import StopMarketOrder
 
 order: StopMarketOrder = self.order_factory.stop_market(
     instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
@@ -274,7 +274,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import StopLimitOrder
+from nautilus_trader.model.orders import StopLimitOrder
 
 order: StopLimitOrder = self.order_factory.stop_limit(
     instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
@@ -282,7 +282,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
     quantity=Quantity.from_int(50_000),
     price=Price.from_str("1.30000"),
     trigger_price=Price.from_str("1.30010"),
-    trigger_type=TriggerType.BID,  # <-- optional (default DEFAULT)
+    trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
     expire_time=pd.Timestamp("2022-06-06T12:00"),
     post_only=True,  # <-- optional (default False)
@@ -309,7 +309,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import MarketToLimitOrder
+from nautilus_trader.model.orders import MarketToLimitOrder
 
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
     instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
@@ -343,7 +343,7 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import MarketIfTouchedOrder
+from nautilus_trader.model.orders import MarketIfTouchedOrder
 
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
@@ -379,9 +379,9 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import LimitIfTouched
+from nautilus_trader.model.orders import LimitIfTouchedOrder
 
-order: LimitIfTouched = self.order_factory.limit_if_touched(
+order: LimitIfTouchedOrder = self.order_factory.limit_if_touched(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(5),
@@ -419,7 +419,7 @@ from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import TrailingStopMarketOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
@@ -460,7 +460,7 @@ from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import TrailingStopLimitOrder
+from nautilus_trader.model.orders import TrailingStopLimitOrder
 
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
@@ -534,7 +534,7 @@ orders: a take-profit `LIMIT` order and a stop-loss `STOP_MARKET` order. When th
 the child orders are placed in the market. The take-profit order closes the position with profits if
 the market moves favorably, while the stop-loss order limits losses if the market moves unfavorably.
 
-Bracket orders can be easily created using the [OrderFactory](../../api_reference/common.md#class-orderfactory),
+Bracket orders can be easily created using the [OrderFactory](../api_reference/common.md#class-orderfactory),
 which supports various order types, parameters, and instructions.
 
 :::warning
