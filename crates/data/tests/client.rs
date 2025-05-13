@@ -1378,8 +1378,8 @@ fn test_request_data(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1398,10 +1398,7 @@ fn test_request_data(
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
-    assert_eq!(
-        rec[0],
-        DataCommand::Request(RequestCommand::Data(req.clone()))
-    );
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::Data(req)));
 }
 
 #[rstest]
@@ -1413,8 +1410,8 @@ fn test_request_instrument(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1437,7 +1434,7 @@ fn test_request_instrument(
     assert_eq!(rec.len(), 1);
     assert_eq!(
         rec[0],
-        DataCommand::Request(RequestCommand::Instrument(req.clone()))
+        DataCommand::Request(RequestCommand::Instrument(req))
     );
 }
 
@@ -1451,8 +1448,8 @@ fn test_request_instruments(
     // record request commands sent to the client
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1474,7 +1471,7 @@ fn test_request_instruments(
     assert_eq!(rec.len(), 1);
     assert_eq!(
         rec[0],
-        DataCommand::Request(RequestCommand::Instruments(req.clone()))
+        DataCommand::Request(RequestCommand::Instruments(req))
     );
 }
 
@@ -1487,8 +1484,8 @@ fn test_request_book_snapshot(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1510,7 +1507,7 @@ fn test_request_book_snapshot(
     assert_eq!(rec.len(), 1);
     assert_eq!(
         rec[0],
-        DataCommand::Request(RequestCommand::BookSnapshot(req.clone()))
+        DataCommand::Request(RequestCommand::BookSnapshot(req))
     );
 }
 
@@ -1523,8 +1520,8 @@ fn test_request_quotes(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1546,10 +1543,7 @@ fn test_request_quotes(
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
-    assert_eq!(
-        rec[0],
-        DataCommand::Request(RequestCommand::Quotes(req.clone()))
-    );
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::Quotes(req)));
 }
 
 #[rstest]
@@ -1561,8 +1555,8 @@ fn test_request_trades(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1584,10 +1578,7 @@ fn test_request_trades(
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
-    assert_eq!(
-        rec[0],
-        DataCommand::Request(RequestCommand::Trades(req.clone()))
-    );
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::Trades(req)));
 }
 
 #[rstest]
@@ -1599,8 +1590,8 @@ fn test_request_bars(
 ) {
     let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
     let client = Box::new(MockDataClient::new_with_recorder(
-        clock.clone(),
-        cache.clone(),
+        clock,
+        cache,
         client_id,
         Some(venue),
         Some(recorder.clone()),
@@ -1622,8 +1613,5 @@ fn test_request_bars(
 
     let rec = recorder.borrow();
     assert_eq!(rec.len(), 1);
-    assert_eq!(
-        rec[0],
-        DataCommand::Request(RequestCommand::Bars(req.clone()))
-    );
+    assert_eq!(rec[0], DataCommand::Request(RequestCommand::Bars(req)));
 }

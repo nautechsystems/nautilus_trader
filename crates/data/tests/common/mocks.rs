@@ -77,11 +77,11 @@ impl MockDataClient {
         recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
     ) -> Self {
         Self {
-            clock,
-            cache,
             client_id,
             venue,
             recorder,
+            clock,
+            cache,
         }
     }
 }

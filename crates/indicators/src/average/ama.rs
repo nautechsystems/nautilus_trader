@@ -126,9 +126,7 @@ impl AdaptiveMovingAverage {
         assert!(period_slow > 0, "period_slow must be a positive integer");
         assert!(
             period_slow > period_fast,
-            "period_slow ({}) must be greater than period_fast ({})",
-            period_slow,
-            period_fast
+            "period_slow ({period_slow}) must be greater than period_fast ({period_fast})"
         );
         Self {
             period_efficiency_ratio,
