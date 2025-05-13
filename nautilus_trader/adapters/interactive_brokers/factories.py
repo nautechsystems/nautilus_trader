@@ -86,9 +86,11 @@ def get_cached_ib_client(
 
     """
     global GATEWAY
+
     if dockerized_gateway:
         PyCondition.equal(host, "127.0.0.1", "host", "127.0.0.1")
         PyCondition.none(port, "Ensure `port` is set to None when using DockerizedIBGatewayConfig.")
+
         if GATEWAY is None:
             GATEWAY = DockerizedIBGateway(dockerized_gateway)
             GATEWAY.safe_start(wait=dockerized_gateway.timeout)
@@ -116,6 +118,7 @@ def get_cached_ib_client(
         )
         client.start()
         IB_CLIENTS[client_key] = client
+
     return IB_CLIENTS[client_key]
 
 
@@ -212,6 +215,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             connection_timeout=config.connection_timeout,
             request_timeout=config.request_timeout,
         )
+
         return data_client
 
 
@@ -290,4 +294,5 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             name=name,
             connection_timeout=config.connection_timeout,
         )
+
         return exec_client

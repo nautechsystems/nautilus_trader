@@ -161,11 +161,13 @@ def _extract_isin(details: IBContractDetails) -> int:
         for tag_value in details.secIdList:
             if tag_value.tag == "ISIN":
                 return tag_value.value
+
     raise ValueError("No ISIN found")
 
 
 def _tick_size_to_precision(tick_size: float | Decimal) -> int:
     tick_size_str = f"{tick_size:.10f}"
+
     return len(tick_size_str.partition(".")[2].rstrip("0"))
 
 
@@ -178,12 +180,14 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "CMDTY": "COMMODITY",
         "FUT": "INDEX",
     }
+
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 
 
 def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
     details.contract = IBContract(**details.contract.__dict__)
     details = IBContractDetails(**details.__dict__)
+
     return details
 
 
@@ -198,6 +202,7 @@ def parse_instrument(
         symbology_method=symbology_method,
         databento_venue=databento_venue,
     )
+
     if security_type == "STK":
         return parse_equity_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "IND":
@@ -221,10 +226,12 @@ def parse_instrument(
 def contract_details_to_dict(details: IBContractDetails) -> dict:
     dict_details = details.dict().copy()
     dict_details["contract"] = details.contract.dict().copy()
+
     if dict_details.get("secIdList"):
         dict_details["secIdList"] = {
             tag_value.tag: tag_value.value for tag_value in dict_details["secIdList"]
         }
+
     return dict_details
 
 
@@ -300,7 +307,7 @@ def parse_futures_contract(
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_str(details.contract.multiplier),
+        multiplier=Quantity.from_int(int(details.contract.multiplier) * details.priceMagnifier),
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
         activation_ns=activation.value,
@@ -332,7 +339,7 @@ def parse_option_contract(
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
-        multiplier=Quantity.from_str(details.contract.multiplier),
+        multiplier=Quantity.from_int(int(details.contract.multiplier) * details.priceMagnifier),
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
         strike_price=Price(details.contract.strike, price_precision),
@@ -421,6 +428,7 @@ def parse_cfd_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
+
     if RE_CFD_CASH.match(details.contract.localSymbol):
         return Cfd(
             instrument_id=instrument_id,
@@ -481,6 +489,7 @@ def parse_commodity_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
+
     return Commodity(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -525,6 +534,7 @@ def ib_contract_to_instrument_id(
 
     if symbology_method == SymbologyMethod.DATABENTO:
         assert databento_venue is not None
+
         return InstrumentId.from_str(f"{contract.localSymbol}.{databento_venue}")
     elif symbology_method == SymbologyMethod.IB_SIMPLIFIED:
         return ib_contract_to_instrument_id_simplified_symbology(contract)
@@ -544,6 +554,7 @@ def ib_contract_to_instrument_id_raw_symbology(contract: IBContract) -> Instrume
     else:
         symbol = f"{contract.localSymbol}={contract.secType}"
         venue = (contract.primaryExchange or contract.exchange).replace(".", "/")
+
     return InstrumentId.from_str(f"{symbol}.{venue}")
 
 
@@ -551,6 +562,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     contract: IBContract,
 ) -> InstrumentId:
     security_type = contract.secType
+
     if security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
         venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
@@ -593,8 +605,10 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     else:
         symbol = None
         venue = None
+
     if symbol and venue:
         return InstrumentId(Symbol(symbol), Venue(venue))
+
     raise ValueError(f"Unknown {contract=}")
 
 
@@ -621,6 +635,7 @@ def instrument_id_to_ib_contract(
 def instrument_id_to_ib_contract_raw_symbology(instrument_id: InstrumentId) -> IBContract:
     local_symbol, security_type = instrument_id.symbol.value.rsplit("=", 1)
     exchange = instrument_id.venue.value.replace("/", ".")
+
     if security_type == "STK":
         return IBContract(
             secType=security_type,
@@ -744,6 +759,7 @@ def instrument_id_to_ib_contract_databento_symbology(
 ) -> IBContract:
     if instrument_id.venue.value in ["GLBX", "IFEU", "NDEX"]:
         assert exchange is not None
+
         if RE_FUT.match(instrument_id.symbol.value) or RE_FUT_ORIGINAL.match(
             instrument_id.symbol.value,
         ):

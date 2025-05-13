@@ -45,9 +45,11 @@ class DockerizedIBGateway:
         self.log = NautilusLogger(repr(self))
         self.username = config.username or os.getenv("TWS_USERNAME")
         self.password = config.password or os.getenv("TWS_PASSWORD")
+
         if self.username is None:
             self.log.error("`username` not set nor available in env `TWS_USERNAME`")
             raise ValueError("`username` not set nor available in env `TWS_USERNAME`")
+
         if self.password is None:
             self.log.error("`password` not set nor available in env `TWS_PASSWORD`")
             raise ValueError("`password` not set nor available in env `TWS_PASSWORD`")
@@ -77,6 +79,7 @@ class DockerizedIBGateway:
     @property
     def container_status(self) -> ContainerStatus:
         container = self.container
+
         if container is None:
             return ContainerStatus.NO_CONTAINER
         elif container.status == "running":
@@ -94,6 +97,7 @@ class DockerizedIBGateway:
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
+
         return self._container
 
     @staticmethod
@@ -102,6 +106,7 @@ class DockerizedIBGateway:
             logs = container.logs()
         except NoContainer:
             return False
+
         return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
     def start(self, wait: int | None = None) -> None:
@@ -120,9 +125,9 @@ class DockerizedIBGateway:
             ContainerStatus.CONTAINER_CREATED,
             ContainerStatus.UNKNOWN,
         )
-
         self.log.info("Ensuring gateway is running")
         status = self.container_status
+
         if status == ContainerStatus.NO_CONTAINER:
             self.log.debug("No container, starting")
         elif status in broken_statuses:
@@ -156,6 +161,7 @@ class DockerizedIBGateway:
         for _ in range(wait or self.timeout):
             if self.is_logged_in(container=self._container):
                 break
+
             self.log.debug("Waiting for IB Gateway to start")
             sleep(1)
         else:

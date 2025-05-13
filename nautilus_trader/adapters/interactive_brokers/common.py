@@ -197,6 +197,9 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     ContractDetails class to be used internally in Nautilus for ease of
     encoding/decoding.
+
+    Reference: https://ibkrcampus.com/campus/ibkr-api-page/twsapi-ref/#contract-pub-func
+
     """
 
     contract: IBContract | None = None
@@ -204,7 +207,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     minTick: float = 0
     orderTypes: str = ""
     validExchanges: str = ""
-    priceMagnifier: float = 0
+    priceMagnifier: int = 1
     underConId: int = 0
     longName: str = ""
     contractMonth: str = ""
@@ -215,7 +218,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     tradingHours: str = ""
     liquidHours: str = ""
     evRule: str = ""
-    evMultiplier: int = 0
+    evMultiplier: float = 0
     mdSizeMultiplier: int = 1  # obsolete
     aggGroup: int = 0
     underSymbol: str = ""
@@ -237,7 +240,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     couponType: str = ""
     callable: bool = False
     putable: bool = False
-    coupon: int = 0
+    coupon: float = 0
     convertible: bool = False
     maturity: str = ""
     issueDate: str = ""
