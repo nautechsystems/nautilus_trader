@@ -37,6 +37,17 @@ cdef extern from "../includes/core.h":
         # The UUID v4 value as a fixed-length C string byte array (includes null terminator).
         uint8_t value[37];
 
+    void cvec_drop(CVec cvec);
+
+    CVec cvec_new();
+
+    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
+    const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
+
+    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer
+    # with millisecond precision.
+    const char *unix_nanos_to_iso8601_millis_cstr(uint64_t timestamp_ns);
+
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);
 
@@ -57,17 +68,6 @@ cdef extern from "../includes/core.h":
 
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
-
-    void cvec_drop(CVec cvec);
-
-    CVec cvec_new();
-
-    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer.
-    const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
-
-    # Converts a UNIX nanoseconds timestamp to an ISO 8601 (RFC 3339) format C string pointer
-    # with millisecond precision.
-    const char *unix_nanos_to_iso8601_millis_cstr(uint64_t timestamp_ns);
 
     # Return the decimal precision inferred from the given C string.
     #

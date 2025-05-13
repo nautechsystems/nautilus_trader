@@ -16,6 +16,7 @@
 //! C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 
 #![allow(unsafe_code)]
+#![allow(unsafe_attr_outside_unsafe)]
 
 pub mod cvec;
 pub mod datetime;
