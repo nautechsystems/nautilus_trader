@@ -19,9 +19,10 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+use nautilus_common::msgbus::{MessageBus, set_message_bus};
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-    clock::{Clock, TestClock},
+    clock::{Clock, LiveClock, TestClock},
     enums::Environment,
 };
 use nautilus_core::UUID4;
@@ -32,16 +33,33 @@ use ustr::Ustr;
 
 use crate::config::NautilusKernelConfig;
 
-/// Provides the core Nautilus system kernel.
+/// Core Nautilus system kernel.
+///
+/// Orchestrates data and execution engines, cache, clock, and messaging across environments.
 #[derive(Debug)]
 pub struct NautilusKernel {
+    /// The kernel name (for logging and identification).
     pub name: Ustr,
+    /// The unique instance identifier for this kernel.
     pub instance_id: UUID4,
+    /// The kernel configuration.
     pub config: NautilusKernelConfig,
+    /// The data engine instance.
     pub data_engine: DataEngine,
+    /// The execution engine instance.
     pub exec_engine: ExecutionEngine,
+    /// The shared in-memory cache.
     pub cache: Rc<RefCell<Cache>>,
+    /// The clock driving the kernel.
     pub clock: Rc<RefCell<dyn Clock>>,
+    /// The machine identifier (hostname or similar).
+    pub machine_id: String,
+    /// The timestamp (ns) when the kernel was created.
+    pub ts_created: u64,
+    /// The timestamp (ns) when the kernel was last started.
+    pub ts_started: Option<u64>,
+    /// The timestamp (ns) when the kernel was last shutdown.
+    pub ts_shutdown: Option<u64>,
 }
 
 impl NautilusKernel {
@@ -49,10 +67,22 @@ impl NautilusKernel {
     pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
         let instance_id = config.instance_id.unwrap_or_default();
         let clock = Self::initialize_clock(&config.environment);
+
+        let msgbus = MessageBus::new(
+            config.trader_id,
+            instance_id,
+            Some(name.as_str().to_string()),
+            None,
+        );
+        set_message_bus(Rc::new(RefCell::new(msgbus)));
+
         let cache = Self::initialize_cache(config.trader_id, &instance_id, config.cache.clone());
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine.clone());
         let exec_engine =
             ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine.clone());
+        let machine_id = String::new();
+        let ts_created = clock.borrow().timestamp_ns().as_u64();
+
         Self {
             name,
             instance_id,
@@ -61,9 +91,86 @@ impl NautilusKernel {
             exec_engine,
             cache,
             clock,
+            machine_id,
+            ts_created,
+            ts_started: None,
+            ts_shutdown: None,
         }
     }
 
+    /// Return the kernel's environment context (Backtest, Sandbox, Live).
+    pub fn environment(&self) -> Environment {
+        self.config.environment
+    }
+
+    /// Return the kernel's name.
+    pub fn name(&self) -> Ustr {
+        self.name
+    }
+
+    /// Return the kernel's trader ID.
+    pub fn trader_id(&self) -> TraderId {
+        self.config.trader_id
+    }
+
+    /// Return the kernel's machine ID.
+    pub fn machine_id(&self) -> &str {
+        &self.machine_id
+    }
+
+    /// Return the kernel's instance ID.
+    pub fn instance_id(&self) -> UUID4 {
+        self.instance_id
+    }
+
+    /// Return the UNIX timestamp (ns) when the kernel was created.
+    pub fn ts_created(&self) -> u64 {
+        self.ts_created
+    }
+
+    /// Return the UNIX timestamp (ns) when the kernel was last started.
+    pub fn ts_started(&self) -> Option<u64> {
+        self.ts_started
+    }
+
+    /// Return the UNIX timestamp (ns) when the kernel was last shutdown.
+    pub fn ts_shutdown(&self) -> Option<u64> {
+        self.ts_shutdown
+    }
+
+    /// Return whether the kernel has been configured to load state.
+    pub fn load_state(&self) -> bool {
+        self.config.load_state
+    }
+
+    /// Return whether the kernel has been configured to save state.
+    pub fn save_state(&self) -> bool {
+        self.config.save_state
+    }
+
+    /// Return the kernel's clock.
+    pub fn clock(&self) -> Rc<RefCell<dyn Clock>> {
+        self.clock.clone()
+    }
+
+    /// Return the kernel's cache.
+    pub fn cache(&self) -> Rc<RefCell<Cache>> {
+        self.cache.clone()
+    }
+
+    /// Return the kernel's data engine.
+    pub fn data_engine(&self) -> &DataEngine {
+        &self.data_engine
+    }
+
+    /// Return the kernel's execution engine.
+    pub fn exec_engine(&self) -> &ExecutionEngine {
+        &self.exec_engine
+    }
+
+    /// Initialize the shared clock based on the environment.
+    ///
+    /// Uses a TestClock for backtest, or LiveClock for live/sandbox.
     fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
         match environment {
             Environment::Backtest => {
@@ -71,105 +178,142 @@ impl NautilusKernel {
                 Rc::new(RefCell::new(test_clock))
             }
             Environment::Live | Environment::Sandbox => {
-                todo!("Initialize clock for Live and Sandbox environments")
+                let live_clock = LiveClock::new();
+                Rc::new(RefCell::new(live_clock))
             }
         }
     }
 
+    /// Initialize the shared cache.
+    ///
+    /// Returns an in-memory cache with optional database adapter.
     fn initialize_cache(
         trader_id: TraderId,
         instance_id: &UUID4,
         cache_config: Option<CacheConfig>,
     ) -> Rc<RefCell<Cache>> {
         let cache_config = cache_config.unwrap_or_default();
-        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> =
-            if let Some(cache_database_config) = &cache_config.database {
-                todo!("initialize_cache_database")
-            } else {
-                None
-            };
+
+        // TODO: Placeholder: persistent database adapter can be initialized here (e.g., Redis)
+        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> = None;
 
         let cache = Cache::new(Some(cache_config), cache_database);
         Rc::new(RefCell::new(cache))
     }
 
+    /// Start the Nautilus system kernel.
     fn start(&self) {
-        todo!("implement start")
+        self.start_engines();
+        self.connect_clients();
     }
 
+    /// Stop the Nautilus system kernel.
     fn stop(&self) {
-        todo!("implement stop")
+        self.stop_clients();
+        self.disconnect_clients();
+        self.stop_engines();
+        self.cancel_timers();
+        self.flush_writer();
     }
 
+    /// Dispose of the Nautilus system kernel, releasing resources.
     fn dispose(&self) {
-        todo!("implement dispose")
+        self.stop_engines();
+
+        self.data_engine.dispose();
     }
 
+    /// Cancel all tasks currently running under the kernel.
+    ///
+    /// Intended for cleanup during shutdown.
     fn cancel_all_tasks(&self) {
-        todo!("implement cancel_all_tasks")
+        // TODO: implement task cancellation logic for async contexts
     }
 
+    /// Start all engine components.
+    /// Currently only starts the data engine.
     fn start_engines(&self) {
-        todo!("implement start_engines")
+        self.data_engine.start();
     }
 
     fn register_executor(&self) {
-        todo!("implement register_executor")
+        // TODO: register executors for actors and strategies when supported
     }
 
+    /// Stop all engine components.
+    /// Currently only stops the data engine.
     fn stop_engines(&self) {
-        todo!("implement stop_engines")
+        self.data_engine.stop();
     }
 
+    /// Connect engine clients (e.g., data sources).
     fn connect_clients(&self) {
-        todo!("implement connect_clients")
+        self.data_engine.connect();
     }
 
+    /// Disconnect all engine clients.
     fn disconnect_clients(&self) {
-        todo!("implement disconnect_clients")
+        self.data_engine.disconnect();
     }
 
+    /// Stop engine clients.
     fn stop_clients(&self) {
-        todo!("implement stop_clients")
+        self.data_engine.stop();
     }
 
+    /// Initialize the portfolio (orders & positions).
     fn initialize_portfolio(&self) {
-        todo!("implement initialize_portfolio")
+        // TODO: Placeholder: portfolio initialization to be implemented in next pass
     }
 
+    /// Await engine clients to connect and initialize.
+    ///
+    /// Blocks until connected or timeout.
     fn await_engines_connected(&self) {
-        todo!("implement await_engines_connected")
+        // TODO: await engine connections with timeout
     }
 
+    /// Await execution engine state reconciliation.
+    ///
+    /// Blocks until executions are reconciled or timeout.
     fn await_execution_reconciliation(&self) {
-        todo!("implement await_execution_reconciliation")
+        // TODO: await execution reconciliation with timeout
     }
 
+    /// Await portfolio initialization (e.g., positions & PnL).
+    ///
+    /// Blocks until portfolio is initialized or timeout.
     fn await_portfolio_initialized(&self) {
-        todo!("implement await_portfolio_initialized")
+        // TODO: await portfolio initialization with timeout
     }
 
+    /// Await post-stop trader residual events.
+    ///
+    /// Allows final cleanup before full shutdown.
     fn await_trader_residuals(&self) {
-        todo!("implement await_trader_residuals")
+        // TODO: await trader residual events after stop
     }
 
+    /// Check if engine clients are connected.
     fn check_engines_connected(&self) {
-        todo!("implement check_engines_connected")
+        // TODO: check engine connection status
     }
 
+    /// Check if engine clients are disconnected.
     fn check_engines_disconnected(&self) {
-        todo!("implement check_engines_disconnected")
+        // TODO: check engine disconnection status
     }
 
+    /// Check if the portfolio has been initialized.
     fn check_portfolio_initialized(&self) {
-        todo!("implement check_portfolio_initialized")
+        // TODO: check portfolio initialized status
     }
 
     fn cancel_timers(&self) {
-        todo!("implement cancel_timers")
+        self.clock.borrow_mut().cancel_timers();
     }
 
     fn flush_writer(&self) {
-        todo!("implement flush_writer")
+        // TODO: No writer in this kernel version; placeholder for future streaming
     }
 }
