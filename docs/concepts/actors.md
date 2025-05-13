@@ -101,8 +101,8 @@ Here's an example demonstrating both historical and real-time data handling:
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.identifiers import ClientId, InstrumentId
+from nautilus_trader.model import Bar, BarType
+from nautilus_trader.model import ClientId, InstrumentId
 
 
 class MyActorConfig(ActorConfig):
@@ -120,11 +120,11 @@ class MyActor(Actor):
         self.request_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            start=None,            # datetime, optional
-            end=None,              # datetime, optional
-            callback=None,         # called with the request ID when the response has completed
-            update_catalog=False,  # bool, default False
-            params=None,           # dict[str, Any], optional
+            start=None,                # datetime, optional
+            end=None,                  # datetime, optional
+            callback=None,             # called with the request ID when completed
+            update_catalog_mode=None,  # UpdateCatalogMode | None, default None
+            params=None,               # dict[str, Any], optional
         )
 
         # Subscribe to real-time data - will be processed by on_bar() handler

@@ -48,7 +48,7 @@ None
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
-- Fixed import errors and link in `Orders` concept guide
+- Fixed various errors in concept guides
 - Added errors and panics docs for most crate
 - Added errors and panics docs for most crate
 
