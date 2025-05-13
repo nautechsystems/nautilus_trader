@@ -152,7 +152,14 @@ impl Debug for RedisCacheDatabase {
 }
 
 impl RedisCacheDatabase {
-    /// Creates a new [`RedisCacheDatabase`] instance.
+    /// Creates a new [`RedisCacheDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the database configuration is missing in `config`.
+    /// - establishing the Redis connection fails.
+    /// - the command processing task cannot be spawned.
     // need to remove async from here
     pub async fn new(
         trader_id: TraderId,
@@ -223,16 +230,31 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Retrieves all keys matching the given `pattern` from Redis for this trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis scan operation fails.
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
         DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
 
+    /// Reads the value(s) associated with `key` for this trader from Redis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         DatabaseQueries::read(&self.con, &self.trader_key, key).await
     }
 
+    /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
@@ -241,6 +263,11 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Sends an update command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn update(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
@@ -249,6 +276,11 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Sends a delete command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {

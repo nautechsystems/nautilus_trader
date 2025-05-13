@@ -80,6 +80,15 @@ pub enum DatabaseQuery {
 }
 
 impl PostgresCacheDatabase {
+    /// Connects to the Postgres cache database using the provided connection parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if establishing the database connection fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal Postgres pool connection attempt (`connect_pg`) unwraps on error.
     pub async fn connect(
         host: Option<String>,
         port: Option<u16>,
@@ -140,6 +149,11 @@ impl PostgresCacheDatabase {
     }
 }
 
+/// Retrieves a `PostgresCacheDatabase` using default connection options.
+///
+/// # Errors
+///
+/// Returns an error if connecting to the database or initializing the cache adapter fails.
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
     let connect_options = get_postgres_connect_options(None, None, None, None, None);
     Ok(PostgresCacheDatabase::connect(
