@@ -52,6 +52,11 @@ use crate::sql::models::{
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {
+    /// Truncates all tables in the cache database via the provided Postgres `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the TRUNCATE operation fails.
     pub async fn truncate(pool: &PgPool) -> anyhow::Result<()> {
         sqlx::query("SELECT truncate_all_tables()")
             .execute(pool)
@@ -60,6 +65,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to truncate tables: {e}"))
     }
 
+    /// Inserts a raw key-value entry into the `general` table via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the INSERT operation fails.
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
             .bind(key)
@@ -70,6 +80,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
     }
 
+    /// Loads all entries from the `general` table via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SELECT operation fails.
     pub async fn load(pool: &PgPool) -> anyhow::Result<HashMap<String, Vec<u8>>> {
         sqlx::query_as::<_, GeneralRow>("SELECT * FROM general")
             .fetch_all(pool)
@@ -84,6 +99,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load general table: {e}"))
     }
 
+    /// Inserts or ignores a `Currency` row via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the INSERT operation fails.
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
             "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
@@ -99,6 +119,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into currency table: {e}"))
     }
 
+    /// Loads all `Currency` entries via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SELECT operation fails.
     pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
         sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency ORDER BY id ASC")
             .fetch_all(pool)
@@ -107,6 +132,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load currencies: {e}"))
     }
 
+    /// Loads a single `Currency` entry by `code` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SELECT operation fails.
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
         sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency WHERE id = $1")
             .bind(code)
@@ -116,6 +146,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load currency: {e}"))
     }
 
+    /// Inserts or updates an `InstrumentAny` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the INSERT or UPDATE operation fails.
     pub async fn add_instrument(
         pool: &PgPool,
         kind: &str,
@@ -175,6 +210,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!(format!("Failed to insert item {} into instrument table: {:?}", instrument.id().to_string(), e)))
     }
 
+    /// Loads a single `InstrumentAny` entry by `instrument_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SELECT operation fails.
     pub async fn load_instrument(
         pool: &PgPool,
         instrument_id: &InstrumentId,
@@ -189,6 +229,11 @@ impl DatabaseQueries {
             })
     }
 
+    /// Loads all `InstrumentAny` entries via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SELECT operation fails.
     pub async fn load_instruments(pool: &PgPool) -> anyhow::Result<Vec<InstrumentAny>> {
         sqlx::query_as::<_, InstrumentAnyModel>("SELECT * FROM instrument")
             .fetch_all(pool)
@@ -197,6 +242,15 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
     }
 
+    /// Inserts or updates an `OrderAny` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the order initialization existence check unwraps `None` after awaiting.
     pub async fn add_order(
         pool: &PgPool,
         _kind: &str,
@@ -266,6 +320,14 @@ impl DatabaseQueries {
         }
     }
 
+    /// Inserts an `OrderSnapshot` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
+    /// # Panics
+    ///
+    /// Panics if serialization of `snapshot.exec_algorithm_params` fails.
     pub async fn add_order_snapshot(pool: &PgPool, snapshot: OrderSnapshot) -> anyhow::Result<()> {
         let mut transaction = pool.begin().await?;
 
@@ -397,6 +459,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
+    /// Loads an `OrderSnapshot` entry by client order ID via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_order_snapshot(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
@@ -411,6 +478,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load order snapshot: {e}"))
     }
 
+    /// Inserts or updates a `PositionSnapshot` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails, or if beginning the transaction fails.
     pub async fn add_position_snapshot(
         pool: &PgPool,
         snapshot: PositionSnapshot,
@@ -482,6 +554,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
+    /// Loads a `PositionSnapshot` entry by `position_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_position_snapshot(
         pool: &PgPool,
         position_id: &PositionId,
@@ -494,6 +571,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to load position snapshot: {e}"))
     }
 
+    /// Checks if an `OrderInitialized` event exists for the given `client_order_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT operation fails.
     pub async fn check_if_order_initialized_exists(
         pool: &PgPool,
         client_order_id: ClientOrderId,
@@ -508,6 +590,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to check if order initialized exists: {e}"))
     }
 
+    /// Checks if any account event exists for the given `account_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT operation fails.
     pub async fn check_if_account_event_exists(
         pool: &PgPool,
         account_id: AccountId,
@@ -524,6 +611,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to check if account event exists: {e}"))
     }
 
+    /// Inserts or updates an order event entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails.
     pub async fn add_order_event(
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
@@ -633,6 +725,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
+    /// Loads all order events for a `client_order_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_order_events(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
@@ -645,6 +742,14 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load order events: {e}"))
     }
 
+    /// Loads and assembles a complete `OrderAny` for a `client_order_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if assembling events or SQL operations fail.
+    /// # Panics
+    ///
+    /// Panics if assembling the order from events fails.
     pub async fn load_order(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
@@ -663,6 +768,14 @@ impl DatabaseQueries {
         }
     }
 
+    /// Loads and assembles all `OrderAny` entries via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading events or SQL operations fail.
+    /// # Panics
+    ///
+    /// Panics if loading or assembling any individual order fails.
     pub async fn load_orders(pool: &PgPool) -> anyhow::Result<Vec<OrderAny>> {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
@@ -692,6 +805,14 @@ impl DatabaseQueries {
         Ok(orders)
     }
 
+    /// Inserts or updates an `AccountAny` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    /// # Panics
+    ///
+    /// Panics if checking for existing account event unwrap fails.
     pub async fn add_account(
         pool: &PgPool,
         kind: &str,
@@ -754,6 +875,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to commit add_account transaction: {e}"))
     }
 
+    /// Loads all account events for `account_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_account_events(
         pool: &PgPool,
         account_id: &AccountId,
@@ -768,6 +894,14 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load account events: {e}"))
     }
 
+    /// Loads and assembles a complete `AccountAny` for `account_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if assembling events or SQL operations fail.
+    /// # Panics
+    ///
+    /// Panics if assembling the account from events fails.
     pub async fn load_account(
         pool: &PgPool,
         account_id: &AccountId,
@@ -785,6 +919,14 @@ impl DatabaseQueries {
         }
     }
 
+    /// Loads and assembles all `AccountAny` entries via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading events or SQL operations fail.
+    /// # Panics
+    ///
+    /// Panics if loading or assembling any individual account fails.
     pub async fn load_accounts(pool: &PgPool) -> anyhow::Result<Vec<AccountAny>> {
         let mut accounts: Vec<AccountAny> = Vec::new();
         let account_ids: Vec<AccountId> = sqlx::query(
@@ -814,6 +956,11 @@ impl DatabaseQueries {
         Ok(accounts)
     }
 
+    /// Inserts a `TradeTick` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_trade(pool: &PgPool, trade: &TradeTick) -> anyhow::Result<()> {
         sqlx::query(r#"
             INSERT INTO "trade" (
@@ -841,6 +988,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into trade table: {e}"))
     }
 
+    /// Loads all `TradeTick` entries for `instrument_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_trades(
         pool: &PgPool,
         instrument_id: &InstrumentId,
@@ -855,6 +1007,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load trades: {e}"))
     }
 
+    /// Inserts a `QuoteTick` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_quote(pool: &PgPool, quote: &QuoteTick) -> anyhow::Result<()> {
         sqlx::query(r#"
             INSERT INTO "quote" (
@@ -881,6 +1038,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into quote table: {e}"))
     }
 
+    /// Loads all `QuoteTick` entries for `instrument_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_quotes(
         pool: &PgPool,
         instrument_id: &InstrumentId,
@@ -895,6 +1057,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load quotes: {e}"))
     }
 
+    /// Inserts a `Bar` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
         println!("Adding bar: {bar:?}");
         sqlx::query(r#"
@@ -927,6 +1094,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to insert into bar table: {e}"))
     }
 
+    /// Loads all `Bar` entries for `instrument_id` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_bars(
         pool: &PgPool,
         instrument_id: &InstrumentId,
@@ -941,6 +1113,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load bars: {e}"))
     }
 
+    /// Loads all distinct client order IDs from order events via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or iteration fails.
     pub async fn load_distinct_order_event_client_ids(
         pool: &PgPool,
     ) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
@@ -962,6 +1139,11 @@ impl DatabaseQueries {
         Ok(map)
     }
 
+    /// Inserts a `Signal` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_signal(pool: &PgPool, signal: &Signal) -> anyhow::Result<()> {
         sqlx::query(
             r#"
@@ -987,6 +1169,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to insert into signal table: {e}"))
     }
 
+    /// Loads all `Signal` entries by `name` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_signals(pool: &PgPool, name: &str) -> anyhow::Result<Vec<Signal>> {
         sqlx::query_as::<_, SignalModel>(
             r#"SELECT * FROM "signal" WHERE name = $1 ORDER BY ts_init ASC"#,
@@ -998,6 +1185,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to load signals: {e}"))
     }
 
+    /// Inserts a `CustomData` entry via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_custom_data(pool: &PgPool, data: &CustomData) -> anyhow::Result<()> {
         sqlx::query(
             r#"
@@ -1029,6 +1221,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to insert into custom table: {e}"))
     }
 
+    /// Loads all `CustomData` entries of `data_type` via the provided `pool`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the SQL SELECT or deserialization fails.
     pub async fn load_custom_data(
         pool: &PgPool,
         data_type: &DataType,

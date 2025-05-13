@@ -84,7 +84,14 @@ impl Debug for RedisMessageBusDatabase {
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     type DatabaseType = Self;
 
-    /// Creates a new [`RedisMessageBusDatabase`] instance.
+    /// Creates a new [`RedisMessageBusDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - the database configuration is missing in `config`.
+    /// - establishing the Redis connection for publishing fails.
+    ///
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -195,7 +202,11 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 }
 
 impl RedisMessageBusDatabase {
-    /// Gets the stream receiver for this instance.
+    /// Retrieves the Redis stream receiver for this message bus instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream receiver has already been taken.
     pub fn get_stream_receiver(
         &mut self,
     ) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
@@ -222,6 +233,14 @@ impl RedisMessageBusDatabase {
     }
 }
 
+/// Publishes messages received on `rx` to Redis streams for the given `trader_id` and `instance_id`, using `config`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - the database configuration is missing in `config`.
+/// - establishing the Redis connection fails.
+/// - any Redis command fails during publishing.
 pub async fn publish_messages(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
     trader_id: TraderId,
@@ -348,6 +367,13 @@ async fn drain_buffer(
     pipe.query_async(conn).await.map_err(anyhow::Error::from)
 }
 
+/// Streams messages from Redis streams and sends them over the provided `tx` channel.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - establishing the Redis connection fails.
+/// - any Redis read operation fails.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
     config: DatabaseConfig,
@@ -417,6 +443,14 @@ pub async fn stream_messages(
     Ok(())
 }
 
+/// Decodes a Redis stream message value into a `BusMessage`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - the incoming `stream_msg` is not an array.
+/// - the array has fewer than four elements (invalid format).
+/// - parsing the topic or payload fails.
 fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     if let redis::Value::Array(stream_msg) = stream_msg {
         if stream_msg.len() < 4 {

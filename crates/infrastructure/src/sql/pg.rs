@@ -93,7 +93,11 @@ impl From<PostgresConnectOptions> for PgConnectOptions {
     }
 }
 
-// Gets the postgres connect options from provided arguments, environment variables or defaults
+/// Constructs `PostgresConnectOptions` by merging provided arguments, environment variables, and defaults.
+///
+/// # Panics
+///
+/// Panics if an environment variable for port cannot be parsed into a `u16`.
 #[must_use]
 pub fn get_postgres_connect_options(
     host: Option<String>,
@@ -125,11 +129,25 @@ pub fn get_postgres_connect_options(
     PostgresConnectOptions::new(host, port, username, password, database)
 }
 
+/// Connects to a Postgres database with the provided connection `options` returning a connection pool.
+///
+/// # Errors
+///
+/// Returns an error if establishing the database connection fails.
 pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
     Ok(PgPool::connect_with(options).await?)
 }
 
-/// Scans current path with keyword `nautilus_trader` and build schema dir
+/// Scans the current working directory for the `nautilus_trader` repository
+/// and constructs the path to the SQL schema directory.
+///
+/// # Errors
+///
+/// Returns an error if the `SCHEMA_DIR` environment variable is not set and the repository
+/// cannot be located in the current directory path.
+/// # Panics
+///
+/// Panics if the current working directory cannot be determined or contains invalid UTF-8.
 fn get_schema_dir() -> anyhow::Result<String> {
     std::env::var("SCHEMA_DIR").or_else(|_| {
         let nautilus_git_repo_name = "nautilus_trader";
@@ -145,6 +163,15 @@ fn get_schema_dir() -> anyhow::Result<String> {
     })
 }
 
+/// Initializes the Postgres database by creating schema, roles, and executing SQL files from `schema_dir`.
+///
+/// # Errors
+///
+/// Returns an error if any SQL execution or file system operation fails.
+///
+/// # Panics
+///
+/// Panics if `schema_dir` is missing and cannot be determined or if other unwraps fail.
 pub async fn init_postgres(
     pg: &PgPool,
     database: String,
@@ -265,6 +292,11 @@ pub async fn init_postgres(
     Ok(())
 }
 
+/// Drops the Postgres database with the given name using the provided connection pool.
+///
+/// # Errors
+///
+/// Returns an error if the DROP DATABASE command fails.
 pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> {
     // Execute drop owned
     match sqlx::query(format!("DROP OWNED BY {database}").as_str())
