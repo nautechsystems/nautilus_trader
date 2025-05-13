@@ -56,7 +56,7 @@ use crate::{
 };
 
 /// Provides a WebSocket client for connecting to [Coinbase International](https://www.coinbase.com/en/international-exchange).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
