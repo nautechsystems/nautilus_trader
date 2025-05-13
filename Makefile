@@ -87,6 +87,10 @@ docs-python:
 docs-rust:
 	RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace
 
+.PHONY: docsrs-check
+docsrs-check:
+	RUSTDOCFLAGS="--cfg docsrs" cargo hack --workspace doc --no-deps --all-features
+
 .PHONY: clippy
 clippy:
 	cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used
