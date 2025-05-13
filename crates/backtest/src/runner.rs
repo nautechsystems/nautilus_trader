@@ -31,6 +31,9 @@ use nautilus_common::{
 use nautilus_data::engine::DataEngine;
 
 #[must_use]
+/// # Panics
+///
+/// Panics if the global data queue has not been initialized.
 pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
     DATA_QUEUE
         .try_with(|dq| {
@@ -41,6 +44,9 @@ pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if setting the global data queue fails or it is already set.
 pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
     DATA_QUEUE
         .try_with(|deque| {
@@ -52,6 +58,9 @@ pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
 pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
 #[must_use]
+/// # Panics
+///
+/// Panics if the global clock has not been initialized.
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
         .try_with(|clock| {
@@ -63,6 +72,9 @@ pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if setting the global clock fails or it is already set.
 pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
@@ -75,6 +87,9 @@ pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
 
 /// Get globally shared message bus command queue
 #[must_use]
+/// # Panics
+///
+/// Panics if the global message bus commands have not been initialized.
 pub fn get_msgbus_cmd() -> MessageBusCommands {
     MSGBUS_CMD
         .try_with(std::clone::Clone::clone)
