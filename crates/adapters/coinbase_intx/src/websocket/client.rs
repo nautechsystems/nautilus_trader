@@ -196,8 +196,8 @@ impl CoinbaseIntxWebSocketClient {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the websocket is not connected.
+    /// This function panics if:
+    /// - The websocket is not connected.
     /// - If `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = NautilusWsMessage> + 'static {
         let rx = self

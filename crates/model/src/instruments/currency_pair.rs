@@ -163,6 +163,7 @@ impl CurrencyPair {
     }
 
     /// Creates a new [`CurrencyPair`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any input parameter is invalid (see `new_checked`).

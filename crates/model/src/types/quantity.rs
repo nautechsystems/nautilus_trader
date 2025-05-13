@@ -87,9 +87,9 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -110,11 +110,11 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is zero.
-    /// - If `value` becomes zero after rounding to `precision`.
-    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is zero.
+    /// - `value` becomes zero after rounding to `precision`.
+    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -136,8 +136,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }
@@ -146,8 +145,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
     pub fn non_zero(value: f64, precision: u8) -> Self {
         Self::non_zero_checked(value, precision).expect(FAILED)
     }
@@ -156,8 +154,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
         if raw == QUANTITY_UNDEF {
             check_predicate_true(
@@ -179,8 +176,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);

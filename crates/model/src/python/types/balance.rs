@@ -57,9 +57,6 @@ impl AccountBalance {
     /// Panics if parsing numeric values (`unwrap()`) fails due to invalid format.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    /// # Panics
-    ///
-    /// Panics if numeric parsing via `unwrap()` fails due to invalid format.
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let dict = values.as_ref();
         let currency: String = dict.get_item("currency")?.extract()?;

@@ -100,6 +100,7 @@ impl IdsGenerator {
     /// Retrieves or generates a position ID for the given order.
     ///
     /// # Panics
+    ///
     /// Panics if `generate` is `Some(true)` but no cached position ID is available.
     pub fn get_position_id(
         &mut self,

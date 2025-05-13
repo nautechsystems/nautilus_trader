@@ -115,8 +115,8 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 /// # Errors
 ///
 /// Returns an error if:
-/// - constructing the Redis client fails.
-/// - establishing or configuring the connection manager fails.
+/// - Constructing the Redis client fails.
+/// - Establishing or configuring the connection manager fails.
 ///
 /// In case of reconnection issues, the connection will retry reconnection
 /// `number_of_retries` times, with an exponentially increasing delay, calculated as

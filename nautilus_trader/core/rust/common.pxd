@@ -312,9 +312,9 @@ cdef extern from "../includes/common.h":
     #
     # # Panics
     #
-    # This function panics:
-    # - If `name` is not a valid string.
-    # - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+    # This function panics if:
+    # - `name` is not a valid string.
+    # - `callback_ptr` is NULL and no default callback has been assigned on the clock.
     void live_clock_set_time_alert(LiveClock_API *clock,
                                    const char *name_ptr,
                                    uint64_t alert_time_ns,
@@ -329,9 +329,9 @@ cdef extern from "../includes/common.h":
     #
     # # Panics
     #
-    # This function panics:
-    # - If `name` is not a valid string.
-    # - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+    # This function panics if:
+    # - `name` is not a valid string.
+    # - `callback_ptr` is NULL and no default callback has been assigned on the clock.
     void live_clock_set_timer(LiveClock_API *clock,
                               const char *name_ptr,
                               uint64_t interval_ns,

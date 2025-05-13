@@ -43,6 +43,7 @@ impl InstrumentStatus {
     /// # Errors
     ///
     /// Returns a `PyErr` if extracting any attribute or converting types fails.
+    ///
     /// # Panics
     ///
     /// Panics if converting `action_u16` to `MarketStatusAction` fails.

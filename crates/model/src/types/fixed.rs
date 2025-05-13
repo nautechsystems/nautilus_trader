@@ -64,8 +64,7 @@ pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
 ///
 /// # Errors
 ///
-/// This function returns an error:
-/// - If `precision` exceeds [`FIXED_PRECISION`].
+/// Returns an error if `precision` exceeds [`FIXED_PRECISION`].
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
         anyhow::bail!(
@@ -79,8 +78,7 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     check_fixed_precision(precision).expect(FAILED);
@@ -94,8 +92,7 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`].
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
     check_fixed_precision(precision).expect(FAILED);
     let pow1 = 10_i128.pow(u32::from(precision));
@@ -108,8 +105,7 @@ pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     check_fixed_precision(precision).expect(FAILED);
@@ -123,8 +119,7 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `precision` exceeds [`FIXED_PRECISION`].
+/// Panics if `precision` exceeds [`FIXED_PRECISION`].
 #[must_use]
 pub fn f64_to_fixed_u128(value: f64, precision: u8) -> u128 {
     check_fixed_precision(precision).expect(FAILED);

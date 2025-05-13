@@ -172,6 +172,7 @@ impl FuturesSpread {
     }
 
     /// Creates a new [`FuturesSpread`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any input parameter is invalid (see `new_checked`).

@@ -58,10 +58,10 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `code` is not a valid string.
-    /// - If `name` is the empty string.
-    /// - If `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `code` is not a valid string.
+    /// - `name` is the empty string.
+    /// - `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -91,8 +91,7 @@ impl Currency {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Currency::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Currency::new_checked`] for more details.
     pub fn new<T: AsRef<str>>(
         code: T,
         precision: u8,
@@ -110,8 +109,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If there is a failure acquiring the lock on the currency map.
+    /// Returns an error if there is a failure acquiring the lock on the currency map.
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
         let mut map = CURRENCY_MAP
             .lock()
@@ -137,9 +135,9 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If a currency with the given `code` does not exist.
-    /// - If there is a failure acquiring the lock on the currency map.
+    /// Returns an error if:
+    /// - A currency with the given `code` does not exist.
+    /// - There is a failure acquiring the lock on the currency map.
     pub fn is_fiat(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Fiat)
@@ -149,7 +147,7 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
+    /// Returns an error if:
     /// - If a currency with the given `code` does not exist.
     /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_crypto(code: &str) -> anyhow::Result<bool> {
@@ -162,9 +160,9 @@ impl Currency {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If a currency with the given `code` does not exist.
-    /// - If there is a failure acquiring the lock on the currency map.
+    /// Returns an error if:
+    /// - A currency with the given `code` does not exist.
+    /// - There is a failure acquiring the lock on the currency map.
     pub fn is_commodity_backed(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)

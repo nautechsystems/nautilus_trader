@@ -137,6 +137,7 @@ impl OrderEmulator {
     /// # Errors
     ///
     /// Returns an error if no emulated orders are found or processing fails.
+    ///
     /// # Panics
     ///
     /// Panics if a cached client ID cannot be unwrapped.

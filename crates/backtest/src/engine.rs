@@ -199,6 +199,7 @@ impl BacktestEngine {
     ///
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
+    ///
     /// # Panics
     ///
     /// Panics if adding the instrument to the simulated exchange fails.

@@ -59,8 +59,7 @@ impl TradeTick {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `size` is not positive (> 0).
+    /// Returns an error if `size` is not positive (> 0).
     ///
     /// # Notes
     ///

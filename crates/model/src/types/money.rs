@@ -74,8 +74,7 @@ impl Money {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `amount` is invalid outside the representable range [{MONEY_MIN}, {MONEY_MAX}].
+    /// Returns an error if `amount` is invalid outside the representable range [{MONEY_MIN}, {MONEY_MAX}].
     ///
     /// # Notes
     ///
@@ -95,8 +94,7 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Money::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Money::new_checked`] for more details.
     pub fn new(amount: f64, currency: Currency) -> Self {
         Self::new_checked(amount, currency).expect(FAILED)
     }
@@ -111,8 +109,7 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Money::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Money::new_checked`] for more details.
     #[must_use]
     pub fn zero(currency: Currency) -> Self {
         Self::new(0.0, currency)

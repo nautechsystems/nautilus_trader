@@ -145,6 +145,7 @@ pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
 ///
 /// Returns an error if the `SCHEMA_DIR` environment variable is not set and the repository
 /// cannot be located in the current directory path.
+///
 /// # Panics
 ///
 /// Panics if the current working directory cannot be determined or contains invalid UTF-8.

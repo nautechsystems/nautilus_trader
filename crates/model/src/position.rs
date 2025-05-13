@@ -86,10 +86,10 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the instrument ID does not match the fill’s instrument_id.
-    /// - If the fill’s order_side is `NoOrderSide`.
-    /// - If the fill’s position_id is `None`.
+    /// This function panics if:
+    /// - The instrument ID does not match the fill’s `instrument_id`.
+    /// - The fill’s `order_side` is `NoOrderSide`.
+    /// - The fill’s `position_id` is `None`.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
         assert_eq!(instrument.id(), fill.instrument_id);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
@@ -472,12 +472,12 @@ impl Position {
         result
     }
 
-    #[must_use]
     /// Calculates the notional value based on the last price.
     ///
     /// # Panics
     ///
     /// Panics if `self.base_currency` is `None`.
+    #[must_use]
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
             Money::new(
@@ -492,12 +492,12 @@ impl Position {
         }
     }
 
-    #[must_use]
     /// Returns the last `OrderFilled` event for the position.
     ///
     /// # Panics
     ///
     /// Panics if there are no events in the position.
+    #[must_use]
     pub fn last_event(&self) -> OrderFilled {
         *self
             .events

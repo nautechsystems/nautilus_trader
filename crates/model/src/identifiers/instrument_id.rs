@@ -92,8 +92,7 @@ impl From<&str> for InstrumentId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` string is not valid.
+    /// Panics if the `value` string is not valid.
     fn from(value: &str) -> Self {
         Self::from_str(value).unwrap()
     }
@@ -104,8 +103,7 @@ impl From<String> for InstrumentId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the `value` string is not valid.
+    /// Panics if the `value` string is not valid.
     fn from(value: String) -> Self {
         Self::from(value.as_str())
     }

@@ -99,9 +99,8 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the capsule cannot be downcast to a `PyCapsule`, indicating a type mismatch
-/// or improper capsule handling.
+/// Panics if the capsule cannot be downcast to a `PyCapsule`, indicating a type
+/// mismatch or improper capsule handling.
 ///
 /// # Safety
 ///

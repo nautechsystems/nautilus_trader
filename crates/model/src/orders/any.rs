@@ -218,10 +218,10 @@ pub enum LimitOrderAny {
 }
 
 impl LimitOrderAny {
-    #[must_use]
     /// # Panics
     ///
     /// Panics if called on a `MarketToLimit` variant when the inner `price` is `None`.
+    #[must_use]
     pub fn limit_px(&self) -> Price {
         match self {
             Self::Limit(order) => order.price,

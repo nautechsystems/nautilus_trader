@@ -67,7 +67,7 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 ///
 /// # Errors
 ///
-/// This function returns an error if `s` is empty.
+/// Returns an error if `s` is empty.
 #[inline(always)]
 pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     if s.as_ref().is_empty() {
@@ -80,10 +80,10 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result
 ///
 /// # Errors
 ///
-/// This function returns an error:
-/// - If `s` is an empty string.
-/// - If `s` consists solely of whitespace characters.
-/// - If `s` contains one or more non-ASCII characters.
+/// Returns an error if:
+/// - `s` is an empty string.
+/// - `s` consists solely of whitespace characters.
+/// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
 pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
@@ -114,10 +114,10 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
 ///
 /// # Errors
 ///
-/// This function returns an error:
-/// - If `s` is an empty string.
-/// - If `s` consists solely of whitespace characters.
-/// - If `s` contains one or more non-ASCII characters.
+/// Returns an error if:
+/// - `s` is an empty string.
+/// - `s` consists solely of whitespace characters.
+/// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
 pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
     if let Some(s) = s {

@@ -104,9 +104,9 @@ impl Price {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -127,8 +127,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }
@@ -137,8 +136,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn from_raw(raw: PriceRaw, precision: u8) -> Self {
         if raw == PRICE_UNDEF {
             check_predicate_true(
@@ -162,8 +160,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -174,8 +171,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn max(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -189,8 +185,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn min(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);

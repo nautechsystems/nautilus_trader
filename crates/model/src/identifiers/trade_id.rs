@@ -55,9 +55,9 @@ impl TradeId {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
-    /// - If `value` length exceeds 36 characters.
+    /// Returns an error if:
+    /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
+    /// - `value` length exceeds 36 characters.
     ///
     /// # Notes
     ///
@@ -72,9 +72,9 @@ impl TradeId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
-    /// - If `value` length exceeds 36 characters.
+    /// This function panics if:
+    /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
+    /// - `value` length exceeds 36 characters.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
@@ -83,16 +83,17 @@ impl TradeId {
     ///
     /// Maximum length is 36 characters plus a null terminator byte.
     ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If `value` is empty or consists only of a single null byte.
-    /// - If `value` exceeds 36 bytes and does not end with a null byte.
-    /// - If `value` is exactly 37 bytes but the last byte is not null.
-    /// - If `value` contains non-ASCII characters.
     /// # Errors
     ///
     /// Returns an error if `value` is empty, contains non-ASCII characters, or exceeds max length.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `value` is empty or consists only of a single null byte.
+    /// - `value` exceeds 36 bytes and does not end with a null byte.
+    /// - `value` is exactly 37 bytes but the last byte is not null.
+    /// - `value` contains non-ASCII characters.
     pub fn from_bytes(value: &[u8]) -> anyhow::Result<Self> {
         check_slice_not_empty(value, "value")?;
 
