@@ -1,7 +1,7 @@
 # Concepts
 
 Concept guides introduce and explain the foundational ideas, components, and best practices that underpin the NautilusTrader platform.
-Designed to offer both conceptual and practical insights, these guides help you navigate the system's architecture, strategies, data management, execution flow, and more.
+These guides are designed to provide both conceptual and practical insights, helping you navigate the system's architecture, strategies, data management, execution flow, and more.
 Explore the following guides to deepen your understanding and make the most of NautilusTrader.
 
 ## [Overview](overview.md)

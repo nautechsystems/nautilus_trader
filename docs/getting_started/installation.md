@@ -290,6 +290,15 @@ export HIGH_PRECISION=false
 make install-debug
 ```
 
+### Rust feature flag
+
+To enable high-precision (128-bit) mode in Rust, add the `high-precision` feature to your `Cargo.toml`:
+
+```toml
+[dependencies]
+nautilus_core = { version = "*", features = ["high-precision"] }
+```
+
 :::info
 See the [Value Types](../concepts/overview.md#value-types) specifications for more details.
 :::
