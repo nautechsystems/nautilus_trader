@@ -31,6 +31,8 @@ base class, and implementing any of the `calculate_` methods.
 For example, the following is the implementation for the built-in `WinRate` statistic:
 
 ```python
+import pandas as pd
+from typing import Any
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
@@ -56,7 +58,12 @@ These statistics can then be registered with a traders `PortfolioAnalyzer`.
 ```python
 stat = WinRate()
 
+# Register with the portfolio analyzer
 engine.portfolio.analyzer.register_statistic(stat)
+
+:::info
+See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for details on available methods.
+:::
 ```
 
 :::tip

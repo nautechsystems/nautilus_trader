@@ -14,7 +14,7 @@ NautilusTrader's design, architecture, and implementation philosophy prioritizes
 highest level, with the aim of supporting Python-native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal, and asset-class-agnostic —  with any REST API or WebSocket stream able to be integrated via modular
+The platform is also universal and asset-class-agnostic — with any REST API or WebSocket stream able to be integrated via modular
 adapters. It supports high-frequency trading across a wide range of asset classes and instrument types
 including FX, Equities, Futures, Options, Crypto and Betting, enabling seamless operations across multiple venues simultaneously.
 
@@ -63,7 +63,7 @@ There are three main use cases for this software package:
 - Testing trading systems with real-time data and simulated execution (`sandbox`).
 - Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`).
 
-The projects codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
+The project's codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
 the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
 be built using the sandbox adapter.
 

@@ -131,7 +131,7 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
 
 | Setting    | Default | Description                                                                                                                  |
 |------------|---------|------------------------------------------------------------------------------------------------------------------------------|
-| `oms_type` | None    | Specifies the [OMS type](/docs/concepts/execution.md#oms-configuration), for position ID handling and order processing flow. |
+| `oms_type` | None    | Specifies the [OMS type](../concepts/execution#oms-configuration), for position ID handling and order processing flow. |
 
 #### External order claims
 
