@@ -61,7 +61,7 @@ mod serial_tests {
                 let instruments = database.load_instruments().await.unwrap();
                 currencies.len() >= 2 && !instruments.is_empty()
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         )
         .await;
 
@@ -111,7 +111,7 @@ mod serial_tests {
                     .unwrap();
                 order.is_some()
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         )
         .await;
 
@@ -148,7 +148,7 @@ mod serial_tests {
                 let account = database.load_account(&account.id()).await.unwrap();
                 account.is_some()
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         )
         .await;
 

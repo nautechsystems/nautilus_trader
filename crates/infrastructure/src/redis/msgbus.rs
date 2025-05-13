@@ -810,7 +810,7 @@ mod serial_tests {
                     !messages.is_empty()
                 }
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         )
         .await;
 

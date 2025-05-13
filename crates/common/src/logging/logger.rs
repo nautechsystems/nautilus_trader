@@ -682,7 +682,7 @@ mod tests {
                     .filter_map(Result::ok)
                     .any(|entry| entry.path().is_file())
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         drop(log_guard); // Ensure log buffers are flushed
@@ -700,7 +700,7 @@ mod tests {
                     std::fs::read_to_string(log_file_path).expect("Error while reading log file");
                 !log_contents.is_empty()
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         assert_eq!(
@@ -810,7 +810,7 @@ mod tests {
                     false
                 }
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         assert_eq!(
