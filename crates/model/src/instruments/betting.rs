@@ -218,10 +218,11 @@ impl BettingInstrument {
     }
 
     /// Creates a new [`BettingInstrument`] instance by parsing and validating input parameters.
-    #[allow(clippy::too_many_arguments)]
+    ///
     /// # Panics
     ///
     /// Panics if any required parameter is invalid or parsing fails during `new_checked`.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,

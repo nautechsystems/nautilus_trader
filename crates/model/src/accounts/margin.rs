@@ -254,9 +254,9 @@ impl MarginAccount {
     ///
     /// # Panics
     ///
-    /// The function panics:
-    /// - If no starting balance exists for the given `currency`.
-    /// - If total free margin would be negative.
+    /// This function panics if:
+    /// - No starting balance exists for the given `currency`.
+    /// - Total free margin would be negative.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => balance,

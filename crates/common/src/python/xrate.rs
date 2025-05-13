@@ -26,7 +26,7 @@ use crate::xrate::get_exchange_rate;
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
 /// - `quotes_bid` or `quotes_ask` is empty.
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.

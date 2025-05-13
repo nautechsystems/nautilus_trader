@@ -43,8 +43,7 @@ impl TraderId {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// Returns an error if `value` is not a valid string, or does not contain a hyphen '-' separator.
     ///
     /// # Notes
     ///
@@ -60,8 +59,7 @@ impl TraderId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

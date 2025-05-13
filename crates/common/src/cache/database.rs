@@ -60,9 +60,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if the database fails to close properly.
-    /// # Errors
-    ///
-    /// Returns an error if closing the cache database fails.
     fn close(&mut self) -> anyhow::Result<()>;
 
     /// Flushes any pending changes to the database.
@@ -70,9 +67,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if flushing changes fails.
-    /// # Errors
-    ///
-    /// Returns an error if flushing the cache database fails.
     fn flush(&mut self) -> anyhow::Result<()>;
 
     /// Loads all cached data into memory.
@@ -80,9 +74,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading data from the database fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading all cache data fails.
     async fn load_all(&self) -> anyhow::Result<CacheMap>;
 
     /// Loads raw key-value data from the database.
@@ -90,16 +81,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if the load operation fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading raw key-value data fails.
     fn load(&self) -> anyhow::Result<HashMap<String, Bytes>>;
 
     /// Loads all currencies from the cache.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading currencies fails.
     /// # Errors
     ///
     /// Returns an error if loading currencies fails.
@@ -110,16 +95,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading instruments fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading instruments fails.
     async fn load_instruments(&self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>>;
 
     /// Loads all synthetic instruments from the cache.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading synthetic instruments fails.
     /// # Errors
     ///
     /// Returns an error if loading synthetic instruments fails.
@@ -130,9 +109,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading accounts fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading accounts fails.
     async fn load_accounts(&self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
 
     /// Loads all orders from the cache.
@@ -140,16 +116,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading orders fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading orders fails.
     async fn load_orders(&self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
     /// Loads all positions from the cache.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading positions fails.
     /// # Errors
     ///
     /// Returns an error if loading positions fails.
@@ -178,9 +148,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the index order-position mapping fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading order-position index fails.
     fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>>;
 
     /// Loads mapping from order IDs to client IDs.
@@ -188,16 +155,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the index order-client mapping fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading order-client index fails.
     fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
 
     /// Loads a single currency by code.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading the currency fails.
     /// # Errors
     ///
     /// Returns an error if loading a single currency fails.
@@ -205,9 +166,6 @@ pub trait CacheDatabaseAdapter {
 
     /// Loads a single instrument by ID.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading the instrument fails.
     /// # Errors
     ///
     /// Returns an error if loading a single instrument fails.
@@ -220,9 +178,6 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading the synthetic instrument fails.
-    /// # Errors
-    ///
     /// Returns an error if loading a single synthetic instrument fails.
     async fn load_synthetic(
         &self,
@@ -233,17 +188,11 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading the account fails.
-    /// # Errors
-    ///
     /// Returns an error if loading a single account fails.
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
 
     /// Loads a single order by client order ID.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading the order fails.
     /// # Errors
     ///
     /// Returns an error if loading a single order fails.
@@ -254,17 +203,11 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading the position fails.
-    /// # Errors
-    ///
     /// Returns an error if loading a single position fails.
     async fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Option<Position>>;
 
     /// Loads actor state by component ID.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading actor state fails.
     /// # Errors
     ///
     /// Returns an error if loading actor state fails.
@@ -275,16 +218,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading strategy state fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading strategy state fails.
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>>;
 
     /// Loads signals by name.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading signals fails.
     /// # Errors
     ///
     /// Returns an error if loading signals fails.
@@ -295,9 +232,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading custom data fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading custom data fails.
     fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
 
     /// Loads an order snapshot by client order ID.
@@ -305,9 +239,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the order snapshot fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading order snapshot fails.
     fn load_order_snapshot(
         &self,
         client_order_id: &ClientOrderId,
@@ -318,9 +249,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the position snapshot fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading position snapshot fails.
     fn load_position_snapshot(
         &self,
         position_id: &PositionId,
@@ -331,9 +259,6 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading quotes fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading quotes fails.
     fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
 
     /// Loads trade ticks by instrument ID.
@@ -341,16 +266,10 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading trades fails.
-    /// # Errors
-    ///
-    /// Returns an error if loading trades fails.
     fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
 
     /// Loads bars by instrument ID.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if loading bars fails.
     /// # Errors
     ///
     /// Returns an error if loading bars fails.

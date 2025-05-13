@@ -157,10 +157,9 @@ impl RedisCacheDatabase {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the database configuration is missing in `config`.
-    /// - establishing the Redis connection fails.
-    /// - the command processing task cannot be spawned.
-    // need to remove async from here
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection fails.
+    /// - The command processing task cannot be spawned.
     pub async fn new(
         trader_id: TraderId,
         instance_id: UUID4,

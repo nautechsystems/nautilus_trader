@@ -1487,6 +1487,7 @@ impl Cache {
     /// Indexes the given `client_order_id` with the given `venue_order_id`.
     ///
     /// The `overwrite` parameter determines whether to overwrite any existing cached identifier.
+    ///
     /// # Errors
     ///
     /// Returns an error if the existing venue order ID conflicts and overwrite is false.
@@ -1527,8 +1528,7 @@ impl Cache {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// If not `replace_existing` and the `order.client_order_id` is already contained in the cache.
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
     pub fn add_order(
         &mut self,
         order: OrderAny,

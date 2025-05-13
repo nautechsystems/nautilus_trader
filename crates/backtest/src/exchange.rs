@@ -234,9 +234,8 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
+    /// Returns an error if the exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
     ///
-    /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
     /// # Panics
     ///
     /// Panics if the instrument cannot be added to the exchange.
@@ -376,10 +375,10 @@ impl SimulatedExchange {
             })
     }
 
-    #[must_use]
     /// # Panics
     ///
     /// Panics if retrieving the account from the execution client fails.
+    #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
         self.exec_client
             .as_ref()

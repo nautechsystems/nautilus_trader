@@ -124,9 +124,9 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[must_use]
     pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
@@ -155,6 +155,7 @@ impl BarBuilder {
     }
 
     /// Set the initial values for a partially completed bar.
+    ///
     /// # Panics
     ///
     /// Panics if internal values for `high` or `low` are unexpectedly missing.
@@ -188,6 +189,7 @@ impl BarBuilder {
     }
 
     /// Updates the builder state with the given price, size, and event timestamp.
+    ///
     /// # Panics
     ///
     /// Panics if `high` or `low` values are unexpectedly `None` when updating.
@@ -217,6 +219,7 @@ impl BarBuilder {
     }
 
     /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
+    ///
     /// # Panics
     ///
     /// Panics if `high` or `low` values are unexpectedly `None` when updating.
@@ -339,9 +342,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -447,9 +450,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -573,9 +576,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -716,9 +719,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -909,9 +912,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,

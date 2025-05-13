@@ -66,9 +66,9 @@ impl QuoteTick {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `bid_price.precision` does not equal `ask_price.precision`.
-    /// - If `bid_size.precision` does not equal `ask_size.precision`.
+    /// Returns an error if:
+    /// - `bid_price.precision` does not equal `ask_price.precision`.
+    /// - `bid_size.precision` does not equal `ask_size.precision`.
     ///
     /// # Notes
     ///
@@ -109,9 +109,9 @@ impl QuoteTick {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `bid_price.precision` does not equal `ask_price.precision`.
-    /// - If `bid_size.precision` does not equal `ask_size.precision`.
+    /// This function panics if:
+    /// - `bid_price.precision` does not equal `ask_price.precision`.
+    /// - `bid_size.precision` does not equal `ask_size.precision`.
     pub fn new(
         instrument_id: InstrumentId,
         bid_price: Price,

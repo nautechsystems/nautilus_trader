@@ -498,10 +498,10 @@ impl OrderMatchingEngine {
 
     // -- TRADING COMMANDS ------------------------------------------------------------------------
 
-    #[allow(clippy::needless_return)]
     /// # Panics
     ///
     /// Panics if the instrument activation timestamp is missing.
+    #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
         // Enter the scope where you will borrow a cache
         {
@@ -1067,6 +1067,7 @@ impl OrderMatchingEngine {
 
     /// Iterate the matching engine by processing the bid and ask order sides
     /// and advancing time up to the given UNIX `timestamp_ns`.
+    ///
     /// # Panics
     ///
     /// Panics if the best bid or ask price is unavailable when iterating.

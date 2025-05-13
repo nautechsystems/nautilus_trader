@@ -176,6 +176,7 @@ impl OptionContract {
     }
 
     /// Creates a new [`OptionContract`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any input parameter is invalid (see `new_checked`).

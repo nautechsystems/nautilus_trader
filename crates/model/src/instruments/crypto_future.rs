@@ -181,6 +181,7 @@ impl CryptoFuture {
     }
 
     /// Creates a new [`CryptoFuture`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).

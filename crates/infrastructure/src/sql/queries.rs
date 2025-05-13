@@ -325,6 +325,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if the SQL INSERT operation fails.
+    ///
     /// # Panics
     ///
     /// Panics if serialization of `snapshot.exec_algorithm_params` fails.
@@ -747,6 +748,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if assembling events or SQL operations fail.
+    ///
     /// # Panics
     ///
     /// Panics if assembling the order from events fails.
@@ -773,6 +775,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
+    ///
     /// # Panics
     ///
     /// Panics if loading or assembling any individual order fails.
@@ -810,6 +813,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if the SQL INSERT or UPDATE operation fails.
+    ///
     /// # Panics
     ///
     /// Panics if checking for existing account event unwrap fails.
@@ -899,6 +903,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if assembling events or SQL operations fail.
+    ///
     /// # Panics
     ///
     /// Panics if assembling the account from events fails.
@@ -924,6 +929,7 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
+    ///
     /// # Panics
     ///
     /// Panics if loading or assembling any individual account fails.

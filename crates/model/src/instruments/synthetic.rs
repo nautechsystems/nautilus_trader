@@ -158,6 +158,7 @@ impl SyntheticInstrument {
     }
 
     /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
+    ///
     /// # Panics
     ///
     /// Panics if the provided formula is invalid and cannot be parsed.

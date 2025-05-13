@@ -44,9 +44,9 @@ impl AccountId {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string.
-    /// - If `value` length is greater than 36.
+    /// Returns an error if:
+    /// - `value` is not a valid string.
+    /// - `value` length is greater than 36.
     ///
     /// # Notes
     ///
@@ -62,8 +62,7 @@ impl AccountId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is not a valid string, or value length is greater than 36.
+    /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

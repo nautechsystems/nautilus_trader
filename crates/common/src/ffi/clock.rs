@@ -368,9 +368,9 @@ pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `name` is not a valid string.
-/// - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+/// This function panics if:
+/// - `name` is not a valid string.
+/// - `callback_ptr` is NULL and no default callback has been assigned on the clock.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_time_alert(
     clock: &mut LiveClock_API,
@@ -403,9 +403,9 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `name` is not a valid string.
-/// - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+/// This function panics if:
+/// - `name` is not a valid string.
+/// - `callback_ptr` is NULL and no default callback has been assigned on the clock.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_timer(
     clock: &mut LiveClock_API,

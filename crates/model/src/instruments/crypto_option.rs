@@ -190,6 +190,7 @@ impl CryptoOption {
     }
 
     /// Creates a new [`CryptoOption`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).

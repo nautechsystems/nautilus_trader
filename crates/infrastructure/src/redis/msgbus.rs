@@ -89,8 +89,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - the database configuration is missing in `config`.
-    /// - establishing the Redis connection for publishing fails.
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection for publishing fails.
     ///
     fn new(
         trader_id: TraderId,
@@ -238,9 +238,9 @@ impl RedisMessageBusDatabase {
 /// # Errors
 ///
 /// Returns an error if:
-/// - the database configuration is missing in `config`.
-/// - establishing the Redis connection fails.
-/// - any Redis command fails during publishing.
+/// - The database configuration is missing in `config`.
+/// - Establishing the Redis connection fails.
+/// - Any Redis command fails during publishing.
 pub async fn publish_messages(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
     trader_id: TraderId,
@@ -372,8 +372,8 @@ async fn drain_buffer(
 /// # Errors
 ///
 /// Returns an error if:
-/// - establishing the Redis connection fails.
-/// - any Redis read operation fails.
+/// - Establishing the Redis connection fails.
+/// - Any Redis read operation fails.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
     config: DatabaseConfig,
@@ -448,9 +448,9 @@ pub async fn stream_messages(
 /// # Errors
 ///
 /// Returns an error if:
-/// - the incoming `stream_msg` is not an array.
-/// - the array has fewer than four elements (invalid format).
-/// - parsing the topic or payload fails.
+/// - The incoming `stream_msg` is not an array.
+/// - The array has fewer than four elements (invalid format).
+/// - Parsing the topic or payload fails.
 fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     if let redis::Value::Array(stream_msg) = stream_msg {
         if stream_msg.len() < 4 {

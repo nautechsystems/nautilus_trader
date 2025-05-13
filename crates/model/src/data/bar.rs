@@ -686,10 +686,10 @@ impl Bar {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `high` is not >= `low`.
-    /// - If `high` is not >= `close`.
-    /// - If `low` is not <= `close.
+    /// Returns an error if:
+    /// - `high` is not >= `low`.
+    /// - `high` is not >= `close`.
+    /// - `low` is not <= `close.
     ///
     /// # Notes
     ///
@@ -727,10 +727,10 @@ impl Bar {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `high` is not >= `low`.
-    /// - If `high` is not >= `close`.
-    /// - If `low` is not <= `close.
+    /// This function panics if:
+    /// - `high` is not >= `low`.
+    /// - `high` is not >= `close`.
+    /// - `low` is not <= `close.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,

@@ -30,10 +30,10 @@ use nautilus_common::{
 };
 use nautilus_data::engine::DataEngine;
 
-#[must_use]
 /// # Panics
 ///
 /// Panics if the global data queue has not been initialized.
+#[must_use]
 pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
     DATA_QUEUE
         .try_with(|dq| {
@@ -57,10 +57,10 @@ pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
 
 pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
-#[must_use]
 /// # Panics
 ///
 /// Panics if the global clock has not been initialized.
+#[must_use]
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
         .try_with(|clock| {
@@ -86,10 +86,11 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
 pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
 
 /// Get globally shared message bus command queue
-#[must_use]
+///
 /// # Panics
 ///
 /// Panics if the global message bus commands have not been initialized.
+#[must_use]
 pub fn get_msgbus_cmd() -> MessageBusCommands {
     MSGBUS_CMD
         .try_with(std::clone::Clone::clone)

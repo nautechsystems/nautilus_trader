@@ -139,6 +139,7 @@ impl Equity {
     }
 
     /// Creates a new [`Equity`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any parameter is invalid (see `new_checked`).

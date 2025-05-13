@@ -163,7 +163,7 @@ impl TrailingStopLimitOrder {
     ///
     /// # Panics
     ///
-    /// This function panics if any order validation fails (see [`TrailingStopLimitOrder::new_checked`]).
+    /// Panics if any order validation fails (see [`TrailingStopLimitOrder::new_checked`]).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,

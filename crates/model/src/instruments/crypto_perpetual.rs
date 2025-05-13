@@ -174,6 +174,7 @@ impl CryptoPerpetual {
     }
 
     /// Creates a new [`CryptoPerpetual`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if any input parameter is invalid (see `new_checked`).
