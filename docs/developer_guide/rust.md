@@ -1,21 +1,11 @@
 # Rust
 
-The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the
-platform and systems. This is because Rust will ensure that it is free of memory errors and
 data race conditions, being 'correct by construction' through its formal specification of types, ownership
-and lifetimes at compile time.
-
-Furthermore, due to the absence of a built-in runtime and garbage collector, along with the
-language's ability to access the lowest-level primitives, we can anticipate that future implementations
-will be highly performant. This combination of accuracy and performance is highly valued for a high-frequency
-trading (HFT) platform.
+The [Rust](https://www.rust-lang.org/learn) programming language is an ideal fit for implementing the mission-critical core of the platform and systems. Its strong type system, ownership model, and compile-time checks eliminate memory errors and data races by construction, while zero-cost abstractions and the absence of a garbage collector deliver C-like performance—critical for high-frequency trading workloads.
 
 ## Python Bindings
 
-Interoperating from Python calling Rust can be achieved by binding a Rust C-ABI compatible interface generated using `cbindgen` with
-Cython. This approach is to aid a smooth transition to greater amounts
-of Rust in the codebase, and reducing amounts of Cython (which will eventually be eliminated).
-We want to avoid a need for Rust to call Python using the FFI. In the future [PyO3](https://github.com/PyO3/PyO3) will be used.
+Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing users to import NautilusTrader crates directly in Python without a Rust toolchain.
 
 ## Unsafe Rust
 
@@ -31,12 +21,12 @@ The definition for what the Rust language designers consider undefined behavior 
 
 ## Safety Policy
 
-To maintain the high standards of correctness the project strives for, it's necessary to specify a reasonable policy
 to adhere to when implementing `unsafe` Rust.
+To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
 - If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
 and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
-- All `unsafe` code blocks must be completely covered by unit tests within the same source file.
+- Document why each function is `unsafe` in its doc comment’s Safety section, and cover all `unsafe` blocks with unit tests.
 
 ## Resources
 
