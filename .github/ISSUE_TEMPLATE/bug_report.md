@@ -7,12 +7,18 @@ labels:
 
 # Bug Report
 
-| Term    | Definition |
-|---------|------------|
-| **Bug** | Behaviour that clearly contradicts the platform’s documented / intended design (as shown in the code, docs, or specs). |
-| **Expectation&nbsp;mismatch** | Behaviour that follows the platform’s documented / intended design but differs from what you expected. |
+| Term                          | Definition |
+|-------------------------------|------------|
+| **Bug**                       | Behavior that contradicts the platform’s documented or intended design as per code, docs, or specs. (i.e., The implementation is incorrect.) |
+| **Expectation&nbsp;mismatch** | Behavior that follows the platform’s documented or intended design but differs from what you expected (i.e., The design/spec might be the problem.) |
+| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., “It would be great if the platform could…”) |
 
-**Note**: If the behavior is by design but differs from your expectations, consider opening a discussion, feature request, or RFC instead.
+**Note:**
+
+- Use this template only for issues that fit the **Bug** definition; submitting it automatically applies the `bug` label.
+- `bug`-labelled issues are triaged with higher priority because they require corrective implementation work.
+- **Expectation mismatches** and design-level concerns should be opened as Discussions, or RFCs instead, where they can be validated and discussed to consensus before any work is scheduled.
+- The absence of a feature is typically not an expectation mismatch, and should be filed as an enhancement request.
 
 ## Confirmation
 
@@ -20,10 +26,10 @@ labels:
 
 - [ ] I’ve re-read the relevant sections of the documentation.
 - [ ] I’ve searched existing issues and discussions to avoid duplicates.
-- [ ] I’ve reviewed or skimmed the source code (or examples) to confirm the behavior isn’t by design.
-- [ ] I’ve confirmed the issue is reproducible with the latest version of `nautilus_trader`.
+- [ ] I’ve reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
+- [ ] I’ve confirmed the issue is reproducible with the latest development version of `nautilus_trader` (it may have been fixed already).
 
-## Expected Behavior
+### Expected Behavior
 
 Add here...
 
