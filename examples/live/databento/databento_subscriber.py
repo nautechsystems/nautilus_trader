@@ -21,7 +21,6 @@ from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoLiveDataClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -66,7 +65,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),
+        # database=DatabaseConfig(),
         encoding="msgpack",
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
