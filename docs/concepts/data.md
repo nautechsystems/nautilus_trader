@@ -663,7 +663,7 @@ Converts JSON back to Parquet format:
 ### Migration Process
 
 The following migration examples both use trades data (you can also migrate the other data types in the same way).
-All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
+All commands should be run from the root of the `persistence` crate directory.
 
 #### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 

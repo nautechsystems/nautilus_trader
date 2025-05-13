@@ -1,9 +1,4 @@
 # Backtesting
-
-:::info
-We are currently working on this concept guide.
-:::
-
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
 including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
@@ -193,13 +188,22 @@ Nautilus supports two modes of bar processing:
    - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
-Here's how to configure adaptive bar ordering for a venue:
+Here's how to configure adaptive bar ordering for a venue, including account setup:
 
 ```python
-# Configure venue with adaptive bar ordering
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency
+
+# Initialize the backtest engine
+engine = BacktestEngine()
+
+# Add a venue with adaptive bar ordering and required account settings
 engine.add_venue(
-    venue=venue,
+    venue=venue,  # Your Venue identifier, e.g., Venue("BINANCE")
     oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, Currency("USDT"))],
     bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
@@ -373,16 +377,22 @@ When you attach a venue to the engine—either for live trading or a back‑test
 | Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
 | Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
 
-Example of adding a `CASH` account for trading on Binance Spot with assets directly:
+Example of adding a `CASH` account for a backtest venue:
 
 ```python
-from nautilus_trader.model.enums import AccountType
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency, Venue
 
+# Initialize the backtest engine
+engine = BacktestEngine()
 
+# Add a CASH account for the venue
 engine.add_venue(
-    venue_code="BINANCE",
-    account_type=AccountType.CASH,   #  CASH | MARGIN | BETTING
-    ...
+    venue=Venue("BINANCE"),  # Create or reference a Venue identifier
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, Currency("USDT"))],
 )
 ```
 
