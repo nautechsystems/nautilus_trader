@@ -1201,19 +1201,25 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
+        topic = f"data.{data_type.topic}"
+
+        if instrument_id and not data_type.metadata:
+            topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+
         self._msgbus.subscribe(
-            topic=f"data.{data_type.topic}",
+            topic=topic,
             handler=self.handle_data,
         )
 
-        if client_id is None:
+        # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
+        if client_id is None and instrument_id is None:
             return
 
         cdef SubscribeData command = SubscribeData(
             data_type=data_type,
             instrument_id=instrument_id,
             client_id=client_id,
-            venue=None,
+            venue=instrument_id.venue if instrument_id else None,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,
@@ -1840,19 +1846,25 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
+        topic = f"data.{data_type.topic}"
+
+        if instrument_id and not data_type.metadata:
+            topic = f"data.{data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+
         self._msgbus.unsubscribe(
-            topic=f"data.{data_type.topic}",
+            topic=topic,
             handler=self.handle_data,
         )
 
-        if client_id is None:
+        # TODO during a backtest, use any ClientId for subscribing to custom data from a catalog when not using instrument_id
+        if client_id is None and instrument_id is None:
             return
 
         cdef UnsubscribeData command = UnsubscribeData(
             data_type=data_type,
             instrument_id=instrument_id,
             client_id=client_id,
-            venue=None,
+            venue=instrument_id.venue if instrument_id else None,
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
             params=params,

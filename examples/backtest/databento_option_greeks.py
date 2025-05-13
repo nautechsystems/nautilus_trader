@@ -20,7 +20,6 @@
 # Note: Use the python extension jupytext to be able to open this python file in jupyter as a notebook
 
 # %%
-# from nautilus_trader.model.data import DataType
 import pandas as pd
 
 from nautilus_trader.adapters.databento.data_utils import data_path
@@ -40,6 +39,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
@@ -132,14 +132,26 @@ class OptionStrategy(Strategy):
 
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"duration_seconds": pd.Timedelta(minutes=1).seconds},
+            params={"duration_seconds": pd.Timedelta(minutes=2).seconds},
         )
         self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
 
-        if self.config.load_greeks:
-            self.greeks.subscribe_greeks("ES")
-            # self.subscribe_data(DataType(GreeksData, metadata={"instrument_id": "ES*"}))
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id,
+            params={
+                "append_data": False,
+            },  # prepending data ensures that greeks are cached and available before on_bar
+        )
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id2,
+            params={"append_data": False},
+        )
+        self.greeks.subscribe_greeks(
+            InstrumentId.from_str("ES*.GLBX"),
+        )  # adds all ES greeks read from the message bus to the cache
 
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
@@ -148,8 +160,9 @@ class OptionStrategy(Strategy):
 
         self.start_orders_done = True
 
-    # def on_data(self, data):
-    #     self.user_log(data)
+    # def on_data(self, greeks):
+    #     self.log.warning(f"{greeks=}")
+    #     self.cache.add_greeks(greeks)
 
     def on_bar(self, bar):
         self.user_log(
@@ -200,6 +213,10 @@ class OptionStrategy(Strategy):
 
     def on_stop(self):
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.config.option_id)
+        self.unsubscribe_quote_ticks(self.config.option_id2)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
 
 
 # %% [markdown]
@@ -208,10 +225,9 @@ class OptionStrategy(Strategy):
 # %%
 # BacktestEngineConfig
 
-# for saving and loading custom data greeks, use True, False then False, True below
-stream_data, load_greeks = False, False
-# stream_data, load_greeks = True, False
-# stream_data, load_greeks = False, True
+# When load_greeks is False, the streamed greeks can be saved after the backtest
+# When load_greeks is True, the greeks are loaded from the catalog
+load_greeks = False
 
 actors = [
     ImportableActorConfig(
@@ -265,7 +281,7 @@ engine_config = BacktestEngineConfig(
     logging=logging,
     actors=actors,
     strategies=strategies,
-    streaming=(streaming if stream_data else None),
+    streaming=(streaming if not load_greeks else None),
     catalogs=catalogs,
 )
 
@@ -297,7 +313,7 @@ if load_greeks:
             data_cls=GreeksData.fully_qualified_name(),
             catalog_path=catalog.path,
             client_id="GreeksDataProvider",
-            metadata={"instrument_id": "ES"},
+            # metadata={"instrument_id": "ES"}, # not used anymore, reminder on syntax
         ),
         *data,
     ]
@@ -315,11 +331,12 @@ venues = [
 configs = [
     BacktestRunConfig(
         engine=engine_config,
-        data=data,
+        data=[],  # data
         venues=venues,
         chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
         start=start_time,
         end=end_time,
+        raise_exception=True,
     ),
 ]
 
@@ -329,15 +346,11 @@ node = BacktestNode(configs=configs)
 results = node.run()
 
 # %%
-if stream_data:
+if not load_greeks:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
     )
-
-# %%
-# catalog.consolidate_catalog()
-# catalog.consolidate_data(GreeksData, instrument_id=InstrumentId.from_str("ESM4 P5230.GLBX"))
 
 # %% [markdown]
 # ## backtest results

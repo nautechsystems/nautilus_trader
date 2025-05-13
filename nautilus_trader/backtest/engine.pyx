@@ -741,7 +741,7 @@ cdef class BacktestEngine:
             elif data_type in (QuoteTick, TradeTick):
                 self._backtest_subscription_names.add(f"{data_type.__name__}.{data_point.instrument_id}")
             elif data_type is CustomData:
-                self._backtest_subscription_names.add(f"{type(data_point.data).__name__}.{data_point.data.__dict__.get('instrument_id', None)}")
+                self._backtest_subscription_names.add(f"{type(data_point.data).__name__}.{getattr(data_point.data, 'instrument_id', None)}")
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
@@ -771,8 +771,7 @@ cdef class BacktestEngine:
         if subscription_name in self._data_requests or subscription_name in self._backtest_subscription_names:
             return
 
-        self._log.debug(f"_handle_subscribe {duration_seconds=}")
-        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_seconds=}")
         self._data_requests[subscription_name] = request
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=request)
 
@@ -786,7 +785,6 @@ cdef class BacktestEngine:
             return
 
         self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
-
         cdef bint append_data = response.params.get("append_data", True)
         self._data_iterator.add_data(subscription_name, data, append_data)
 
@@ -809,8 +807,8 @@ cdef class BacktestEngine:
         cdef object duration_seconds = request.params.get("duration_seconds")
         cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
 
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
-        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time))
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_seconds=}")
+        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), last_ts_init)
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     def dump_pickled_data(self) -> bytes:

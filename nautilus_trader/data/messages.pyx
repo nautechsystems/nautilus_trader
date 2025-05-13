@@ -1732,7 +1732,7 @@ cdef class RequestData(Request):
         self.venue = venue
         self.params = params or {}
 
-    def with_dates(self, datetime start, datetime end):
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init):
         return RequestData(
             data_type=self.data_type,
             instrument_id=self.instrument_id,
@@ -1743,7 +1743,7 @@ cdef class RequestData(Request):
             venue=self.venue,
             callback=self.callback,
             request_id=self.id,
-            ts_init=self.ts_init,
+            ts_init=ts_init,
             params=self.params.copy(),
         )
 
@@ -2074,7 +2074,7 @@ cdef class RequestQuoteTicks(RequestData):
             params
         )
 
-    def with_dates(self, datetime start, datetime end):
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init):
         return RequestQuoteTicks(
             instrument_id=self.instrument_id,
             start=start,
@@ -2084,7 +2084,7 @@ cdef class RequestQuoteTicks(RequestData):
             venue=self.venue,
             callback=self.callback,
             request_id=self.id,
-            ts_init=self.ts_init,
+            ts_init=ts_init,
             params=self.params.copy(),
         )
 
@@ -2175,7 +2175,7 @@ cdef class RequestTradeTicks(RequestData):
             params
         )
 
-    def with_dates(self, datetime start, datetime end):
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init):
         return RequestTradeTicks(
             instrument_id=self.instrument_id,
             start=start,
@@ -2185,7 +2185,7 @@ cdef class RequestTradeTicks(RequestData):
             venue=self.venue,
             callback=self.callback,
             request_id=self.id,
-            ts_init=self.ts_init,
+            ts_init=ts_init,
             params=self.params.copy(),
         )
 
@@ -2278,7 +2278,7 @@ cdef class RequestBars(RequestData):
         )
         self.bar_type = bar_type
 
-    def with_dates(self, datetime start, datetime end):
+    def with_dates(self, datetime start, datetime end, uint64_t ts_init):
         return RequestBars(
             bar_type=self.bar_type,
             start=start,
@@ -2288,7 +2288,7 @@ cdef class RequestBars(RequestData):
             venue=self.venue,
             callback=self.callback,
             request_id=self.id,
-            ts_init=self.ts_init,
+            ts_init=ts_init,
             params=self.params.copy(),
         )
 

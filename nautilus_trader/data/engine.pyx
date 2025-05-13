@@ -751,6 +751,7 @@ cdef class DataEngine(Component):
         if venue is not None and venue.is_synthetic():
             # No further check as no client needed
             pass
+
         elif client is None:
             client = self._routing_map.get(command.venue, self._default_client)
 
@@ -1483,13 +1484,23 @@ cdef class DataEngine(Component):
         n_requests = (len(missing_intervals) if used_client else 0) + (1 if has_catalog_data else 0)
 
         if n_requests == 0:
-            return
+            response = DataResponse(
+                client_id=request.client_id,
+                venue=request.venue,
+                data_type=request.data_type,
+                data=[],
+                correlation_id=request.id,
+                response_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+                params=request.params,
+            )
+            self._handle_response(response)
 
         self._new_query_group(request.id, n_requests)
 
         # Catalog query
         if has_catalog_data:
-            new_request = request.with_dates(start, end)
+            new_request = request.with_dates(start, end, now.value)
             new_request.params["request_ts_start"] = start.value
             new_request.params["request_ts_end"] = end.value
             self._query_catalog(new_request)
@@ -1497,7 +1508,7 @@ cdef class DataEngine(Component):
         # Client requests
         if len(missing_intervals) > 0 and used_client:
             for request_start, request_end in missing_intervals:
-                new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end))
+                new_request = request.with_dates(time_object_to_dt(request_start), time_object_to_dt(request_end), now.value)
                 new_request.params["request_ts_start"] = request_start
                 new_request.params["request_ts_end"] = request_end
                 new_request.params["instrument_id"] = instrument_id
@@ -1851,7 +1862,13 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cpdef void _handle_custom_data(self, CustomData data):
-        self._msgbus.publish_c(topic=f"data.{data.data_type.topic}", msg=data.data)
+        topic = f"data.{data.data_type.topic}"
+        instrument_id = getattr(data.data, "instrument_id", None)
+
+        if instrument_id and not data.data_type.metadata:
+            topic = f"data.{data.data_type.type.__name__}.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+
+        self._msgbus.publish_c(topic=topic, msg=data.data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 

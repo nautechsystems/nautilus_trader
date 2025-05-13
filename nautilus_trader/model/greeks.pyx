@@ -169,6 +169,7 @@ cdef class GreeksCalculator:
         underlying_instrument_id = InstrumentId.from_str(f"{instrument.underlying}.{instrument_id.venue}")
 
         if use_cached_greeks and (greeks_data := self._cache.greeks(instrument_id)) is not None:
+            self._log.debug(f"Using cached greeks for {instrument_id=}")
             pass
         else:
             utc_now_ns = ts_event if ts_event is not None else self._clock.timestamp_ns()
@@ -216,8 +217,8 @@ cdef class GreeksCalculator:
 
             # publishing greeks on the message bus so they can be written to a catalog from streamed objects
             if publish_greeks:
-                data_type = DataType(GreeksData, metadata={"instrument_id": instrument_id.value})
-                self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=greeks_data)
+                data_type = DataType(GreeksData)
+                self._msgbus.publish_c(topic=f"data.{instrument_id.venue}.{instrument_id.symbol.topic()}", msg=greeks_data)
 
         if spot_shock != 0. or vol_shock != 0. or time_to_expiry_shock != 0.:
             underlying_price = greeks_data.underlying_price
@@ -452,7 +453,7 @@ cdef class GreeksCalculator:
 
         return portfolio_greeks
 
-    def subscribe_greeks(self, underlying: str = "", handler: Callable[[GreeksData], None] = None) -> None:
+    def subscribe_greeks(self, instrument_id: InstrumentId | None = None, handler: Callable[[GreeksData], None] = None) -> None:
         """
         Subscribe to Greeks data for a given underlying instrument.
 
@@ -460,8 +461,9 @@ cdef class GreeksCalculator:
 
         Parameters
         ----------
-        underlying : str, default ""
-            The underlying instrument ID prefix to subscribe to.
+        instrument_id : str, optional
+            The underlying instrument ID subscribe to.
+            Use for example InstrumentId.from_str("ES*.GLBX") to cache all ES greeks.
             If empty, subscribes to all Greeks data.
         handler : Callable[[GreeksData], None], optional
             The callback function to handle received Greeks data.
@@ -473,7 +475,8 @@ cdef class GreeksCalculator:
 
         """
         used_handler = handler or (lambda greeks: self._cache.add_greeks(greeks))
+        topic = f"data.GreeksData.{instrument_id.venue}.{instrument_id.symbol.topic()}" if instrument_id else "data.GreeksData.*"
         self._msgbus.subscribe(
-            topic=f"data.GreeksData.instrument_id={underlying}*",
+            topic=topic,
             handler=used_handler,
         )

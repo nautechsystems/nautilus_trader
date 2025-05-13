@@ -2033,9 +2033,9 @@ class TestActor:
 
         # Assert
         assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
 
     def test_request_order_book_snapshots_sends_request_to_data_engine(self) -> None:
         # Arrange
@@ -2065,9 +2065,9 @@ class TestActor:
 
         # Assert
         assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
 
     def test_request_quote_ticks_sends_request_to_data_engine(self) -> None:
         # Arrange
@@ -2084,9 +2084,9 @@ class TestActor:
 
         # Assert
         assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
 
     def test_request_quote_ticks_with_registered_callback(self) -> None:
         # Arrange
@@ -2138,9 +2138,9 @@ class TestActor:
 
         # Assert
         assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
 
     def test_request_trade_ticks_with_registered_callback(self) -> None:
         # Arrange
@@ -2193,9 +2193,9 @@ class TestActor:
 
         # Assert
         assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
 
     def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
