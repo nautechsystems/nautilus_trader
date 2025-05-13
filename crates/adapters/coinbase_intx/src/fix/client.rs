@@ -52,7 +52,7 @@ use crate::{
 };
 
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
     endpoint: String,
     api_key: String,

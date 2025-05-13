@@ -93,7 +93,7 @@ pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> =
 /// This client wraps the underlying `HttpClient` to handle functionality
 /// specific to Coinbase, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into specific data models.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoinbaseIntxHttpInnerClient {
     base_url: String,
     client: HttpClient,
@@ -505,7 +505,7 @@ impl CoinbaseIntxHttpInnerClient {
 ///
 /// This client wraps the underlying `CoinbaseIntxHttpInnerClient` to handle conversions
 /// into the Nautilus domain model.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
