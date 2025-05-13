@@ -42,6 +42,7 @@ None
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
+- Fixed processing activated trailing stop update when no trigger price, thanks for reporting @hope2see
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
 - Fixed HTTP batch order operations for Bybit (#2627), thanks @sunlei
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore

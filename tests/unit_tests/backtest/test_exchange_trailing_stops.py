@@ -1743,6 +1743,40 @@ class TestSimulatedExchange:
         assert trailing_stop.status == expected_status
         assert trailing_stop.filled_qty == expected_filled_qty
 
+    def test_modify_unactivated_trailing_stop_order_before_activation(self) -> None:
+        # Arrange: seed simple market quote so order activation will succeed if triggered
+        quote = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=12.0,
+            ask_price=13.0,
+        )
+        self.exchange.process_quote_tick(quote)
+        self.data_engine.process(quote)
+        self.portfolio.update_quote_tick(quote)
+
+        # Submit a trailing-stop market order without activation
+        trailing_stop = self.strategy.order_factory.trailing_stop_market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100_000),
+            trailing_offset=Decimal("1.0"),
+            trailing_offset_type=TrailingOffsetType.PRICE,
+            trigger_type=TriggerType.BID_ASK,
+        )
+        self.strategy.submit_order(trailing_stop)
+
+        # Immediately modify before activation occurs
+        new_qty = Quantity.from_int(50_000)
+        self.strategy.modify_order(trailing_stop, new_qty)
+
+        # Process without errors and update quantity
+        self.exchange.process(0)
+        assert trailing_stop.quantity == new_qty
+
+        # Engine auto-activates trailing stops on submit when activation_price unset
+        assert trailing_stop.is_activated
+        assert trailing_stop.trigger_price == Price.from_str("14.000")
+
     @pytest.mark.parametrize(
         ("bid_price", "ask_price", "expected_status", "expected_filled_qty"),
         [

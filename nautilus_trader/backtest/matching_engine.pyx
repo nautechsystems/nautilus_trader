@@ -1503,6 +1503,10 @@ cdef class OrderMatchingEngine:
         Price trigger_price,
     ):
         if order.is_activated:
+            # Activated trailing-stop may not yet have a trigger_price;
+            # await next market update to calculate it
+            if trigger_price is None:
+                return
             self._update_stop_market_order(order, qty, trigger_price)
         elif qty or trigger_price:
             self._generate_order_updated(order, qty, None, trigger_price)
@@ -1515,6 +1519,10 @@ cdef class OrderMatchingEngine:
         Price trigger_price,
     ):
         if order.is_activated:
+            # Activated trailing-stop may not yet have a trigger_price;
+            # await next market update to calculate it
+            if trigger_price is None:
+                return
             self._update_stop_limit_order(order, qty, price, trigger_price)
         elif qty or trigger_price:
             self._generate_order_updated(order, qty, price, trigger_price)
