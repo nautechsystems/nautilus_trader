@@ -203,7 +203,7 @@ engine.add_venue(
     venue=venue,  # Your Venue identifier, e.g., Venue("BINANCE")
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
-    starting_balances=[Money(10_000, Currency("USDT"))],
+    starting_balances=[Money(10_000, Currency.from_str("USDT"))],
     bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
@@ -381,6 +381,7 @@ Example of adding a `CASH` account for a backtest venue:
 
 ```python
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OmsType, AccountType
 from nautilus_trader.model import Money, Currency, Venue
 
@@ -392,7 +393,7 @@ engine.add_venue(
     venue=Venue("BINANCE"),  # Create or reference a Venue identifier
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
-    starting_balances=[Money(10_000, Currency("USDT"))],
+    starting_balances=[Money(10_000, USDT)],
 )
 ```
 

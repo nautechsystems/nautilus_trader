@@ -8,9 +8,14 @@ currently a number of subclasses representing a range of *asset classes* and *in
 - `FuturesSpread` (generic Futures Spread)
 - `OptionContract` (generic Option Contract)
 - `OptionSpread` (generic Option Spread)
+- `BinaryOption` (generic Binary Option instrument)
+- `Cfd` (Contract for Difference instrument)
+- `Commodity` (commodity instrument in a spot/cash market)
 - `CurrencyPair` (represents a Fiat FX or Cryptocurrency pair in a spot/cash market)
+- `CryptoOption` (Crypto Option instrument)
 - `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
 - `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
+- `IndexInstrument` (generic Index instrument)
 - `BettingInstrument` (Sports, gaming, or other betting)
 
 ## Symbology
@@ -43,7 +48,7 @@ from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumen
 from nautilus_trader.model import InstrumentId
 
 provider = BinanceSpotInstrumentProvider(client=binance_http_client)
-await self.provider.load_all_async()
+await provider.load_all_async()
 
 btcusdt = InstrumentId.from_str("BTCUSDT.BINANCE")
 instrument = provider.find(btcusdt)
@@ -63,7 +68,7 @@ See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the
 latest instrument definitions for the exchange. Refer to a particular `Instrument`
-object by pass the matching `InstrumentId` to data and execution related methods, and classes which require one.
+object by passing the matching `InstrumentId` to data and execution related methods and classes that require one.
 
 ## Finding instruments
 
@@ -97,7 +102,9 @@ be passed to the actors/strategies `on_instrument()` method. A user can override
 to take upon receiving an instrument update:
 
 ```python
-def on_instrument(instrument: Instrument) -> None:
+from nautilus_trader.model.instruments import Instrument
+
+def on_instrument(self, instrument: Instrument) -> None:
     # Take some action on an instrument update
     pass
 ```
@@ -275,13 +282,16 @@ To use any fee model in your trading system, whether built-in or custom, you spe
 Here's an example using the custom per-contract fee model:
 
 ```python
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.objects import Money, Currency
+
 engine.add_venue(
     venue=venue,
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=USD,
-    fee_model=PerContractFeeModel(Money(2.50, USD)),  # Our custom fee-model injected here: 2.50 USD / per 1 filled contract
-    starting_balances=[Money(1_000_000, USD)],
+    fee_model=PerContractFeeModel(Money(2.50, USD)),  # 2.50 USD per contract
+    starting_balances=[Money(1_000_000, USD)],  # Starting with 1,000,000 USD balance
 )
 ```
 
