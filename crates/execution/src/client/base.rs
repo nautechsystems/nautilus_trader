@@ -109,6 +109,11 @@ impl BaseExecutionClient {
         self.cache.borrow().account(&self.account_id).cloned()
     }
 
+    /// Generates and publishes the account state event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if constructing or sending the account state fails.
     pub fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,

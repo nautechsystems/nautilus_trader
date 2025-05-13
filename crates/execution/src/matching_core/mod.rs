@@ -167,6 +167,11 @@ impl OrderMatchingCore {
         self.orders_ask.clear();
     }
 
+    /// Adds a passive order to the matching core.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`OrderError::NotFound`] if the order cannot be added.
     pub fn add_order(&mut self, order: PassiveOrderAny) -> Result<(), OrderError> {
         match order.order_side_specified() {
             OrderSideSpecified::Buy => {
@@ -180,6 +185,11 @@ impl OrderMatchingCore {
         }
     }
 
+    /// Deletes a passive order from the matching core.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`OrderError::NotFound`] if the order is not present.
     pub fn delete_order(&mut self, order: &PassiveOrderAny) -> Result<(), OrderError> {
         match order.order_side_specified() {
             OrderSideSpecified::Buy => {

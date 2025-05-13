@@ -21,6 +21,15 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::*};
 
+/// Calculates the new trigger and limit prices for a trailing stop order.
+///
+/// # Errors
+///
+/// Returns an error if the order type or trigger type is invalid.
+///
+/// # Panics
+///
+/// Panics if trigger type or trailing offset type is unset.
 pub fn trailing_stop_calculate(
     price_increment: Price,
     order: &OrderAny,
@@ -343,6 +352,15 @@ pub fn trailing_stop_calculate(
     Ok((new_trigger_price, new_price))
 }
 
+/// Calculates the trailing stop price using the last traded price.
+///
+/// # Errors
+///
+/// Returns an error if the offset calculation fails or the offset type is unsupported.
+///
+/// # Panics
+///
+/// Panics if the offset cannot be converted to a float.
 pub fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
@@ -372,6 +390,15 @@ pub fn trailing_stop_calculate_with_last(
     Ok(Price::new(price_value, price_increment.precision))
 }
 
+/// Calculates the trailing stop price using bid and ask prices.
+///
+/// # Errors
+///
+/// Returns an error if the offset calculation fails or the offset type is unsupported.
+///
+/// # Panics
+///
+/// Panics if the offset cannot be converted to a float.
 pub fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,

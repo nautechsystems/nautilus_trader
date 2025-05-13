@@ -22,6 +22,11 @@ use nautilus_model::{
 use rust_decimal::prelude::ToPrimitive;
 
 pub trait FeeModel {
+    /// Calculates commission for a fill.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if commission calculation fails.
     fn get_commission(
         &self,
         order: &OrderAny,
@@ -69,6 +74,10 @@ pub struct FixedFeeModel {
 
 impl FixedFeeModel {
     /// Creates a new [`FixedFeeModel`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
     pub fn new(commission: Money, change_commission_once: Option<bool>) -> anyhow::Result<Self> {
         if commission.as_f64() < 0.0 {
             anyhow::bail!("Commission must be greater than or equal to zero.")

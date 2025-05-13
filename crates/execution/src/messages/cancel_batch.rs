@@ -38,6 +38,11 @@ pub struct BatchCancelOrders {
 impl BatchCancelOrders {
     /// Creates a new [`BatchCancelOrders`] instance.
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new `CancelBatchOrders` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parameters are invalid.
     pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
