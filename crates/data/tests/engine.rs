@@ -113,18 +113,19 @@ fn register_mock_client(
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
     venue: Venue,
-    data_engine: &mut DataEngine,
+    routing: Option<Venue>,
     recorder: &Rc<RefCell<Vec<DataCommand>>>,
+    data_engine: &mut DataEngine,
 ) {
-    let rec = MockDataClient::new_with_recorder(
+    let client = MockDataClient::new_with_recorder(
         clock.clone(),
         cache.clone(),
         client_id,
         Some(venue),
         Some(recorder.clone()),
     );
-    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(rec));
-    data_engine.register_client(adapter, None);
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+    data_engine.register_client(adapter, routing);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -312,12 +313,13 @@ fn test_execute_subscribe_custom_data(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let data_type = DataType::new(stringify!(String), None);
-    let cmd = SubscribeData::new(
+    let sub = SubscribeData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -325,7 +327,7 @@ fn test_execute_subscribe_custom_data(
         UnixNanos::default(),
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Data(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Data(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(data_engine.subscribed_custom_data().contains(&data_type));
@@ -364,8 +366,9 @@ fn test_execute_subscribe_book_deltas(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
@@ -426,14 +429,15 @@ fn test_execute_subscribe_book_snapshots(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
     data_engine.process(&inst_any as &dyn Any);
 
-    let cmd = SubscribeBookSnapshots::new(
+    let sub = SubscribeBookSnapshots::new(
         audusd_sim.id,
         BookType::L2_MBP,
         Some(client_id),
@@ -444,7 +448,7 @@ fn test_execute_subscribe_book_snapshots(
         NonZeroUsize::new(1_000).unwrap(),
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookSnapshots(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(
@@ -456,7 +460,7 @@ fn test_execute_subscribe_book_snapshots(
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
-    let cmd = UnsubscribeBookSnapshots::new(
+    let unsub = UnsubscribeBookSnapshots::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -464,7 +468,7 @@ fn test_execute_subscribe_book_snapshots(
         UnixNanos::default(),
         None,
     );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(cmd));
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(unsub));
     data_engine.execute(&unsub_cmd);
 
     assert!(
@@ -491,8 +495,9 @@ fn test_execute_subscribe_instrument(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let sub = SubscribeInstrument::new(
@@ -550,11 +555,12 @@ fn test_execute_subscribe_quotes(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
-    let cmd = SubscribeQuotes::new(
+    let sub = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -562,7 +568,7 @@ fn test_execute_subscribe_quotes(
         UnixNanos::default(),
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(data_engine.subscribed_quotes().contains(&audusd_sim.id));
@@ -570,7 +576,7 @@ fn test_execute_subscribe_quotes(
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
-    let cmd = UnsubscribeQuotes::new(
+    let unsub = UnsubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -578,7 +584,7 @@ fn test_execute_subscribe_quotes(
         UnixNanos::default(),
         None,
     );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(cmd));
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(unsub));
     data_engine.execute(&unsub_cmd);
 
     assert!(!data_engine.subscribed_quotes().contains(&audusd_sim.id));
@@ -601,11 +607,12 @@ fn test_execute_subscribe_trades(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
-    let cmd = SubscribeTrades::new(
+    let sub = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -613,7 +620,7 @@ fn test_execute_subscribe_trades(
         UnixNanos::default(),
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Trades(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Trades(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(data_engine.subscribed_trades().contains(&audusd_sim.id));
@@ -621,7 +628,7 @@ fn test_execute_subscribe_trades(
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
-    let cmd = UnsubscribeTrades::new(
+    let ubsub = UnsubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -629,7 +636,7 @@ fn test_execute_subscribe_trades(
         UnixNanos::default(),
         None,
     );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd));
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Trades(ubsub));
     data_engine.execute(&unsub_cmd);
 
     assert!(!data_engine.subscribed_trades().contains(&audusd_sim.id));
@@ -652,8 +659,9 @@ fn test_execute_subscribe_bars(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
@@ -661,7 +669,7 @@ fn test_execute_subscribe_bars(
 
     let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
 
-    let cmd = SubscribeBars::new(
+    let sub = SubscribeBars::new(
         bar_type,
         Some(client_id),
         Some(venue),
@@ -670,7 +678,7 @@ fn test_execute_subscribe_bars(
         false,
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(data_engine.subscribed_bars().contains(&bar_type));
@@ -710,11 +718,12 @@ fn test_execute_subscribe_mark_prices(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
-    let cmd = SubscribeMarkPrices::new(
+    let sub = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -722,7 +731,7 @@ fn test_execute_subscribe_mark_prices(
         UnixNanos::default(),
         None,
     );
-    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd));
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(sub));
     data_engine.execute(&sub_cmd);
 
     assert!(
@@ -734,7 +743,7 @@ fn test_execute_subscribe_mark_prices(
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
-    let cmd = UnsubscribeMarkPrices::new(
+    let unsub = UnsubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
         Some(venue),
@@ -742,7 +751,7 @@ fn test_execute_subscribe_mark_prices(
         UnixNanos::default(),
         None,
     );
-    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(cmd));
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::MarkPrices(unsub));
     data_engine.execute(&unsub_cmd);
 
     assert!(
@@ -769,8 +778,9 @@ fn test_execute_subscribe_index_prices(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let sub_cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(SubscribeIndexPrices::new(
@@ -833,8 +843,9 @@ fn test_execute_request_data(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestData {
@@ -866,8 +877,9 @@ fn test_execute_request_instrument(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestInstrument::new(
@@ -900,8 +912,9 @@ fn test_execute_request_instruments(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestInstruments::new(
@@ -935,8 +948,9 @@ fn test_execute_request_book_snapshot(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestBookSnapshot::new(
@@ -969,8 +983,9 @@ fn test_execute_request_quotes(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestQuotes::new(
@@ -1005,8 +1020,9 @@ fn test_execute_request_trades(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestTrades::new(
@@ -1040,8 +1056,9 @@ fn test_execute_request_bars(
         cache.clone(),
         client_id,
         venue,
-        &mut data_engine,
+        None,
         &recorder,
+        &mut data_engine,
     );
 
     let req = RequestBars::new(
@@ -1076,7 +1093,7 @@ fn test_process_instrument(
 
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
 
-    let cmd = SubscribeInstrument::new(
+    let sub = SubscribeInstrument::new(
         audusd_sim.id(),
         Some(client_id),
         venue,
@@ -1084,7 +1101,7 @@ fn test_process_instrument(
         UnixNanos::default(),
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1116,7 +1133,7 @@ fn test_process_book_delta(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeBookDeltas::new(
+    let sub = SubscribeBookDeltas::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -1127,7 +1144,7 @@ fn test_process_book_delta(
         true,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1155,7 +1172,7 @@ fn test_process_book_deltas(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeBookDeltas::new(
+    let sub = SubscribeBookDeltas::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -1166,7 +1183,7 @@ fn test_process_book_deltas(
         true,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1196,7 +1213,7 @@ fn test_process_book_depth10(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeBookDepth10::new(
+    let sub = SubscribeBookDepth10::new(
         audusd_sim.id,
         BookType::L3_MBO,
         Some(client_id),
@@ -1207,7 +1224,7 @@ fn test_process_book_depth10(
         true,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1236,7 +1253,7 @@ fn test_process_quote_tick(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeQuotes::new(
+    let sub = SubscribeQuotes::new(
         audusd_sim.id,
         Some(client_id),
         venue,
@@ -1244,7 +1261,7 @@ fn test_process_quote_tick(
         UnixNanos::default(),
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1274,7 +1291,7 @@ fn test_process_trade_tick(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeTrades::new(
+    let sub = SubscribeTrades::new(
         audusd_sim.id,
         Some(client_id),
         venue,
@@ -1282,7 +1299,7 @@ fn test_process_trade_tick(
         UnixNanos::default(),
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1312,7 +1329,7 @@ fn test_process_mark_price(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeMarkPrices::new(
+    let sub = SubscribeMarkPrices::new(
         audusd_sim.id,
         Some(client_id),
         venue,
@@ -1320,7 +1337,7 @@ fn test_process_mark_price(
         UnixNanos::default(),
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1366,7 +1383,7 @@ fn test_process_index_price(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
-    let cmd = SubscribeIndexPrices::new(
+    let sub = SubscribeIndexPrices::new(
         audusd_sim.id,
         Some(client_id),
         venue,
@@ -1374,7 +1391,7 @@ fn test_process_index_price(
         UnixNanos::default(),
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
@@ -1414,7 +1431,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
 
     let bar = Bar::default();
 
-    let cmd = SubscribeBars::new(
+    let sub = SubscribeBars::new(
         bar.bar_type,
         Some(client_id),
         venue,
@@ -1423,7 +1440,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
         false,
         None,
     );
-    let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(cmd));
+    let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
     msgbus::send(&endpoint, &cmd as &dyn Any);
