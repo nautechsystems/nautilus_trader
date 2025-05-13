@@ -23,6 +23,11 @@ pub mod volatility;
 
 use pyo3::{prelude::*, pymodule};
 
+/// Initializes the Python `indicators` module by adding all indicator classes.
+///
+/// # Errors
+///
+/// Returns a Python exception if adding any indicator class fails.
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Average
