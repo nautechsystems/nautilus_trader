@@ -34,3 +34,51 @@ pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char
 pub extern "C" fn unix_nanos_to_iso8601_millis_cstr(timestamp_ns: u64) -> *const c_char {
     str_to_cstr(&unix_nanos_to_iso8601_millis(timestamp_ns.into()))
 }
+/// Converts seconds to nanoseconds (ns).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
+    crate::datetime::secs_to_nanos(secs)
+}
+
+/// Converts seconds to milliseconds (ms).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
+    crate::datetime::secs_to_millis(secs)
+}
+
+/// Converts milliseconds (ms) to nanoseconds (ns).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
+    crate::datetime::millis_to_nanos(millis)
+}
+
+/// Converts microseconds (μs) to nanoseconds (ns).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
+    crate::datetime::micros_to_nanos(micros)
+}
+
+/// Converts nanoseconds (ns) to seconds.
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
+    crate::datetime::nanos_to_secs(nanos)
+}
+
+/// Converts nanoseconds (ns) to milliseconds (ms).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
+    crate::datetime::nanos_to_millis(nanos)
+}
+
+/// Converts nanoseconds (ns) to microseconds (μs).
+#[cfg(feature = "ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
+    crate::datetime::nanos_to_micros(nanos)
+}

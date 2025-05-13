@@ -149,6 +149,7 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "python")]
     use pyo3::types::PyString;
     use rstest::*;
 
