@@ -196,6 +196,9 @@ The Signal messaging approach shines when you need:
 ```python
 # Define signal constants for better organization (optional but recommended)
 import types
+from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.common.enums import LogColor
+
 signals = types.SimpleNamespace()
 signals.NEW_HIGHEST_PRICE = "NewHighestPriceReached"
 signals.NEW_LOWEST_PRICE = "NewLowestPriceReached"

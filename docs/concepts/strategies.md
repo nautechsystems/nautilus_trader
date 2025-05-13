@@ -1,8 +1,8 @@
 # Strategies
 
 The heart of the NautilusTrader user experience is in writing and working with
-trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class,
-and implementing the methods required by the users trading strategy logic.
+trading strategies. Defining a trading strategy involves inheriting the `Strategy` class and
+implementing the methods required by the strategy's logic.
 
 **Key capabilities**:
 
@@ -17,7 +17,7 @@ plus order management capabilities.
 We recommend reviewing the [Actors](actors.md) guide before diving into strategy development.
 :::
 
-Strategies can be added to Nautilus systems with any [environment context](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
+Strategies can be added to Nautilus systems in any [environment contexts](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
 events based on their logic as soon as the system starts.
 
 Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
@@ -57,7 +57,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 class MyStrategy(Strategy):
     def __init__(self) -> None:
-        super().__init__()  # <-- the super class must be called to initialize the strategy
+        super().__init__()  # <-- the superclass must be called to initialize the strategy
 ```
 
 From here, you can implement handlers as necessary to perform actions based on state transitions
@@ -274,6 +274,9 @@ specified alert time. In a live context, this might be slightly delayed by a few
 This example sets a time alert to trigger one minute from the current time:
 
 ```python
+import pandas as pd
+
+# Fire a TimeEvent one minute from now
 self.clock.set_time_alert(
     name="MyTimeAlert1",
     alert_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
@@ -288,6 +291,9 @@ or is canceled.
 This example sets a timer to fire once per minute, starting immediately:
 
 ```python
+import pandas as pd
+
+# Fire a TimeEvent every minute
 self.clock.set_timer(
     name="MyTimer1",
     interval=pd.Timedelta(minutes=1),
