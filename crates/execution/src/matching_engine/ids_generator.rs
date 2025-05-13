@@ -72,6 +72,11 @@ impl IdsGenerator {
         self.execution_count = 0;
     }
 
+    /// Retrieves or generates a unique venue order ID for the given order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if ID generation fails.
     pub fn get_venue_order_id(&mut self, order: &OrderAny) -> anyhow::Result<VenueOrderId> {
         // check existing on order
         if let Some(venue_order_id) = order.venue_order_id() {
@@ -92,6 +97,10 @@ impl IdsGenerator {
         Ok(venue_order_id)
     }
 
+    /// Retrieves or generates a position ID for the given order.
+    ///
+    /// # Panics
+    /// Panics if `generate` is `Some(true)` but no cached position ID is available.
     pub fn get_position_id(
         &mut self,
         order: &OrderAny,

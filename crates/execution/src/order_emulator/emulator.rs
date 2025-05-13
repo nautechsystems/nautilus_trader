@@ -134,6 +134,12 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if no emulated orders are found or processing fails.
+    /// # Panics
+    ///
+    /// Panics if a cached client ID cannot be unwrapped.
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -265,6 +271,9 @@ impl OrderEmulator {
         matching_core
     }
 
+    /// # Panics
+    ///
+    /// Panics if the emulation trigger type is `NoTrigger`.
     pub fn handle_submit_order(&mut self, command: SubmitOrder) {
         let mut order = command.order.clone();
         let emulation_trigger = order.emulation_trigger();
@@ -763,6 +772,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order type is invalid for a stop order.
     pub fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         match order.order_type() {
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
@@ -775,6 +787,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a limit order has no price.
     pub fn fill_limit_order(&mut self, order: &mut OrderAny) {
         if matches!(order.order_type(), OrderType::Limit) {
             self.fill_market_order(order);
@@ -919,6 +934,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a market order command is missing.
     pub fn fill_market_order(&mut self, order: &mut OrderAny) {
         // Fetch command
         let mut command = match self
