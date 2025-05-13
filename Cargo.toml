@@ -70,7 +70,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.48.0" }
 
 ahash = "0.8.12"
 anyhow = "1.0.98"
-arrow = "55.0.0"  # Keep major version in line with datafusion
+arrow = "55.1.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
@@ -89,7 +89,7 @@ itertools = "0.14.0"
 itoa = "1.0.15"
 log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 memchr = "2.7.4"
-parquet = "55.0.0"  # Keep major version in line with datafusion
+parquet = "55.1.0"  # Keep major version in line with datafusion
 pyo3 = { version = "0.24.2", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.1"
