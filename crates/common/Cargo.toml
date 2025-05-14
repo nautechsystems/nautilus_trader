@@ -77,6 +77,8 @@ sysinfo = "0.35.1"
 proptest = { workspace = true }
 tempfile = { workspace = true }
 criterion = {workspace = true}
+rand.workspace = true
+regex = "1.11.1"
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
@@ -84,4 +86,9 @@ cbindgen = { workspace = true, optional = true }
 [[bench]]
 name = "cache_orders"
 path = "benches/cache/orders.rs"
+harness = false
+
+[[bench]]
+name = "matching"
+path = "benches/matching.rs"
 harness = false

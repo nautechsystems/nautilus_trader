@@ -182,7 +182,7 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
     // Find existing patterns which match this topic
     let mut matches = Vec::new();
     for (pattern, subs) in msgbus_ref_mut.patterns.iter_mut() {
-        if is_matching(&Ustr::from(topic.as_ref()), pattern) {
+        if is_matching_backtracking(&Ustr::from(topic.as_ref()), pattern) {
             subs.push(sub.clone());
             subs.sort();
             // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -465,7 +465,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(sub.clone())
             } else {
                 None
@@ -511,7 +511,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(&sub.handler)
             } else {
                 None
@@ -591,6 +591,61 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     });
 
     table[n][m]
+}
+
+/// Match a topic and a string pattern using iterative backtracking algorithm
+/// pattern can contains -
+/// '*' - match 0 or more characters after this
+/// '?' - match any character once
+/// 'a-z' - match the specific character
+#[must_use]
+pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
+    let topic_bytes = topic.as_bytes();
+    let pattern_bytes = pattern.as_bytes();
+
+    // Stack to store states for backtracking (topic_idx, pattern_idx)
+    let mut stack = vec![(0, 0)];
+
+    while let Some((mut i, mut j)) = stack.pop() {
+        loop {
+            // Found a match if we've consumed both strings
+            if i == topic.len() && j == pattern.len() {
+                return true;
+            }
+
+            // If we've reached the end of the pattern, break to try other paths
+            if j == pattern.len() {
+                break;
+            }
+
+            // Handle '*' wildcard
+            if pattern_bytes[j] == b'*' {
+                // Try skipping '*' entirely first
+                stack.push((i, j + 1));
+
+                // Continue with matching current character and keeping '*'
+                if i < topic.len() {
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            // Handle '?' or exact character match
+            else if i < topic.len()
+                && (pattern_bytes[j] == b'?' || topic_bytes[i] == pattern_bytes[j])
+            {
+                // Continue matching linearly without stack operations
+                i += 1;
+                j += 1;
+                continue;
+            }
+
+            // No match found in current path
+            break;
+        }
+    }
+
+    false
 }
 
 impl Default for MessageBus {
