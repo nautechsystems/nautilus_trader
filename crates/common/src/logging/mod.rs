@@ -51,6 +51,7 @@ static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
+
 /// Returns whether the core logger is enabled.
 pub fn logging_is_initialized() -> bool {
     LOGGING_INITIALIZED.load(Ordering::Relaxed)
