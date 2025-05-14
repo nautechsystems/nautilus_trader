@@ -4013,6 +4013,7 @@ dependencies = [
  "proptest",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.9.1",
  "regex",
  "rstest",
  "rust_decimal",
