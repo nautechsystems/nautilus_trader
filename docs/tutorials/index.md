@@ -5,15 +5,13 @@ Each tutorial targets specific features or workflows, enabling hands-on learning
 From basic tasks to more advanced operations, these tutorials cater to a wide range of skill levels.
 
 :::info
-Each tutorial is generated from a Jupyter notebook located in the docs [tutorials directory](https://github.com/nautechsystems/nautilus_trader/tree/develop/docs/tutorials).
-These notebooks not only serve as valuable learning aids but also lets you to execute the code.
+Each tutorial is generated from a Jupyter notebook located in the docs [tutorials directory](https://github.com/nautechsystems/nautilus_trader/tree/develop/docs/tutorials). These notebooks serve as valuable learning aids and let you execute the code interactively.
 :::
 
 :::tip
-Make sure you are following the tutorial docs which match the version of NautilusTrader you are running:
-
-- **Latest**: These docs are built from the HEAD of the `master` branch and work with the latest stable release.
-- **Nightly**: These docs are built from the HEAD of the `nightly` branch and work with bleeding edge and experimental changes/features currently in development.
+- Make sure you are using the tutorial docs that match your NautilusTrader version:
+- **Latest**: These docs are built from the HEAD of the `master` branch and work with the latest stable release. See https://nautilustrader.io/docs/latest/tutorials/.
+- **Nightly**: These docs are built from the HEAD of the `nightly` branch and work with bleeding-edge and experimental features. See https://nautilustrader.io/docs/nightly/tutorials/.
 
 :::
 
@@ -27,10 +25,10 @@ deleted when the container is deleted.
   - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions
 - From a terminal, download the latest image
   - `docker pull ghcr.io/nautechsystems/jupyterlab:nightly --platform linux/amd64`
-- Run the docker container, exposing the jupyter port:
+- Run the docker container, exposing the Jupyter port:
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
-- Open your web browser to `localhost:{port}`
-  - <http://localhost:8888>
+- When the container starts, a URL with an access token will be printed in the terminal. Copy that URL and open it in your browser, for example:
+  - http://localhost:8888
 
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
