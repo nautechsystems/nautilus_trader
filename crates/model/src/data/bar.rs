@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
-    num::NonZeroUsize,
+    num::{NonZero, NonZeroUsize},
     str::FromStr,
 };
 
@@ -39,6 +39,107 @@ use crate::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     types::{Price, Quantity, fixed::FIXED_SIZE_BINARY},
+};
+
+pub const BAR_SPEC_1_SECOND_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Second,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_5_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(5).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_15_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(15).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_30_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(30).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_2_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(2).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_4_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(4).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_6_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(6).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_12_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(12).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_2_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(2).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_5_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(5).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_WEEK_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Week,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_6_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(6).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_12_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(12).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
 };
 
 /// Returns the bar interval as a `TimeDelta`.
