@@ -32,10 +32,19 @@ The Binance adapter supports the following product types:
 - Coin-Margined Futures
 
 :::note
-Margin accounts are not fully supported at this time due to limited developer testing.
-Contributions via [GitHub issue](https://github.com/nautechsystems/nautilus_trader/issues) reports
-or pull requests to enhance margin account functionality are encouraged.
+Margin trading (cross & isolated) is not implemented at this time.
+Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
+or pull requests to add margin trading functionality are welcome.
 :::
+
+### Product Support Matrix
+
+| Product Type                             | Supported | Notes                               |
+|------------------------------------------|-----------|-------------------------------------|
+| Spot Markets (incl. Binance US)          | ✓         |                                     |
+| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
+| USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
+| Coin-Margined Futures                    | ✓         |                                     |
 
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Binance adapter includes multiple components, which can be used together or separately depending
