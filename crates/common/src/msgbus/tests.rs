@@ -219,6 +219,10 @@ fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected
         is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
         expected
     );
+    assert_eq!(
+        is_matching_backtracking(&Ustr::from(topic), &Ustr::from(pattern)),
+        expected
+    );
 }
 
 fn convert_pattern_to_regex(pattern: &str) -> String {

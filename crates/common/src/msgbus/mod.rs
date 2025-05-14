@@ -182,7 +182,7 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
     // Find existing patterns which match this topic
     let mut matches = Vec::new();
     for (pattern, subs) in msgbus_ref_mut.patterns.iter_mut() {
-        if is_matching(&Ustr::from(topic.as_ref()), pattern) {
+        if is_matching_backtracking(&Ustr::from(topic.as_ref()), pattern) {
             subs.push(sub.clone());
             subs.sort();
             // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -465,7 +465,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(sub.clone())
             } else {
                 None
@@ -511,7 +511,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(&sub.handler)
             } else {
                 None
