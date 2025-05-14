@@ -27,3 +27,9 @@ pub mod trade_id;
 pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
+
+/// FFI wrapper for interned string statistics.
+#[unsafe(no_mangle)]
+pub extern "C" fn interned_string_stats() {
+    crate::identifiers::interned_string_stats();
+}

@@ -27,6 +27,7 @@ use nautilus_core::{
         string::{cstr_as_str, str_to_cstr},
     },
 };
+#[cfg(feature = "python")]
 use pyo3::{ffi, prelude::*};
 
 use super::timer::TimeEventHandler;
@@ -81,6 +82,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 /// # Panics
 ///
 /// Panics if the `callback_ptr` is null or represents the Python `None` object.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_register_default_handler(
     clock: &mut TestClock_API,
@@ -141,6 +143,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 /// # Panics
 ///
 /// Panics if `callback_ptr` is null or if setting the timer fails.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_time_alert(
     clock: &mut TestClock_API,
@@ -174,6 +177,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 /// # Panics
 ///
 /// Panics if `callback_ptr` is null or represents the Python `None` object.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_clock_set_timer(
     clock: &mut TestClock_API,
@@ -314,6 +318,7 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 /// # Panics
 ///
 /// Panics if `callback_ptr` is null or represents the Python `None` object.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_register_default_handler(
     clock: &mut LiveClock_API,
@@ -371,6 +376,7 @@ pub extern "C" fn live_clock_timer_count(clock: &mut LiveClock_API) -> usize {
 /// This function panics if:
 /// - `name` is not a valid string.
 /// - `callback_ptr` is NULL and no default callback has been assigned on the clock.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_time_alert(
     clock: &mut LiveClock_API,
@@ -406,6 +412,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 /// This function panics if:
 /// - `name` is not a valid string.
 /// - `callback_ptr` is NULL and no default callback has been assigned on the clock.
+#[cfg(feature = "python")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn live_clock_set_timer(
     clock: &mut LiveClock_API,

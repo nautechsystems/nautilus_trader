@@ -51,55 +51,40 @@ static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
 static LOGGING_COLORED: AtomicBool = AtomicBool::new(true);
-
 /// Returns whether the core logger is enabled.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_is_initialized() -> u8 {
-    u8::from(LOGGING_INITIALIZED.load(Ordering::Relaxed))
+pub fn logging_is_initialized() -> bool {
+    LOGGING_INITIALIZED.load(Ordering::Relaxed)
 }
 
 /// Sets the logging system to bypass mode.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_set_bypass() {
+pub fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
 /// Shuts down the logging system.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_shutdown() {
+pub fn logging_shutdown() {
     // Flush any buffered logs and mark logging as uninitialized
     log::logger().flush();
     LOGGING_INITIALIZED.store(false, Ordering::Relaxed);
 }
 
 /// Returns whether the core logger is using ANSI colors.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_is_colored() -> u8 {
-    u8::from(LOGGING_COLORED.load(Ordering::Relaxed))
+pub fn logging_is_colored() -> bool {
+    LOGGING_COLORED.load(Ordering::Relaxed)
 }
 
 /// Sets the global logging clock to real-time mode.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_clock_set_realtime_mode() {
+pub fn logging_clock_set_realtime_mode() {
     LOGGING_REALTIME.store(true, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock to static mode.
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_clock_set_static_mode() {
+pub fn logging_clock_set_static_mode() {
     LOGGING_REALTIME.store(false, Ordering::Relaxed);
 }
 
 /// Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
+pub fn logging_clock_set_static_time(time_ns: u64) {
     let clock = get_atomic_clock_static();
     clock.set_time(time_ns.into());
 }

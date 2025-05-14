@@ -300,41 +300,6 @@ typedef struct TimeEventHandler_t {
     char *callback_ptr;
 } TimeEventHandler_t;
 
-/**
- * Returns whether the core logger is enabled.
- */
-uint8_t logging_is_initialized(void);
-
-/**
- * Sets the logging system to bypass mode.
- */
-void logging_set_bypass(void);
-
-/**
- * Shuts down the logging system.
- */
-void logging_shutdown(void);
-
-/**
- * Returns whether the core logger is using ANSI colors.
- */
-uint8_t logging_is_colored(void);
-
-/**
- * Sets the global logging clock to real-time mode.
- */
-void logging_clock_set_realtime_mode(void);
-
-/**
- * Sets the global logging clock to static mode.
- */
-void logging_clock_set_static_mode(void);
-
-/**
- * Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
- */
-void logging_clock_set_static_time(uint64_t time_ns);
-
 struct TestClock_API test_clock_new(void);
 
 void test_clock_drop(struct TestClock_API clock);
@@ -653,6 +618,20 @@ void logger_flush(void);
  * Flushes global logger buffers of any records and then drops the logger.
  */
 void logger_drop(struct LogGuard_API log_guard);
+
+uint8_t logging_is_initialized(void);
+
+void logging_set_bypass(void);
+
+void logging_shutdown(void);
+
+uint8_t logging_is_colored(void);
+
+void logging_clock_set_realtime_mode(void);
+
+void logging_clock_set_static_mode(void);
+
+void logging_clock_set_static_time(uint64_t time_ns);
 
 /**
  * # Safety
