@@ -232,14 +232,14 @@ impl InstrumentStatus {
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
+        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
