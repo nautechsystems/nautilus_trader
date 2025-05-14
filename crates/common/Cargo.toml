@@ -77,7 +77,7 @@ sysinfo = "0.35.1"
 proptest = { workspace = true }
 tempfile = { workspace = true }
 criterion = {workspace = true}
-rand.workspace = true
+rand = { workspace = true }
 regex = "1.11.1"
 
 [build-dependencies]

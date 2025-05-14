@@ -26,12 +26,14 @@ None
 - Improved validations for `TrailingStopMarketOrder` in Rust (#2607), thanks @nicolad
 - Improved orders initialize and display tests in Rust (#2617), thanks @nicolad
 - Improved testing for Rust orders module (#2578), thanks @dakshbtc
-- Improved AMA (Adaptive Moving Average) indicator parity with Cython (#2626), thanks @nicolad
+- Improved Cython-Rust indicator parity for `AdaptiveMovingAverage` (AMA) (#2626), thanks @nicolad
+- Improved Cython-Rust indicator parity for `DoubleExponentialMovingAverage` (DEMA) (#2633), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved exception on deserializing order from cache database
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
+- Optimized message bus topic-matching logic in Rust by 100× (#2634), thanks @twitu
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `databento` crate to v0.25.0
 - Upgraded `redis` crate to v0.31.0
