@@ -72,13 +72,13 @@ pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
 /// Converts nanoseconds (ns) to milliseconds (ms).
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
-pub extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
+pub const extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     crate::datetime::nanos_to_millis(nanos)
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
 #[cfg(feature = "ffi")]
 #[unsafe(no_mangle)]
-pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
+pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     crate::datetime::nanos_to_micros(nanos)
 }

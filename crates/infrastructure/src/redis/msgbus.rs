@@ -91,7 +91,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     /// Returns an error if:
     /// - The database configuration is missing in `config`.
     /// - Establishing the Redis connection for publishing fails.
-    ///
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,

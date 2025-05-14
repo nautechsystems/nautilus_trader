@@ -46,6 +46,7 @@ pub const WEEKDAYS: [Weekday; 5] = [
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
 pub fn secs_to_nanos(secs: f64) -> u64 {
     let nanos = secs * NANOSECONDS_IN_SECOND as f64;
     nanos.max(0.0).trunc() as u64
@@ -56,6 +57,7 @@ pub fn secs_to_nanos(secs: f64) -> u64 {
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
 pub fn secs_to_millis(secs: f64) -> u64 {
     let millis = secs * MILLISECONDS_IN_SECOND as f64;
     millis.max(0.0).trunc() as u64
@@ -66,6 +68,7 @@ pub fn secs_to_millis(secs: f64) -> u64 {
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
 pub fn millis_to_nanos(millis: f64) -> u64 {
     let nanos = millis * NANOSECONDS_IN_MILLISECOND as f64;
     nanos.max(0.0).trunc() as u64
@@ -76,6 +79,7 @@ pub fn millis_to_nanos(millis: f64) -> u64 {
 /// Casting f64 to u64 by truncating the fractional part is intentional for unit conversion,
 /// which may lose precision and drop negative values after clamping.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[must_use]
 pub fn micros_to_nanos(micros: f64) -> u64 {
     let nanos = micros * NANOSECONDS_IN_MICROSECOND as f64;
     nanos.max(0.0).trunc() as u64
@@ -86,6 +90,7 @@ pub fn micros_to_nanos(micros: f64) -> u64 {
 /// Casting u64 to f64 may lose precision for large values,
 /// but is acceptable when computing fractional seconds.
 #[allow(clippy::cast_precision_loss)]
+#[must_use]
 pub fn nanos_to_secs(nanos: u64) -> f64 {
     let seconds = nanos / NANOSECONDS_IN_SECOND;
     let rem_nanos = nanos % NANOSECONDS_IN_SECOND;
@@ -93,11 +98,13 @@ pub fn nanos_to_secs(nanos: u64) -> f64 {
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
+#[must_use]
 pub const fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
+#[must_use]
 pub const fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
