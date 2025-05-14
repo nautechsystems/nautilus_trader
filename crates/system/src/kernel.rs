@@ -25,7 +25,7 @@ use nautilus_common::{
     enums::Environment,
     msgbus::{MessageBus, set_message_bus},
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
@@ -42,31 +42,31 @@ pub struct NautilusKernel {
     pub name: Ustr,
     /// The unique instance identifier for this kernel.
     pub instance_id: UUID4,
+    /// The machine identifier (hostname or similar).
+    pub machine_id: String,
     /// The kernel configuration.
     pub config: NautilusKernelConfig,
-    /// The data engine instance.
-    pub data_engine: DataEngine,
-    /// The execution engine instance.
-    pub exec_engine: ExecutionEngine,
     /// The shared in-memory cache.
     pub cache: Rc<RefCell<Cache>>,
     /// The clock driving the kernel.
     pub clock: Rc<RefCell<dyn Clock>>,
-    /// The machine identifier (hostname or similar).
-    pub machine_id: String,
-    /// The timestamp (ns) when the kernel was created.
-    pub ts_created: u64,
-    /// The timestamp (ns) when the kernel was last started.
-    pub ts_started: Option<u64>,
-    /// The timestamp (ns) when the kernel was last shutdown.
-    pub ts_shutdown: Option<u64>,
+    /// The data engine instance.
+    pub data_engine: DataEngine,
+    /// The execution engine instance.
+    pub exec_engine: ExecutionEngine,
+    /// The UNIX timestamp (nanoseconds) when the kernel was created.
+    pub ts_created: UnixNanos,
+    /// The UNIX timestamp (nanoseconds) when the kernel was last started.
+    pub ts_started: Option<UnixNanos>,
+    /// The UNIX timestamp (nanoseconds) when the kernel was last shutdown.
+    pub ts_shutdown: Option<UnixNanos>,
 }
 
 impl NautilusKernel {
     #[must_use]
     pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
         let instance_id = config.instance_id.unwrap_or_default();
-        let clock = Self::initialize_clock(&config.environment);
+        let machine_id = String::new(); // TODO: Implement
 
         let msgbus = MessageBus::new(
             config.trader_id,
@@ -76,26 +76,65 @@ impl NautilusKernel {
         );
         set_message_bus(Rc::new(RefCell::new(msgbus)));
 
+        let clock = Self::initialize_clock(&config.environment);
         let cache = Self::initialize_cache(config.trader_id, &instance_id, config.cache.clone());
+
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine.clone());
         let exec_engine =
             ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine.clone());
-        let machine_id = String::new();
-        let ts_created = clock.borrow().timestamp_ns().as_u64();
+
+        let ts_created = clock.borrow().timestamp_ns();
 
         Self {
             name,
             instance_id,
+            machine_id,
             config,
-            data_engine,
-            exec_engine,
             cache,
             clock,
-            machine_id,
+            data_engine,
+            exec_engine,
             ts_created,
             ts_started: None,
             ts_shutdown: None,
         }
+    }
+
+    /// Initialize the shared clock based on the environment.
+    ///
+    /// Uses a `TestClock` for backtest, or `LiveClock` for live/sandbox.
+    fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
+        match environment {
+            Environment::Backtest => {
+                let test_clock = TestClock::new();
+                Rc::new(RefCell::new(test_clock))
+            }
+            Environment::Live | Environment::Sandbox => {
+                let live_clock = LiveClock::new();
+                Rc::new(RefCell::new(live_clock))
+            }
+        }
+    }
+
+    /// Initialize the shared cache.
+    ///
+    /// Returns an in-memory cache with optional database adapter.
+    fn initialize_cache(
+        trader_id: TraderId,
+        instance_id: &UUID4,
+        cache_config: Option<CacheConfig>,
+    ) -> Rc<RefCell<Cache>> {
+        let cache_config = cache_config.unwrap_or_default();
+
+        // TODO: Placeholder: persistent database adapter can be initialized here (e.g., Redis)
+        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> = None;
+
+        let cache = Cache::new(Some(cache_config), cache_database);
+        Rc::new(RefCell::new(cache))
+    }
+
+    fn generate_timestamp_ns(&self) -> UnixNanos {
+        self.clock.borrow().timestamp_ns()
     }
 
     /// Return the kernel's environment context (Backtest, Sandbox, Live).
@@ -130,19 +169,19 @@ impl NautilusKernel {
 
     /// Return the UNIX timestamp (ns) when the kernel was created.
     #[must_use]
-    pub const fn ts_created(&self) -> u64 {
+    pub const fn ts_created(&self) -> UnixNanos {
         self.ts_created
     }
 
     /// Return the UNIX timestamp (ns) when the kernel was last started.
     #[must_use]
-    pub const fn ts_started(&self) -> Option<u64> {
+    pub const fn ts_started(&self) -> Option<UnixNanos> {
         self.ts_started
     }
 
     /// Return the UNIX timestamp (ns) when the kernel was last shutdown.
     #[must_use]
-    pub const fn ts_shutdown(&self) -> Option<u64> {
+    pub const fn ts_shutdown(&self) -> Option<UnixNanos> {
         self.ts_shutdown
     }
 
@@ -182,47 +221,14 @@ impl NautilusKernel {
         &self.exec_engine
     }
 
-    /// Initialize the shared clock based on the environment.
-    ///
-    /// Uses a `TestClock` for backtest, or `LiveClock` for live/sandbox.
-    fn initialize_clock(environment: &Environment) -> Rc<RefCell<dyn Clock>> {
-        match environment {
-            Environment::Backtest => {
-                let test_clock = TestClock::new();
-                Rc::new(RefCell::new(test_clock))
-            }
-            Environment::Live | Environment::Sandbox => {
-                let live_clock = LiveClock::new();
-                Rc::new(RefCell::new(live_clock))
-            }
-        }
-    }
-
-    /// Initialize the shared cache.
-    ///
-    /// Returns an in-memory cache with optional database adapter.
-    fn initialize_cache(
-        trader_id: TraderId,
-        instance_id: &UUID4,
-        cache_config: Option<CacheConfig>,
-    ) -> Rc<RefCell<Cache>> {
-        let cache_config = cache_config.unwrap_or_default();
-
-        // TODO: Placeholder: persistent database adapter can be initialized here (e.g., Redis)
-        let cache_database: Option<Box<dyn CacheDatabaseAdapter>> = None;
-
-        let cache = Cache::new(Some(cache_config), cache_database);
-        Rc::new(RefCell::new(cache))
-    }
-
     /// Start the Nautilus system kernel.
-    fn start(&self) {
+    pub fn start(&self) {
         self.start_engines();
         self.connect_clients();
     }
 
     /// Stop the Nautilus system kernel.
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.stop_clients();
         self.disconnect_clients();
         self.stop_engines();
@@ -231,7 +237,7 @@ impl NautilusKernel {
     }
 
     /// Dispose of the Nautilus system kernel, releasing resources.
-    fn dispose(&self) {
+    pub fn dispose(&self) {
         self.stop_engines();
 
         self.data_engine.dispose();
