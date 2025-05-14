@@ -21,7 +21,7 @@ use rstest::rstest;
 use ustr::Ustr;
 
 use crate::msgbus::{
-    self, MessageBus, get_message_bus, is_matching,
+    self, MessageBus, get_message_bus, is_matching, is_matching_backtracking,
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
     },
@@ -272,7 +272,7 @@ fn generate_pattern_from_topic(topic: &str, rng: &mut StdRng) -> String {
 }
 
 #[rstest]
-fn test_generate_pattern_from_topic() {
+fn test_matching_with_regex() {
     let topic = "data.quotes.BINANCE.ETHUSDT";
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -282,6 +282,27 @@ fn test_generate_pattern_from_topic() {
         let regex = Regex::new(&regex_pattern).unwrap();
         assert_eq!(
             is_matching(&Ustr::from(topic), &Ustr::from(&pattern)),
+            regex.is_match(topic),
+            "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
+            i,
+            pattern,
+            topic,
+            regex_pattern
+        );
+    }
+}
+
+#[rstest]
+fn test_matching_backtracking() {
+    let topic = "data.quotes.BINANCE.ETHUSDT";
+    let mut rng = StdRng::seed_from_u64(42);
+
+    for i in 0..1000 {
+        let pattern = generate_pattern_from_topic(topic, &mut rng);
+        let regex_pattern = convert_pattern_to_regex(&pattern);
+        let regex = Regex::new(&regex_pattern).unwrap();
+        assert_eq!(
+            is_matching_backtracking(&Ustr::from(topic), &Ustr::from(&pattern)),
             regex.is_match(topic),
             "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
             i,

@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use nautilus_common::msgbus::is_matching;
+use nautilus_common::msgbus::{is_matching, is_matching_backtracking};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use regex::Regex;
 use ustr::Ustr;
@@ -80,6 +80,25 @@ fn bench_matching(c: &mut Criterion) {
         }
 
         regex_group.finish();
+    }
+
+    {
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut iter_group = c.benchmark_group("Iterative backtracking matching");
+
+        for ele in [1, 10, 100, 1000] {
+            let topics = create_topics(ele, &mut rng);
+
+            iter_group.bench_function(format!("{} topics", ele), |b| {
+                b.iter(|| {
+                    for topic in topics.iter() {
+                        black_box(is_matching_backtracking(&pattern_ustr, topic));
+                    }
+                });
+            });
+        }
+
+        iter_group.finish();
     }
 }
 
