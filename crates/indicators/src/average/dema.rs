@@ -146,8 +146,10 @@ impl MovingAverage for DoubleExponentialMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::{Bar, QuoteTick, TradeTick};
-    use nautilus_model::enums::PriceType;
+    use nautilus_model::{
+        data::{Bar, QuoteTick, TradeTick},
+        enums::PriceType,
+    };
     use rstest::rstest;
 
     use crate::{
