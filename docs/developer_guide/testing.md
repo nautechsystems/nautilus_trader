@@ -19,6 +19,7 @@ Alternatively, run:
 ```bash
 pytest
 ```
+
 from the repository root to discover and execute all tests.
 
 ## Mocks

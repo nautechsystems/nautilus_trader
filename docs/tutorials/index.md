@@ -9,9 +9,10 @@ Each tutorial is generated from a Jupyter notebook located in the docs [tutorial
 :::
 
 :::tip
+
 - Make sure you are using the tutorial docs that match your NautilusTrader version:
-- **Latest**: These docs are built from the HEAD of the `master` branch and work with the latest stable release. See https://nautilustrader.io/docs/latest/tutorials/.
-- **Nightly**: These docs are built from the HEAD of the `nightly` branch and work with bleeding-edge and experimental features. See https://nautilustrader.io/docs/nightly/tutorials/.
+- **Latest**: These docs are built from the HEAD of the `master` branch and work with the latest stable release. See <https://nautilustrader.io/docs/latest/tutorials/>.
+- **Nightly**: These docs are built from the HEAD of the `nightly` branch and work with bleeding-edge and experimental features. See <https://nautilustrader.io/docs/nightly/tutorials/>.
 
 :::
 
@@ -28,7 +29,7 @@ deleted when the container is deleted.
 - Run the docker container, exposing the Jupyter port:
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
 - When the container starts, a URL with an access token will be printed in the terminal. Copy that URL and open it in your browser, for example:
-  - http://localhost:8888
+  - <http://localhost:8888>
 
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
