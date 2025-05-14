@@ -11,16 +11,16 @@ execution with Bybit.
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `bybit` dependencies using pip:
+To install NautilusTrader with Bybit support:
 
-```
-pip install -U "nautilus_trader[bybit]"
+```bash
+pip install --upgrade "nautilus_trader[bybit]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Bybit):
 
-```
-uv sync --extra bybit
+```bash
+uv sync --all-extras
 ```
 
 ## Examples

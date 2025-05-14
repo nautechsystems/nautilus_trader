@@ -7,16 +7,16 @@ execution with Binance.
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `binance` dependencies using pip:
+To install NautilusTrader with Binance support:
 
-```
-pip install -U "nautilus_trader[binance]"
+```bash
+pip install --upgrade "nautilus_trader[binance]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Binance):
 
-```
-uv sync --extra binance
+```bash
+uv sync --all-extras
 ```
 
 ## Examples
@@ -25,10 +25,10 @@ You can find functional live example scripts [here](https://github.com/nautechsy
 
 ## Overview
 
-The Binance integration supports the following product types:
+The Binance adapter supports the following product types:
 
 - Spot markets (including Binance US)
-- USDT-Margined Futures
+- USDT-Margined Futures (perpetual and delivery)
 - Coin-Margined Futures
 
 :::note

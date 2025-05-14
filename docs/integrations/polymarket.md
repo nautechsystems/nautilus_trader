@@ -13,16 +13,16 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `polymarket` dependencies using pip:
+To install NautilusTrader with Polymarket support:
 
-```
-pip install -U "nautilus_trader[polymarket]"
+```bash
+pip install --upgrade "nautilus_trader[polymarket]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Polymarket):
 
-```
-uv sync --extra polymarket
+```bash
+uv sync --all-extras
 ```
 
 ## Examples
