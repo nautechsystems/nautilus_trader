@@ -686,7 +686,7 @@ mod serial_tests {
         let stream_signal_clone = stream_signal.clone();
 
         // Use a message ID in the future, as streaming begins
-        // around the timestamp the thread is spawned.
+        // around the timestamp the task is spawned.
         let clock = get_atomic_clock_realtime();
         let future_id = (clock.get_time_ms() + 1_000_000).to_string();
 
