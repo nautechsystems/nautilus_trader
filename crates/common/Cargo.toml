@@ -87,3 +87,8 @@ cbindgen = { workspace = true, optional = true }
 name = "cache_orders"
 path = "benches/cache/orders.rs"
 harness = false
+
+[[bench]]
+name = "matching"
+path = "benches/matching.rs"
+harness = false
