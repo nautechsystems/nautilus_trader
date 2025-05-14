@@ -49,7 +49,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// # Errors
     ///
     /// Returns serialization errors.
-    fn as_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
+    fn to_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
 
@@ -58,7 +58,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// # Errors
     ///
     /// Returns serialization errors.
-    fn as_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
+    fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self).map(Bytes::from)
     }
 }

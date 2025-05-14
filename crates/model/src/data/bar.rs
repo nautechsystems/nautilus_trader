@@ -1314,7 +1314,7 @@ mod tests {
     #[rstest]
     fn test_json_serialization() {
         let bar = Bar::default();
-        let serialized = bar.as_json_bytes().unwrap();
+        let serialized = bar.to_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, bar);
     }
@@ -1322,7 +1322,7 @@ mod tests {
     #[rstest]
     fn test_msgpack_serialization() {
         let bar = Bar::default();
-        let serialized = bar.as_msgpack_bytes().unwrap();
+        let serialized = bar.to_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, bar);
     }
