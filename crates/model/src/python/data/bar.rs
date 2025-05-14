@@ -385,22 +385,22 @@ impl Bar {
     }
 
     /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.
-    #[pyo3(name = "as_json")]
-    fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+    #[pyo3(name = "to_json_bytes")]
+    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    #[pyo3(name = "as_msgpack")]
-    fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+    #[pyo3(name = "to_msgpack_bytes")]
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
@@ -464,12 +464,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
+    fn test_to_dict() {
         pyo3::prepare_freethreaded_python();
         let bar = Bar::default();
 
         Python::with_gil(|py| {
-            let dict_string = bar.py_as_dict(py).unwrap().to_string();
+            let dict_string = bar.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-LAST-INTERNAL', 'open': '1.00010', 'high': '1.00020', 'low': '1.00000', 'close': '1.00010', 'volume': '100000', 'ts_event': 0, 'ts_init': 0}";
             assert_eq!(dict_string, expected_string);
         });
@@ -481,7 +481,7 @@ mod tests {
         let bar = Bar::default();
 
         Python::with_gil(|py| {
-            let dict = bar.py_as_dict(py).unwrap();
+            let dict = bar.py_to_dict(py).unwrap();
             let parsed = Bar::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, bar);
         });

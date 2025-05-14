@@ -265,22 +265,22 @@ impl OrderBookDelta {
     }
 
     /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.
-    #[pyo3(name = "as_json")]
-    fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+    #[pyo3(name = "to_json_bytes")]
+    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    #[pyo3(name = "as_msgpack")]
-    fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+    #[pyo3(name = "to_msgpack_bytes")]
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
@@ -327,12 +327,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict(stub_delta: OrderBookDelta) {
+    fn test_to_dict(stub_delta: OrderBookDelta) {
         pyo3::prepare_freethreaded_python();
         let delta = stub_delta;
 
         Python::with_gil(|py| {
-            let dict_string = delta.py_as_dict(py).unwrap().to_string();
+            let dict_string = delta.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.XNAS', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}";
             assert_eq!(dict_string, expected_string);
         });
@@ -344,7 +344,7 @@ mod tests {
         let delta = stub_delta;
 
         Python::with_gil(|py| {
-            let dict = delta.py_as_dict(py).unwrap();
+            let dict = delta.py_to_dict(py).unwrap();
             let parsed = OrderBookDelta::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, delta);
         });

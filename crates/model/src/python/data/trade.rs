@@ -327,21 +327,21 @@ impl TradeTick {
     }
 
     /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.
-    #[pyo3(name = "as_json")]
-    fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
+    #[pyo3(name = "to_json_bytes")]
+    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         // SAFETY: Unwrap safe when serializing a valid object
         self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    #[pyo3(name = "as_msgpack")]
-    fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
+    #[pyo3(name = "to_msgpack_bytes")]
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
         // SAFETY: Unwrap safe when serializing a valid object
         self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
@@ -389,12 +389,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict(stub_trade_ethusdt_buyer: TradeTick) {
+    fn test_to_dict(stub_trade_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
         let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict_string = trade.py_as_dict(py).unwrap().to_string();
+            let dict_string = trade.py_to_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
@@ -406,7 +406,7 @@ mod tests {
         let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict = trade.py_as_dict(py).unwrap();
+            let dict = trade.py_to_dict(py).unwrap();
             let parsed = TradeTick::py_from_dict(py, dict).unwrap();
             assert_eq!(parsed, trade);
         });
