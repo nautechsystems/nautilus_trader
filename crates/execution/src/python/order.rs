@@ -363,6 +363,8 @@ impl OrderStatusReport {
         self.ts_triggered.map(|t| t.as_u64())
     }
 
+    /// Creates an `OrderStatusReport` from a Python dictionary.
+    ///
     /// # Errors
     ///
     /// Returns a Python exception if conversion from dict fails.
@@ -372,6 +374,8 @@ impl OrderStatusReport {
         from_dict_pyo3(py, values)
     }
 
+    /// Converts the `OrderStatusReport` to a Python dictionary.
+    ///
     /// # Errors
     ///
     /// Returns a Python exception if conversion to dict fails.

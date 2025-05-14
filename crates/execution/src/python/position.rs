@@ -141,6 +141,8 @@ impl PositionStatusReport {
         self.is_short()
     }
 
+    /// Creates a `PositionStatusReport` from a Python dictionary.
+    ///
     /// # Errors
     ///
     /// Returns a Python exception if conversion from dict fails.
@@ -150,6 +152,8 @@ impl PositionStatusReport {
         from_dict_pyo3(py, values)
     }
 
+    /// Converts the `PositionStatusReport` to a Python dictionary.
+    ///
     /// # Errors
     ///
     /// Returns a Python exception if conversion to dict fails.

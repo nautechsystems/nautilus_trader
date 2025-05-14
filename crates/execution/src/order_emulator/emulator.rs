@@ -134,6 +134,8 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
+    /// Reactivates emulated orders from cache on start.
+    ///
     /// # Errors
     ///
     /// Returns an error if no emulated orders are found or processing fails.

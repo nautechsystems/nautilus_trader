@@ -128,6 +128,8 @@ impl ExecutionMassStatus {
         Ok(())
     }
 
+    /// Creates an `ExecutionMassStatus` from a Python dictionary.
+    ///
     /// # Errors
     ///
     /// Returns a Python exception if conversion from dict fails.
