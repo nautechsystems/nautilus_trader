@@ -178,27 +178,6 @@ cdef extern from "../includes/common.h":
         # The callable raw pointer.
         char *callback_ptr;
 
-    # Returns whether the core logger is enabled.
-    uint8_t logging_is_initialized();
-
-    # Sets the logging system to bypass mode.
-    void logging_set_bypass();
-
-    # Shuts down the logging system.
-    void logging_shutdown();
-
-    # Returns whether the core logger is using ANSI colors.
-    uint8_t logging_is_colored();
-
-    # Sets the global logging clock to real-time mode.
-    void logging_clock_set_realtime_mode();
-
-    # Sets the global logging clock to static mode.
-    void logging_clock_set_static_mode();
-
-    # Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
-    void logging_clock_set_static_time(uint64_t time_ns);
-
     TestClock_API test_clock_new();
 
     void test_clock_drop(TestClock_API clock);
@@ -475,6 +454,20 @@ cdef extern from "../includes/common.h":
 
     # Flushes global logger buffers of any records and then drops the logger.
     void logger_drop(LogGuard_API log_guard);
+
+    uint8_t logging_is_initialized();
+
+    void logging_set_bypass();
+
+    void logging_shutdown();
+
+    uint8_t logging_is_colored();
+
+    void logging_clock_set_realtime_mode();
+
+    void logging_clock_set_static_mode();
+
+    void logging_clock_set_static_time(uint64_t time_ns);
 
     # # Safety
     #

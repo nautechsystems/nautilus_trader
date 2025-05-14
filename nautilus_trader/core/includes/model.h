@@ -1868,9 +1868,10 @@ extern const PriceRaw PRICE_RAW_MIN;
  */
 extern const QuantityRaw QUANTITY_RAW_MAX;
 
+/**
+ * Clones a data instance.
+ */
 struct Data_t data_clone(const struct Data_t *data);
-
-void interned_string_stats(void);
 
 /**
  * # Panics
@@ -2595,6 +2596,11 @@ struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
                                           uint64_t ts_event,
                                           uint64_t ts_init,
                                           uint8_t reconciliation);
+
+/**
+ * FFI wrapper for interned string statistics.
+ */
+void interned_string_stats(void);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

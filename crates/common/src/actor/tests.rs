@@ -259,8 +259,8 @@ fn trader_id() -> TraderId {
 
 #[fixture]
 fn test_logging() -> Option<LogGuard> {
-    // TODO: Using u8 for now due FFI (change when Cython gone)
-    if logging_is_initialized() == 1 {
+    // Avoid reinitializing logger if already set
+    if logging_is_initialized() {
         return None;
     }
 

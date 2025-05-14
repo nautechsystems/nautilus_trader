@@ -91,9 +91,8 @@ impl_as_ref_for_identifier!(trader_id::TraderId);
 impl_as_ref_for_identifier!(venue::Venue);
 impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
 
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub extern "C" fn interned_string_stats() {
+/// Print interned string cache statistics for debugging purposes.
+pub fn interned_string_stats() {
     dbg!(ustr::total_allocated());
     dbg!(ustr::total_capacity());
 

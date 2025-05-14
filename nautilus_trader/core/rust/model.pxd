@@ -1040,9 +1040,8 @@ cdef extern from "../includes/model.h":
     # The maximum raw quantity integer value.
     extern const QuantityRaw QUANTITY_RAW_MAX;
 
+    # Clones a data instance.
     Data_t data_clone(const Data_t *data);
-
-    void interned_string_stats();
 
     # # Panics
     #
@@ -1676,6 +1675,9 @@ cdef extern from "../includes/model.h":
                                        uint64_t ts_event,
                                        uint64_t ts_init,
                                        uint8_t reconciliation);
+
+    # FFI wrapper for interned string statistics.
+    void interned_string_stats();
 
     # Returns a Nautilus identifier from a C string pointer.
     #
