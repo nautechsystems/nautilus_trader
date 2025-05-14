@@ -1,7 +1,6 @@
 # Integrations
 
-NautilusTrader is modularly designed to work with *adapters*, enabling connectivity to trading venues
-and data providers by translating their raw APIs into a unified interface and normalized domain model.
+NautilusTrader uses modular *adapters* to connect to trading venues and data providers, translating raw APIs into a unified interface and normalized domain model.
 
 The following integrations are currently supported:
 
@@ -45,15 +44,14 @@ strategies, priority will be given to *standard* functionality:
 The implementation of each integration aims to meet the following criteria:
 
 - Low-level client components should match the exchange API as closely as possible.
-- The full range of an exchanges functionality (where applicable to NautilusTrader), should *eventually* be supported.
+- The full range of an exchange's functionality (where applicable to NautilusTrader) should *eventually* be supported.
 - Exchange specific data types will be added to support the functionality and return
   types which are reasonably expected by a user.
-- Actions which are unsupported by either the exchange or NautilusTrader, will be explicitly logged as a warning or error when a user attempts to perform said action.
+- Actions unsupported by an exchange or NautilusTrader will be logged as a warning or error when invoked.
 
 ## API unification
 
-All integrations must be compatible with the NautilusTrader API at the system boundary,
-this means there is some normalization and standardization needed.
+All integrations must conform to NautilusTrader’s system API, requiring normalization and standardization:
 
-- All symbols will match the raw/native/local symbol for the exchange, unless there are conflicts (such as Binance using the same symbol for both Spot and Perpetual Futures markets).
-- All timestamps will be either normalized to UNIX nanoseconds, or clearly marked as UNIX milliseconds by appending `_ms` to param and property names.
+- Symbols should use the venue’s native symbol format unless disambiguation is required (e.g., Binance Spot vs. Binance Futures).
+- Timestamps must use UNIX epoch nanoseconds. If milliseconds are used, field/property names should explicitly end with `_ms`.
