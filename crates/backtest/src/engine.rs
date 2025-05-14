@@ -196,7 +196,6 @@ impl BacktestEngine {
     /// # Errors
     ///
     /// Returns an error if:
-    ///
     /// - The instrument's associated venue has not been added via `add_venue`.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     ///

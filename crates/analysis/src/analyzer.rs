@@ -198,7 +198,6 @@ impl PortfolioAnalyzer {
     /// # Errors
     ///
     /// Returns an error if:
-    ///
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
@@ -241,7 +240,6 @@ impl PortfolioAnalyzer {
     /// # Errors
     ///
     /// Returns an error if:
-    ///
     /// - No currency is specified in a multi-currency portfolio.
     /// - The specified currency is not found in account balances.
     /// - The unrealized PnL currency does not match the specified currency.
