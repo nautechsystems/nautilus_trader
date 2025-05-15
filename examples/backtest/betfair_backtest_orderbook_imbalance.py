@@ -19,9 +19,9 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_CLIENT_ID
-from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair import BETFAIR_CLIENT_ID
+from nautilus_trader.adapters.betfair import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance

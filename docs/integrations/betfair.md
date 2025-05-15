@@ -65,9 +65,9 @@ data and execution clients. To achieve this, add a `BETFAIR` section to your cli
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 
 ```python
-from nautilus_trader.adapters.betfair.constants import BETFAIR
-from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.adapters.betfair import BETFAIR
+from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair import BetfairLiveExecClientFactory
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 
