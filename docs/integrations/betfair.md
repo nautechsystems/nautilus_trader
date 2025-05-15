@@ -65,6 +65,7 @@ data and execution clients. To achieve this, add a `BETFAIR` section to your cli
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
 
 ```python
+from nautilus_trader.adapters.betfair.constants import BETFAIR
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.config import TradingNodeConfig
@@ -72,13 +73,13 @@ from nautilus_trader.live.node import TradingNode
 
 # Configure Betfair data and execution clients (using AUD account currency)
 config = TradingNodeConfig(
-    data_clients={"BETFAIR": {"account_currency": "AUD"}},
-    exec_clients={"BETFAIR": {"account_currency": "AUD"}},
+    data_clients={BETFAIR: {"account_currency": "AUD"}},
+    exec_clients={BETFAIR: {"account_currency": "AUD"}},
 )
 
 # Build the TradingNode with Betfair adapter factories
 node = TradingNode(config)
-node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
+node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
+node.add_exec_client_factory(BETFAIR, BetfairLiveExecClientFactory)
 node.build()
 ```
