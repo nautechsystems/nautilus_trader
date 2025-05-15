@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provides an API integration adapter for the Binance Crypto exchange.
+Binance cryptocurreny exchange integration adapter.
 
 This subpackage provides an instrument provider, data and execution clients,
-configuration types, and constants for connecting to and interacting with Binance's API.
+configurations, data types and constants for connecting to and interacting with
+Binance's API.
 
-This module offers convenient re-exports of the most commonly used components for ease
-of use in downstream code.
+For convenience, the most commonly used symbols are re-exported at the
+subpackage's top level, so downstream code can simply import from
+``nautilus_trader.adapters.binance``.
 
 """
 import pyarrow as pa
@@ -34,7 +36,10 @@ from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
@@ -75,8 +80,11 @@ __all__ = [
     "BinanceAccountType",
     "BinanceDataClientConfig",
     "BinanceExecClientConfig",
+    "BinanceFuturesInstrumentProvider",
     "BinanceFuturesMarkPriceUpdate",
     "BinanceLiveDataClientFactory",
     "BinanceLiveExecClientFactory",
+    "BinanceOrderBookDeltaDataLoader",
+    "BinanceSpotInstrumentProvider",
     "get_cached_binance_http_client",
 ]
