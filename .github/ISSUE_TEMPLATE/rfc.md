@@ -1,6 +1,6 @@
 ---
 name: RFC (Request for Comments)
-about: Propose change or idea for discussion
+about: Propose a change or idea for discussion
 labels:
 - RFC
 ---
