@@ -16,9 +16,6 @@
 from typing import Any
 from typing import Callable
 
-from nautilus_trader.adapters.binance.common.types import BinanceBar
-from nautilus_trader.adapters.binance.common.types import BinanceTicker
-
 from nautilus_trader.common.messages cimport ComponentStateChanged
 from nautilus_trader.common.messages cimport ShutdownSystem
 from nautilus_trader.common.messages cimport TradingStateChanged
@@ -118,8 +115,6 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Bar.__name__: Bar.to_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.to_dict_c,
     InstrumentClose.__name__: InstrumentClose.to_dict_c,
-    BinanceBar.__name__: BinanceBar.to_dict,
-    BinanceTicker.__name__: BinanceTicker.to_dict,
 }
 
 
@@ -172,8 +167,6 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Bar.__name__: Bar.from_dict_c,
     InstrumentStatus.__name__: InstrumentStatus.from_dict_c,
     InstrumentClose.__name__: InstrumentClose.from_dict_c,
-    BinanceBar.__name__: BinanceBar.from_dict,
-    BinanceTicker.__name__: BinanceTicker.from_dict,
 }
 
 
@@ -226,8 +219,6 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     Bar,
     InstrumentStatus,
     InstrumentClose,
-    BinanceBar,
-    BinanceTicker,
 }
 
 
