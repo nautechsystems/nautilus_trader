@@ -20,3 +20,8 @@ Base classes are defined which can allow for other serialization implementations
 the built-in specification serializers.
 
 """
+
+from nautilus_trader.serialization.base import register_serializable_type
+
+
+__all__ = ["register_serializable_type"]
