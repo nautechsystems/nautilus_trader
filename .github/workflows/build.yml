@@ -436,7 +436,17 @@ jobs:
           cleanup-local-dist: "false"
 
       - name: List local wheels
-        run: ls -1 dist/*.whl
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Safely list wheel files; only regular files, no directories
+          if [[ -d dist ]]; then
+            echo "Found dist directory, listing wheel files:"
+            find dist -type f -name '*.whl'
+          else
+            echo "No dist directory found"
+          fi
 
       - name: Upload wheels to GitHub release
         run: |
@@ -547,6 +557,15 @@ jobs:
         with:
           python-version: "3.13"
           free-disk-space: "true"
+
+      - name: Clean existing dist directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Cleaning existing dist/ directory"
+          rm -rf dist
+          mkdir -p dist
 
       - name: Build sdist
         run: |
