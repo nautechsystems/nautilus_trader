@@ -1,9 +1,9 @@
 # Adapters
 
 The NautilusTrader design integrates data providers and/or trading venues
-through adapter implementations, these can be found in the top level `adapters` subpackage.
+through adapter implementations. These can be found in the top-level `adapters` subpackage.
 
-An integrations adapter is *typically* comprised of the following main components:
+An integration adapter is *typically* comprised of the following main components:
 
 - `HttpClient`
 - `WebSocketClient`
@@ -14,7 +14,7 @@ An integrations adapter is *typically* comprised of the following main component
 ## Instrument providers
 
 Instrument providers do as their name suggests - instantiating Nautilus
-`Instrument` objects by parsing the publisher or venues raw API.
+`Instrument` objects by parsing the raw API of the publisher or venue.
 
 The use cases for the instruments available from an `InstrumentProvider` are either:
 

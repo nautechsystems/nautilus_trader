@@ -18,7 +18,7 @@ order management methods.
 
 ## Basic example
 
-Just like strategies, actors support configuration through very similar pattern.
+Just like strategies, actors support configuration through a very similar pattern.
 
 ```python
 from nautilus_trader.config import ActorConfig
@@ -87,7 +87,7 @@ Here's how different data operations map to their handlers:
 | `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |
 | `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing |
 | `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates |
-| `request_instruments()`         | Historical       | `on_historical_data()`   | Instrument definition updates |
+| `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definition updates |
 | `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing |
 | `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing |
 | `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing |
