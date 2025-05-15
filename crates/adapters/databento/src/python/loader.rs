@@ -99,9 +99,9 @@ impl DatabentoDataLoader {
             data.push(py_object);
         }
 
-        Ok(PyList::new(py, &data)
-            .expect("Invalid `ExactSizeIterator`")
-            .into())
+        let list = PyList::new(py, &data).expect("Invalid `ExactSizeIterator`");
+
+        Ok(list.into_py_any_unwrap(py))
     }
 
     // Cannot include trades

@@ -19,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::Context;
 use databento::dbn;
 use dbn::{
     Publisher,
@@ -101,7 +102,7 @@ impl DatabentoDataLoader {
 
         loader
             .load_publishers(publishers_filepath)
-            .unwrap_or_else(|e| panic!("Error loading publishers.json: {e}"));
+            .context("Error loading publishers.json")?;
 
         Ok(loader)
     }
@@ -192,42 +193,63 @@ impl DatabentoDataLoader {
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
         Ok(std::iter::from_fn(move || {
-            if let Err(e) = dbn_stream.advance() {
-                return Some(Err(e.into()));
-            }
-            match dbn_stream.get() {
-                Some(rec) => {
-                    let record = dbn::RecordRef::from(rec);
-                    let msg = record.get::<InstrumentDefMsgV1>().unwrap();
+            let result: anyhow::Result<Option<InstrumentAny>> = (|| {
+                dbn_stream
+                    .advance()
+                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
 
-                    let raw_symbol = rec.raw_symbol().expect("Error decoding `raw_symbol`");
+                if let Some(rec) = dbn_stream.get() {
+                    let record = dbn::RecordRef::from(rec);
+                    let msg = record
+                        .get::<InstrumentDefMsgV1>()
+                        .ok_or_else(|| anyhow::anyhow!("Failed to decode InstrumentDefMsgV1"))?;
+
+                    // Symbol and venue resolution
+                    let raw_symbol = rec
+                        .raw_symbol()
+                        .map_err(|e| anyhow::anyhow!("Error decoding `raw_symbol`: {e}"))?;
                     let symbol = Symbol::from(raw_symbol);
 
-                    let publisher = rec.hd.publisher().expect("Invalid `publisher` for record");
+                    let publisher = rec
+                        .hd
+                        .publisher()
+                        .map_err(|e| anyhow::anyhow!("Invalid `publisher` for record: {e}"))?;
                     let venue = match publisher {
                         Publisher::GlbxMdp3Glbx if use_exchange_as_venue => {
-                            // SAFETY: GLBX instruments have a valid `exchange` field
-                            let exchange = rec.exchange().unwrap();
-                            let venue = Venue::from_code(exchange).unwrap_or_else(|_| {
-                                panic!("`Venue` not found for exchange {exchange}")
-                            });
+                            let exchange = rec.exchange().map_err(|e| {
+                                anyhow::anyhow!("Missing `exchange` for record: {e}")
+                            })?;
+                            let venue = Venue::from_code(exchange).map_err(|e| {
+                                anyhow::anyhow!("Venue not found for exchange {exchange}: {e}")
+                            })?;
                             self.symbol_venue_map.insert(symbol, venue);
                             venue
                         }
                         _ => *self
                             .publisher_venue_map
                             .get(&msg.hd.publisher_id)
-                            .expect("`Venue` not found `publisher_id`"),
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Venue not found for publisher_id {}",
+                                    msg.hd.publisher_id
+                                )
+                            })?,
                     };
                     let instrument_id = InstrumentId::new(symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    match decode_instrument_def_msg_v1(rec, instrument_id, Some(ts_init)) {
-                        Ok(data) => Some(Ok(data)),
-                        Err(e) => Some(Err(e)),
-                    }
+                    let data = decode_instrument_def_msg_v1(rec, instrument_id, Some(ts_init))?;
+                    Ok(Some(data))
+                } else {
+                    // No more records
+                    Ok(None)
                 }
-                None => None,
+            })();
+
+            match result {
+                Ok(Some(item)) => Some(Ok(item)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             }
         }))
     }
@@ -250,35 +272,39 @@ impl DatabentoDataLoader {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
 
         Ok(std::iter::from_fn(move || {
-            if let Err(e) = dbn_stream.advance() {
-                return Some(Err(e.into()));
-            }
-            match dbn_stream.get() {
-                Some(rec) => {
+            let result: anyhow::Result<Option<(Option<Data>, Option<Data>)>> = (|| {
+                dbn_stream
+                    .advance()
+                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+                if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
-                    let instrument_id = match &instrument_id {
-                        Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                    let instrument_id = if let Some(id) = &instrument_id {
+                        *id
+                    } else {
+                        decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
-                        .expect("Failed to decode record"),
+                        .context("Failed to decode instrument id")?
                     };
-
-                    match decode_record(
+                    let (item1, item2) = decode_record(
                         &record,
                         instrument_id,
                         price_precision,
                         None,
                         include_trades,
-                    ) {
-                        Ok(data) => Some(Ok(data)),
-                        Err(e) => Some(Err(e)),
-                    }
+                    )?;
+                    Ok(Some((item1, item2)))
+                } else {
+                    Ok(None)
                 }
-                None => None,
+            })();
+            match result {
+                Ok(Some(v)) => Some(Ok(v)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             }
         }))
     }
