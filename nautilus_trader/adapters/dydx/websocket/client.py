@@ -162,8 +162,8 @@ class DYDXWebsocketClient:
         self._retry_manager_pool = RetryManagerPool[None](
             pool_size=100,
             max_retries=self._max_send_retries or 0,
-            delay_initial_ms=self._delay_initial_ms or 1_000,
-            delay_max_ms=self._delay_max_ms or 10_000,
+            delay_initial_ms=self._delay_initial_ms or 100,
+            delay_max_ms=self._delay_max_ms or 5_000,
             backoff_factor=self._backoff_factor or 2,
             logger=self._log,
             exc_types=(WebSocketClientError,),
