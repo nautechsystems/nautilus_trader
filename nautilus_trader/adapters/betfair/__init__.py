@@ -13,14 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provides an API integration adapter for the Betfair spots betting exchange.
+Betfair sports betting exchange integration adapter.
 
 This subpackage provides an instrument provider, data and execution clients,
 configurations, data types and constants for connecting to and interacting with
-Binance's API.
+Betfairs's API.
 
-This module offers convenient re-exports of the most commonly used types for ease of use
-in downstream code.
+For convenience, the most commonly used symbols are re-exported at the
+subpackage's top level, so downstream code can simply import from
+``nautilus_trader.adapters.betfair``.
 
 """
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
