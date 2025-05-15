@@ -16,11 +16,12 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
-from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
-from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BinanceAccountType
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -47,7 +48,7 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
     ),
     data_clients={
-        "BINANCE": BinanceDataClientConfig(
+        BINANCE: BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
@@ -59,7 +60,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "BINANCE": BinanceExecClientConfig(
+        BINANCE: BinanceExecClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
@@ -105,8 +106,8 @@ node.trader.add_strategy(strategy)
 node.trader.add_exec_algorithm(exec_algorithm)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
+node.add_data_client_factory(BINANCE, BinanceLiveDataClientFactory)
+node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 node.build()
 
 

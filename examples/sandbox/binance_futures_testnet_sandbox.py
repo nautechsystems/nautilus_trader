@@ -17,8 +17,10 @@
 import asyncio
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.adapters.binance import BinanceAccountType
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
@@ -77,7 +79,7 @@ async def main():
         #     heartbeat_interval_secs=1,
         # ),
         data_clients={
-            "BINANCE": BinanceDataClientConfig(
+            BINANCE: BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -89,8 +91,8 @@ async def main():
             ),
         },
         exec_clients={
-            "BINANCE": SandboxExecutionClientConfig(
-                venue="BINANCE",
+            BINANCE: SandboxExecutionClientConfig(
+                venue=BINANCE_VENUE,
                 starting_balances=["10_000 USDT", "10 ETH"],
             ),
         },
@@ -121,8 +123,8 @@ async def main():
     node.trader.add_strategy(strategy)
 
     # Register your client factories with the node (can take user-defined factories)
-    node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-    node.add_exec_client_factory("BINANCE", SandboxLiveExecClientFactory)
+    node.add_data_client_factory(BINANCE, BinanceLiveDataClientFactory)
+    node.add_exec_client_factory(BINANCE, SandboxLiveExecClientFactory)
     node.build()
 
     try:

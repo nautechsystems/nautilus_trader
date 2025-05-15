@@ -122,12 +122,13 @@ data and execution clients. To achieve this, add a `BINANCE` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -137,7 +138,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -152,16 +153,17 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
 # Register the client factories with the node
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
+node.add_data_client_factory(BINANCE, BinanceLiveDataClientFactory)
+node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 
 # Finally build the node
 node.build()
@@ -229,10 +231,12 @@ It's also possible to configure one or both clients to connect to the Binance te
 Simply set the `testnet` option to `True` (this is `False` by default):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -240,7 +244,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -290,10 +294,12 @@ To use Binance Future Hedge mode, you need to follow the three items below:
 - 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
 
     ```python
+    from nautilus_trader.adapters.binance import BINANCE
+
     config = TradingNodeConfig(
         ...,  # Omitted
         data_clients={
-            "BINANCE": BinanceDataClientConfig(
+            BINANCE: BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -302,7 +308,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             ),
         },
         exec_clients={
-            "BINANCE": BinanceExecClientConfig(
+            BINANCE: BinanceExecClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -403,7 +409,7 @@ You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating i
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
-from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.model import DataType
 from nautilus_trader.model import ClientId
 

@@ -380,17 +380,18 @@ When you attach a venue to the engine—either for live trading or a back‑test
 Example of adding a `CASH` account for a backtest venue:
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OmsType, AccountType
-from nautilus_trader.model import Money, Currency, Venue
+from nautilus_trader.model import Money, Currency
 
 # Initialize the backtest engine
 engine = BacktestEngine()
 
 # Add a CASH account for the venue
 engine.add_venue(
-    venue=Venue("BINANCE"),  # Create or reference a Venue identifier
+    venue=BINANCE_VENUE,  # Create or reference a Venue identifier
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
     starting_balances=[Money(10_000, USDT)],
