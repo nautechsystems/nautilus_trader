@@ -1,6 +1,6 @@
 ---
  name: Bug Report
- about: Bug – behavior that contradicts the platform’s documented or intended design.
+ about: Bug – behavior that contradicts the platform’s documented or intended design
 labels:
 - bug
 ---
