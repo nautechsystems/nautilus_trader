@@ -316,7 +316,8 @@ async fn process_commands(
             drain_buffer(&mut con, &trader_key, &mut buffer).await;
             last_drain = Instant::now();
         } else if let Some(cmd) = rx.recv().await {
-            tracing::debug!("Received {cmd:?}");
+            tracing::trace!("Received {cmd:?}");
+
             if matches!(cmd.op_type, DatabaseOperation::Close) {
                 break;
             }
