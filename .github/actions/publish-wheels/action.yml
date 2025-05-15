@@ -61,10 +61,16 @@ runs:
         bash ./scripts/ci/publish-wheels-r2-verify-files.sh
 
     - name: Clean up local dist directory
-      if: ${{ inputs.cleanup-local-dist == 'true' }}
+      if: ${{ inputs.cleanup-local-dist == 'true' && success() }}
       shell: bash
       run: |
         set -euo pipefail
-        ls -lh dist/ || echo "No dist directory found"
-        rm -rf dist/* 2>/dev/null || true
-        echo "Cleanup completed"
+
+        if [[ -d dist ]]; then
+          echo "Found dist directory:"
+          ls -lh dist/
+          rm -rf dist/*
+          echo "Cleanup completed"
+        else
+          echo "No dist directory found"
+        fi
