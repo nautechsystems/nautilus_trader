@@ -133,6 +133,7 @@ where
 /// # Panics
 ///
 /// Panics if the request URI has no host component.
+#[allow(clippy::result_large_err)]
 fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets
