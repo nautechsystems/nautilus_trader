@@ -203,3 +203,28 @@ pub fn parse_component_levels(
         None => HashMap::new(),
     }
 }
+
+/// Logs that a task has started using `tracing::debug!`.
+pub fn log_task_started(task_name: &str) {
+    tracing::debug!("Started task '{task_name}'");
+}
+
+/// Logs that a task has stopped using `tracing::debug!`.
+pub fn log_task_stopped(task_name: &str) {
+    tracing::debug!("Stopped task '{task_name}'");
+}
+
+/// Logs that a task is being awaited using `tracing::debug!`.
+pub fn log_task_awaiting(task_name: &str) {
+    tracing::debug!("Awaiting task '{task_name}'");
+}
+
+/// Logs that a task was aborted using `tracing::debug!`.
+pub fn log_task_aborted(task_name: &str) {
+    tracing::debug!("Aborted task '{task_name}'");
+}
+
+/// Logs that there was an error in a task `tracing::error!`.
+pub fn log_task_error(task_name: &str, e: &anyhow::Error) {
+    tracing::error!("Error in task '{task_name}': {e}");
+}

@@ -54,6 +54,7 @@ use tokio_tungstenite::{
 use crate::{
     backoff::ExponentialBackoff,
     fix::process_fix_buffer,
+    logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -273,7 +274,7 @@ impl SocketClientInner {
 
             if !self.read_task.is_finished() {
                 self.read_task.abort();
-                tracing::debug!("Aborted task 'read'");
+                log_task_aborted("read");
             }
 
             self.connection_mode
@@ -324,7 +325,7 @@ impl SocketClientInner {
         #[cfg(feature = "python")] py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'read'");
+        log_task_started("read");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -385,7 +386,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'read'");
+            log_task_stopped("read");
         })
     }
 
@@ -395,7 +396,7 @@ impl SocketClientInner {
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'write'");
+        log_task_started("write");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -468,7 +469,7 @@ impl SocketClientInner {
             // we ignore any error as the writer may already be closed.
             _ = active_writer.shutdown().await;
 
-            tracing::debug!("Completed task 'write'");
+            log_task_stopped("write");
         })
     }
 
@@ -477,7 +478,7 @@ impl SocketClientInner {
         heartbeat: (u64, Vec<u8>),
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'heartbeat'");
+        log_task_started("heartbeat");
         let (interval_secs, message) = heartbeat;
 
         tokio::task::spawn(async move {
@@ -502,7 +503,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'heartbeat'");
+            log_task_stopped("heartbeat");
         })
     }
 }
@@ -511,18 +512,18 @@ impl Drop for SocketClientInner {
     fn drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
-            tracing::debug!("Aborted task 'read'");
+            log_task_aborted("read");
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
-            tracing::debug!("Aborted task 'write'");
+            log_task_aborted("write");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
-                tracing::debug!("Aborted task 'heartbeat'");
+                log_task_aborted("heartbeat");
             }
         }
     }
@@ -646,13 +647,13 @@ impl SocketClient {
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
-                tracing::debug!("Aborted controller task");
+                log_task_aborted("controller");
             }
         })
         .await
         {
             Ok(()) => {
-                tracing::debug!("Controller task finished");
+                log_task_stopped("controller");
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
@@ -726,7 +727,7 @@ impl SocketClient {
         #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Started task 'controller'");
+            log_task_started("controller");
 
             let check_interval = Duration::from_millis(10);
 
@@ -744,13 +745,13 @@ impl SocketClient {
 
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
-                            tracing::debug!("Aborted task 'read'");
+                            log_task_aborted("read");
                         }
 
                         if let Some(task) = &inner.heartbeat_task {
                             if !task.is_finished() {
                                 task.abort();
-                                tracing::debug!("Aborted task 'heartbeat'");
+                                log_task_aborted("heartbeat");
                             }
                         }
                     })
@@ -807,7 +808,7 @@ impl SocketClient {
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
 
-            tracing::debug!("Completed task 'controller'");
+            log_task_stopped("controller");
         })
     }
 }

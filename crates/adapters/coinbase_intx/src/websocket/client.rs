@@ -24,7 +24,7 @@ use std::{
 
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -613,7 +613,7 @@ impl CoinbaseIntxFeedHandler {
             }
         }
 
-        tracing::debug!("Stopped message streaming");
+        log_task_stopped("message-streaming");
         None
     }
 }

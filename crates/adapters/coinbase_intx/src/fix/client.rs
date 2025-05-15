@@ -31,6 +31,7 @@ use std::{
 };
 
 use base64::prelude::*;
+use nautilus_common::logging::{log_task_started, log_task_stopped};
 use nautilus_core::{python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
@@ -285,7 +286,7 @@ impl CoinbaseIntxFixClient {
         let client_clone = self.clone();
 
         self.processing_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'maintain FIX connection'");
+            log_task_started("maintain-fix-connection");
 
             let mut last_logon_attempt = std::time::Instant::now()
                 .checked_sub(Duration::from_secs(10))
@@ -315,7 +316,9 @@ impl CoinbaseIntxFixClient {
         let target_comp_id = self.target_comp_id.clone();
 
         self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'FIX heartbeat' at {heartbeat_secs}s intervals");
+            log_task_started("heartbeat");
+            tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
+
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
@@ -341,7 +344,7 @@ impl CoinbaseIntxFixClient {
                 tokio::time::sleep(interval).await;
             }
 
-            tracing::debug!("Stopped task 'FIX heartbeat'");
+            log_task_stopped("heartbeat");
         })));
 
         Ok(())

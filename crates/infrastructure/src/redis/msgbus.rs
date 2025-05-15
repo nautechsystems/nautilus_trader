@@ -26,6 +26,7 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
+    logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
@@ -109,7 +110,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
-                log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
+                log_task_error(MSGBUS_PUBLISH, &e);
             }
         }));
 
@@ -128,7 +129,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                         stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
                             .await
                     {
-                        log::error!("Error in task '{MSGBUS_STREAM}': {e}");
+                        log_task_error(MSGBUS_STREAM, &e);
                     }
                 })),
             )
@@ -246,7 +247,7 @@ pub async fn publish_messages(
     instance_id: UUID4,
     config: MessageBusConfig,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting message publishing");
+    log_task_started(MSGBUS_PUBLISH);
 
     let db_config = config
         .database
@@ -305,7 +306,7 @@ pub async fn publish_messages(
         .await?;
     }
 
-    tracing::debug!("Stopped message publishing");
+    log_task_stopped(MSGBUS_PUBLISH);
     Ok(())
 }
 
@@ -379,7 +380,8 @@ pub async fn stream_messages(
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    tracing::info!("Starting message streaming");
+    log_task_started(MSGBUS_STREAM);
+
     let mut con = create_redis_connection(MSGBUS_STREAM, config).await?;
 
     let stream_keys = &stream_keys
@@ -438,7 +440,7 @@ pub async fn stream_messages(
         }
     }
 
-    tracing::debug!("Stopped message streaming");
+    log_task_stopped(MSGBUS_STREAM);
     Ok(())
 }
 
@@ -484,7 +486,8 @@ async fn run_heartbeat(
     signal: Arc<AtomicBool>,
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
 ) {
-    tracing::debug!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
+    log_task_started("heartbeat");
+    tracing::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
 
     let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
@@ -513,7 +516,7 @@ async fn run_heartbeat(
         }
     }
 
-    tracing::debug!("Stopped heartbeat");
+    log_task_stopped("heartbeat");
 }
 
 fn create_heartbeat_msg() -> BusMessage {
