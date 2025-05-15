@@ -68,7 +68,7 @@ jobs:
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           github_ref: ${{ github.ref }}
 
       # Run codspeed once only
