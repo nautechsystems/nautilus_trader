@@ -63,7 +63,7 @@ a clear explanatory message.
 
 ## Execution instructions
 
-Certain exchanges allow a trader to specify conditions and restrictions on
+Certain venues allow a trader to specify conditions and restrictions on
 how an order will be processed and executed. The following is a brief
 summary of the different execution instructions available.
 
@@ -72,7 +72,7 @@ summary of the different execution instructions available.
 The order's time in force specifies how long the order will remain open or active before any
 remaining quantity is canceled.
 
-- `GTC` **(Good Till Cancel)**: The order remains active until canceled by the trader or the exchange.
+- `GTC` **(Good Till Cancel)**: The order remains active until canceled by the trader or the venue.
 - `IOC` **(Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any unfilled portion canceled.
 - `FOK` **(Fill or Kill)**: The order executes immediately in full or not at all.
 - `GTD` **(Good Till Date)**: The order remains active until a specified expiration date and time.
@@ -83,7 +83,7 @@ remaining quantity is canceled.
 ### Expire time
 
 This instruction is to be used in conjunction with the `GTD` time in force to specify the time
-at which the order will expire and be removed from the exchanges order book (or order management system).
+at which the order will expire and be removed from the venues order book (or order management system).
 
 ### Post-only
 
@@ -95,7 +95,7 @@ important for market makers, or traders seeking to restrict the order to a liqui
 
 An order which is set as `reduce_only` will only ever reduce an existing position on an instrument, and
 never open a new position (if already flat). The exact behavior of this instruction can vary between
-exchanges, however the behavior as per the Nautilus `SimulatedExchange` is typical of a live exchange.
+venues, however the behavior as per the Nautilus `SimulatedExchange` is typical of a real venue.
 
 - Order will be canceled if the associated position is closed (becomes flat)
 - Order quantity will be reduced as the associated positions size reduces
@@ -111,26 +111,26 @@ Specifying a display quantity of zero is also equivalent to setting an order as 
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm)
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
-- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`).
+- `DEFAULT`: The default trigger type for the venue (typically `LAST` or `BID_ASK`).
 - `LAST`: The trigger price will be based on the last traded price.
 - `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders.
 - `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices.
 - `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
 - `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
 - `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the exchanges mark price for the instrument.
-- `INDEX`: The trigger price will be based on the exchanges index price for the instrument.
+- `MARK`: The trigger price will be based on the venues mark price for the instrument.
+- `INDEX`: The trigger price will be based on the venues index price for the instrument.
 
 ### Trigger offset type
 
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
 of the stop price based on the offset from the *market* (bid, ask or last price as applicable).
 
-- `DEFAULT`: The default offset type for the exchange (typically `PRICE`).
+- `DEFAULT`: The default offset type for the venue (typically `PRICE`).
 - `PRICE`: The offset is based on a price difference.
 - `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
 - `TICKS`: The offset is based on a number of ticks.
-- `PRICE_TIER`: The offset is based on an exchange specific price tier.
+- `PRICE_TIER`: The offset is based on an venue specific price tier.
 
 ### Contingent orders
 
@@ -485,7 +485,7 @@ See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.m
 
 ## Advanced Orders
 
-The following guide should be read in conjunction with the specific documentation from the broker or exchange
+The following guide should be read in conjunction with the specific documentation from the broker or venue
 involving these order types, lists/groups and execution instructions (such as for Interactive Brokers).
 
 ### Order Lists
@@ -493,38 +493,64 @@ involving these order types, lists/groups and execution instructions (such as fo
 Combinations of contingent orders, or larger order bulks can be grouped together into a list with a common
 `order_list_id`. The orders contained in this list may or may not have a contingent relationship with
 each other, as this is specific to how the orders themselves are constructed, and the
-specific exchange they are being routed to.
+specific venue they are being routed to.
 
 ### Contingency Types
 
-- `OTO` are parent orders with 'one-triggers-other' child orders.
-- `OCO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-cancels-other when triggered).
-- `OUO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-updates-other when triggered or modified).
+- **OTO (One-Triggers-Other)** – a parent order that, once executed, automatically places one or more child orders.
+  - *Full-trigger model*: child order(s) are released **only after the parent is completely filled**. Common at most retail equity/option brokers (e.g. Schwab, Fidelity, TD Ameritrade) and many spot-crypto venues (Binance, Coinbase).
+  - *Partial-trigger model*: child order(s) are released **pro-rata to each partial fill**. Used by professional-grade platforms such as Interactive Brokers, most futures/FX OMSs, and Kraken Pro.
+
+- **OCO (One-Cancels-Other)** – two (or more) linked live orders where executing one cancels the remainder.
+
+- **OUO (One-Updates-Other)** – two (or more) linked live orders where executing one reduces the open quantity of the remainder.
 
 :::info
 These contingency types relate to ContingencyType FIX tag <1385> <https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html>.
 :::
 
-#### One Triggers the Other (OTO)
+#### One-Triggers-Other (OTO)
 
-An OTO orders involves two orders—a parent order and a child order. The parent order is a live
-marketplace order. The child order, held in a separate order file, is not. If the parent order
-executes in full, the child order is released to the marketplace and becomes live.
-An OTO order can be made up of stock orders, option orders, or a combination of both.
+An OTO order involves two parts:
 
-#### One Cancels the Other (OCO)
+1. **Parent order** – submitted to the matching engine immediately.
+2. **Child order(s)** – held *off-book* until the trigger condition is met.
 
-An OCO order is an order whose execution results in the immediate cancellation of another order
-linked to it. Cancellation of the Contingent Order happens on a best efforts basis.
-In an OCO order, both orders are live in the marketplace at the same time. The execution of either
-order triggers an attempt to cancel the other unexecuted order. Partial executions will also trigger an attempt to cancel the other order.
+##### Trigger models
 
-#### One Updates the Other (OUO)
+| Trigger model       | When are child orders released?                                                                                                                  |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Full trigger**    | When the parent order’s cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
+| **Partial trigger** | Immediately upon each partial execution of the parent; the child’s quantity matches the executed amount and is increased as further fills occur. |
 
-An OUO order is an order whose execution results in the immediate reduction of quantity in another
-order linked to it. The quantity reduction happens on a best effort basis. In an OUO order both
-orders are live in the marketplace at the same time. The execution of either order triggers an
-attempt to reduce the remaining quantity of the other order, partial executions included.
+> **Why the distinction matters**
+> *Full trigger* leaves a risk window: any partially filled position is live without its protective exit until the remaining quantity fills.
+> *Partial trigger* mitigates that risk by ensuring every executed lot instantly has its linked stop/limit, at the cost of creating more order traffic and updates.
+
+An OTO order can use any supported asset type on the venue (e.g. stock entry with option hedge, futures entry with OCO bracket, crypto spot entry with TP/SL).
+
+| Venue / Adapter ID                           | Asset classes             | Trigger rule for child                      | Practical notes                                                   |
+|----------------------------------------------|---------------------------|---------------------------------------------|-------------------------------------------------------------------|
+| Binance / Binance Futures (`BINANCE`)        | Spot, perpetual futures   | **Partial or full** – fires on first fill.  | OTOCO/TP-SL children appear instantly; monitor margin usage.      |
+| Bybit Spot (`BYBIT`)                         | Spot                      | **Full** – child placed after completion.   | TP-SL preset activates only once the limit order is fully filled. |
+| Bybit Perps (`BYBIT`)                        | Perpetual futures         | **Partial and full** – configurable.        | “Partial-position” mode sizes TP-SL as fills arrive.              |
+| Kraken Futures (`KRAKEN`)                    | Futures & perps           | **Partial and full** – automatic.           | Child quantity matches every partial execution.                   |
+| OKX (`OKX`)                                  | Spot, futures, options    | **Full** – attached stop waits for fill.    | Position-level TP-SL can be added separately.                     |
+| Interactive Brokers (`INTERACTIVE_BROKERS`)  | Stocks, options, FX, fut  | **Configurable** – OCA can pro-rate.        | `OcaType 2/3` reduces remaining child quantities.                 |
+| Coinbase International (`COINBASE_INTX`)     | Spot & perps              | **Full** – bracket added post-execution.    | Entry plus bracket not simultaneous; added once position is live. |
+| dYdX v4 (`DYDX`)                             | Perpetual futures (DEX)   | On-chain condition (size exact).            | TP-SL triggers by oracle price; partial fill not applicable.      |
+| Betfair (`BETFAIR`)                          | Prediction market (DEX)   | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
+| Polymarket (`POLYMARKET`)                    | Sports betting            | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
+
+#### One-Cancels-Other (OCO)
+
+An OCO order is a set of linked orders where the execution of **any** order (full *or partial*) triggers a best-efforts cancellation of the others.
+Both orders are live simultaneously; once one starts filling, the venue attempts to cancel the unexecuted portion of the remainder.
+
+#### One-Updates-Other (OUO)
+
+An OUO order is a set of linked orders where execution of one order causes an immediate *reduction* of open quantity in the other order(s).
+Both orders are live concurrently, and each partial execution proportionally updates the remaining quantity of its peer order on a best-effort basis.
 
 ### Bracket Orders
 
@@ -571,7 +597,7 @@ The only requirement to emulate an order is to pass a `TriggerType` to the `emul
 parameter of an `Order` constructor, or `OrderFactory` creation method. The following
 emulation trigger types are currently supported:
 
-- `NO_TRIGGER`: disables local emulation completely and order is fully submitted to the exchange.
+- `NO_TRIGGER`: disables local emulation completely and order is fully submitted to the venue.
 - `DEFAULT`: which is the same as `BID_ASK`.
 - `BID_ASK`: emulated using quotes to trigger.
 - `LAST`: emulated using trades to trigger.
@@ -615,7 +641,7 @@ An emulated order will progress through the following stages:
 1. Submitted by a `Strategy` through the `submit_order` method
 2. Sent to the `RiskEngine` for pre-trade risk checks (it may be denied at this point)
 3. Sent to the `OrderEmulator` where it is *held* / emulated
-4. Once triggered, emulated order is transformed into a `MARKET` or `LIMIT` order and released (submitted to the exchange)
+4. Once triggered, emulated order is transformed into a `MARKET` or `LIMIT` order and released (submitted to the venue)
 5. Released order undergoes final risk checks before venue submission
 
 :::note
