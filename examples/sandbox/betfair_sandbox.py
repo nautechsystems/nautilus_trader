@@ -18,12 +18,12 @@ import asyncio
 import traceback
 from decimal import Decimal
 
-from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
-from nautilus_trader.adapters.betfair.constants import BETFAIR
-from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
-from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
+from nautilus_trader.adapters.betfair import BETFAIR
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair import BetfairInstrumentProviderConfig
+from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair import get_cached_betfair_client
+from nautilus_trader.adapters.betfair import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import LoggingConfig
