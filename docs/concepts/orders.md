@@ -523,6 +523,11 @@ An OTO order involves two parts:
 | **Full trigger**    | When the parent order’s cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
 | **Partial trigger** | Immediately upon each partial execution of the parent; the child’s quantity matches the executed amount and is increased as further fills occur. |
 
+:::info
+The default backtest venue for NautilusTrader uses a *partial trigger* model for OTO orders.
+A future update will add configuration to opt-in to a *full trigger* model.
+:::
+
 > **Why the distinction matters**
 > *Full trigger* leaves a risk window: any partially filled position is live without its protective exit until the remaining quantity fills.
 > *Partial trigger* mitigates that risk by ensuring every executed lot instantly has its linked stop/limit, at the cost of creating more order traffic and updates.
@@ -539,8 +544,8 @@ An OTO order can use any supported asset type on the venue (e.g. stock entry wit
 | Interactive Brokers (`INTERACTIVE_BROKERS`)  | Stocks, options, FX, fut  | **Configurable** – OCA can pro-rate.        | `OcaType 2/3` reduces remaining child quantities.                 |
 | Coinbase International (`COINBASE_INTX`)     | Spot & perps              | **Full** – bracket added post-execution.    | Entry plus bracket not simultaneous; added once position is live. |
 | dYdX v4 (`DYDX`)                             | Perpetual futures (DEX)   | On-chain condition (size exact).            | TP-SL triggers by oracle price; partial fill not applicable.      |
-| Betfair (`BETFAIR`)                          | Prediction market (DEX)   | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
-| Polymarket (`POLYMARKET`)                    | Sports betting            | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
+| Polymarket (`POLYMARKET`)                    | Prediction market (DEX)   | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
+| Betfair (`BETFAIR`)                          | Sports betting            | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
 
 #### One-Cancels-Other (OCO)
 
