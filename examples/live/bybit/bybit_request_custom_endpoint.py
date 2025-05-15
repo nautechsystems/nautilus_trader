@@ -17,12 +17,12 @@
 import os
 from datetime import timedelta
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
-from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
+from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit import BybitProductType
+from nautilus_trader.adapters.bybit import BybitTickerData
 from nautilus_trader.common import Environment
 from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.config import InstrumentProviderConfig
