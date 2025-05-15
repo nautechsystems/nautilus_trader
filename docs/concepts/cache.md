@@ -67,7 +67,7 @@ def on_bar(self, bar: Bar) -> None:
 ## Configuration
 
 The `Cache`’s behavior and capacity can be configured through the `CacheConfig` class.
-You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](/concepts/architecture.md#environment-contexts).
+You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](architecture.md#environment-contexts).
 
 Here's a basic example of configuring the `Cache`:
 
