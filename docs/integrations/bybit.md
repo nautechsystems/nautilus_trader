@@ -140,7 +140,7 @@ data and execution clients. To achieve this, add a `BYBIT` section to your clien
 configuration(s):
 
 ```python
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
@@ -169,8 +169,8 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
