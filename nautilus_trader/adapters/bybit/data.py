@@ -55,10 +55,14 @@ from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -272,6 +276,57 @@ class BybitDataClient(LiveMarketDataClient):
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        """
+        Subscribe to instruments updates.
+
+        Parameters
+        ----------
+        command : SubscribeInstruments
+            The command to subscribe to instruments.
+
+        """
+        self._log.info("Skipping subscribe_instruments, Bybit subscribes automatically")
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        """
+        Subscribe to instrument updates.
+
+        Parameters
+        ----------
+        command : SubscribeInstrument
+            The command to subscribe to instrument.
+
+        """
+        self._log.info("Skipping subscribe_instrument, Bybit subscribes automatically")
+
+    async def _unsubscribe_instruments(
+        self,
+        command: UnsubscribeInstruments,
+    ) -> None:
+        """
+        Unsubscribe from instruments updates.
+
+        Parameters
+        ----------
+        command : UnsubscribeInstruments
+            The command to unsubscribe from instruments updates.
+
+        """
+        self._log.info("Skipping unsubscribe_instruments, not applicable for Bybit")
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        """
+        Unsubscribe from instrument updates.
+
+        Parameters
+        ----------
+        command : UnsubscribeInstrument
+            The command to unsubscribe from instrument updates.
+
+        """
+        self._log.info("Skipping unsubscribe_instrument, not applicable for Bybit")
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type == BookType.L3_MBO:
