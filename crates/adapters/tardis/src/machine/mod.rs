@@ -194,6 +194,7 @@ async fn stream_from_websocket(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn handle_connection_response(ws_resp: tungstenite::http::Response<Option<Vec<u8>>>) -> Result<()> {
     if ws_resp.status() != tungstenite::http::StatusCode::SWITCHING_PROTOCOLS {
         return match ws_resp.body() {
