@@ -77,11 +77,12 @@ impl DatabentoLiveClient {
                     let py_obj = data_to_pycapsule(py, data);
                     call_python(py, &callback, py_obj);
                 }),
-                LiveMessage::Instrument(data) => Python::with_gil(|py| {
-                    let py_obj =
-                        instrument_any_to_pyobject(py, data).expect("Failed creating instrument");
-                    call_python(py, &callback, py_obj);
-                }),
+                LiveMessage::Instrument(data) => {
+                    Python::with_gil(|py| match instrument_any_to_pyobject(py, data) {
+                        Ok(py_obj) => call_python(py, &callback, py_obj),
+                        Err(e) => tracing::error!("Failed creating instrument: {e}"),
+                    })
+                }
                 LiveMessage::Status(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py_any_unwrap(py);
                     call_python(py, &callback_pyo3, py_obj);
@@ -134,7 +135,7 @@ impl DatabentoLiveClient {
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
     ) -> PyResult<Self> {
-        let publishers_json = fs::read_to_string(publishers_filepath)?;
+        let publishers_json = fs::read_to_string(publishers_filepath).map_err(to_pyvalue_err)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&publishers_json).map_err(to_pyvalue_err)?;
         let publisher_venue_map = publishers_vec
@@ -180,14 +181,20 @@ impl DatabentoLiveClient {
         start: Option<u64>,
         snapshot: Option<bool>,
     ) -> PyResult<()> {
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let mut symbol_venue_map = self
+            .symbol_venue_map
+            .write()
+            .map_err(|e| to_pyruntime_err(format!("symbol_venue_map lock poisoned: {e}")))?;
         let symbols: Vec<String> = instrument_ids
             .iter()
             .map(|instrument_id| {
                 instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
             })
             .collect();
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        let first_symbol = symbols
+            .first()
+            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
+        let stype_in = infer_symbology_type(first_symbol);
         let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
@@ -229,7 +236,10 @@ impl DatabentoLiveClient {
         // Consume the receiver
         // SAFETY: We guard the client from being started more than once with the
         // `is_running` flag, so here it is safe to unwrap the command receiver.
-        let cmd_rx = self.cmd_rx.take().unwrap();
+        let cmd_rx = self
+            .cmd_rx
+            .take()
+            .ok_or_else(|| to_pyruntime_err("Command receiver already taken"))?;
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.key.clone(),
