@@ -27,6 +27,7 @@ use nautilus_common::{
     },
     custom::CustomData,
     enums::SerializationEncoding,
+    logging::{log_task_awaiting, log_task_started, log_task_stopped},
     runtime::get_runtime,
     signal::Signal,
 };
@@ -56,6 +57,7 @@ use crate::redis::{create_redis_connection, queries::DatabaseQueries};
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
 const CACHE_WRITE: &str = "cache-write";
+const CACHE_PROCESS: &str = "cache-process";
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
@@ -179,7 +181,7 @@ impl RedisCacheDatabase {
         let encoding = config.encoding;
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
-                log::error!("Error in task '{CACHE_WRITE}': {e}");
+                log::error!("Error in task '{CACHE_PROCESS}': {e}");
             }
         });
 
@@ -210,10 +212,11 @@ impl RedisCacheDatabase {
             log::debug!("Error sending close command: {e:?}");
         }
 
-        log::debug!("Awaiting task '{CACHE_WRITE}'");
+        log_task_awaiting(CACHE_PROCESS);
+
         tokio::task::block_in_place(|| {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
-                log::error!("Error awaiting task '{CACHE_WRITE}': {e:?}");
+                log::error!("Error awaiting task '{CACHE_PROCESS}': {e:?}");
             }
         });
 
@@ -294,7 +297,7 @@ async fn process_commands(
     trader_key: String,
     config: CacheConfig,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting cache processing");
+    log_task_started(CACHE_PROCESS);
 
     let db_config = config
         .database
@@ -329,7 +332,7 @@ async fn process_commands(
         drain_buffer(&mut con, &trader_key, &mut buffer).await;
     }
 
-    tracing::debug!("Stopped cache processing");
+    log_task_stopped(CACHE_PROCESS);
     Ok(())
 }
 

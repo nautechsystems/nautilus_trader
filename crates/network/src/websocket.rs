@@ -56,6 +56,7 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
 };
@@ -260,7 +261,7 @@ impl WebSocketClientInner {
             if let Some(ref read_task) = self.read_task.take() {
                 if !read_task.is_finished() {
                     read_task.abort();
-                    tracing::debug!("Aborted task 'read'");
+                    log_task_aborted("read");
                 }
             }
 
@@ -360,7 +361,7 @@ impl WebSocketClientInner {
         handler: Arc<PyObject>,
         ping_handler: Option<Arc<PyObject>>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'read'");
+        log_task_started("read");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -436,7 +437,7 @@ impl WebSocketClientInner {
         writer: MessageWriter,
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'write'");
+        log_task_started("write");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -509,7 +510,7 @@ impl WebSocketClientInner {
             // we ignore any error as the writer may already be closed.
             _ = active_writer.close().await;
 
-            tracing::debug!("Completed task 'write'");
+            log_task_stopped("write");
         })
     }
 
@@ -519,7 +520,7 @@ impl WebSocketClientInner {
         message: Option<String>,
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'heartbeat'");
+        log_task_started("heartbeat");
 
         tokio::task::spawn(async move {
             let interval = Duration::from_secs(heartbeat_secs);
@@ -546,7 +547,7 @@ impl WebSocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'heartbeat'");
+            log_task_stopped("heartbeat");
         })
     }
 }
@@ -556,19 +557,19 @@ impl Drop for WebSocketClientInner {
         if let Some(ref read_task) = self.read_task.take() {
             if !read_task.is_finished() {
                 read_task.abort();
-                tracing::debug!("Aborted task 'read'");
+                log_task_aborted("read");
             }
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
-            tracing::debug!("Aborted task 'write'");
+            log_task_aborted("write");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
-                tracing::debug!("Aborted task 'heartbeat'");
+                log_task_aborted("heartbeat");
             }
         }
     }
@@ -760,7 +761,7 @@ impl WebSocketClient {
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
-                tracing::debug!("Aborted task 'controller'");
+                log_task_aborted("controller");
             }
         })
         .await
@@ -831,7 +832,7 @@ impl WebSocketClient {
         #[cfg(feature = "python")] py_post_disconnection: Option<PyObject>, // TODO: Deprecated
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Started task 'controller'");
+            log_task_started("controller");
 
             let check_interval = Duration::from_millis(10);
 
@@ -850,14 +851,14 @@ impl WebSocketClient {
                         if let Some(task) = &inner.read_task {
                             if !task.is_finished() {
                                 task.abort();
-                                tracing::debug!("Aborted task 'read'");
+                                log_task_aborted("read");
                             }
                         }
 
                         if let Some(task) = &inner.heartbeat_task {
                             if !task.is_finished() {
                                 task.abort();
-                                tracing::debug!("Aborted task 'heartbeat'");
+                                log_task_aborted("heartbeat");
                             }
                         }
                     })
@@ -919,7 +920,7 @@ impl WebSocketClient {
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
 
-            tracing::debug!("Completed task 'controller'");
+            log_task_stopped("controller");
         })
     }
 }

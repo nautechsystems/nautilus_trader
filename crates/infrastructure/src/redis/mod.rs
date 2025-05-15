@@ -21,7 +21,10 @@ pub mod queries;
 
 use std::time::Duration;
 
-use nautilus_common::msgbus::database::{DatabaseConfig, MessageBusConfig};
+use nautilus_common::{
+    logging::log_task_awaiting,
+    msgbus::database::{DatabaseConfig, MessageBusConfig},
+};
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use redis::RedisError;
@@ -35,7 +38,8 @@ const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
     if let Some(handle) = handle {
-        tracing::debug!("Awaiting task '{task_name}'");
+        log_task_awaiting(task_name);
+
         let timeout = Duration::from_secs(2);
         match tokio::time::timeout(timeout, handle).await {
             Ok(result) => {

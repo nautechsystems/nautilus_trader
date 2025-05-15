@@ -42,6 +42,7 @@ pub mod mode;
 pub mod socket;
 pub mod websocket;
 
+mod logging;
 mod tls;
 
 #[cfg(feature = "python")]
