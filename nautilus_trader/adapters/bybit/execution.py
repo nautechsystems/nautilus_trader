@@ -1517,7 +1517,7 @@ class BybitExecutionClient(LiveExecutionClient):
             price=str(order.price),
             timeInForce=time_in_force,
             orderLinkId=order.client_order_id.value,
-            reduceOnly=order.reduce_only,
+            reduceOnly=order.is_reduce_only,
             tpslMode=BybitTpSlMode.PARTIAL if product_type != BybitProductType.SPOT else None,
             triggerPrice=str(order.trigger_price),
             triggerDirection=trigger_direction,
