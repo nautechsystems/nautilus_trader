@@ -94,7 +94,8 @@ impl DoubleExponentialMovingAverage {
     /// Creates a new [`DoubleExponentialMovingAverage`] instance.
     ///
     /// # Panics
-    /// * If `period` is not a positive integer (> 0).
+    ///
+    /// Panics if `period` is not a positive integer (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         assert!(

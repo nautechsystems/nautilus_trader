@@ -81,7 +81,8 @@ impl ExponentialMovingAverage {
     /// Creates a new [`ExponentialMovingAverage`] instance.
     ///
     /// # Panics
-    /// * If `period` is not positive.
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         assert!(
