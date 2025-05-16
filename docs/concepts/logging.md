@@ -20,15 +20,19 @@ Infrastructure such as [Vector](https://github.com/vectordotdev/vector) can be i
 Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
-Log level (`LogLevel`) values include (and generally match Rust's `tracing` level filters):
+Log level (`LogLevel`) values include (and generally match Rust's `tracing` level filters).
+
+Python loggers expose the following levels:
 
 - `OFF`
 - `DEBUG`
 - `INFO`
-- `WARNING` or `WARN`
+- `WARNING`
 - `ERROR`
 
-:::info
+:::warning
+The Python `Logger` does not provide a `trace()` method; `TRACE` level logs are only emitted by the underlying Rust components and cannot be generated directly from Python code.
+
 See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
 :::
 
@@ -45,6 +49,8 @@ Logging can be configured in the following ways:
 - ANSI colors in log lines
 - Bypass logging entirely
 - Print Rust config to stdout at initialization
+- Optionally initialize logging via the PyO3 bridge (`use_pyo3`) to capture log events emitted by Rust components
+- Truncate existing log file on startup if it already exists (`clear_log_file`)
 
 ### Standard output logging
 
