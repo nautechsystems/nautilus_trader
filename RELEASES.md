@@ -12,7 +12,8 @@ Released on TBD (UTC).
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
-- Introduced HyperSync client to blockchain adapter (#2606), thanks @filipmacek
+- Added HyperSync client to blockchain adapter (#2606), thanks @filipmacek
+- Added support for DEXs, pools, and tokens to blockchain adapter (#2638), thanks @filipmacek
 
 ### Breaking Changes
 None
@@ -32,6 +33,7 @@ None
 - Improved testing for Rust orders module (#2578), thanks @dakshbtc
 - Improved Cython-Rust indicator parity for `AdaptiveMovingAverage` (AMA) (#2626), thanks @nicolad
 - Improved Cython-Rust indicator parity for `DoubleExponentialMovingAverage` (DEMA) (#2633), thanks @nicolad
+- Improved Cython-Rust indicator parity for `ExponentialMovingAverage` (EMA) (#2642), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved exception on deserializing order from cache database
 - Improved `None` condition checks for value types, which now raise a `TypeError` instead of an obscure `AttributeError`
