@@ -68,11 +68,7 @@ redis = { version = "0.31.0", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ], optional = true }
-sqlx = { version = "0.8.5", features = [
-  "postgres",
-  "runtime-tokio",
-  "json"
-], optional = true }
+sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

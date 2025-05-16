@@ -114,6 +114,11 @@ tokio = { version = "1.45.0", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
+sqlx = { version = "0.8.5", features = [
+    "postgres",
+    "runtime-tokio",
+    "json"
+]}
 
 # dev-dependencies
 axum = "0.8.4"

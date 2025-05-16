@@ -16,7 +16,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
@@ -131,6 +134,8 @@ pub struct Chain {
     /// URL endpoint for the default RPC connection.
     pub rpc_url: Option<String>,
 }
+
+pub type SharedChain = Arc<Chain>;
 
 impl Chain {
     pub fn new(name: Blockchain, chain_id: u32) -> Self {

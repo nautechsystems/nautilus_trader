@@ -20,6 +20,8 @@ use thiserror::Error;
 pub enum BlockchainRpcClientError {
     #[error("Client error: {0}")]
     ClientError(String),
+    #[error("Decoding error: {0}")]
+    AbiDecodingError(String),
     #[error("Parsing error: {0}")]
     MessageParsingError(String),
     #[error("Unsupported rpc response type of message {0}")]

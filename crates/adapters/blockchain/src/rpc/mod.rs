@@ -27,6 +27,7 @@ use crate::rpc::{
 pub mod chains;
 pub mod core;
 pub mod error;
+pub mod http;
 pub mod types;
 pub mod utils;
 
