@@ -13,15 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use std::sync::LazyLock;
+
+use nautilus_model::defi::{
+    chain::chains,
+    dex::{AmmType, Dex},
+};
+
+use crate::exchanges::extended::DexExtended;
+
+/// Aerodrome Slipstream DEX on Base
+pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
+    let dex = Dex::new(
+        chains::BASE.clone(),
+        "Aerodrome Slipstream",
+        "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
+        AmmType::StableSwap,
+        "",
+    );
+    DexExtended::new(dex)
+});

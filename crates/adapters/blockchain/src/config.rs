@@ -18,25 +18,27 @@
 pub struct BlockchainAdapterConfig {
     /// Determines if the adapter should use Hypersync for live data streaming.
     pub use_hypersync_for_live_data: bool,
+    /// The HTTP URL for the blockchain RPC endpoint.
+    pub http_rpc_url: String,
+    /// The maximum number of RPC requests allowed per second.
+    pub rpc_requests_per_second: Option<u32>,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
     pub wss_rpc_url: Option<String>,
 }
 
 impl BlockchainAdapterConfig {
     #[must_use]
-    pub const fn new(wss_rpc_url: Option<String>, use_hypersync_for_live_data: bool) -> Self {
+    pub const fn new(
+        http_rpc_url: String,
+        rpc_requests_per_second: Option<u32>,
+        wss_rpc_url: Option<String>,
+        use_hypersync_for_live_data: bool,
+    ) -> Self {
         Self {
-            use_hypersync_for_live_data,
+            http_rpc_url,
             wss_rpc_url,
-        }
-    }
-}
-
-impl Default for BlockchainAdapterConfig {
-    fn default() -> Self {
-        Self {
-            wss_rpc_url: None,
-            use_hypersync_for_live_data: true,
+            use_hypersync_for_live_data,
+            rpc_requests_per_second,
         }
     }
 }

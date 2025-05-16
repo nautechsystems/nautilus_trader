@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use nautilus_blockchain::{config::BlockchainAdapterConfig, data::BlockchainDataClient};
+use nautilus_blockchain::{config::BlockchainAdapterConfig, data::BlockchainDataClient, exchanges};
 use nautilus_common::logging::{
     logger::{Logger, LoggerConfig},
     writer::FileWriterConfig,
@@ -72,19 +72,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => chains::ETHEREUM.clone(), // default
     };
     let chain = Arc::new(chain);
-    let wss_rpc_url = std::env::var("RPC_WSS_URL").expect("RPC_WSS_URL must be set");
     let http_rpc_url = std::env::var("RPC_HTTP_URL").expect("RPC_HTTP_URL must be set");
-    let blockchain_adapter_config =
-        BlockchainAdapterConfig::new(http_rpc_url, None, Some(wss_rpc_url), false);
-    let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_adapter_config);
+    let blockchain_adapter_config = BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true);
+    let mut data_client = BlockchainDataClient::new(chain, blockchain_adapter_config);
+    data_client.initialize_cache_database(None).await;
+
+    let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
+    let dex_id = univ3.id();
     data_client.connect().await?;
-    data_client.subscribe_blocks().await;
+    data_client.register_exchange(univ3.clone()).await?;
+    // Lets use block https://etherscan.io/block/22327045 from (Apr-22-2025 08:49:47 PM +UTC)
+    let from_block = Some(22327045);
 
     // Main loop to keep the app running
     loop {
         tokio::select! {
             () = notify.notified() => break,
-            () = data_client.process_rpc_message() => {}
+             result = data_client.sync_exchange_pools(dex_id.as_str(), from_block) => {
+                match result {
+                    Ok(_) => {
+                        // Exit after the tokens and pool are synced successfully
+                        log::info!("Successfully synced tokens and pools");
+                        break;
+                    },
+                    Err(e) => {
+                        // Handle error case
+                        log::error!("Error syncing tokens and pools: {}", e);
+                        break;
+                    }
+                }
+            }
         }
     }
     data_client.disconnect()?;

@@ -13,15 +13,31 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use sqlx::{FromRow, Row, postgres::PgRow};
+
+/// A data transfer object that maps database rows to token data.
+/// Implements `FromRow` trait to automatically convert PostgreSQL results into `TokenRow`
+/// objects that can be transformed into domain entity `Token` objects.
+pub struct TokenRow {
+    pub address: String,
+    pub name: String,
+    pub symbol: String,
+    pub decimals: i32,
+}
+
+impl<'r> FromRow<'r, PgRow> for TokenRow {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let address = row.try_get::<String, _>("address")?;
+        let name = row.try_get::<String, _>("name")?;
+        let symbol = row.try_get::<String, _>("symbol")?;
+        let decimals = row.try_get::<i32, _>("decimals")?;
+
+        let token = TokenRow {
+            address,
+            name,
+            symbol,
+            decimals,
+        };
+        Ok(token)
+    }
+}

@@ -13,15 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use std::sync::LazyLock;
+
+use nautilus_model::defi::{
+    chain::chains,
+    dex::{AmmType, Dex},
+};
+
+use crate::exchanges::extended::DexExtended;
+
+/// Uniswap V2 DEX on Ethereum
+pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "Uniswap V2",
+        "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+        AmmType::CPAMM,
+        "PoolCreated(address,address,address,uint256)",
+    );
+    DexExtended::new(dex)
+});

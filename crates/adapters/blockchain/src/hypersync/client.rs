@@ -15,14 +15,18 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
+use alloy::primitives::keccak256;
 use hypersync_client::{
-    Client, ClientConfig,
+    Client, ClientConfig, StreamConfig,
     net_types::{BlockSelection, FieldSelection, Query},
 };
-use nautilus_model::defi::chain::Chain;
+use nautilus_model::defi::chain::SharedChain;
 use reqwest::Url;
 
-use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};
+use crate::{
+    events::pool_created::PoolCreated, exchanges::extended::DexExtended,
+    hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage,
+};
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
@@ -31,7 +35,7 @@ const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 /// A client for interacting with a `HyperSync` api to retrieve blockchain data.
 pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum)
-    chain: Chain,
+    chain: SharedChain,
     /// The underlying `HyperSync` Rust client for making API requests
     client: Arc<Client>,
     /// Background task handle for the block subscription task
@@ -42,7 +46,10 @@ pub struct HyperSyncClient {
 
 impl HyperSyncClient {
     #[must_use]
-    pub fn new(chain: Chain, tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>) -> Self {
+    pub fn new(
+        chain: SharedChain,
+        tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
+    ) -> Self {
         let mut config = ClientConfig::default();
         let hypersync_url =
             Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
@@ -54,6 +61,68 @@ impl HyperSyncClient {
             blocks_subscription_task: None,
             tx,
         }
+    }
+
+    /// Fetches historical pool creation events for a specific DEX from the HyperSync API.
+    pub async fn request_pool_created_events(
+        &mut self,
+        from_block: u32,
+        dex: &DexExtended,
+    ) -> Vec<PoolCreated> {
+        let factory_address = dex.factory.as_ref();
+        let pair_created_event = dex.pool_created_event.as_ref();
+        log::info!(
+            "Requesting pair created events from Hypersync emitted by factory {} and from block {}",
+            factory_address,
+            from_block
+        );
+        let event_hash = keccak256(pair_created_event.as_bytes());
+        let topic0 = format!("0x{}", hex::encode(event_hash));
+
+        let query = serde_json::from_value(serde_json::json!({
+            "from_block": from_block,
+            "logs": [{
+                "topic": [
+                    topic0
+                ],
+                "address": [
+                    factory_address,
+                ]
+            }],
+            "field_selection": {
+                "log": [
+                    "block_number",
+                    "data",
+                    "topic0",
+                    "topic1",
+                    "topic2",
+                    "topic3",
+                ]
+        }}))
+        .unwrap();
+
+        let mut rx = self
+            .client
+            .clone()
+            .stream(
+                query,
+                StreamConfig {
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let mut result = Vec::new();
+        while let Some(response) = rx.recv().await {
+            let response = response.unwrap();
+            for batch in response.data.logs {
+                for log in batch {
+                    let pool = dex.parse_pool_created_event(log).unwrap();
+                    result.push(pool);
+                }
+            }
+        }
+        result
     }
 
     /// Disconnects from the `HyperSync` service and stops all background tasks.
@@ -88,7 +157,7 @@ impl HyperSyncClient {
                 for batch in response.data.blocks {
                     for received_block in batch {
                         let mut block = transform_hypersync_block(received_block).unwrap();
-                        block.set_chain(chain.clone());
+                        block.set_chain(chain.as_ref().clone());
                         let msg = BlockchainMessage::Block(block);
                         if let Err(e) = tx.send(msg) {
                             log::error!("Error sending message: {e}");
