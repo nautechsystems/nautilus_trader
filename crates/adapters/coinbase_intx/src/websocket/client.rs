@@ -116,7 +116,7 @@ impl CoinbaseIntxWebSocketClient {
 
     /// Returns the websocket url being used by the client.
     #[must_use]
-    pub fn url(&self) -> &str {
+    pub const fn url(&self) -> &str {
         self.url.as_str()
     }
 

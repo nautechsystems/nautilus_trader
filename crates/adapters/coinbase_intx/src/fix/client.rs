@@ -116,31 +116,31 @@ impl CoinbaseIntxFixClient {
 
     /// Returns the FIX endpoint being used by the client.
     #[must_use]
-    pub fn endpoint(&self) -> &str {
+    pub const fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
     /// Returns the public API key being used by the client.
     #[must_use]
-    pub fn api_key(&self) -> &str {
+    pub const fn api_key(&self) -> &str {
         self.api_key.as_str()
     }
 
     /// Returns the Coinbase International portfolio ID being used by the client.
     #[must_use]
-    pub fn portfolio_id(&self) -> &str {
+    pub const fn portfolio_id(&self) -> &str {
         self.portfolio_id.as_str()
     }
 
     /// Returns the sender company ID being used by the client.
     #[must_use]
-    pub fn sender_comp_id(&self) -> &str {
+    pub const fn sender_comp_id(&self) -> &str {
         self.sender_comp_id.as_str()
     }
 
     /// Returns the target company ID being used by the client.
     #[must_use]
-    pub fn target_comp_id(&self) -> &str {
+    pub const fn target_comp_id(&self) -> &str {
         self.target_comp_id.as_str()
     }
 

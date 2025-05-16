@@ -207,12 +207,12 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
-    pub fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
+    pub const fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_bid()
     }
 
     #[must_use]
-    pub fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
+    pub const fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_ask()
     }
 
