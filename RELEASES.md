@@ -38,6 +38,7 @@ None
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
 - Optimized message bus topic-matching logic in Rust by 100× (#2634), thanks @twitu
+- Upgraded Rust (MSRV) to 1.87.0
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `databento` crate to v0.25.0
 - Upgraded `redis` crate to v0.31.0
@@ -223,7 +224,7 @@ None
 - Refined databento venue dataset mapping and configuration (#2483), thanks @faysou
 - Refined usage of databento `use_exchange_as_venue` (#2487), thanks @faysou
 - Refined time initialization of components in backtest (#2490), thanks @faysou
-- Upgraded Rust MSRV to 1.86.0
+- Upgraded Rust (MSRV) to 1.86.0
 - Upgraded `pyo3` crate to v0.24.1
 
 ### Fixes

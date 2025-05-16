@@ -28,7 +28,7 @@ members = [
 [workspace.package]
 version = "0.48.0"
 edition = "2024"
-rust-version = "1.86.0"
+rust-version = "1.87.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0"
 readme = "README.md"
