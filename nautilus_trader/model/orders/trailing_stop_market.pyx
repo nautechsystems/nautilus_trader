@@ -79,6 +79,8 @@ cdef class TrailingStopMarketOrder(Order):
         The order initialization event ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    activation_price : Price, optional
+        The price for the order to become active. If ``None`` then the order will be activated right after the order is accepted.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
