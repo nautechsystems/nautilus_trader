@@ -23,6 +23,7 @@ pub mod ethereum;
 pub mod extended;
 
 /// Returns a vector of all Dexes instances across all chains
+#[must_use]
 pub fn all_dex() -> Vec<&'static DexExtended> {
     let mut dexes = Vec::new();
     dexes.extend(arbitrum::all());
@@ -32,6 +33,7 @@ pub fn all_dex() -> Vec<&'static DexExtended> {
 }
 
 /// Returns a map of all DEX names to Dex instances across all chains
+#[must_use]
 pub fn dex_extended_map() -> HashMap<&'static str, &'static DexExtended> {
     let mut map = HashMap::new();
     map.extend(arbitrum::dex_map());

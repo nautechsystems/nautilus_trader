@@ -90,14 +90,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             () = notify.notified() => break,
              result = data_client.sync_exchange_pools(dex_id.as_str(), from_block) => {
                 match result {
-                    Ok(_) => {
+                    Ok(()) => {
                         // Exit after the tokens and pool are synced successfully
                         log::info!("Successfully synced tokens and pools");
                         break;
                     },
                     Err(e) => {
                         // Handle error case
-                        log::error!("Error syncing tokens and pools: {}", e);
+                        log::error!("Error syncing tokens and pools: {e}");
                         break;
                     }
                 }

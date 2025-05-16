@@ -22,7 +22,7 @@ use nautilus_model::defi::{
 
 use crate::exchanges::extended::DexExtended;
 
-/// PancakeSwap V3 DEX on Base
+/// `PancakeSwap` V3 DEX on Base
 pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::BASE.clone(),

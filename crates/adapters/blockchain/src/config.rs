@@ -35,10 +35,10 @@ impl BlockchainAdapterConfig {
         use_hypersync_for_live_data: bool,
     ) -> Self {
         Self {
-            http_rpc_url,
-            wss_rpc_url,
             use_hypersync_for_live_data,
+            http_rpc_url,
             rpc_requests_per_second,
+            wss_rpc_url,
         }
     }
 }

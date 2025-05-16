@@ -38,6 +38,7 @@ pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
 /// Returns a slice of all Ethereum Dexes
+#[must_use]
 pub fn all() -> Vec<&'static DexExtended> {
     vec![
         &UNISWAP_V2,
@@ -53,6 +54,7 @@ pub fn all() -> Vec<&'static DexExtended> {
 }
 
 /// Returns a map of Ethereum DEX name to Dex reference for easy lookup
+#[must_use]
 pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     let mut map = HashMap::new();
     map.insert("uniswap_v2", &*UNISWAP_V2);

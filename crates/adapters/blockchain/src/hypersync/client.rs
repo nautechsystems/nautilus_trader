@@ -17,7 +17,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use alloy::primitives::keccak256;
 use hypersync_client::{
-    Client, ClientConfig, StreamConfig,
+    Client, ClientConfig,
     net_types::{BlockSelection, FieldSelection, Query},
 };
 use nautilus_model::defi::chain::SharedChain;
@@ -32,15 +32,15 @@ use crate::{
 /// for the hypersync to index the block.
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
-/// A client for interacting with a `HyperSync` api to retrieve blockchain data.
+/// A client for interacting with a HyperSync API to retrieve blockchain data.
 pub struct HyperSyncClient {
-    /// The target blockchain identifier (e.g. Ethereum, Arbitrum)
+    /// The target blockchain identifier (e.g. Ethereum, Arbitrum).
     chain: SharedChain,
-    /// The underlying `HyperSync` Rust client for making API requests
+    /// The underlying HyperSync Rust client for making API requests.
     client: Arc<Client>,
-    /// Background task handle for the block subscription task
+    /// Background task handle for the block subscription task.
     blocks_subscription_task: Option<tokio::task::JoinHandle<()>>,
-    /// Channel for sending blockchain messages to the adapter data client
+    /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
 }
 
@@ -72,9 +72,7 @@ impl HyperSyncClient {
         let factory_address = dex.factory.as_ref();
         let pair_created_event = dex.pool_created_event.as_ref();
         log::info!(
-            "Requesting pair created events from Hypersync emitted by factory {} and from block {}",
-            factory_address,
-            from_block
+            "Requesting pair created events from Hypersync emitted by factory {factory_address} and from block {from_block}"
         );
         let event_hash = keccak256(pair_created_event.as_bytes());
         let topic0 = format!("0x{}", hex::encode(event_hash));
@@ -104,12 +102,7 @@ impl HyperSyncClient {
         let mut rx = self
             .client
             .clone()
-            .stream(
-                query,
-                StreamConfig {
-                    ..Default::default()
-                },
-            )
+            .stream(query, Default::default())
             .await
             .unwrap();
         let mut result = Vec::new();
@@ -125,7 +118,7 @@ impl HyperSyncClient {
         result
     }
 
-    /// Disconnects from the `HyperSync` service and stops all background tasks.
+    /// Disconnects from the HyperSync service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
     }

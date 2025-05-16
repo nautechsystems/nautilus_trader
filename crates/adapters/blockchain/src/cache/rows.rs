@@ -16,6 +16,7 @@
 use sqlx::{FromRow, Row, postgres::PgRow};
 
 /// A data transfer object that maps database rows to token data.
+///
 /// Implements `FromRow` trait to automatically convert PostgreSQL results into `TokenRow`
 /// objects that can be transformed into domain entity `Token` objects.
 pub struct TokenRow {
@@ -32,7 +33,7 @@ impl<'r> FromRow<'r, PgRow> for TokenRow {
         let symbol = row.try_get::<String, _>("symbol")?;
         let decimals = row.try_get::<i32, _>("decimals")?;
 
-        let token = TokenRow {
+        let token = Self {
             address,
             name,
             symbol,
