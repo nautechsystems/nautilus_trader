@@ -1047,14 +1047,6 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
-        # Publish events
-        self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id}",
-            msg=event,
-        )
-        if self.snapshot_orders:
-            self._create_order_state_snapshot(order)
-
         # Publish pending position events from snapshot to prevent recursion issues
         cdef list to_publish = self._pending_position_events.copy()
 
@@ -1196,6 +1188,13 @@ cdef class ExecutionEngine(Component):
             return
 
         self._cache.update_order(order)
+        if self.snapshot_orders:
+            self._create_order_state_snapshot(order)
+
+        self._msgbus.publish_c(
+            topic=f"events.order.{event.strategy_id}",
+            msg=event,
+        )
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)

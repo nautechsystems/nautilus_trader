@@ -140,13 +140,16 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Act
         self.engine.run()
 
-        # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 2689
+        # Assert
+        assert strategy.fast_ema.count == 2_689
         assert self.engine.iteration == 115_044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            996_498.80,
-            USD,
-        )
+        assert self.engine.cache.orders_total_count() == 178
+        assert self.engine.cache.positions_total_count() == 89
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(USD) == Money(996_814.33, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -202,13 +205,17 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine.run()
 
         # Assert
-        assert strategy1.fast_ema.count == 2689
-        assert strategy2.fast_ema.count == 2689
+        assert strategy1.fast_ema.count == 2_689
+        assert strategy2.fast_ema.count == 2_689
         assert self.engine.iteration == 115_044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            974_269.71,
-            USD,
-        )
+        assert self.engine.cache.orders_total_count() == 1_308
+        assert self.engine.cache.positions_total_count() == 654
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.event_count == 1_519
+        assert account.balance_total(USD) == Money(1_023_530.50, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
@@ -270,12 +277,15 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 8353
+        assert strategy.fast_ema.count == 8_353
         assert self.engine.iteration == 120_468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            987_607.44,
-            GBP,
-        )
+        assert self.engine.cache.orders_total_count() == 570
+        assert self.engine.cache.positions_total_count() == 285
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(GBP) == Money(961_069.95, GBP)
 
     def test_run_ema_cross_stop_entry_trail_strategy(self):
         # Arrange
@@ -297,13 +307,16 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Act
         self.engine.run()
 
-        # Assert - Should return expected PnL
+        # Assert
         assert strategy.fast_ema.count == 8_353
         assert self.engine.iteration == 120_468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            998_967.44,
-            GBP,
-        )
+        assert self.engine.cache.orders_total_count() == 12
+        assert self.engine.cache.positions_total_count() == 1
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(GBP) == Money(1_008_966.94, GBP)
 
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
         # Arrange
@@ -325,13 +338,16 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         # Act
         self.engine.run()
 
-        # Assert - Should return expected PnL
-        assert strategy.fast_ema.count == 41761
+        # Assert
+        assert strategy.fast_ema.count == 41_761
         assert self.engine.iteration == 120_468
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
-            850_143.71,
-            GBP,
-        )
+        assert self.engine.cache.orders_total_count() == 7_459
+        assert self.engine.cache.positions_total_count() == 3_729
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(GBP) == Money(241_080.17, GBP)
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
@@ -409,8 +425,13 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         # Assert
         assert strategy.fast_ema.count == 30_117
         assert self.engine.iteration == 60_234
-        ending_balance = self.engine.portfolio.account(self.venue).balance_total(USD)
-        assert ending_balance == Money(953_220.61, USD)
+        assert self.engine.cache.orders_total_count() == 2_984
+        assert self.engine.cache.positions_total_count() == 1_492
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(USD) == Money(1_088_115.65, USD)
 
 
 class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
@@ -477,10 +498,14 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         # Assert
         assert strategy.fast_ema.count == 10_000
         assert self.engine.iteration == 10_000
-        btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
-        usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9_999_549.43133000, USDT)
+        assert self.engine.cache.orders_total_count() == 2_255
+        assert self.engine.cache.positions_total_count() == 1
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(BTC) == Money(10.00000000, BTC)
+        assert account.balance_total(USDT) == Money(9_999_549.43133000, USDT)
 
     def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
         # Arrange
@@ -513,10 +538,14 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         assert len(ticks) == 40_000
         assert strategy.fast_ema.count == 10_000
         assert self.engine.iteration == 40_000
-        btc_ending_balance = self.engine.portfolio.account(self.venue).balance_total(BTC)
-        usdt_ending_balance = self.engine.portfolio.account(self.venue).balance_total(USDT)
-        assert btc_ending_balance == Money(10.00000000, BTC)
-        assert usdt_ending_balance == Money(9_999_954.94313300, USDT)
+        assert self.engine.cache.orders_total_count() == 902
+        assert self.engine.cache.positions_total_count() == 1
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(BTC) == Money(10.00000000, BTC)
+        assert account.balance_total(USDT) == Money(9_999_954.94313300, USDT)
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
@@ -575,12 +604,15 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 1771
+        assert strategy.fast_ema.count == 1_771
         assert self.engine.iteration == 100_000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            996_601.43,
-            AUD,
-        )
+        assert self.engine.cache.orders_total_count() == 172
+        assert self.engine.cache.positions_total_count() == 86
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(AUD) == Money(991_881.44, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -600,10 +632,13 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Assert
         assert strategy.fast_ema.count == 1_000
         assert self.engine.iteration == 100_000
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(
-            998_121.60,
-            AUD,
-        )
+        assert self.engine.cache.orders_total_count() == 96
+        assert self.engine.cache.positions_total_count() == 48
+        assert self.engine.cache.orders_open_count() == 0
+        assert self.engine.cache.positions_open_count() == 0
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(AUD) == Money(996_361.60, AUD)
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
@@ -661,10 +696,10 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Assert
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69_806
-        expected_commission = Money(127.56763570, USDT)
-        expected_usdt = Money(999_764.32147162, USDT)
-        assert self.engine.portfolio.account(self.venue).commission(USDT) == expected_commission
-        assert self.engine.portfolio.account(self.venue).balance_total(USDT) == expected_usdt
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.commission(USDT) == Money(127.56763570, USDT)
+        assert account.balance_total(USDT) == Money(998_869.96375810, USDT)
 
 
 class TestBacktestAcceptanceTestsOrderBookImbalance:
@@ -783,8 +818,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        assert self.engine.iteration == 4216
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(927.19, GBP)
+        assert self.engine.iteration == 4_216
+        account = self.engine.portfolio.account(self.venue)
+        assert account is not None
+        assert account.balance_total(GBP) == Money(924.64, GBP)
 
 
 class TestBacktestNodeWithBacktestDataIterator:

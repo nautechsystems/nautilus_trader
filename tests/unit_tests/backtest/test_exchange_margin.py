@@ -3235,7 +3235,7 @@ class TestSimulatedExchangeMarginAccount:
         assert position_open.quantity == Quantity.from_int(50_000)
         assert position_closed.realized_pnl == Money(-100, JPY)
         assert position_closed.commissions() == [Money(100, JPY)]
-        assert self.exchange.get_account().balance_total(USD) == Money(999_994.67, USD)
+        assert self.exchange.get_account().balance_total(USD) == Money(1_011_105.53, USD)
 
     def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self) -> None:
         # Arrange: Prepare market

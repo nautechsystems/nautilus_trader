@@ -513,7 +513,7 @@ class TestStrategy:
         # Act
         strategy.register_indicator_for_bars(bar_type, ema1)
         strategy.register_indicator_for_bars(bar_type, ema2)
-        strategy.register_indicator_for_bars(bar_type, ema2)
+        strategy.register_indicator_for_bars(bar_type, ema2)  # Logs error
 
         assert len(strategy.registered_indicators) == 2
         assert ema1 in strategy.registered_indicators
