@@ -59,9 +59,9 @@ pub struct BlockchainDataClient {
     rpc_client: Option<BlockchainRpcClientAny>,
     /// Interface for interacting with ERC20 token contracts.
     tokens: Erc20Contract,
-    /// Client for the HyperSync data indexing service
+    /// Client for the HyperSync data indexing service.
     hypersync_client: HyperSyncClient,
-    /// Channel receiver for messages from the HyperSync client
+    /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>,
 }
 
