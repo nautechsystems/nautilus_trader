@@ -26,7 +26,7 @@ pub enum BlockchainMessage {
 /// Represents the types of events that can be subscribed to via the blockchain RPC interface.
 ///
 /// This enum defines the various event types that the application can subscribe to using
-/// the WebSocket-based RPC subscription
+/// the WebSocket-based RPC subscription.
 #[derive(
     Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
 )]

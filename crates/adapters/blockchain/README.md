@@ -50,3 +50,18 @@ This script demonstrates how to use the blockchain data client to discover and c
 ```
 cargo run --bin sync_tokens_pools --features hypersync
 ```
+
+## License
+
+The source code for NautilusTrader is available on GitHub under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
+Contributions to the project are welcome and require the completion of a standard [Contributor License Agreement (CLA)](https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md).
+
+---
+
+NautilusTrader™ is developed and maintained by Nautech Systems, a technology
+company specializing in the development of high-performance trading systems.
+For more information, visit <https://nautilustrader.io>.
+
+<img src="https://nautilustrader.io/nautilus-logo-white.png" alt="logo" width="400" height="auto"/>
+
+<span style="font-size: 0.8em; color: #999;">© 2015-2025 Nautech Systems Pty Ltd. All rights reserved.</span>
