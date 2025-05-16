@@ -34,6 +34,7 @@ None
 - Improved Cython-Rust indicator parity for `DoubleExponentialMovingAverage` (DEMA) (#2633), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved exception on deserializing order from cache database
+- Improved `None` condition checks for value types, which now raise a `TypeError` instead of an obscure `AttributeError`
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
 - Implemented `_subscribe_instrument` for dYdX and Bybit (#2636), thanks @davidsblom
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
