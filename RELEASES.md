@@ -20,6 +20,7 @@ None
 
 ### Internal Improvements
 - Added `activation_price` str and repr tests for trailing stop orders (#2620), thanks @hope2see
+- Added condition check for order `contingency_type` and `linked_order_ids` where a contingency should have associated linked order IDs
 - Improved error handling for Databento adapter by changing many unwraps to instead log or raise Python exceptions (where applicable)
 - Improved fill behavior for limit orders in `L1_MBP` books, will now fill entire size when marketable as `TAKER` or market moves through limit as `MAKER`
 - Improved validations for `LimitOrder` in Rust (#2613), thanks @nicolad
