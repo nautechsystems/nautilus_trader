@@ -40,7 +40,7 @@ pub struct ExponentialMovingAverage {
 
 impl Display for ExponentialMovingAverage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({})", self.name(), self.period,)
+        write!(f, "{}({})", self.name(), self.period)
     }
 }
 
@@ -79,8 +79,15 @@ impl Indicator for ExponentialMovingAverage {
 
 impl ExponentialMovingAverage {
     /// Creates a new [`ExponentialMovingAverage`] instance.
+    ///
+    /// # Panics
+    /// * If `period` is not positive.
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        assert!(
+            period > 0,
+            "ExponentialMovingAverage::new → `period` must be positive (> 0); got {period}"
+        );
         Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -101,10 +108,17 @@ impl MovingAverage for ExponentialMovingAverage {
     fn count(&self) -> usize {
         self.count
     }
+
     fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
             self.has_inputs = true;
             self.value = value;
+            self.count = 1;
+
+            if self.period == 1 {
+                self.initialized = true;
+            }
+            return;
         }
 
         self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
@@ -223,5 +237,86 @@ mod tests {
         assert!(indicator_ema_10.has_inputs);
         assert!(!indicator_ema_10.initialized);
         assert_eq!(indicator_ema_10.value, 1522.0);
+    }
+
+    #[rstest]
+    fn test_period_one_behaviour() {
+        let mut ema = ExponentialMovingAverage::new(1, None);
+        assert_eq!(ema.alpha, 1.0, "α must be 1 when period = 1");
+
+        ema.update_raw(10.0);
+        assert!(ema.initialized());
+        assert_eq!(ema.value(), 10.0);
+
+        ema.update_raw(42.0);
+        assert_eq!(
+            ema.value(),
+            42.0,
+            "With α = 1, the EMA must track the latest sample exactly"
+        );
+    }
+
+    #[rstest]
+    fn test_default_price_type_is_last() {
+        let ema = ExponentialMovingAverage::new(3, None);
+        assert_eq!(
+            ema.price_type,
+            PriceType::Last,
+            "`price_type` default mismatch"
+        );
+    }
+
+    #[rstest]
+    fn test_nan_poisoning_and_reset_recovery() {
+        let mut ema = ExponentialMovingAverage::new(4, None);
+        for x in 0..3 {
+            ema.update_raw(x as f64);
+            assert!(ema.value().is_finite());
+        }
+
+        ema.update_raw(f64::NAN);
+        assert!(ema.value().is_nan());
+
+        ema.update_raw(123.456);
+        assert!(ema.value().is_nan());
+
+        ema.reset();
+        assert!(!ema.has_inputs());
+        ema.update_raw(7.0);
+        assert_eq!(ema.value(), 7.0);
+        assert!(ema.value().is_finite());
+    }
+
+    #[rstest]
+    fn test_reset_without_inputs_is_safe() {
+        let mut ema = ExponentialMovingAverage::new(8, None);
+        ema.reset();
+        assert!(!ema.has_inputs());
+        assert_eq!(ema.count(), 0);
+        assert!(!ema.initialized());
+    }
+
+    #[rstest]
+    fn test_has_inputs_lifecycle() {
+        let mut ema = ExponentialMovingAverage::new(5, None);
+        assert!(!ema.has_inputs());
+
+        ema.update_raw(1.23);
+        assert!(ema.has_inputs());
+
+        ema.reset();
+        assert!(!ema.has_inputs());
+    }
+
+    #[rstest]
+    fn test_subnormal_inputs_do_not_underflow() {
+        let mut ema = ExponentialMovingAverage::new(2, None);
+        let tiny = f64::MIN_POSITIVE / 2.0;
+        ema.update_raw(tiny);
+        ema.update_raw(tiny);
+        assert!(
+            ema.value() > 0.0,
+            "Underflow: EMA value collapsed to zero for sub-normal inputs"
+        );
     }
 }
