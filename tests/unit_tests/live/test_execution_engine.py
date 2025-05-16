@@ -406,7 +406,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("2"),
             order_side=OrderSide.SELL,
             order_type=OrderType.STOP_LIMIT,
-            contingency_type=ContingencyType.OCO,
+            contingency_type=ContingencyType.NO_CONTINGENCY,
             time_in_force=TimeInForce.DAY,
             expire_time=None,
             order_status=OrderStatus.REJECTED,

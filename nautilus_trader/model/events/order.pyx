@@ -265,6 +265,8 @@ cdef class OrderInitialized(OrderEvent):
     ValueError
         If `order_side` is ``NO_ORDER_SIDE``.
     ValueError
+        If `contingency_type` is not ``NO_CONTINGENCY``, and `linked_order_ids` is ``None`` or empty.
+    ValueError
         If `exec_algorithm_id` is not ``None``, and `exec_spawn_id` is ``None``.
     """
 
@@ -297,6 +299,8 @@ cdef class OrderInitialized(OrderEvent):
         bint reconciliation=False,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
+        if contingency_type != ContingencyType.NO_CONTINGENCY:
+            Condition.is_true(linked_order_ids, f"`linked_order_ids` was `None` or empty when `contingency_type` {contingency_type_to_str(contingency_type)}")
         if exec_algorithm_id is not None:
             Condition.not_none(exec_spawn_id, "exec_spawn_id")
 
