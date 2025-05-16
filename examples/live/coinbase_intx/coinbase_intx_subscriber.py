@@ -41,9 +41,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
 
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
-
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
