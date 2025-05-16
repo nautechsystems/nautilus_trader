@@ -555,6 +555,10 @@ cdef class RiskEngine(Component):
         ########################################################################
         # VALIDATION CHECKS
         ########################################################################
+
+        if self.debug:
+            self._log.debug(f"Validating {order}", LogColor.MAGENTA)
+
         if not self._check_order_price(instrument, order):
             return False  # Denied
 
@@ -605,6 +609,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         # RISK CHECKS
         ########################################################################
+
         cdef QuoteTick last_quote = None
         cdef TradeTick last_trade = None
         cdef Price last_px = None
@@ -640,6 +645,9 @@ cdef class RiskEngine(Component):
             Currency base_currency = None
             double xrate
         for order in orders:
+            if self.debug:
+                self._log.debug(f"Pre-trade risk check: {order}", LogColor.MAGENTA)
+
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT:
                 if last_px is None:
                     # Determine entry price
