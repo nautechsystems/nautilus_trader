@@ -68,14 +68,15 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@9d7e65c320fdb52dcd45ffaa68deb6c02c8754d9 # v1.12.0
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
         override: true
 
     - name: Install cargo-nextest
-      uses: taiki-e/install-action@v2
+      # https://github.com/taiki-e/install-action # v2.50.10
+      uses: taiki-e/install-action@83254c543806f3224380bf1001d6fac8feaf2d0b
       with:
         tool: nextest
 
