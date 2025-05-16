@@ -4,18 +4,15 @@ This guide provides further details about the available order types for the plat
 the execution instructions supported for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
-NautilusTrader has unified a large set of order types and execution instructions
-from standard to more advanced, to provide as much of a trading venues potential functionality
-as possible. This enables traders to define certain conditions and instructions for
-order execution and management, facilitating the creation of virtually any type of trading strategy.
+NautilusTrader supports a broad set of order types and execution instructions, from standard to advanced,
+exposing as much of a trading venue's functionality as possible. This enables traders to define instructions
+and contingencies for order execution and management, facilitating the creation of virtually any trading strategy.
 
 ## Overview
 
-The two main types of orders are *Market* orders and *Limit* orders. All other order
-types are built from these two fundamental order types, in terms of liquidity provision they
-are exact opposites, *Market* orders demand liquidity and require immediate trading at the best
-price available. Conversely, *Limit* orders provide liquidity, they act as standing orders in a limit order book
-at a specified limit price.
+All order types are derived from two fundamentals: *Market* and *Limit* orders. In terms of liquidity, they are opposites.
+*Market* orders consume liquidity by executing immediately at the best available price, whereas *Limit*
+orders provide liquidity by resting in the order book at a specified price until matched.
 
 The order types available for the platform are (using the enum values):
 
@@ -30,16 +27,15 @@ The order types available for the platform are (using the enum values):
 - `TRAILING_STOP_LIMIT`
 
 :::info
-NautilusTrader has unified the API for a large set of order types and execution instructions.
-However, these are not necessarily available for every venue. If an order is submitted where an instruction or
-option is not available, the system should either **NOT** submit the order and an error will be logged with
-a clear explanatory message.
+NautilusTrader provides a unified API for many order types and execution instructions, but not all venues support every option.
+If an order contains an instruction or option that the target venue does not support, the system **should not** submit the order;
+instead, it logs an error with a clear explanatory message.
 :::
 
 ### Terminology
 
-- An order is **aggressive** if its type is `MARKET`, or if its executing as a *marketable* order (i.e., taking liquidity).
-- An order is **passive** if not *marketable* (i.e., providing liquidity).
+- An order is **aggressive** if its type is `MARKET` or if it executes as a *marketable* order (i.e., takes liquidity).
+- An order is **passive** if it is not marketable (i.e., provides liquidity).
 - An order is **active local** if it remains within the local system boundary in one of the following three non-terminal statuses:
   - `INITIALIZED`
   - `EMULATED`
@@ -83,7 +79,7 @@ remaining quantity is canceled.
 ### Expire time
 
 This instruction is to be used in conjunction with the `GTD` time in force to specify the time
-at which the order will expire and be removed from the venues order book (or order management system).
+at which the order will expire and be removed from the venue's order book (or order management system).
 
 ### Post-only
 
@@ -93,12 +89,13 @@ important for market makers, or traders seeking to restrict the order to a liqui
 
 ### Reduce-only
 
-An order which is set as `reduce_only` will only ever reduce an existing position on an instrument, and
-never open a new position (if already flat). The exact behavior of this instruction can vary between
-venues, however the behavior as per the Nautilus `SimulatedExchange` is typical of a real venue.
+An order which is set as `reduce_only` will only ever reduce an existing position on an instrument and
+never open a new position (if already flat). The exact behavior of this instruction can vary between venues.
 
-- Order will be canceled if the associated position is closed (becomes flat)
-- Order quantity will be reduced as the associated positions size reduces
+However, the behavior in the Nautilus `SimulatedExchange` is typical of a real venue.
+
+- Order will be canceled if the associated position is closed (becomes flat).
+- Order quantity will be reduced as the associated position's size decreases.
 
 ### Display quantity
 
@@ -118,8 +115,8 @@ which is applicable to conditional trigger orders, specifying the method of trig
 - `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable.
 - `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`.
 - `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`.
-- `MARK`: The trigger price will be based on the venues mark price for the instrument.
-- `INDEX`: The trigger price will be based on the venues index price for the instrument.
+- `MARK`: The trigger price will be based on the venue's mark price for the instrument.
+- `INDEX`: The trigger price will be based on the venue's index price for the instrument.
 
 ### Trigger offset type
 
@@ -130,13 +127,13 @@ of the stop price based on the offset from the *market* (bid, ask or last price 
 - `PRICE`: The offset is based on a price difference.
 - `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%).
 - `TICKS`: The offset is based on a number of ticks.
-- `PRICE_TIER`: The offset is based on an venue specific price tier.
+- `PRICE_TIER`: The offset is based on a venue-specific price tier.
 
 ### Contingent orders
 
-More advanced relationships can be specified between orders such as assigning child order(s) which will only
-trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
-contingent on each other. More documentation for these options can be found in the [advanced order guide](#advanced-orders).
+More advanced relationships can be specified between orders.
+For example, child orders can be assigned to trigger only when the parent is activated or filled, or orders can be
+linked so that one cancels or reduces the quantity of another. See the [Advanced Orders](#advanced-orders) section for more details.
 
 ## Order factory
 
@@ -407,7 +404,7 @@ a fixed offset away from the defined market price. Once triggered a *Market* ord
 immediately be placed.
 
 In the following example we create a *Trailing-Stop-Market* order on the Binance Futures exchange to SELL 10 ETHUSD-PERP COIN_M margined
-Perpetual Futures Contracts activating at a trigger price of 5,000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
+Perpetual Futures Contracts activating at a price of 5,000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
 
 ```python
 import pandas as pd
@@ -425,7 +422,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(10),
-    trigger_price=Price.from_str("5_000"),
+    activation_price=Price.from_str("5_000"),
     trigger_type=TriggerType.LAST_PRICE,  # <-- optional (default DEFAULT)
     trailing_offset=Decimal(100),
     trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
@@ -467,7 +464,7 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(1_250_000),
     price=Price.from_str("0.71000"),
-    trigger_price=Price.from_str("0.72000"),
+    activation_price=Price.from_str("0.72000"),
     trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
     limit_offset=Decimal("0.00050"),
     trailing_offset=Decimal("0.00100"),
@@ -524,8 +521,8 @@ An OTO order involves two parts:
 | **Partial trigger** | Immediately upon each partial execution of the parent; the child’s quantity matches the executed amount and is increased as further fills occur. |
 
 :::info
-The default backtest venue for NautilusTrader uses a *partial trigger* model for OTO orders.
-A future update will add configuration to opt-in to a *full trigger* model.
+The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
+A future update will add configuration to opt-in to a *full-trigger model*.
 :::
 
 > **Why the distinction matters**
@@ -643,11 +640,11 @@ There is no limitation on the number of emulated orders you can have per running
 
 An emulated order will progress through the following stages:
 
-1. Submitted by a `Strategy` through the `submit_order` method
-2. Sent to the `RiskEngine` for pre-trade risk checks (it may be denied at this point)
-3. Sent to the `OrderEmulator` where it is *held* / emulated
-4. Once triggered, emulated order is transformed into a `MARKET` or `LIMIT` order and released (submitted to the venue)
-5. Released order undergoes final risk checks before venue submission
+1. Submitted by a `Strategy` through the `submit_order` method.
+2. Sent to the `RiskEngine` for pre-trade risk checks (it may be denied at this point).
+3. Sent to the `OrderEmulator` where it is *held* / emulated.
+4. Once triggered, emulated order is transformed into a `MARKET` or `LIMIT` order and released (submitted to the venue).
+5. Released order undergoes final risk checks before venue submission.
 
 :::note
 Emulated orders are subject to the same risk controls as *regular* orders, and can be
@@ -710,9 +707,9 @@ There are several ways to query emulation status:
 
 The following `Cache` methods are available:
 
-- `self.cache.orders_emulated(...)`: Returns all currently emulated orders
-- `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated
-- `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders
+- `self.cache.orders_emulated(...)`: Returns all currently emulated orders.
+- `self.cache.is_order_emulated(...)`: Checks if a specific order is emulated.
+- `self.cache.orders_emulated_count(...)`: Returns the count of emulated orders.
 
 See the full [API reference](../../api_reference/cache) for additional details.
 

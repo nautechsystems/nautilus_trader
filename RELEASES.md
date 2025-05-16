@@ -60,7 +60,8 @@ None
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
-- Fixed various errors in concept guides
+- Improved the clarity of various concept guides
+- Fixed several errors in concept guides
 - Added errors and panics docs for most crate
 - Added errors and panics docs for most crate
 
