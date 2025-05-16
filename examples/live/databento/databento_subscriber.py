@@ -38,9 +38,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
 
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
-
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [

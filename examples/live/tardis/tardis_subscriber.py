@@ -38,9 +38,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
 
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
-
 # Run the following to start the tardis-machine server:
 # docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
 

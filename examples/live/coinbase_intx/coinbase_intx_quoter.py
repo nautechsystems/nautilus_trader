@@ -47,9 +47,6 @@ from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
-
 instrument_id = InstrumentId.from_str("BTC-PERP.COINBASE_INTX")
 offset_ticks = 10  # Number of ticks to offset limit orders from the market
 trade_size = Decimal("0.01")
