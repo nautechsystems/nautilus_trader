@@ -37,7 +37,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-core = { workspace = true }
+nautilus-core = { workspace = true, features = ["python"] }
 nautilus-model = { workspace = true }
 
 ahash = { workspace = true }
@@ -53,7 +53,7 @@ strum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-databento = "0.23.0"
+databento = "0.25.0"
 fallible-streaming-iterator = "0.1.9"
 time = "0.3.41"
 
@@ -66,3 +66,4 @@ tracing-test = { workspace = true }
 [[bin]]
 name = "databento-sandbox"
 path = "bin/sandbox.rs"
+required-features = ["python"]

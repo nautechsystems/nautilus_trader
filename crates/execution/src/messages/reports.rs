@@ -20,6 +20,7 @@
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{ClientOrderId, InstrumentId};
 
+#[derive(Debug)]
 pub struct GenerateOrderStatusReport {
     command_id: UUID4,
     ts_init: UnixNanos,
@@ -47,6 +48,7 @@ impl GenerateOrderStatusReport {
     }
 }
 
+#[derive(Debug)]
 pub struct GenerateOrderStatusReports {
     command_id: UUID4,
     ts_init: UnixNanos,
@@ -77,6 +79,7 @@ impl GenerateOrderStatusReports {
     }
 }
 
+#[derive(Debug)]
 pub struct GenerateFillReports {
     command_id: UUID4,
     ts_init: UnixNanos,
@@ -107,6 +110,7 @@ impl GenerateFillReports {
     }
 }
 
+#[derive(Debug)]
 pub struct GeneratePositionReports {
     command_id: UUID4,
     ts_init: UnixNanos,

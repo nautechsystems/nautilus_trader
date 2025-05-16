@@ -36,6 +36,7 @@ use crate::{
     },
 };
 
+#[derive(Debug)]
 pub struct OrderEmulatorAdapter {
     emulator: Rc<RefCell<OrderEmulator>>,
 }

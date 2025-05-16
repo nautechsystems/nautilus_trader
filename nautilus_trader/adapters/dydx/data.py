@@ -48,10 +48,14 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import SubscribeBars
+from nautilus_trader.data.messages import SubscribeInstrument
+from nautilus_trader.data.messages import SubscribeInstruments
 from nautilus_trader.data.messages import SubscribeOrderBook
 from nautilus_trader.data.messages import SubscribeQuoteTicks
 from nautilus_trader.data.messages import SubscribeTradeTicks
 from nautilus_trader.data.messages import UnsubscribeBars
+from nautilus_trader.data.messages import UnsubscribeInstrument
+from nautilus_trader.data.messages import UnsubscribeInstruments
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
@@ -152,8 +156,8 @@ class DYDXDataClient(LiveMarketDataClient):
             base_url=ws_base_url,
             loop=loop,
             max_send_retries=config.max_retries or 3,
-            delay_initial_ms=config.retry_delay_initial_ms or 1_000,
-            delay_max_ms=config.retry_delay_max_ms or 10_000,
+            delay_initial_ms=config.retry_delay_initial_ms or 100,
+            delay_max_ms=config.retry_delay_max_ms or 5_000,
             backoff_factor=2,
         )
 
@@ -772,6 +776,57 @@ class DYDXDataClient(LiveMarketDataClient):
 
         except Exception as e:
             self._log.exception(f"Failed to parse market channel data: {raw.decode()}", e)
+
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        """
+        Subscribe to instruments updates.
+
+        Parameters
+        ----------
+        command : SubscribeInstruments
+            The command to subscribe to instruments.
+
+        """
+        self._log.info("Skipping subscribe_instruments, dYdX subscribes automatically")
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        """
+        Subscribe to instrument updates.
+
+        Parameters
+        ----------
+        command : SubscribeInstrument
+            The command to subscribe to instrument.
+
+        """
+        self._log.info("Skipping subscribe_instrument, dYdX subscribes automatically")
+
+    async def _unsubscribe_instruments(
+        self,
+        command: UnsubscribeInstruments,
+    ) -> None:
+        """
+        Unsubscribe from instruments updates.
+
+        Parameters
+        ----------
+        command : UnsubscribeInstruments
+            The command to unsubscribe from instruments updates.
+
+        """
+        self._log.info("Skipping unsubscribe_instruments, not applicable for dYdX")
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        """
+        Unsubscribe from instrument updates.
+
+        Parameters
+        ----------
+        command : UnsubscribeInstrument
+            The command to unsubscribe from instrument updates.
+
+        """
+        self._log.info("Skipping unsubscribe_instrument, not applicable for dYdX")
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         dydx_symbol = DYDXSymbol(command.instrument_id.symbol.value)

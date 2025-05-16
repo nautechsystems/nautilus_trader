@@ -24,17 +24,20 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-persistence/extension-module",
 ]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
   "nautilus-model/ffi",
+  "nautilus-persistence/ffi",
 ]
 python = [
   "pyo3",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
+  "nautilus-persistence/python",
 ]
 clock_v2 = ["nautilus-common/clock_v2"]
 high-precision = ["nautilus-model/high-precision"]
@@ -47,7 +50,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-persistence = { workspace = true }
 
+ahash = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }

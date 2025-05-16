@@ -189,6 +189,10 @@ class BybitOrderType(Enum):
 
 @unique
 class BybitStopOrderType(Enum):
+    """
+    https://bybit-exchange.github.io/docs/v5/enum#stopordertype
+    """
+
     NONE = ""  # Default
     UNKNOWN = "UNKNOWN"  # Classic account value
     TAKE_PROFIT = "TakeProfit"

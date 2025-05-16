@@ -300,49 +300,20 @@ typedef struct TimeEventHandler_t {
     char *callback_ptr;
 } TimeEventHandler_t;
 
-/**
- * Returns whether the core logger is enabled.
- */
-uint8_t logging_is_initialized(void);
-
-/**
- * Sets the logging system to bypass mode.
- */
-void logging_set_bypass(void);
-
-/**
- * Shuts down the logging system.
- */
-void logging_shutdown(void);
-
-/**
- * Returns whether the core logger is using ANSI colors.
- */
-uint8_t logging_is_colored(void);
-
-/**
- * Sets the global logging clock to real-time mode.
- */
-void logging_clock_set_realtime_mode(void);
-
-/**
- * Sets the global logging clock to static mode.
- */
-void logging_clock_set_static_mode(void);
-
-/**
- * Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
- */
-void logging_clock_set_static_time(uint64_t time_ns);
-
 struct TestClock_API test_clock_new(void);
 
 void test_clock_drop(struct TestClock_API clock);
 
 /**
+ * Registers the default callback handler for TestClock.
+ *
  * # Safety
  *
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if the `callback_ptr` is null or represents the Python `None` object.
  */
 void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
@@ -363,8 +334,13 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * This function assumes:
+ * - `name_ptr` is a valid C string pointer.
+ * - `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or if setting the timer fails.
  */
 void test_clock_set_time_alert(struct TestClock_API *clock,
                                const char *name_ptr,
@@ -375,8 +351,13 @@ void test_clock_set_time_alert(struct TestClock_API *clock,
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * This function assumes:
+ * - `name_ptr` is a valid C string pointer.
+ * - `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or represents the Python `None` object.
  */
 void test_clock_set_timer(struct TestClock_API *clock,
                           const char *name_ptr,
@@ -389,7 +370,7 @@ void test_clock_set_timer(struct TestClock_API *clock,
 /**
  * # Safety
  *
- * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
+ * Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
  */
 CVec test_clock_advance_time(struct TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
 
@@ -398,14 +379,14 @@ void vec_time_event_handlers_drop(CVec v);
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
+ * Assumes `name_ptr` is a valid C string pointer.
  */
 uint64_t test_clock_next_time(struct TestClock_API *clock, const char *name_ptr);
 
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
+ * Assumes `name_ptr` is a valid C string pointer.
  */
 void test_clock_cancel_timer(struct TestClock_API *clock, const char *name_ptr);
 
@@ -418,7 +399,11 @@ void live_clock_drop(struct LiveClock_API clock);
 /**
  * # Safety
  *
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ *
+ * # Panics
+ *
+ * Panics if `callback_ptr` is null or represents the Python `None` object.
  */
 void live_clock_register_default_handler(struct LiveClock_API *clock, PyObject *callback_ptr);
 
@@ -437,14 +422,15 @@ uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * This function assumes:
+ * - `name_ptr` is a valid C string pointer.
+ * - `callback_ptr` is a valid `PyCallable` pointer.
  *
  * # Panics
  *
- * This function panics:
- * - If `name` is not a valid string.
- * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+ * This function panics if:
+ * - `name` is not a valid string.
+ * - `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_time_alert(struct LiveClock_API *clock,
                                const char *name_ptr,
@@ -455,14 +441,15 @@ void live_clock_set_time_alert(struct LiveClock_API *clock,
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
+ * This function assumes:
+ * - `name_ptr` is a valid C string pointer.
+ * - `callback_ptr` is a valid `PyCallable` pointer.
  *
  * # Panics
  *
- * This function panics:
- * - If `name` is not a valid string.
- * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
+ * This function panics if:
+ * - `name` is not a valid string.
+ * - `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_timer(struct LiveClock_API *clock,
                           const char *name_ptr,
@@ -475,14 +462,14 @@ void live_clock_set_timer(struct LiveClock_API *clock,
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
+ * Assumes `name_ptr` is a valid C string pointer.
  */
 uint64_t live_clock_next_time(struct LiveClock_API *clock, const char *name_ptr);
 
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is a valid C string pointer.
+ * Assumes `name_ptr` is a valid C string pointer.
  */
 void live_clock_cancel_timer(struct LiveClock_API *clock, const char *name_ptr);
 
@@ -495,7 +482,11 @@ const char *component_state_to_cstr(enum ComponentState value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum ComponentState component_state_from_cstr(const char *ptr);
 
@@ -506,7 +497,11 @@ const char *component_trigger_to_cstr(enum ComponentTrigger value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
 
@@ -517,7 +512,11 @@ const char *log_level_to_cstr(enum LogLevel value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum LogLevel log_level_from_cstr(const char *ptr);
 
@@ -528,7 +527,11 @@ const char *log_color_to_cstr(enum LogColor value);
  *
  * # Safety
  *
- * - Assumes `ptr` is a valid C string pointer.
+ * Assumes `ptr` is a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if the input C string does not match a valid enum variant.
  */
 enum LogColor log_color_from_cstr(const char *ptr);
 
@@ -542,13 +545,18 @@ enum LogColor log_color_from_cstr(const char *ptr);
  *
  * # Safety
  *
- * Should only be called once during an applications run, ideally at the
+ * Should only be called once during an application's run, ideally at the
  * beginning of the run.
  *
- * - Assume `directory_ptr` is either NULL or a valid C string pointer.
- * - Assume `file_name_ptr` is either NULL or a valid C string pointer.
- * - Assume `file_format_ptr` is either NULL or a valid C string pointer.
- * - Assume `component_level_ptr` is either NULL or a valid C string pointer.
+ * This function assumes:
+ * - `directory_ptr` is either NULL or a valid C string pointer.
+ * - `file_name_ptr` is either NULL or a valid C string pointer.
+ * - `file_format_ptr` is either NULL or a valid C string pointer.
+ * - `component_level_ptr` is either NULL or a valid C string pointer.
+ *
+ * # Panics
+ *
+ * Panics if initializing the Rust logger fails.
  */
 struct LogGuard_API logging_init(TraderId_t trader_id,
                                  UUID4_t instance_id,
@@ -569,8 +577,9 @@ struct LogGuard_API logging_init(TraderId_t trader_id,
  *
  * # Safety
  *
- * - Assumes `component_ptr` is a valid C string pointer.
- * - Assumes `message_ptr` is a valid C string pointer.
+ * This function assumes:
+ * - `component_ptr` is a valid C string pointer.
+ * - `message_ptr` is a valid C string pointer.
  */
 void logger_log(enum LogLevel level,
                 enum LogColor color,
@@ -582,8 +591,9 @@ void logger_log(enum LogLevel level,
  *
  * # Safety
  *
- * - Assumes `machine_id_ptr` is a valid C string pointer.
- * - Assumes `component_ptr` is a valid C string pointer.
+ * This function assumes:
+ * - `machine_id_ptr` is a valid C string pointer.
+ * - `component_ptr` is a valid C string pointer.
  */
 void logging_log_header(TraderId_t trader_id,
                         const char *machine_id_ptr,
@@ -595,7 +605,7 @@ void logging_log_header(TraderId_t trader_id,
  *
  * # Safety
  *
- * - Assumes `component_ptr` is a valid C string pointer.
+ * Assumes `component_ptr` is a valid C string pointer.
  */
 void logging_log_sysinfo(const char *component_ptr);
 
@@ -609,10 +619,24 @@ void logger_flush(void);
  */
 void logger_drop(struct LogGuard_API log_guard);
 
+uint8_t logging_is_initialized(void);
+
+void logging_set_bypass(void);
+
+void logging_shutdown(void);
+
+uint8_t logging_is_colored(void);
+
+void logging_clock_set_realtime_mode(void);
+
+void logging_clock_set_static_mode(void);
+
+void logging_clock_set_static_time(uint64_t time_ns);
+
 /**
  * # Safety
  *
- * - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+ * Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
  */
 struct TimeEvent_t time_event_new(const char *name_ptr,
                                   UUID4_t event_id,

@@ -22,6 +22,7 @@ use std::{
     cell::RefCell,
     cmp::min,
     collections::HashMap,
+    fmt::Debug,
     ops::{Add, Sub},
     rc::Rc,
 };
@@ -101,6 +102,15 @@ pub struct OrderMatchingEngine {
     account_ids: HashMap<TraderId, AccountId>,
     cached_filled_qty: HashMap<ClientOrderId, Quantity>,
     ids_generator: IdsGenerator,
+}
+
+impl Debug for OrderMatchingEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderMatchingEngine))
+            .field("venue", &self.venue)
+            .field("instrument", &self.instrument.id())
+            .finish()
+    }
 }
 
 impl OrderMatchingEngine {
@@ -197,12 +207,12 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
-    pub fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
+    pub const fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_bid()
     }
 
     #[must_use]
-    pub fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
+    pub const fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_ask()
     }
 
@@ -243,6 +253,9 @@ impl OrderMatchingEngine {
         self.iterate(deltas.ts_event);
     }
 
+    /// # Panics
+    ///
+    /// Panics if updating the order book with the quote tick fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
 
@@ -253,6 +266,9 @@ impl OrderMatchingEngine {
         self.iterate(quote.ts_event);
     }
 
+    /// # Panics
+    ///
+    /// Panics if the bar type configuration is missing a time delta.
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 
@@ -441,6 +457,9 @@ impl OrderMatchingEngine {
         self.last_bar_ask = None;
     }
 
+    /// # Panics
+    ///
+    /// Panics if updating the order book with the trade tick fails.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         log::debug!("Processing {trade}");
 
@@ -479,6 +498,9 @@ impl OrderMatchingEngine {
 
     // -- TRADING COMMANDS ------------------------------------------------------------------------
 
+    /// # Panics
+    ///
+    /// Panics if the instrument activation timestamp is missing.
     #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &mut OrderAny, account_id: AccountId) {
         // Enter the scope where you will borrow a cache
@@ -1045,6 +1067,10 @@ impl OrderMatchingEngine {
 
     /// Iterate the matching engine by processing the bid and ask order sides
     /// and advancing time up to the given UNIX `timestamp_ns`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the best bid or ask price is unavailable when iterating.
     pub fn iterate(&mut self, timestamp_ns: UnixNanos) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
@@ -1269,6 +1295,9 @@ impl OrderMatchingEngine {
         self.apply_fills(order, fills, LiquiditySide::Taker, None, position);
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order has no price, or if fill price or quantity precision mismatches occur.
     pub fn fill_limit_order(&mut self, order: &mut OrderAny) {
         match order.price() {
             Some(order_price) => {
@@ -1462,7 +1491,10 @@ impl OrderMatchingEngine {
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
-                OrderType::Market | OrderType::MarketIfTouched | OrderType::StopMarket
+                OrderType::Market
+                    | OrderType::MarketIfTouched
+                    | OrderType::StopMarket
+                    | OrderType::TrailingStopMarket
             )
         {
             // Exhausted simulated book volume (continue aggressive filling into next level)

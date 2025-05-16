@@ -1,0 +1,64 @@
+[package]
+name = "nautilus-blockchain"
+readme = "README.md"
+publish = false  # Do not publish to crates.io for now
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lib]
+name = "nautilus_blockchain"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+hypersync = ["hypersync-client", "hypersync-schema"]
+
+[package.metadata.docs.rs]
+features = ["defi", "python"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-model = { workspace = true, features = ["defi"] }
+nautilus-core = { workspace = true }
+nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
+nautilus-common = { workspace = true }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+dotenvy = { workspace = true }
+enum_dispatch = { workspace = true }
+futures-util = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tracing = { workspace = true }
+ustr = { workspace = true }
+hypersync-client = { version = "0.18.2", optional = true }
+hypersync-schema = { version = "0.3.0", optional = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+
+[[bin]]
+name = "live_blocks_rpc"
+path = "bin/watch_rpc_live_blocks.rs"
+required-features = ["hypersync"]
+
+[[bin]]
+name = "live_blocks_hypersync"
+path = "bin/watch_hypersync_live_blocks.rs"
+required-features = ["hypersync"]

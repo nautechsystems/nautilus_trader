@@ -67,7 +67,7 @@ class TestInstrumentProviderPyo3:
             price_precision = 5
 
         return CurrencyPair(
-            id=instrument_id,
+            instrument_id=instrument_id,
             raw_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
@@ -95,7 +95,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def betting_instrument() -> BettingInstrument:
         return BettingInstrument(
-            id=InstrumentId.from_str("1-123456789.BETFAIR"),
+            instrument_id=InstrumentId.from_str("1-123456789.BETFAIR"),
             raw_symbol=Symbol.from_str("1-123456789"),
             betting_type="ODDS",
             competition_id=12282733,
@@ -133,7 +133,7 @@ class TestInstrumentProviderPyo3:
         price_increment = Price.from_str("0.001")
         size_increment = Quantity.from_str("0.01")
         return BinaryOption(
-            id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
+            instrument_id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
             raw_symbol=raw_symbol,
             outcome="Yes",
             description="Will the outcome of this market be 'Yes'?",
@@ -158,7 +158,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
         return CryptoPerpetual(
-            id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+            instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
             raw_symbol=Symbol("ETHUSDT-PERP"),
             base_currency=_ETH,
             quote_currency=_USDT,
@@ -186,7 +186,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def ethusdt_binance() -> CurrencyPair:
         return CurrencyPair(
-            id=InstrumentId(
+            instrument_id=InstrumentId(
                 symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
@@ -213,7 +213,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def xbtusd_bitmex() -> CryptoPerpetual:
         return CryptoPerpetual(
-            id=InstrumentId(
+            instrument_id=InstrumentId(
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
@@ -243,7 +243,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def ethusd_bitmex() -> CryptoPerpetual:
         return CryptoPerpetual(
-            id=InstrumentId(
+            instrument_id=InstrumentId(
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
@@ -282,7 +282,7 @@ class TestInstrumentProviderPyo3:
         symbol = f"BTCUSDT_{expiration.strftime('%y%m%d')}"
         instrument_id_str = f"{symbol}.BINANCE"
         return CryptoFuture(
-            id=InstrumentId.from_str(instrument_id_str),
+            instrument_id=InstrumentId.from_str(instrument_id_str),
             raw_symbol=Symbol(symbol),
             underlying=_BTC,
             quote_currency=_USDT,
@@ -312,7 +312,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def btcusd_option_deribit() -> CryptoOption:
         return CryptoOption(
-            id=InstrumentId.from_str("BTC-13JAN23-16000-P.DERIBIT"),
+            instrument_id=InstrumentId.from_str("BTC-13JAN23-16000-P.DERIBIT"),
             raw_symbol=Symbol("BTC-13JAN23-16000-P"),
             underlying=_BTC,
             quote_currency=_USD,
@@ -343,7 +343,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def btcusdt_binance() -> CurrencyPair:
         return CurrencyPair(
-            id=InstrumentId.from_str("BTCUSDT.BINANCE"),
+            instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
             raw_symbol=Symbol("BTCUSDT"),
             base_currency=_BTC,
             quote_currency=_USDT,
@@ -367,7 +367,7 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def aapl_equity() -> Equity:
         return Equity(
-            id=InstrumentId.from_str("AAPL.XNAS"),
+            instrument_id=InstrumentId.from_str("AAPL.XNAS"),
             raw_symbol=Symbol("AAPL"),
             isin="US0378331005",
             currency=_USD,
@@ -392,7 +392,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return OptionContract(
-            id=InstrumentId.from_str("AAPL211217C00150000.OPRA"),
+            instrument_id=InstrumentId.from_str("AAPL211217C00150000.OPRA"),
             raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             exchange="GMNI",  # Nasdaq GEMX
@@ -424,7 +424,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2021-12-17", tz=pytz.utc)
         return FuturesContract(
-            id=InstrumentId.from_str("ESZ21.GLBX"),
+            instrument_id=InstrumentId.from_str("ESZ21.GLBX"),
             raw_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             exchange="XCME",
@@ -454,7 +454,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2024-6-21T13:30:00", tz=pytz.utc)
         return FuturesSpread(
-            id=InstrumentId.from_str("ESM4-ESU4.GLBX"),
+            instrument_id=InstrumentId.from_str("ESM4-ESU4.GLBX"),
             raw_symbol=Symbol("ESM4-ESU4"),
             asset_class=AssetClass.INDEX,
             exchange="XCME",
@@ -485,7 +485,7 @@ class TestInstrumentProviderPyo3:
         if expiration is None:
             expiration = pd.Timestamp("2024-02-23T22:59:00", tz=pytz.utc)
         return OptionSpread(
-            id=InstrumentId.from_str("UD:U$: GN 2534559.GLBX"),
+            instrument_id=InstrumentId.from_str("UD:U$: GN 2534559.GLBX"),
             raw_symbol=Symbol("UD:U$: GN 2534559"),
             asset_class=AssetClass.FX,
             exchange="XCME",

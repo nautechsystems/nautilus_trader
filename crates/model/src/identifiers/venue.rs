@@ -41,8 +41,7 @@ impl Venue {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string.
+    /// Returns an error if `value` is not a valid string.
     ///
     /// # Notes
     ///
@@ -57,8 +56,7 @@ impl Venue {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
@@ -91,6 +89,9 @@ impl Venue {
         Self(s)
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the venue code is unknown or lock on venue map fails.
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
         let map_guard = VENUE_MAP
             .lock()

@@ -99,9 +99,12 @@ impl BinaryOption {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (e.g., invalid precision or increments).
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         currency: Currency,
@@ -142,7 +145,7 @@ impl BinaryOption {
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             asset_class,
             currency,
@@ -169,10 +172,14 @@ impl BinaryOption {
         })
     }
 
-    /// Creates a new [`BinaryOption`] instance.
+    /// Creates a new [`BinaryOption`] instance by validating parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if parameter validation fails during `new_checked`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         currency: Currency,
@@ -198,7 +205,7 @@ impl BinaryOption {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             asset_class,
             currency,

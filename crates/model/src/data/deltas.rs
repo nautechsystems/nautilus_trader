@@ -55,8 +55,12 @@ pub struct OrderBookDeltas {
 
 impl OrderBookDeltas {
     /// Creates a new [`OrderBookDeltas`] instance.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if `deltas` is empty and correctness check fails.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
         Self::new_checked(instrument_id, deltas).expect(FAILED)
     }
@@ -67,6 +71,15 @@ impl OrderBookDeltas {
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new [`OrderBookDeltas`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `deltas` is empty.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `deltas` is empty when unwrapping the last element.
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

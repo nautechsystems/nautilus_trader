@@ -271,7 +271,7 @@ mod tests {
 
         let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_event, ts_init);
 
-        let serialized = mark_price.as_json_bytes().unwrap();
+        let serialized = mark_price.to_json_bytes().unwrap();
         let deserialized = MarkPriceUpdate::from_json_bytes(&serialized).unwrap();
 
         assert_eq!(mark_price, deserialized);
@@ -284,7 +284,7 @@ mod tests {
 
         let mark_price = MarkPriceUpdate::new(instrument_id, price, ts_event, ts_init);
 
-        let serialized = mark_price.as_msgpack_bytes().unwrap();
+        let serialized = mark_price.to_msgpack_bytes().unwrap();
         let deserialized = MarkPriceUpdate::from_msgpack_bytes(&serialized).unwrap();
 
         assert_eq!(mark_price, deserialized);
@@ -373,7 +373,7 @@ mod tests {
 
         let index_price = IndexPriceUpdate::new(instrument_id, price, ts_event, ts_init);
 
-        let serialized = index_price.as_json_bytes().unwrap();
+        let serialized = index_price.to_json_bytes().unwrap();
         let deserialized = IndexPriceUpdate::from_json_bytes(&serialized).unwrap();
 
         assert_eq!(index_price, deserialized);
@@ -386,7 +386,7 @@ mod tests {
 
         let index_price = IndexPriceUpdate::new(instrument_id, price, ts_event, ts_init);
 
-        let serialized = index_price.as_msgpack_bytes().unwrap();
+        let serialized = index_price.to_msgpack_bytes().unwrap();
         let deserialized = IndexPriceUpdate::from_msgpack_bytes(&serialized).unwrap();
 
         assert_eq!(index_price, deserialized);

@@ -1051,6 +1051,73 @@ class TestOrders:
             == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
         )
 
+    def test_initialize_trailing_stop_market_order_with_activation_price(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            activation_price=Price.from_str("1.00000"),
+            trailing_offset=Decimal("0.00050"),
+        )
+
+        # Assert
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
+        assert order.has_activation_price
+        assert not order.has_trigger_price
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert not order.is_activated
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-ACTIVATION 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-ACTIVATION 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+
+    def test_initialize_trailing_stop_market_order_with_activation_price_and_trigger(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            activation_price=Price.from_str("1.00000"),
+            trigger_price=Price.from_str("1.01000"),
+            trailing_offset=Decimal("0.00050"),
+        )
+
+        # Assert
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
+        assert order.has_activation_price
+        assert order.has_trigger_price
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
+        assert order.is_passive
+        assert not order.is_activated
+        assert not order.is_aggressive
+        assert not order.is_open
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-ACTIVATION @ 1.01000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopMarketOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_MARKET[DEFAULT] @ 1.00000-ACTIVATION @ 1.01000-STOP 0.00050-TRAILING_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+
     def test_trailing_stop_market_order_to_dict(self):
         # Arrange
         order = self.order_factory.trailing_stop_market(
@@ -1082,6 +1149,7 @@ class TestOrders:
             "type": "TRAILING_STOP_MARKET",
             "side": "BUY",
             "quantity": "100000",
+            "activation_price": None,
             "trigger_price": "1.00000",
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
@@ -1137,6 +1205,7 @@ class TestOrders:
             "type": "TRAILING_STOP_MARKET",
             "side": "BUY",
             "quantity": "100000",
+            "activation_price": None,
             "trigger_price": None,
             "trigger_type": "DEFAULT",
             "trailing_offset": "0.00050",
@@ -1221,6 +1290,75 @@ class TestOrders:
             == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT[DEFAULT] [DEFAULT] None-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
         )
 
+    def test_initialize_trailing_stop_limit_order_with_activation_price(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            activation_price=Price.from_str("1.00000"),
+            price=Price.from_str("1.00000"),
+            limit_offset=Decimal("5"),
+            trailing_offset=Decimal("10"),
+        )
+
+        # Assert
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
+        assert order.has_price
+        assert order.has_activation_price
+        assert not order.has_trigger_price
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
+        assert order.is_passive
+        assert not order.is_aggressive
+        assert not order.is_closed
+        assert not order.is_activated
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT[DEFAULT] @ 1.00000-ACTIVATION [DEFAULT] 1.00000-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT[DEFAULT] @ 1.00000-ACTIVATION [DEFAULT] 1.00000-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+
+    def test_initialize_trailing_stop_market_order_with_activation_price_and_no_initial_price(self):
+        # Arrange, Act
+        order = self.order_factory.trailing_stop_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            activation_price=Price.from_str("1.00000"),
+            limit_offset=Decimal("5"),
+            trailing_offset=Decimal("10"),
+        )
+
+        # Assert
+        assert order.order_type == OrderType.TRAILING_STOP_LIMIT
+        assert order.status == OrderStatus.INITIALIZED
+        assert order.time_in_force == TimeInForce.GTC
+        assert order.expire_time is None
+        assert not order.has_price
+        assert order.has_activation_price
+        assert not order.has_trigger_price
+        assert order.trailing_offset_type == TrailingOffsetType.PRICE
+        assert order.is_passive
+        assert not order.is_activated
+        assert not order.is_aggressive
+        assert not order.is_closed
+        assert isinstance(order.init_event, OrderInitialized)
+        assert (
+            str(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT[DEFAULT] @ 1.00000-ACTIVATION [DEFAULT] None-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+        assert (
+            repr(order)
+            == "TrailingStopLimitOrder(BUY 100_000 AUD/USD.SIM TRAILING_STOP_LIMIT[DEFAULT] @ 1.00000-ACTIVATION [DEFAULT] None-LIMIT 10-TRAILING_OFFSET[PRICE] 5-LIMIT_OFFSET[PRICE] GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=None)"  # noqa
+        )
+
     def test_trailing_stop_limit_order_to_dict(self):
         # Arrange
         order = self.order_factory.trailing_stop_limit(
@@ -1257,6 +1395,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": "1.00000",
+            "activation_price": None,
             "trigger_price": "1.10010",
             "trigger_type": "MARK_PRICE",
             "limit_offset": "5",
@@ -1316,6 +1455,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "price": None,
+            "activation_price": None,
             "trigger_price": None,
             "trigger_type": "MARK_PRICE",
             "limit_offset": "5",

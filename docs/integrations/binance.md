@@ -7,16 +7,16 @@ execution with Binance.
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `binance` dependencies using pip:
+To install NautilusTrader with Binance support:
 
-```
-pip install -U "nautilus_trader[binance]"
+```bash
+pip install --upgrade "nautilus_trader[binance]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Binance):
 
-```
-uv sync --extra binance
+```bash
+uv sync --all-extras
 ```
 
 ## Examples
@@ -25,17 +25,26 @@ You can find functional live example scripts [here](https://github.com/nautechsy
 
 ## Overview
 
-The Binance integration supports the following product types:
+The Binance adapter supports the following product types:
 
 - Spot markets (including Binance US)
-- USDT-Margined Futures
+- USDT-Margined Futures (perpetual and delivery)
 - Coin-Margined Futures
 
 :::note
-Margin accounts are not fully supported at this time due to limited developer testing.
-Contributions via [GitHub issue](https://github.com/nautechsystems/nautilus_trader/issues) reports
-or pull requests to enhance margin account functionality are encouraged.
+Margin trading (cross & isolated) is not implemented at this time.
+Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
+or pull requests to add margin trading functionality are welcome.
 :::
+
+### Product Support Matrix
+
+| Product Type                             | Supported | Notes                               |
+|------------------------------------------|-----------|-------------------------------------|
+| Spot Markets (incl. Binance US)          | ✓         |                                     |
+| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
+| USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
+| Coin-Margined Futures                    | ✓         |                                     |
 
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Binance adapter includes multiple components, which can be used together or separately depending
@@ -70,7 +79,7 @@ See the Binance [API Reference](../api_reference/adapters/binance.md) for full d
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
 spot assets and futures contracts. Because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
-pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance).
+pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for *both* natively by Binance).
 
 Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
 E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
@@ -113,12 +122,13 @@ data and execution clients. To achieve this, add a `BINANCE` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -128,7 +138,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -143,16 +153,17 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
 # Register the client factories with the node
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
+node.add_data_client_factory(BINANCE, BinanceLiveDataClientFactory)
+node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 
 # Finally build the node
 node.build()
@@ -165,18 +176,22 @@ Either pass the corresponding `api_key` and `api_secret` values to the configura
 set the following environment variables:
 
 For Binance Spot/Margin live clients, you can set:
+
 - `BINANCE_API_KEY`
 - `BINANCE_API_SECRET`
 
 For Binance Spot/Margin testnet clients, you can set:
+
 - `BINANCE_TESTNET_API_KEY`
 - `BINANCE_TESTNET_API_SECRET`
 
 For Binance Futures live clients, you can set:
+
 - `BINANCE_FUTURES_API_KEY`
 - `BINANCE_FUTURES_API_SECRET`
 
 For Binance Futures testnet clients, you can set:
+
 - `BINANCE_FUTURES_TESTNET_API_KEY`
 - `BINANCE_FUTURES_TESTNET_API_SECRET`
 
@@ -216,10 +231,12 @@ It's also possible to configure one or both clients to connect to the Binance te
 Simply set the `testnet` option to `True` (this is `False` by default):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -227,7 +244,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -250,7 +267,7 @@ to `True` (this is `False` by default.)
 
 Some Binance instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
-In these cases, a _warn and continue_ approach is taken (the instrument will not
+In these cases, a *warn and continue* approach is taken (the instrument will not
 be available).
 
 These warnings may cause unnecessary log noise, and so it's possible to
@@ -272,13 +289,17 @@ Binance Futures Hedge mode is a position mode where a trader opens positions in 
 directions to mitigate risk and potentially profit from market volatility.
 
 To use Binance Future Hedge mode, you need to follow the three items below:
+
 - 1. Before starting the strategy, ensure that hedge mode is configured on Binance.
 - 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
+
     ```python
+    from nautilus_trader.adapters.binance import BINANCE
+
     config = TradingNodeConfig(
         ...,  # Omitted
         data_clients={
-            "BINANCE": BinanceDataClientConfig(
+            BINANCE: BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -287,7 +308,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             ),
         },
         exec_clients={
-            "BINANCE": BinanceExecClientConfig(
+            BINANCE: BinanceExecClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -300,6 +321,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
     ```
 
 - 3. When submitting an order, use a suffix (`LONG` or `SHORT` ) in the `position_id` to indicate the position direction.
+
     ```python
     class EMACrossHedgeMode(Strategy):
         ...,  # Omitted
@@ -387,7 +409,7 @@ You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating i
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
-from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.model import DataType
 from nautilus_trader.model import ClientId
 

@@ -124,7 +124,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 def _set_feature_flags() -> list[str]:
     if HIGH_PRECISION:
-        return ["--all-features"]
+        return ["--features", "high-precision,ffi,python,extension-module"]
     else:
         return ["--features", "ffi,python,extension-module"]
 
@@ -186,7 +186,7 @@ CYTHON_COMPILER_DIRECTIVES = {
 }
 
 # TODO: Temporarily separate Cython configuration while we require v3.0.11 for coverage
-if cython_compiler_version == "3.1.0b1":
+if cython_compiler_version == "3.1.0":
     Options.warning_errors = True  # Treat compiler warnings as errors
     Options.extra_warnings = True
     CYTHON_COMPILER_DIRECTIVES["warn.deprecated.IF"] = False

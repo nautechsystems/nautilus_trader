@@ -16,7 +16,7 @@ FROM base AS builder
 
 # Install build deps
 RUN apt-get update && \
-    apt-get install -y curl clang git libssl-dev make pkg-config && \
+    apt-get install -y curl clang git libssl-dev make pkg-config capnproto libcapnp-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -35,7 +35,7 @@ RUN uv sync --no-install-package nautilus_trader
 COPY Cargo.toml ./
 COPY Cargo.lock ./
 COPY crates ./crates
-RUN cargo build --release --all-features
+RUN cargo build --lib --release --all-features
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./

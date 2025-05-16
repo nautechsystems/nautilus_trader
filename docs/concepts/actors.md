@@ -18,7 +18,7 @@ order management methods.
 
 ## Basic example
 
-Just like strategies, actors support configuration through very similar pattern.
+Just like strategies, actors support configuration through a very similar pattern.
 
 ```python
 from nautilus_trader.config import ActorConfig
@@ -54,7 +54,7 @@ When working with data in Nautilus, it's important to understand the relationshi
 *requests/subscriptions* and their corresponding callback handlers. The system uses different handlers
 depending on whether the data is historical or real-time.
 
-### Historical vs Real-time Data
+### Historical vs real-time data
 
 The system distinguishes between two types of data flow:
 
@@ -68,7 +68,7 @@ The system distinguishes between two types of data flow:
    - Processed through specific handlers like `on_bar()`, `on_quote_tick()`, etc.
    - Used for live data processing.
 
-### Callback Handlers
+### Callback handlers
 
 Here's how different data operations map to their handlers:
 
@@ -87,7 +87,7 @@ Here's how different data operations map to their handlers:
 | `subscribe_instrument_close()`  | Real-time&nbsp;  | `on_instrument_close()`  | Live instrument close updates |
 | `request_data()`                | Historical       | `on_historical_data()`   | Historical data processing |
 | `request_instrument()`          | Historical       | `on_instrument()`        | Instrument definition updates |
-| `request_instruments()`         | Historical       | `on_historical_data()`   | Instrument definition updates |
+| `request_instruments()`         | Historical       | `on_instrument()`        | Instrument definition updates |
 | `request_quote_ticks()`         | Historical       | `on_historical_data()`   | Historical quotes processing |
 | `request_trade_ticks()`         | Historical       | `on_historical_data()`   | Historical trades processing |
 | `request_bars()`                | Historical       | `on_historical_data()`   | Historical bars processing |
@@ -101,8 +101,8 @@ Here's an example demonstrating both historical and real-time data handling:
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.identifiers import ClientId, InstrumentId
+from nautilus_trader.model import Bar, BarType
+from nautilus_trader.model import ClientId, InstrumentId
 
 
 class MyActorConfig(ActorConfig):
@@ -120,11 +120,11 @@ class MyActor(Actor):
         self.request_bars(
             bar_type=self.bar_type,
             # Many optional parameters
-            start=None,            # datetime, optional
-            end=None,              # datetime, optional
-            callback=None,         # called with the request ID when the response has completed
-            update_catalog=False,  # bool, default False
-            params=None,           # dict[str, Any], optional
+            start=None,                # datetime, optional
+            end=None,                  # datetime, optional
+            callback=None,             # called with the request ID when completed
+            update_catalog_mode=None,  # UpdateCatalogMode | None, default None
+            params=None,               # dict[str, Any], optional
         )
 
         # Subscribe to real-time data - will be processed by on_bar() handler

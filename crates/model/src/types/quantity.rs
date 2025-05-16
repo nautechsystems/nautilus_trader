@@ -44,6 +44,7 @@ pub type QuantityRaw = u64;
 
 /// The maximum raw quantity integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as QuantityRaw;
 
 /// The sentinel value for an unset or null quantity.
@@ -86,9 +87,9 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -109,11 +110,11 @@ impl Quantity {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is zero.
-    /// - If `value` becomes zero after rounding to `precision`.
-    /// - If `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is zero.
+    /// - `value` becomes zero after rounding to `precision`.
+    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -135,8 +136,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }
@@ -145,8 +145,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::non_zero_checked`] for more details.
     pub fn non_zero(value: f64, precision: u8) -> Self {
         Self::non_zero_checked(value, precision).expect(FAILED)
     }
@@ -155,8 +154,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn from_raw(raw: QuantityRaw, precision: u8) -> Self {
         if raw == QUANTITY_UNDEF {
             check_predicate_true(
@@ -178,8 +176,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -516,7 +513,7 @@ impl<'de> Deserialize<'de> for Quantity {
 /// Returns an error if the quantity is not positive.
 pub fn check_positive_quantity(value: Quantity, param: &str) -> anyhow::Result<()> {
     if !value.is_positive() {
-        anyhow::bail!("{FAILED}: invalid `Quantity` for '{param}' not positive, was {value}")
+        anyhow::bail!("invalid `Quantity` for '{param}' not positive, was {value}")
     }
     Ok(())
 }
@@ -535,7 +532,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: invalid `Quantity` for 'qty' not positive, was 0")]
+    #[should_panic(expected = "invalid `Quantity` for 'qty' not positive, was 0")]
     fn test_check_quantity_positive() {
         let qty = Quantity::new(0.0, 0);
         check_positive_quantity(qty, "qty").unwrap();

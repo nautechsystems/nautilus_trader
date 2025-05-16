@@ -1,9 +1,4 @@
 # Backtesting
-
-:::info
-We are currently working on this concept guide.
-:::
-
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
 including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
@@ -193,13 +188,22 @@ Nautilus supports two modes of bar processing:
    - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
-Here's how to configure adaptive bar ordering for a venue:
+Here's how to configure adaptive bar ordering for a venue, including account setup:
 
 ```python
-# Configure venue with adaptive bar ordering
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency
+
+# Initialize the backtest engine
+engine = BacktestEngine()
+
+# Add a venue with adaptive bar ordering and required account settings
 engine.add_venue(
-    venue=venue,
+    venue=venue,  # Your Venue identifier, e.g., Venue("BINANCE")
     oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, Currency.from_str("USDT"))],
     bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
@@ -209,6 +213,7 @@ engine.add_venue(
 When backtesting with different types of data, Nautilus implements specific handling for slippage and spread simulation:
 
 For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated with high accuracy by:
+
 - Filling orders against actual order book levels.
 - Matching available size at each price level sequentially.
 - Maintaining realistic order book depth impact (per order fill).
@@ -216,9 +221,10 @@ For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated wit
 For L1 data types (e.g., L1 orderbook, trades, quotes, bars), slippage is handled through:
 
 **Initial fill slippage** (`prob_slippage`):
-   - Controlled by the `prob_slippage` parameter of the `FillModel`.
-   - Determines if the initial fill will occur one tick away from current market price.
-   - Example: With `prob_slippage=0.5`, a market BUY has 50% chance of filling one tick above the best ask price.
+
+- Controlled by the `prob_slippage` parameter of the `FillModel`.
+- Determines if the initial fill will occur one tick away from current market price.
+- Example: With `prob_slippage=0.5`, a market BUY has 50% chance of filling one tick above the best ask price.
 
 :::note
 When backtesting with bar data, be aware that the reduced granularity of price information affects the slippage mechanism.
@@ -266,51 +272,52 @@ engine = BacktestEngine(
 **prob_fill_on_limit** (default: `1.0`)
 
 - Purpose:
-   - Simulates the probability of a limit order getting filled when its price level is reached in the market.
+  - Simulates the probability of a limit order getting filled when its price level is reached in the market.
 - Details:
-   - Simulates your position in the order queue at a given price level.
-   - Applies to all data types (e.g., L3/L2/L1 orderbook, quotes, trades, bars).
-   - New random probability check occurs each time market price touches your order price (but does not move through it).
-   - On successful probability check, fills entire remaining order quantity.
+  - Simulates your position in the order queue at a given price level.
+  - Applies to all data types (e.g., L3/L2/L1 orderbook, quotes, trades, bars).
+  - New random probability check occurs each time market price touches your order price (but does not move through it).
+  - On successful probability check, fills entire remaining order quantity.
 
 **Examples**:
 
-   - With `prob_fill_on_limit=0.0`:
-      - Limit BUY orders never fill when best ask reaches the limit price.
-      - Limit SELL orders never fill when best bid reaches the limit price.
-      - This simulates being at the very back of the queue and never reaching the front.
-   - With `prob_fill_on_limit=0.5`:
-      - Limit BUY orders have 50% chance of filling when best ask reaches the limit price.
-      - Limit SELL orders have 50% chance of filling when best bid reaches the limit price.
-      - This simulates being in the middle of the queue.
-   - With `prob_fill_on_limit=1.0` (default):
-      - Limit BUY orders always fill when best ask reaches the limit price.
-      - Limit SELL orders always fill when best bid reaches the limit price.
-      - This simulates being at the front of the queue with guaranteed fills.
+- With `prob_fill_on_limit=0.0`:
+  - Limit BUY orders never fill when best ask reaches the limit price.
+  - Limit SELL orders never fill when best bid reaches the limit price.
+  - This simulates being at the very back of the queue and never reaching the front.
+- With `prob_fill_on_limit=0.5`:
+  - Limit BUY orders have 50% chance of filling when best ask reaches the limit price.
+  - Limit SELL orders have 50% chance of filling when best bid reaches the limit price.
+  - This simulates being in the middle of the queue.
+- With `prob_fill_on_limit=1.0` (default):
+  - Limit BUY orders always fill when best ask reaches the limit price.
+  - Limit SELL orders always fill when best bid reaches the limit price.
+  - This simulates being at the front of the queue with guaranteed fills.
 
 **prob_slippage** (default: `0.0`)
 
 - Purpose:
-   - Simulates the probability of experiencing price slippage when executing market orders.
+  - Simulates the probability of experiencing price slippage when executing market orders.
 - Details:
-     - Only applies to L1 data types (e.g., quotes, trades, bars).
-     - When triggered, moves fill price one tick against your order direction.
-     - Affects all market-type orders (`MARKET`, `MARKET_TO_LIMIT`, `MARKET_IF_TOUCHED`, `STOP_MARKET`).
-     - Not utilized with L2/L3 data where order book depth can determine slippage.
+  - Only applies to L1 data types (e.g., quotes, trades, bars).
+  - When triggered, moves fill price one tick against your order direction.
+  - Affects all market-type orders (`MARKET`, `MARKET_TO_LIMIT`, `MARKET_IF_TOUCHED`, `STOP_MARKET`).
+  - Not utilized with L2/L3 data where order book depth can determine slippage.
 
 **Examples**:
 
-   - With `prob_slippage=0.0` (default):
-      - No artificial slippage is applied, representing an idealized scenario where you always get filled at the current market price.
-   - With `prob_slippage=0.5`:
-      - Market BUY orders have 50% chance of filling one tick above the best ask price, and 50% chance at the best ask price.
-      - Market SELL orders have 50% chance of filling one tick below the best bid price, and 50% chance at the best bid price.
-   - With `prob_slippage=1.0`:
-      - Market BUY orders always fill one tick above the best ask price.
-      - Market SELL orders always fill one tick below the best bid price.
-      - This simulates consistent adverse price movement against your orders.
+- With `prob_slippage=0.0` (default):
+  - No artificial slippage is applied, representing an idealized scenario where you always get filled at the current market price.
+- With `prob_slippage=0.5`:
+  - Market BUY orders have 50% chance of filling one tick above the best ask price, and 50% chance at the best ask price.
+  - Market SELL orders have 50% chance of filling one tick below the best bid price, and 50% chance at the best bid price.
+- With `prob_slippage=1.0`:
+  - Market BUY orders always fill one tick above the best ask price.
+  - Market SELL orders always fill one tick below the best bid price.
+  - This simulates consistent adverse price movement against your orders.
 
 **prob_fill_on_stop** (default: `1.0`)
+
 - Stop order is just shorter name for stop-market order, that convert to market orders when market-price touches the stop-price.
 - That means, stop order order-fill mechanics is simply market-order mechanics, that is controlled by the `prob_slippage` parameter.
 
@@ -353,9 +360,11 @@ The `FillModel` has certain limitations to keep in mind:
 
 :::note
 As the `FillModel` continues to evolve, future versions may introduce more sophisticated simulation of order execution dynamics, including:
+
 - Partial fill simulation
 - Variable slippage based on order size
 - More complex queue position modeling
+
 :::
 
 ## Account Types
@@ -364,31 +373,34 @@ When you attach a venue to the engine—either for live trading or a back‑test
 
 | Account type           | Typical use-case                                         | What the engine locks                                                                                              |
 | ---------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------|
-| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | `notional + (2 × taker fee × notional)` for every open order, so commissions for both entry and exit are reserved. |
+| Cash                   | Spot trading (e.g. BTC/USDT, stocks)                     | Notional value for every position a pending order would open.                                                      |
 | Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
 | Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
 
-Example of adding a `CASH` account for trading on Binance Spot with assets directly:
+Example of adding a `CASH` account for a backtest venue:
 
 ```python
-from nautilus_trader.model.enums import AccountType
+from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency
 
+# Initialize the backtest engine
+engine = BacktestEngine()
 
+# Add a CASH account for the venue
 engine.add_venue(
-    venue_code="BINANCE",
-    account_type=AccountType.CASH,   #  CASH | MARGIN | BETTING
-    ...
+    venue=BINANCE_VENUE,  # Create or reference a Venue identifier
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, USDT)],
 )
 ```
 
 ### Cash Accounts
 
 Cash accounts settle trades in full; there is no leverage and therefore no concept of margin.
-To guarantee you can always pay commissions, the engine pre‑reserves:
-
-    locked = notional + (2 × taker_fee × notional)
-
-The “× 2” covers a full round‑trip—entering and closing the position—even if the close uses a market (taker) order.
 
 ### Margin Accounts
 
@@ -411,8 +423,3 @@ nor do they add to initial margin in margin accounts—as they can only reduce e
 
 Betting accounts are specialised for venues where you stake an amount to win or lose a fixed payout (some prediction markets, sports books, etc.).
 The engine locks only the stake required by the venue; leverage and margin are not applicable.
-
-:::tip
-Keep these nuances in mind when sizing orders: in a cash account the commission buffer can make the locked balance appear larger than the raw notional,
-and in a margin account leverage multiplies both your potential gain and risk of liquidation.
-:::

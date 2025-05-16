@@ -227,12 +227,22 @@ impl BetPosition {
     }
 }
 
+/// Calculates the total PnL (realized + unrealized) for a list of `Bet` instances.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the PnL calculation fails.
 #[pyfunction]
 #[pyo3(name = "calc_bets_pnl")]
 pub fn py_calc_bets_pnl(bets: Vec<Bet>) -> PyResult<Decimal> {
     Ok(calc_bets_pnl(&bets))
 }
 
+/// Creates a `Bet` from a probability, volume, and side.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input parameters are invalid.
 #[pyfunction]
 #[pyo3(name = "probability_to_bet")]
 pub fn py_probability_to_bet(
@@ -243,6 +253,11 @@ pub fn py_probability_to_bet(
     Ok(probability_to_bet(probability, volume, side.as_specified()))
 }
 
+/// Creates an inverse `Bet` from a probability, volume, and side.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the input parameters are invalid.
 #[pyfunction]
 #[pyo3(name = "inverse_probability_to_bet")]
 pub fn py_inverse_probability_to_bet(

@@ -47,8 +47,7 @@ impl AccountBalance {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `total` is not the result of `locked` + `free`.
+    /// Returns an error if `total` is not the result of `locked` + `free`.
     ///
     /// # Notes
     ///
@@ -73,8 +72,7 @@ impl AccountBalance {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`AccountBalance::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`AccountBalance::new_checked`] for more details.
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
         Self::new_checked(total, locked, free).expect(FAILED)
     }

@@ -21,6 +21,7 @@ However, backtests can also be conducted on any of the supported market data typ
 A high-performance order book implemented in Rust is available to maintain order book state based on provided data.
 
 `OrderBook` instances are maintained per instrument for both backtesting and live trading, with the following book types available:
+
 - `L3_MBO`: **Market by order (MBO)** or L3 data, uses every order book event at every price level, keyed by order ID.
 - `L2_MBP`: **Market by price (MBP)** or L2 data, aggregates order book events by price level.
 - `L1_MBP`: **Market by price (MBP)** or L1 data, also known as best bid and offer (BBO), captures only top-level updates.
@@ -161,6 +162,7 @@ use this convention:
 `{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
 
 **Notes**:
+
 - The derived bar type must use an `INTERNAL` aggregation source (since this is how the bar is aggregated).
 - The sampled bar type must have a higher granularity than the derived bar type.
 - The sampled instrument ID is inferred to match that of the derived bar type.
@@ -260,6 +262,7 @@ NautilusTrader provides two distinct operations for working with bars:
 - **`subscribe_bars()`**: Establishes a real-time data feed processed by the `on_bar()` handler.
 
 These methods work together in a typical workflow:
+
 1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior.
 2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time.
 
@@ -405,7 +408,7 @@ The platform ensures consistency by flowing data through the same pathways acros
 and then distributed to subscribed or registered handlers.
 
 For users who need more flexibility, the platform also supports the creation of custom data types.
-For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
+For details on how to implement user-defined data types, see the [Custom Data](#custom-data) section below.
 
 ## Loading data
 
@@ -418,6 +421,7 @@ NautilusTrader facilitates data loading and conversion for three main use cases:
 Regardless of the destination, the process remains the same: converting diverse external data formats into Nautilus data structures.
 
 To achieve this, two main components are necessary:
+
 - A type of DataLoader (normally specific per raw source/format) which can read the data and return a `pd.DataFrame` with the correct schema for the desired Nautilus object
 - A type of DataWrangler (specific per data type) which takes this `pd.DataFrame` and returns a `list[Data]` of Nautilus objects
 
@@ -454,6 +458,7 @@ of the Nautilus core, currently in development.
 4. The Nautilus `list[Data]` is the output of the data loading process.
 
 The following diagram illustrates how raw data is transformed into Nautilus data structures:
+
 ```
   ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
   │          │    │                      │                  │                      │
@@ -473,6 +478,7 @@ Concretely, this would involve:
 - `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
 
 The following example shows how to accomplish the above in Python:
+
 ```python
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
@@ -570,17 +576,22 @@ Rust Arrow schema implementations are available for the follow data types (enhan
 By default any data which already exists under a filename will be overwritten.
 
 You can use one of the following write mode with catalog.write_data:
+
 - CatalogWriteMode.OVERWRITE
 - CatalogWriteMode.APPEND
 - CatalogWriteMode.PREPEND
 - CatalogWriteMode.NEWFILE, which will create a file name of the form `part-{i}.parquet` where `i` is an integer starting at 0.
+
 :::
 
 ### Reading data
+
 Any stored data can then be read back into memory:
+
 ```python
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 import pandas as pd
+import pytz
 
 
 start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz=pytz.utc))
@@ -653,7 +664,7 @@ Converts JSON back to Parquet format:
 ### Migration Process
 
 The following migration examples both use trades data (you can also migrate the other data types in the same way).
-All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
+All commands should be run from the root of the `persistence` crate directory.
 
 #### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 
@@ -698,11 +709,13 @@ cargo run --bin to_json trades.parquet
 This will create `trades.json` and `trades.metadata.json` files.
 
 **2. Switch to new schema version**:
+
 ```bash
 git checkout <new-version>
 ```
 
 **3. Convert from JSON back to new schema Parquet**:
+
 ```bash
 cargo run --features high-precision --bin to_parquet trades.json
 ```
@@ -717,6 +730,7 @@ This will create a `trades.parquet` file with the new schema.
 - Perform migrations in a staging environment before applying them to production data.
 
 ## Custom Data
+
 Due to the modular nature of the Nautilus design, it is possible to set up systems
 with very flexible data streams, including custom user-defined data types. This
 guide covers some possible use cases for this functionality.

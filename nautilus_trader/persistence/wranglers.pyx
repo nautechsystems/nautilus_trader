@@ -535,6 +535,10 @@ cdef class TradeTickDataWrangler:
         is_raw : bool, default False
             If the data is scaled to Nautilus fixed-point values.
 
+        Returns
+        -------
+        list[TradeTick]
+
         Raises
         ------
         ValueError
@@ -572,7 +576,7 @@ cdef class TradeTickDataWrangler:
         bint sort_data: bool = True,
     ):
         """
-        Process the given bar datasets into Nautilus `QuoteTick` objects.
+        Process the given bar datasets into Nautilus `TradeTick` objects.
 
         Expects columns ['open', 'high', 'low', 'close', 'volume'] with 'timestamp' index.
         Note: The 'volume' column is optional, will then use the `default_volume`.
@@ -600,6 +604,15 @@ cdef class TradeTickDataWrangler:
             If False, then high, low, close timestamps are offset after the open timestamp.
         sort_data : bool, default True
             If the data should be sorted by timestamp.
+
+        Returns
+        -------
+        list[TradeTick]
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
 
         """
         Condition.type(data, pd.DataFrame, "data")

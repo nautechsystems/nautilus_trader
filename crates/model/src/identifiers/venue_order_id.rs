@@ -37,8 +37,7 @@ impl VenueOrderId {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string.
+    /// Returns an error if `value` is not a valid string.
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
@@ -49,8 +48,7 @@ impl VenueOrderId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

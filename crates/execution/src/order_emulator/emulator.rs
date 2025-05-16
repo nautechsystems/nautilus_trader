@@ -16,6 +16,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -60,6 +61,15 @@ pub struct OrderEmulator {
     subscribed_strategies: HashSet<StrategyId>,
     monitored_positions: HashSet<PositionId>,
     on_event_handler: Option<ShareableMessageHandler>,
+}
+
+impl Debug for OrderEmulator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderEmulator))
+            .field("cores", &self.matching_cores.len())
+            .field("subscribed_quotes", &self.subscribed_quotes.len())
+            .finish()
+    }
 }
 
 impl OrderEmulator {
@@ -124,6 +134,15 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
+    /// Reactivates emulated orders from cache on start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no emulated orders are found or processing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a cached client ID cannot be unwrapped.
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -255,6 +274,9 @@ impl OrderEmulator {
         matching_core
     }
 
+    /// # Panics
+    ///
+    /// Panics if the emulation trigger type is `NoTrigger`.
     pub fn handle_submit_order(&mut self, command: SubmitOrder) {
         let mut order = command.order.clone();
         let emulation_trigger = order.emulation_trigger();
@@ -753,6 +775,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order type is invalid for a stop order.
     pub fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         match order.order_type() {
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
@@ -765,6 +790,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a limit order has no price.
     pub fn fill_limit_order(&mut self, order: &mut OrderAny) {
         if matches!(order.order_type(), OrderType::Limit) {
             self.fill_market_order(order);
@@ -792,7 +820,7 @@ impl OrderEmulator {
             let emulation_trigger = TriggerType::NoTrigger;
 
             // Transform order
-            let mut transformed = if let Ok(transformed) = LimitOrder::new(
+            let mut transformed = if let Ok(transformed) = LimitOrder::new_checked(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
@@ -909,6 +937,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a market order command is missing.
     pub fn fill_market_order(&mut self, order: &mut OrderAny) {
         // Fetch command
         let mut command = match self

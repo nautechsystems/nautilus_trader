@@ -19,6 +19,11 @@ use nautilus_core::paths::get_test_data_path;
 
 use crate::files::ensure_file_exists_or_download_http;
 
+/// Returns the full path to the test data file at the specified relative `path` within the standard test data directory.
+///
+/// # Panics
+///
+/// Panics if the computed path cannot be represented as a valid UTF-8 string.
 #[must_use]
 pub fn get_test_data_file_path(path: &str) -> String {
     get_test_data_path()
@@ -28,6 +33,11 @@ pub fn get_test_data_file_path(path: &str) -> String {
         .to_string()
 }
 
+/// Returns the full path to the Nautilus-specific test data file given by `filename`, within the configured precision directory ("64-bit" or "128-bit").
+///
+/// # Panics
+///
+/// Panics if the computed path cannot be represented as a valid UTF-8 string.
 #[must_use]
 #[allow(unused_mut)]
 pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
@@ -50,6 +60,11 @@ pub fn get_test_data_large_checksums_filepath() -> PathBuf {
     get_test_data_path().join("large").join("checksums.json")
 }
 
+/// Ensures that the specified test data file exists locally by downloading it if necessary, using the provided `url`.
+///
+/// # Panics
+///
+/// Panics if the download or checksum verification fails, or if the resulting path cannot be represented as a valid UTF-8 string.
 #[must_use]
 pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     let filepath = get_test_data_path().join("large").join(filename);

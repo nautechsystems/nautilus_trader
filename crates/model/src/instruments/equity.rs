@@ -85,9 +85,12 @@ impl Equity {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         isin: Option<Ustr>,
         currency: Currency,
@@ -115,7 +118,7 @@ impl Equity {
         check_positive_price(price_increment, stringify!(price_increment))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             isin,
             currency,
@@ -136,9 +139,13 @@ impl Equity {
     }
 
     /// Creates a new [`Equity`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         isin: Option<Ustr>,
         currency: Currency,
@@ -157,7 +164,7 @@ impl Equity {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             isin,
             currency,

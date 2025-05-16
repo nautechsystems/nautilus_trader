@@ -79,14 +79,17 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
-# [[bin]]
-# name = "coinbase-intx-http-private"
-# path = "bin/http-private.rs"
+[[bin]]
+name = "coinbase-intx-http-private"
+path = "bin/http-private.rs"
+required-features = ["python"]
 
-# [[bin]]
-# name = "coinbase-intx-http-public"
-# path = "bin/http-public.rs"
+[[bin]]
+name = "coinbase-intx-http-public"
+path = "bin/http-public.rs"
+required-features = ["python"]
 
-# [[bin]]
-# name = "coinbase-intx-ws"
-# path = "bin/websocket.rs"
+[[bin]]
+name = "coinbase-intx-ws"
+path = "bin/websocket.rs"
+required-features = ["python"]

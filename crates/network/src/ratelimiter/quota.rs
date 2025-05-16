@@ -16,7 +16,6 @@
 use std::{num::NonZeroU32, prelude::v1::*, time::Duration};
 
 use nonzero_ext::nonzero;
-use pyo3::{exceptions::PyException, prelude::*};
 
 use super::nanos::Nanos;
 
@@ -50,39 +49,6 @@ use super::nanos::Nanos;
 pub struct Quota {
     pub(crate) max_burst: NonZeroU32,
     pub(crate) replenish_1_per: Duration,
-}
-
-#[pymethods]
-impl Quota {
-    #[staticmethod]
-    pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_second(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
-    }
-
-    #[staticmethod]
-    pub fn rate_per_minute(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_minute(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
-    }
-
-    #[staticmethod]
-    pub fn rate_per_hour(max_burst: u32) -> PyResult<Self> {
-        match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Self::per_hour(max_burst)),
-            None => Err(PyErr::new::<PyException, _>(
-                "Max burst capacity should be a non-zero integer",
-            )),
-        }
-    }
 }
 
 /// Constructors for Quotas
@@ -208,6 +174,7 @@ impl Quota {
     /// This is useful mainly for [`crate::middleware::RateLimitingMiddleware`]
     /// where custom code may want to construct information based on
     /// the amount of burst balance remaining.
+    #[allow(unsafe_code)]
     pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
         // Safety assurance: As we're calling this from this crate
         // only, and we do not allow creating a Gcra from 0

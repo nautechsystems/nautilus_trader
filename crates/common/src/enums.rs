@@ -15,8 +15,6 @@
 
 //! Enumerations for common components.
 
-use std::fmt::Debug;
-
 use log::Level;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};

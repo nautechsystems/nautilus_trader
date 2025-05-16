@@ -41,6 +41,10 @@ pub enum ConnectionMode {
 
 impl ConnectionMode {
     /// Convert a u8 to [`ConnectionMode`], useful when loading from an `AtomicU8`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is not a valid `ConnectionMode` discriminant (must be between 0 and 3 inclusive).
     #[inline]
     #[must_use]
     pub fn from_u8(value: u8) -> Self {

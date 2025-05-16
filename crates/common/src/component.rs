@@ -15,8 +15,13 @@
 
 use crate::enums::{ComponentState, ComponentTrigger};
 
+#[rustfmt::skip]
 impl ComponentState {
-    #[rustfmt::skip]
+    /// Transition the state machine with the component `trigger`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `trigger` is invalid for the current state.
     pub fn transition(&mut self, trigger: &ComponentTrigger) -> anyhow::Result<Self> {
         let new_state = match (&self, trigger) {
             (Self::PreInitialized, ComponentTrigger::Initialize) => Self::Ready,

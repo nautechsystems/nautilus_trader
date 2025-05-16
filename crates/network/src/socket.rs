@@ -29,6 +29,7 @@
 //! - Controller task manages lifecycle
 
 use std::{
+    fmt::Debug,
     path::Path,
     sync::{
         Arc,
@@ -39,6 +40,7 @@ use std::{
 
 use bytes::Bytes;
 use nautilus_cryptography::providers::install_cryptographic_provider;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
@@ -52,6 +54,7 @@ use tokio_tungstenite::{
 use crate::{
     backoff::ExponentialBackoff,
     fix::process_fix_buffer,
+    logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -73,6 +76,7 @@ pub struct SocketConfig {
     pub mode: Mode,
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
+    #[cfg(feature = "python")]
     /// The optional Python function to handle incoming messages.
     pub py_handler: Option<Arc<PyObject>>,
     /// The optional heartbeat with period and beat message.
@@ -144,6 +148,7 @@ impl SocketClientInner {
             mode,
             heartbeat,
             suffix,
+            #[cfg(feature = "python")]
             py_handler,
             reconnect_timeout_ms,
             reconnect_delay_initial_ms,
@@ -168,6 +173,7 @@ impl SocketClientInner {
             connection_mode.clone(),
             reader,
             handler.clone(),
+            #[cfg(feature = "python")]
             py_handler.clone(),
             suffix.clone(),
         ));
@@ -245,6 +251,7 @@ impl SocketClientInner {
                 mode,
                 heartbeat: _,
                 suffix,
+                #[cfg(feature = "python")]
                 py_handler,
                 reconnect_timeout_ms: _,
                 reconnect_delay_initial_ms: _,
@@ -267,7 +274,7 @@ impl SocketClientInner {
 
             if !self.read_task.is_finished() {
                 self.read_task.abort();
-                tracing::debug!("Aborted task 'read'");
+                log_task_aborted("read");
             }
 
             self.connection_mode
@@ -278,6 +285,7 @@ impl SocketClientInner {
                 self.connection_mode.clone(),
                 reader,
                 self.handler.clone(),
+                #[cfg(feature = "python")]
                 py_handler.clone(),
                 suffix.clone(),
             ));
@@ -314,10 +322,10 @@ impl SocketClientInner {
         connection_state: Arc<AtomicU8>,
         mut reader: TcpReader,
         handler: Option<Arc<TcpMessageHandler>>,
-        py_handler: Option<Arc<PyObject>>,
+        #[cfg(feature = "python")] py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'read'");
+        log_task_started("read");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -359,6 +367,7 @@ impl SocketClientInner {
                                     handler(&data);
                                 }
 
+                                #[cfg(feature = "python")]
                                 if let Some(py_handler) = &py_handler {
                                     if let Err(e) = Python::with_gil(|py| {
                                         py_handler.call1(py, (data.as_slice(),))
@@ -377,7 +386,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'read'");
+            log_task_stopped("read");
         })
     }
 
@@ -387,7 +396,7 @@ impl SocketClientInner {
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'write'");
+        log_task_started("write");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -460,7 +469,7 @@ impl SocketClientInner {
             // we ignore any error as the writer may already be closed.
             _ = active_writer.shutdown().await;
 
-            tracing::debug!("Completed task 'write'");
+            log_task_stopped("write");
         })
     }
 
@@ -469,7 +478,7 @@ impl SocketClientInner {
         heartbeat: (u64, Vec<u8>),
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'heartbeat'");
+        log_task_started("heartbeat");
         let (interval_secs, message) = heartbeat;
 
         tokio::task::spawn(async move {
@@ -494,7 +503,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'heartbeat'");
+            log_task_stopped("heartbeat");
         })
     }
 }
@@ -503,18 +512,18 @@ impl Drop for SocketClientInner {
     fn drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
-            tracing::debug!("Aborted task 'read'");
+            log_task_aborted("read");
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
-            tracing::debug!("Aborted task 'write'");
+            log_task_aborted("write");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
-                tracing::debug!("Aborted task 'heartbeat'");
+                log_task_aborted("heartbeat");
             }
         }
     }
@@ -530,6 +539,12 @@ pub struct SocketClient {
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
 }
 
+impl Debug for SocketClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SocketClient)).finish()
+    }
+}
+
 impl SocketClient {
     /// Connect to the server.
     ///
@@ -539,9 +554,9 @@ impl SocketClient {
     pub async fn connect(
         config: SocketConfig,
         handler: Option<Arc<TcpMessageHandler>>,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_connection: Option<PyObject>,
+        #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> anyhow::Result<Self> {
         let inner = SocketClientInner::connect_url(config, handler).await?;
         let writer_tx = inner.writer_tx.clone();
@@ -550,10 +565,13 @@ impl SocketClient {
         let controller_task = Self::spawn_controller_task(
             inner,
             connection_mode.clone(),
+            #[cfg(feature = "python")]
             post_reconnection,
+            #[cfg(feature = "python")]
             post_disconnection,
         );
 
+        #[cfg(feature = "python")]
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
                 Ok(_) => tracing::debug!("Called `post_connection` handler"),
@@ -629,13 +647,13 @@ impl SocketClient {
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
-                tracing::debug!("Aborted controller task");
+                log_task_aborted("controller");
             }
         })
         .await
         {
             Ok(()) => {
-                tracing::debug!("Controller task finished");
+                log_task_stopped("controller");
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
@@ -705,11 +723,11 @@ impl SocketClient {
     fn spawn_controller_task(
         mut inner: SocketClientInner,
         connection_mode: Arc<AtomicU8>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_reconnection: Option<PyObject>,
+        #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Started task 'controller'");
+            log_task_started("controller");
 
             let check_interval = Duration::from_millis(10);
 
@@ -727,13 +745,13 @@ impl SocketClient {
 
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
-                            tracing::debug!("Aborted task 'read'");
+                            log_task_aborted("read");
                         }
 
                         if let Some(task) = &inner.heartbeat_task {
                             if !task.is_finished() {
                                 task.abort();
-                                tracing::debug!("Aborted task 'heartbeat'");
+                                log_task_aborted("heartbeat");
                             }
                         }
                     })
@@ -745,6 +763,7 @@ impl SocketClient {
 
                     tracing::debug!("Closed");
 
+                    #[cfg(feature = "python")]
                     if let Some(ref handler) = post_disconnection {
                         Python::with_gil(|py| match handler.call0(py) {
                             Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
@@ -762,6 +781,7 @@ impl SocketClient {
                             tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
 
+                            #[cfg(feature = "python")]
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => {
@@ -788,7 +808,7 @@ impl SocketClient {
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
 
-            tracing::debug!("Completed task 'controller'");
+            log_task_stopped("controller");
         })
     }
 }
@@ -797,6 +817,7 @@ impl SocketClient {
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
+#[cfg(feature = "python")]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
     use std::ffi::CString;

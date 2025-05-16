@@ -30,6 +30,9 @@ use crate::logging::{
     writer::FileWriterConfig,
 };
 
+/// # Errors
+///
+/// Returns an error if initializing the logger fails.
 pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) -> anyhow::Result<LogGuard> {
     let mut config = LoggerConfig::default();
     config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
@@ -88,6 +91,9 @@ where
     }
 }
 
+/// # Panics
+///
+/// Panics if the timeout duration is exceeded without the condition being met.
 pub async fn wait_until_async<F, Fut>(mut condition: F, timeout: Duration)
 where
     F: FnMut() -> Fut,

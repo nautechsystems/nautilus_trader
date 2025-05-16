@@ -26,6 +26,8 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class TrailingStopLimitOrder(Order):
     cdef readonly Price price
     """The order price (LIMIT).\n\n:returns: `Price` or ``None``"""
+    cdef readonly Price activation_price
+    """The order activation price (STOP).\n\n:returns: `Price` or ``None``"""
     cdef readonly Price trigger_price
     """The order trigger price (STOP).\n\n:returns: `Price` or ``None``"""
     cdef readonly TriggerType trigger_type
@@ -40,6 +42,8 @@ cdef class TrailingStopLimitOrder(Order):
     """The order expiration (UNIX epoch nanoseconds), zero for no expiration.\n\n:returns: `uint64_t`"""
     cdef readonly Quantity display_qty
     """The quantity of the ``LIMIT`` order to display on the public book (iceberg).\n\n:returns: `Quantity` or ``None``"""  # noqa
+    cdef readonly bint is_activated
+    """If the order has been activated.\n\n:returns: `bool`"""
     cdef readonly bint is_triggered
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly uint64_t ts_triggered

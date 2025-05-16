@@ -464,9 +464,9 @@ class Bar:
     def from_msgpack(data: bytes) -> Bar: ...
 
     def as_pycapsule(self) -> object: ...
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class Bet:
     def __init__(self, price: Decimal, stake: Decimal, side: BetSide) -> None: ...
@@ -569,9 +569,9 @@ class OrderBookDelta:
     def from_msgpack(data: bytes) -> OrderBookDelta: ...
 
     def as_pycapsule(self) -> object: ...
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class OrderBookDeltas:
     def __init__(
@@ -653,9 +653,9 @@ class OrderBookDepth10:
     def from_msgpack(data: bytes) -> OrderBookDepth10: ...
 
     def as_pycapsule(self) -> object: ...
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class QuoteTick:
     def __init__(
@@ -699,9 +699,9 @@ class QuoteTick:
     def extract_price(self) -> Price: ...
     def extract_size(self) -> Quantity: ...
     def as_pycapsule(self) -> object: ...
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class TradeTick:
     def __init__(
@@ -743,9 +743,9 @@ class TradeTick:
     def from_msgpack(data: bytes) -> TradeTick: ...
 
     def as_pycapsule(self) -> object: ...
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class MarkPriceUpdate:
     def __init__(
@@ -777,9 +777,9 @@ class MarkPriceUpdate:
     @staticmethod
     def from_msgpack(data: bytes) -> MarkPriceUpdate: ...
 
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class IndexPriceUpdate:
     def __init__(
@@ -811,9 +811,9 @@ class IndexPriceUpdate:
     @staticmethod
     def from_msgpack(data: bytes) -> IndexPriceUpdate: ...
 
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class InstrumentClose:
     def __init__(
@@ -848,9 +848,9 @@ class InstrumentClose:
     @staticmethod
     def from_msgpack(data: bytes) -> InstrumentClose: ...
 
-    def as_dict(self) -> dict[str, Any]: ...
-    def as_json(self) -> bytes: ...
-    def as_msgpack(self) -> bytes: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_json_bytes(self) -> bytes: ...
+    def to_msgpack_bytes(self) -> bytes: ...
 
 class InstrumentStatus:
     def __init__(
@@ -885,6 +885,7 @@ class InstrumentStatus:
     def is_short_sell_restricted(self) -> bool | None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> InstrumentStatus: ...
+    def to_dict(self) -> dict[str, str]: ...
 
 # Enums
 
@@ -1484,7 +1485,6 @@ class MarketIfTouchedOrder:
         init_id: UUID4,
         ts_init: int,
         expire_time: int | None = None,
-        display_qty: Quantity | None = None,
         emulation_trigger: TriggerType | None = None,
         trigger_instrument_id: InstrumentId | None = None,
         contingency_type: ContingencyType | None = None,
@@ -1833,7 +1833,7 @@ class AccountState:
 class BettingInstrument:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         event_type_id: int,
         event_type_name: str,
@@ -1946,7 +1946,7 @@ class BettingInstrument:
 class BinaryOption:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         currency: Currency,
@@ -2026,7 +2026,7 @@ class BinaryOption:
 class CryptoFuture:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -2105,7 +2105,7 @@ class CryptoFuture:
 class CryptoOption:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -2188,7 +2188,7 @@ class CryptoOption:
 class CryptoPerpetual:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -2267,7 +2267,7 @@ class CryptoPerpetual:
 class CurrencyPair:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -2336,7 +2336,7 @@ class CurrencyPair:
 class Equity:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         currency: Currency,
         price_precision: int,
@@ -2401,7 +2401,7 @@ class Equity:
 class FuturesContract:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2484,7 +2484,7 @@ class FuturesContract:
 class FuturesSpread:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2572,7 +2572,7 @@ class FuturesSpread:
 class OptionContract:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -2663,7 +2663,7 @@ class OptionContract:
 class OptionSpread:
     def __init__(
         self,
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: str,
@@ -3789,6 +3789,7 @@ class NautilusDataType(Enum):
     QuoteTick = 3
     TradeTick = 4
     Bar = 5
+    MarkPriceUpdate = 6
 
 class DataBackendSession:
     def __init__(self, chunk_size: int = 10_000) -> None: ...

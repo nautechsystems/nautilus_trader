@@ -220,12 +220,22 @@ impl OrderFilled {
         self.order_type
     }
 
+    /// Constructs an [`OrderFilled`] from a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if deserialization from the Python dict fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
         from_dict_pyo3(py, values)
     }
 
+    /// Converts this [`OrderFilled`] into a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization into a Python dict fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

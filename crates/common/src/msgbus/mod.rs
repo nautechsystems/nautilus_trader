@@ -51,15 +51,22 @@ use crate::messages::data::DataResponse;
 // Re-exports
 pub use crate::msgbus::message::BusMessage;
 
-#[allow(missing_debug_implementations)]
+#[derive(Debug)]
 pub struct ShareableMessageBus(Rc<RefCell<MessageBus>>);
 
+// SAFETY: Cannot be sent across thread boundaries
+#[allow(unsafe_code)]
 unsafe impl Send for ShareableMessageBus {}
+#[allow(unsafe_code)]
 unsafe impl Sync for ShareableMessageBus {}
 
 static MESSAGE_BUS: OnceLock<ShareableMessageBus> = OnceLock::new();
 
 /// Sets the global message bus.
+///
+/// # Panics
+///
+/// Panics if a message bus has already been set.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     if MESSAGE_BUS.set(ShareableMessageBus(msgbus)).is_err() {
         panic!("Failed to set MessageBus");
@@ -67,6 +74,10 @@ pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
 }
 
 /// Gets the global message bus.
+///
+/// # Panics
+///
+/// Panics if the global message bus is uninitialized.
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
     if MESSAGE_BUS.get().is_none() {
         // Initialize default message bus
@@ -87,7 +98,7 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
     }
 }
 
-/// Sends the `response` to the handler registered for the `correlation_id` (if found).
+/// Sends the response to the handler registered for the `correlation_id` (if found).
 pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     let handler = get_message_bus()
         .borrow()
@@ -99,6 +110,15 @@ pub fn response(correlation_id: &UUID4, message: &dyn Any) {
         log::error!(
             "Failed to handle response: handler not found for correlation_id {correlation_id}"
         )
+    }
+}
+
+pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessageHandler) {
+    if let Err(e) = get_message_bus()
+        .borrow_mut()
+        .register_response_handler(correlation_id, handler)
+    {
+        log::error!("Failed to register request handler: {e}");
     }
 }
 
@@ -162,7 +182,7 @@ pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, prio
     // Find existing patterns which match this topic
     let mut matches = Vec::new();
     for (pattern, subs) in msgbus_ref_mut.patterns.iter_mut() {
-        if is_matching(&Ustr::from(topic.as_ref()), pattern) {
+        if is_matching_backtracking(&Ustr::from(topic.as_ref()), pattern) {
             subs.push(sub.clone());
             subs.sort();
             // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -326,7 +346,9 @@ pub struct MessageBus {
 }
 
 // SAFETY: Message bus is not meant to be passed between threads
+#[allow(unsafe_code)]
 unsafe impl Send for MessageBus {}
+#[allow(unsafe_code)]
 unsafe impl Sync for MessageBus {}
 
 impl MessageBus {
@@ -416,6 +438,10 @@ impl MessageBus {
     }
 
     /// Close the message bus which will close the sender channel and join the thread.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error (TBD).
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
@@ -439,7 +465,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(sub.clone())
             } else {
                 None
@@ -459,6 +485,11 @@ impl MessageBus {
         matching_subs
     }
 
+    /// Register a response handler for a specific correlation ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a handler is already registered for the given correlation ID.
     pub fn register_response_handler(
         &mut self,
         correlation_id: &UUID4,
@@ -480,7 +511,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.topic, pattern) {
                 Some(&sub.handler)
             } else {
                 None
@@ -508,7 +539,7 @@ impl MessageBus {
 
     /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
-        if let Some(handler) = self.get_endpoint(message.client_id.inner()) {
+        if let Some(handler) = self.get_response_handler(message.correlation_id()) {
             handler.0.handle(&message);
         }
     }
@@ -560,6 +591,61 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     });
 
     table[n][m]
+}
+
+/// Match a topic and a string pattern using iterative backtracking algorithm
+/// pattern can contains -
+/// '*' - match 0 or more characters after this
+/// '?' - match any character once
+/// 'a-z' - match the specific character
+#[must_use]
+pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
+    let topic_bytes = topic.as_bytes();
+    let pattern_bytes = pattern.as_bytes();
+
+    // Stack to store states for backtracking (topic_idx, pattern_idx)
+    let mut stack = vec![(0, 0)];
+
+    while let Some((mut i, mut j)) = stack.pop() {
+        loop {
+            // Found a match if we've consumed both strings
+            if i == topic.len() && j == pattern.len() {
+                return true;
+            }
+
+            // If we've reached the end of the pattern, break to try other paths
+            if j == pattern.len() {
+                break;
+            }
+
+            // Handle '*' wildcard
+            if pattern_bytes[j] == b'*' {
+                // Try skipping '*' entirely first
+                stack.push((i, j + 1));
+
+                // Continue with matching current character and keeping '*'
+                if i < topic.len() {
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            // Handle '?' or exact character match
+            else if i < topic.len()
+                && (pattern_bytes[j] == b'?' || topic_bytes[i] == pattern_bytes[j])
+            {
+                // Continue matching linearly without stack operations
+                i += 1;
+                j += 1;
+                continue;
+            }
+
+            // No match found in current path
+            break;
+        }
+    }
+
+    false
 }
 
 impl Default for MessageBus {

@@ -34,6 +34,7 @@ use crate::{
     models::{fee::FeeModelAny, fill::FillModel},
 };
 
+#[derive(Debug)]
 pub struct OrderEngineAdapter {
     engine: Rc<RefCell<OrderMatchingEngine>>,
 }

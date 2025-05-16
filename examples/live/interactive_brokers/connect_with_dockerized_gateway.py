@@ -18,6 +18,7 @@
 
 import os
 
+from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
@@ -96,7 +97,7 @@ config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
     data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
+        IB: InteractiveBrokersDataClientConfig(
             ibg_client_id=1,
             handle_revised_bars=False,
             use_regular_trading_hours=True,
@@ -106,7 +107,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "IB": InteractiveBrokersExecClientConfig(
+        IB: InteractiveBrokersExecClientConfig(
             ibg_client_id=1,
             account_id="DU123456",  # This must match with the IB Gateway/TWS node is connecting to
             dockerized_gateway=dockerized_gateway,
@@ -146,8 +147,8 @@ strategy = SubscribeStrategy(config=strategy_config)
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 node.portfolio.set_specific_venue(IB_VENUE)
 

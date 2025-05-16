@@ -15,11 +15,13 @@
 
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
+use rand::{Rng, SeedableRng, rngs::StdRng};
+use regex::Regex;
 use rstest::rstest;
 use ustr::Ustr;
 
 use crate::msgbus::{
-    self, MessageBus, get_message_bus, is_matching,
+    self, MessageBus, get_message_bus, is_matching, is_matching_backtracking,
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
     },
@@ -217,4 +219,100 @@ fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected
         is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
         expected
     );
+    assert_eq!(
+        is_matching_backtracking(&Ustr::from(topic), &Ustr::from(pattern)),
+        expected
+    );
+}
+
+fn convert_pattern_to_regex(pattern: &str) -> String {
+    let mut regex = String::new();
+    regex.push('^');
+
+    for c in pattern.chars() {
+        match c {
+            '.' => regex.push_str("\\."),
+            '*' => regex.push_str(".*"),
+            '?' => regex.push_str("."),
+            _ => regex.push(c),
+        }
+    }
+
+    regex.push('$');
+    regex
+}
+
+#[rstest]
+#[case("a??.quo*es.?I?AN*ET?US*T", "^a..\\.quo.*es\\..I.AN.*ET.US.*T$")]
+#[case("da?*.?u*?s??*NC**ETH?", "^da..*\\..u.*.s...*NC.*.*ETH.$")]
+fn test_convert_pattern_to_regex(#[case] pat: &str, #[case] regex: &str) {
+    assert_eq!(convert_pattern_to_regex(pat), regex);
+}
+
+fn generate_pattern_from_topic(topic: &str, rng: &mut StdRng) -> String {
+    let mut pattern = String::new();
+
+    for c in topic.chars() {
+        let val: f64 = rng.random();
+        // 10% chance of wildcard
+        if val < 0.1 {
+            pattern.push('*');
+        }
+        // 20% chance of question mark
+        else if val < 0.3 {
+            pattern.push('?');
+        }
+        // 20% chance of skipping
+        else if val < 0.5 {
+            continue;
+        }
+        // 50% chance of keeping the character
+        else {
+            pattern.push(c);
+        };
+    }
+
+    pattern
+}
+
+#[rstest]
+fn test_matching_with_regex() {
+    let topic = "data.quotes.BINANCE.ETHUSDT";
+    let mut rng = StdRng::seed_from_u64(42);
+
+    for i in 0..1000 {
+        let pattern = generate_pattern_from_topic(topic, &mut rng);
+        let regex_pattern = convert_pattern_to_regex(&pattern);
+        let regex = Regex::new(&regex_pattern).unwrap();
+        assert_eq!(
+            is_matching(&Ustr::from(topic), &Ustr::from(&pattern)),
+            regex.is_match(topic),
+            "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
+            i,
+            pattern,
+            topic,
+            regex_pattern
+        );
+    }
+}
+
+#[rstest]
+fn test_matching_backtracking() {
+    let topic = "data.quotes.BINANCE.ETHUSDT";
+    let mut rng = StdRng::seed_from_u64(42);
+
+    for i in 0..1000 {
+        let pattern = generate_pattern_from_topic(topic, &mut rng);
+        let regex_pattern = convert_pattern_to_regex(&pattern);
+        let regex = Regex::new(&regex_pattern).unwrap();
+        assert_eq!(
+            is_matching_backtracking(&Ustr::from(topic), &Ustr::from(&pattern)),
+            regex.is_match(topic),
+            "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
+            i,
+            pattern,
+            topic,
+            regex_pattern
+        );
+    }
 }

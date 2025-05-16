@@ -13,5 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::data::Data;
+
 pub mod data;
 pub mod system;
+
+// Re-exports
+pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
+
+// TODO: Refine this to reduce disparity between enum sizes
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
+pub enum DataEvent {
+    Response(DataResponse),
+    Data(Data),
+}

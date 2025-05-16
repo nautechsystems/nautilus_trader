@@ -528,8 +528,8 @@ cdef class OrderInitialized(OrderEvent):
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
 
-        linked_order_ids = values["linked_order_ids"]
-        tags = values["tags"]
+        linked_order_ids = values.get("linked_order_ids")
+        tags = values.get("tags")
 
         if isinstance(linked_order_ids, str):
             linked_order_ids = linked_order_ids.split(",")
@@ -2424,8 +2424,8 @@ cdef class OrderCanceled(OrderEvent):
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderCanceled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2694,8 +2694,8 @@ cdef class OrderExpired(OrderEvent):
     @staticmethod
     cdef OrderExpired from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderExpired(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2966,8 +2966,8 @@ cdef class OrderTriggered(OrderEvent):
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderTriggered(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -3237,8 +3237,8 @@ cdef class OrderPendingUpdate(OrderEvent):
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -3508,8 +3508,8 @@ cdef class OrderPendingCancel(OrderEvent):
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -3798,8 +3798,8 @@ cdef class OrderModifyRejected(OrderEvent):
     @staticmethod
     cdef OrderModifyRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -4090,8 +4090,8 @@ cdef class OrderCancelRejected(OrderEvent):
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
         return OrderCancelRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -4388,10 +4388,10 @@ cdef class OrderUpdated(OrderEvent):
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str v = values["venue_order_id"]
-        cdef str a = values["account_id"]
-        cdef str p = values["price"]
-        cdef str t = values["trigger_price"]
+        cdef str v = values.get("venue_order_id")
+        cdef str a = values.get("account_id")
+        cdef str p = values.get("price")
+        cdef str t = values.get("trigger_price")
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -4736,7 +4736,7 @@ cdef class OrderFilled(OrderEvent):
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str position_id_str = values["position_id"]
+        cdef str position_id_str = values.get("position_id")
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),

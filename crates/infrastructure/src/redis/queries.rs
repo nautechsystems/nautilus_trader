@@ -59,9 +59,15 @@ const INDEX_POSITIONS: &str = "index:positions";
 const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
 const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
+#[derive(Debug)]
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {
+    /// Serializes the given `payload` using the specified `encoding` to a byte vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization to the chosen encoding fails.
     pub fn serialize_payload<T: Serialize>(
         encoding: SerializationEncoding,
         payload: &T,
@@ -76,6 +82,11 @@ impl DatabaseQueries {
         }
     }
 
+    /// Deserializes the given byte slice `payload` into type `T` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deserialization from the chosen encoding fails or converting to the target type fails.
     pub fn deserialize_payload<T: DeserializeOwned>(
         encoding: SerializationEncoding,
         payload: &[u8],
@@ -93,6 +104,11 @@ impl DatabaseQueries {
             .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
     }
 
+    /// Scans Redis for keys matching the given `pattern`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Redis scan operation fails.
     pub async fn scan_keys(
         con: &mut ConnectionManager,
         pattern: String,
@@ -104,6 +120,11 @@ impl DatabaseQueries {
             .await)
     }
 
+    /// Reads raw byte payloads for `key` under `trader_key` from Redis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails or if the collection is unsupported.
     pub async fn read(
         con: &ConnectionManager,
         trader_key: &str,
@@ -128,6 +149,11 @@ impl DatabaseQueries {
         }
     }
 
+    /// Loads all cache data (currencies, instruments, synthetics, accounts, orders, positions) for `trader_key`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading any of the individual caches fails or combining data fails.
     pub async fn load_all(
         con: &ConnectionManager,
         encoding: SerializationEncoding,
@@ -160,6 +186,11 @@ impl DatabaseQueries {
         })
     }
 
+    /// Loads all currencies for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading currency data fails.
     pub async fn load_currencies(
         con: &ConnectionManager,
         trader_key: &str,
@@ -177,12 +208,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let currency_code = match key.as_str().rsplit(':').next() {
-                        Some(code) => Ustr::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let currency_code = if let Some(code) = key.as_str().rsplit(':').next() {
+                        Ustr::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_currency(&con, trader_key, &currency_code, encoding).await {
@@ -207,6 +237,16 @@ impl DatabaseQueries {
         Ok(currencies)
     }
 
+    /// Loads all instruments for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading instrument data fails.
+    /// Loads all instruments for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading instrument data fails.
     pub async fn load_instruments(
         con: &ConnectionManager,
         trader_key: &str,
@@ -266,6 +306,16 @@ impl DatabaseQueries {
         Ok(instruments)
     }
 
+    /// Loads all synthetic instruments for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading synthetic instrument data fails.
+    /// Loads all synthetic instruments for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading synthetic instrument data fails.
     pub async fn load_synthetics(
         con: &ConnectionManager,
         trader_key: &str,
@@ -325,6 +375,16 @@ impl DatabaseQueries {
         Ok(synthetics)
     }
 
+    /// Loads all accounts for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading account data fails.
+    /// Loads all accounts for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading account data fails.
     pub async fn load_accounts(
         con: &ConnectionManager,
         trader_key: &str,
@@ -342,12 +402,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let account_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => AccountId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let account_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        AccountId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_account(&con, trader_key, &account_id, encoding).await {
@@ -372,6 +431,16 @@ impl DatabaseQueries {
         Ok(accounts)
     }
 
+    /// Loads all orders for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading order data fails.
+    /// Loads all orders for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading order data fails.
     pub async fn load_orders(
         con: &ConnectionManager,
         trader_key: &str,
@@ -389,12 +458,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let client_order_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => ClientOrderId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let client_order_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        ClientOrderId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_order(&con, trader_key, &client_order_id, encoding).await {
@@ -419,6 +487,16 @@ impl DatabaseQueries {
         Ok(orders)
     }
 
+    /// Loads all positions for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading position data fails.
+    /// Loads all positions for `trader_key` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if scanning keys or reading position data fails.
     pub async fn load_positions(
         con: &ConnectionManager,
         trader_key: &str,
@@ -436,12 +514,11 @@ impl DatabaseQueries {
             .map(|key| {
                 let con = con.clone();
                 async move {
-                    let position_id = match key.as_str().rsplit(':').next() {
-                        Some(code) => PositionId::from(code),
-                        None => {
-                            log::error!("Invalid key format: {key}");
-                            return None;
-                        }
+                    let position_id = if let Some(code) = key.as_str().rsplit(':').next() {
+                        PositionId::from(code)
+                    } else {
+                        log::error!("Invalid key format: {key}");
+                        return None;
                     };
 
                     match Self::load_position(&con, trader_key, &position_id, encoding).await {
@@ -466,6 +543,11 @@ impl DatabaseQueries {
         Ok(positions)
     }
 
+    /// Loads a single currency for `trader_key` and `code` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_currency(
         con: &ConnectionManager,
         trader_key: &str,
@@ -483,6 +565,11 @@ impl DatabaseQueries {
         Ok(currency)
     }
 
+    /// Loads a single instrument for `trader_key` and `instrument_id` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_instrument(
         con: &ConnectionManager,
         trader_key: &str,
@@ -499,6 +586,11 @@ impl DatabaseQueries {
         Ok(Some(instrument))
     }
 
+    /// Loads a single synthetic instrument for `trader_key` and `instrument_id` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_synthetic(
         con: &ConnectionManager,
         trader_key: &str,
@@ -515,6 +607,11 @@ impl DatabaseQueries {
         Ok(Some(synthetic))
     }
 
+    /// Loads a single account for `trader_key` and `account_id` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_account(
         con: &ConnectionManager,
         trader_key: &str,
@@ -531,6 +628,11 @@ impl DatabaseQueries {
         Ok(Some(account))
     }
 
+    /// Loads a single order for `trader_key` and `client_order_id` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_order(
         con: &ConnectionManager,
         trader_key: &str,
@@ -547,6 +649,11 @@ impl DatabaseQueries {
         Ok(Some(order))
     }
 
+    /// Loads a single position for `trader_key` and `position_id` using the specified `encoding`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying read or deserialization fails.
     pub async fn load_position(
         con: &ConnectionManager,
         trader_key: &str,

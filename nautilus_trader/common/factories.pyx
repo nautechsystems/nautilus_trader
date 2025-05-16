@@ -936,6 +936,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         trailing_offset: Decimal,
+        Price activation_price = None,
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
@@ -963,6 +964,8 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         trailing_offset : Decimal
             The trailing offset for the trigger price (STOP).
+        activation_price : Price, optional
+            The price for the order to become active. If ``None`` then the order will be activated right after the order is accepted.
         trigger_price : Price, optional
             The order trigger price (STOP). If ``None`` then will typically default
             to the delta of market price and `trailing_offset`.
@@ -1020,6 +1023,7 @@ cdef class OrderFactory:
             client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
+            activation_price=activation_price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
@@ -1050,6 +1054,7 @@ cdef class OrderFactory:
         limit_offset: Decimal,
         trailing_offset: Decimal,
         Price price = None,
+        Price activation_price = None,
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
@@ -1084,6 +1089,8 @@ cdef class OrderFactory:
         price : Price, optional
             The order price (LIMIT). If ``None`` then will typically default to the
             delta of market price and `limit_offset`.
+        activation_price : Price, optional
+            The price for the order to become active. If ``None`` then the order will be activated right after the order is accepted.
         trigger_price : Price, optional
             The order trigger price (STOP). If ``None`` then will typically default
             to the delta of market price and `trailing_offset`.
@@ -1150,6 +1157,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             price=price,
+            activation_price=activation_price,
             trigger_price=trigger_price,
             trigger_type=trigger_type,
             limit_offset=limit_offset,

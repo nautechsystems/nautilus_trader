@@ -75,6 +75,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -484,9 +485,7 @@ class TestDataEngine:
         assert self.data_engine.command_count == 2
         assert self.data_engine.subscribed_custom_data() == []
 
-    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(
-        self,
-    ):
+    def test_execute_unsubscribe_when_data_type_unrecognized_logs_and_does_nothing(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
 
@@ -2231,7 +2230,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 1
-        assert len(handler[0].data) == 1
+        assert isinstance(handler[0].data, Instrument)
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):

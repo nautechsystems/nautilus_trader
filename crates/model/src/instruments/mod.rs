@@ -144,8 +144,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If instrument is inverse and not `use_quote_for_inverse`, with no base currency.
+    /// This function panics if instrument is inverse and not `use_quote_for_inverse`, with no base currency.
     fn calculate_notional_value(
         &self,
         quantity: Quantity,

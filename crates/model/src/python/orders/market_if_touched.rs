@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use indexmap::IndexMap;
-use nautilus_core::{UUID4, python::to_pyruntime_err};
+use nautilus_core::{
+    UUID4,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -36,7 +39,7 @@ use crate::{
 impl MarketIfTouchedOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, trigger_price, trigger_type, time_in_force, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -52,7 +55,6 @@ impl MarketIfTouchedOrder {
         init_id: UUID4,
         ts_init: u64,
         expire_time: Option<u64>,
-        display_qty: Option<Quantity>,
         emulation_trigger: Option<TriggerType>,
         trigger_instrument_id: Option<InstrumentId>,
         contingency_type: Option<ContingencyType>,
@@ -63,9 +65,8 @@ impl MarketIfTouchedOrder {
         exec_algorithm_params: Option<IndexMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> Self {
-        let exec_algorithm_params = exec_algorithm_params.map(str_indexmap_to_ustr);
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -78,7 +79,6 @@ impl MarketIfTouchedOrder {
             expire_time.map(std::convert::Into::into),
             reduce_only,
             quote_quantity,
-            display_qty,
             emulation_trigger,
             trigger_instrument_id,
             contingency_type,
@@ -86,12 +86,13 @@ impl MarketIfTouchedOrder {
             linked_order_ids,
             parent_order_id,
             exec_algorithm_id,
-            exec_algorithm_params,
+            exec_algorithm_params.map(str_indexmap_to_ustr),
             exec_spawn_id,
             tags.map(|vec| vec.into_iter().map(|s| Ustr::from(s.as_str())).collect()),
             init_id,
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]

@@ -28,19 +28,24 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
+#![deny(unsafe_code)]
 #![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod backoff;
 pub mod fix;
 pub mod http;
 pub mod mode;
-pub mod ratelimiter;
 pub mod socket;
 pub mod websocket;
 
+mod logging;
 mod tls;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+pub mod ratelimiter;

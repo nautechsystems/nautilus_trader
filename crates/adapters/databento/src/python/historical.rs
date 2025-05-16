@@ -145,7 +145,10 @@ impl DatabentoHistoricalClient {
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let mut symbol_venue_map = self
+            .symbol_venue_map
+            .write()
+            .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
         let symbols: Vec<String> = instrument_ids
             .iter()
             .map(|instrument_id| {
@@ -153,7 +156,10 @@ impl DatabentoHistoricalClient {
             })
             .collect();
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        let first_symbol = symbols
+            .first()
+            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
+        let stype_in = infer_symbology_type(first_symbol);
         let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
@@ -169,7 +175,6 @@ impl DatabentoHistoricalClient {
 
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
         let use_exchange_as_venue = self.use_exchange_as_venue;
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -188,39 +193,43 @@ impl DatabentoHistoricalClient {
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
                 let record = dbn::RecordRef::from(msg);
+                let sym_map = symbol_venue_map
+                    .read()
+                    .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
                 let mut instrument_id = decode_nautilus_instrument_id(
                     &record,
                     &mut metadata_cache,
                     &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
+                    &sym_map,
                 )
                 .map_err(to_pyvalue_err)?;
 
                 if use_exchange_as_venue && instrument_id.venue == Venue::GLBX() {
-                    let exchange = msg.exchange().unwrap();
-                    let venue = Venue::from_code(exchange)
-                        .unwrap_or_else(|_| panic!("`Venue` not found for exchange {exchange}"));
+                    let exchange = msg
+                        .exchange()
+                        .map_err(|e| to_pyvalue_err(format!("Missing exchange in record: {e}")))?;
+                    let venue = Venue::from_code(exchange).map_err(|e| {
+                        to_pyvalue_err(format!("Venue not found for exchange {exchange}: {e}"))
+                    })?;
                     instrument_id.venue = venue;
                 }
 
-                let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
+                let result = decode_instrument_def_msg(msg, instrument_id, None);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
                     Err(e) => tracing::error!("{e:?}"),
                 }
             }
 
-            Python::with_gil(|py| {
-                let py_results: PyResult<Vec<PyObject>> = instruments
+            Python::with_gil(|py| -> PyResult<PyObject> {
+                let objs: Vec<PyObject> = instruments
                     .into_iter()
-                    .map(|result| instrument_any_to_pyobject(py, result))
-                    .collect();
+                    .map(|inst| instrument_any_to_pyobject(py, inst))
+                    .collect::<PyResult<Vec<PyObject>>>()?;
 
-                py_results.map(|objs| {
-                    PyList::new(py, &objs)
-                        .expect("Invalid `ExactSizeIterator`")
-                        .into_py_any_unwrap(py)
-                })
+                let list = PyList::new(py, &objs).expect("Invalid `ExactSizeIterator`");
+
+                Ok(list.into_py_any_unwrap(py))
             })
         })
     }
@@ -240,7 +249,10 @@ impl DatabentoHistoricalClient {
         schema: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
+        let mut symbol_venue_map = self
+            .symbol_venue_map
+            .write()
+            .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
         let symbols: Vec<String> = instrument_ids
             .iter()
             .map(|instrument_id| {
@@ -248,7 +260,10 @@ impl DatabentoHistoricalClient {
             })
             .collect();
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        let first_symbol = symbols
+            .first()
+            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
+        let stype_in = infer_symbology_type(first_symbol);
         let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
@@ -275,7 +290,6 @@ impl DatabentoHistoricalClient {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -302,7 +316,7 @@ impl DatabentoHistoricalClient {
                     &record,
                     instrument_id,
                     price_precision,
-                    Some(ts_init),
+                    None,
                     false, // Don't include trades
                 )
                 .map_err(to_pyvalue_err)?;
@@ -378,7 +392,6 @@ impl DatabentoHistoricalClient {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -406,7 +419,7 @@ impl DatabentoHistoricalClient {
                     &record,
                     instrument_id,
                     price_precision,
-                    Some(ts_init),
+                    None,
                     false, // Not applicable (trade will be decoded regardless)
                 )
                 .map_err(to_pyvalue_err)?;
@@ -470,7 +483,6 @@ impl DatabentoHistoricalClient {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -498,7 +510,7 @@ impl DatabentoHistoricalClient {
                     &record,
                     instrument_id,
                     price_precision,
-                    Some(ts_init),
+                    None,
                     false, // Not applicable
                 )
                 .map_err(to_pyvalue_err)?;
@@ -554,7 +566,6 @@ impl DatabentoHistoricalClient {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -578,7 +589,7 @@ impl DatabentoHistoricalClient {
                 )
                 .map_err(to_pyvalue_err)?;
 
-                let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
+                let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, None)
                     .map_err(to_pyvalue_err)?;
 
                 result.push(imbalance);
@@ -627,7 +638,6 @@ impl DatabentoHistoricalClient {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let symbol_venue_map = self.symbol_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
@@ -651,9 +661,8 @@ impl DatabentoHistoricalClient {
                 )
                 .map_err(to_pyvalue_err)?;
 
-                let statistics =
-                    decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
-                        .map_err(to_pyvalue_err)?;
+                let statistics = decode_statistics_msg(msg, instrument_id, price_precision, None)
+                    .map_err(to_pyvalue_err)?;
 
                 result.push(statistics);
             }
@@ -698,7 +707,6 @@ impl DatabentoHistoricalClient {
             .build();
 
         let publisher_venue_map = self.publisher_venue_map.clone();
-        let ts_init = self.clock.get_time_ns();
         let symbol_venue_map = self.symbol_venue_map.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -723,8 +731,7 @@ impl DatabentoHistoricalClient {
                 )
                 .map_err(to_pyvalue_err)?;
 
-                let status =
-                    decode_status_msg(msg, instrument_id, ts_init).map_err(to_pyvalue_err)?;
+                let status = decode_status_msg(msg, instrument_id, None).map_err(to_pyvalue_err)?;
 
                 result.push(status);
             }

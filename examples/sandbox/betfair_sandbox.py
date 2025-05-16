@@ -18,11 +18,12 @@ import asyncio
 import traceback
 from decimal import Decimal
 
-from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
-from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
-from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
+from nautilus_trader.adapters.betfair import BETFAIR
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair import BetfairInstrumentProviderConfig
+from nautilus_trader.adapters.betfair import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair import get_cached_betfair_client
+from nautilus_trader.adapters.betfair import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import LoggingConfig
@@ -62,14 +63,14 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
         timeout_connection=30.0,
         logging=LoggingConfig(log_level="DEBUG"),
         data_clients={
-            "BETFAIR": BetfairDataClientConfig(
+            BETFAIR: BetfairDataClientConfig(
                 account_currency=account_currency,
                 instrument_config=instrument_config,
             ),
         },
         exec_clients={
-            "BETFAIR": SandboxExecutionClientConfig(
-                venue="BETFAIR",
+            BETFAIR: SandboxExecutionClientConfig(
+                venue=BETFAIR,
                 base_currency="AUD",
                 starting_balances=["10_000 AUD"],
             ),
@@ -96,8 +97,8 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user-defined factories)
-    node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
-    node.add_exec_client_factory("BETFAIR", SandboxLiveExecClientFactory)
+    node.add_data_client_factory(BETFAIR, BetfairLiveDataClientFactory)
+    node.add_exec_client_factory(BETFAIR, SandboxLiveExecClientFactory)
     node.build()
 
     try:

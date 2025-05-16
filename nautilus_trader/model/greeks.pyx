@@ -75,12 +75,11 @@ cdef class GreeksCalculator:
         MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
-        Logger logger not None,
     ) -> None:
         self._msgbus = msgbus
         self._cache = cache
         self._clock = clock
-        self._log = logger
+        self._log = Logger(type(self).__name__)
 
     def instrument_greeks(
         self,

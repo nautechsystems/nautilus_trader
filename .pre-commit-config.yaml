@@ -53,14 +53,14 @@ repos:
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--all-features", "--", "-D", "warnings"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
         pass_filenames: false
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors.
         entry: cargo doc
         language: system
-        args: ["--all-features", "--no-deps", "--workspace"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
         pass_filenames: false
 
   ##############################################################################
@@ -82,7 +82,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.6
+    rev: v0.11.10
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -97,7 +97,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
-    rev: 06907d0267368b49b9180eed423fae5697c1e909
+    rev: v1.7.7
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]
@@ -127,12 +127,25 @@ repos:
           types-toml,
         ]
 
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.7.4  # uv version
+    hooks:
+      - id: uv-lock
+
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
     hooks:
       - id: nbstripout
 
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.6.14  # uv version
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.17.2  # Pin to depend on default node version for GitHub actions runners
     hooks:
-      - id: uv-lock
+      - id: markdownlint-cli2
+        name: markdownlint
+        entry: markdownlint-cli2
+        args:
+          - --config
+          - .markdownlint.jsonc
+          - --fix
+        files: "\\.md$"
+        exclude: '^(CLA\.md|CONTRIBUTING\.md|RELEASES\.md)$'

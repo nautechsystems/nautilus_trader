@@ -22,6 +22,7 @@
 use std::{
     cell::RefCell,
     collections::{BinaryHeap, HashMap, VecDeque},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -121,8 +122,23 @@ pub struct SimulatedExchange {
     use_message_queue: bool,
 }
 
+impl Debug for SimulatedExchange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SimulatedExchange))
+            .field("id", &self.id)
+            .field("account_type", &self.account_type)
+            .finish()
+    }
+}
+
 impl SimulatedExchange {
     /// Creates a new [`SimulatedExchange`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `starting_balances` is empty.
+    /// - `base_currency` is `Some` but `starting_balances` contains multiple currencies.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,
@@ -213,10 +229,19 @@ impl SimulatedExchange {
         self.generate_fresh_account_state();
     }
 
+    /// Adds an instrument to the simulated exchange and initializes its matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the exchange account type is `Cash` and the instrument is a `CryptoPerpetual` or `CryptoFuture`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument cannot be added to the exchange.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         check_equal(
-            instrument.id().venue,
-            self.id,
+            &instrument.id().venue,
+            &self.id,
             "Venue of instrument id",
             "Venue of simulated exchange",
         )
@@ -349,6 +374,9 @@ impl SimulatedExchange {
             })
     }
 
+    /// # Panics
+    ///
+    /// Panics if retrieving the account from the execution client fails.
     #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
         self.exec_client
@@ -356,6 +384,9 @@ impl SimulatedExchange {
             .map(|client| client.get_account().unwrap())
     }
 
+    /// # Panics
+    ///
+    /// Panics if generating account state fails during adjustment.
     pub fn adjust_account(&mut self, adjustment: Money) {
         if self.frozen_account {
             // Nothing to adjust
@@ -413,6 +444,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the command is invalid when generating inflight command.
     pub fn generate_inflight_command(&mut self, command: &TradingCommand) -> (UnixNanos, u32) {
         if let Some(latency_model) = &self.latency_model {
             let ts = match command {
@@ -442,6 +476,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during delta processing fails.
     pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
         for module in &self.modules {
             module.pre_process(Data::Delta(delta));
@@ -470,6 +507,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during deltas processing fails.
     pub fn process_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
         for module in &self.modules {
             module.pre_process(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
@@ -498,6 +538,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during quote tick processing fails.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
             module.pre_process(Data::Quote(quote.to_owned()));
@@ -526,6 +569,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during trade tick processing fails.
     pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         for module in &self.modules {
             module.pre_process(Data::Trade(trade.to_owned()));
@@ -554,6 +600,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during bar processing fails.
     pub fn process_bar(&mut self, bar: Bar) {
         for module in &self.modules {
             module.pre_process(Data::Bar(bar));
@@ -582,6 +631,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if adding a missing instrument during instrument status processing fails.
     pub fn process_instrument_status(&mut self, status: InstrumentStatus) {
         // TODO add module preprocessing
 
@@ -608,6 +660,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if popping an inflight command fails during processing.
     pub fn process(&mut self, ts_now: UnixNanos) {
         // TODO implement correct clock fixed time setting self.clock.set_time(ts_now);
 
@@ -643,6 +698,9 @@ impl SimulatedExchange {
         log::info!("Resetting exchange state");
     }
 
+    /// # Panics
+    ///
+    /// Panics if execution client is uninitialized when processing trading command.
     pub fn process_trading_command(&mut self, command: TradingCommand) {
         if let Some(matching_engine) = self.matching_engines.get_mut(&command.instrument_id()) {
             let account_id = if let Some(exec_client) = &self.exec_client {
@@ -678,6 +736,9 @@ impl SimulatedExchange {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if generating fresh account state fails.
     pub fn generate_fresh_account_state(&self) {
         let balances: Vec<AccountBalance> = self
             .starting_balances
@@ -804,7 +865,7 @@ mod tests {
             TraderId::default(),
             AccountId::default(),
             exchange.clone(),
-            cache.clone(),
+            cache,
             Rc::new(RefCell::new(clock)),
             None,
             None,
@@ -1354,7 +1415,7 @@ mod tests {
         assert_eq!(exchange.borrow().inflight_queue.len(), 2);
         // First inflight command should have timestamp at 100 and 200 insert latency
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(300)
         );
         // Second inflight command should have timestamp at 150 and 200 insert latency
@@ -1368,7 +1429,7 @@ mod tests {
         assert_eq!(exchange.borrow().message_queue.len(), 0);
         assert_eq!(exchange.borrow().inflight_queue.len(), 1);
         assert_eq!(
-            exchange.borrow().inflight_queue.iter().nth(0).unwrap().ts,
+            exchange.borrow().inflight_queue.iter().next().unwrap().ts,
             UnixNanos::from(350)
         );
     }

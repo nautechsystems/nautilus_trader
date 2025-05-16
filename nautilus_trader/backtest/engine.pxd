@@ -24,6 +24,16 @@ from nautilus_trader.core.rust.backtest cimport TimeEventAccumulatorAPI
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
+from nautilus_trader.data.messages cimport DataCommand
+from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.data.messages cimport RequestData
+from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 
 
 cdef class BacktestEngine:
@@ -49,29 +59,72 @@ cdef class BacktestEngine:
     cdef uint64_t _data_len
     cdef uint64_t _index
     cdef uint64_t _iteration
+    cdef object _data_iterator
+    cdef uint64_t _last_ns
+    cdef uint64_t _end_ns
+    cdef dict[str, RequestData] _data_requests
+    cdef set[str] _backtest_subscription_names
 
-    cdef Data _next(self)
     cdef CVec _advance_time(self, uint64_t ts_now)
     cdef void _process_raw_time_event_handlers(
         self,
         CVec raw_handlers,
         uint64_t ts_now,
         bint only_now,
-        bint asof_now=*,
+        bint as_of_now=*,
     )
+
+    cpdef void _handle_data_command(self, DataCommand command)
+    cpdef void _handle_subscribe(self, SubscribeData command)
+    cpdef void _handle_data_response(self, DataResponse response)
+    cpdef void _handle_unsubscribe(self, UnsubscribeData command)
+    cpdef void _handle_empty_data(self, str subscription_name, uint64_t last_ts_init)
 
 
 cdef inline bint should_skip_time_event(
     uint64_t ts_event_init,
     uint64_t ts_now,
     bint only_now,
-    bint asof_now,
+    bint as_of_now,
 ):
     if only_now and ts_event_init < ts_now:
         return True
     if (not only_now) and (ts_event_init == ts_now):
         return True
-    if asof_now and ts_event_init > ts_now:
+    if as_of_now and ts_event_init > ts_now:
         return True
 
     return False
+
+
+cdef class BacktestDataIterator:
+    cdef object _empty_data_callback
+    cdef Logger _log
+    cdef dict[str, list[Data]] _data
+    cdef dict[str, str] _data_name
+    cdef dict[str, str] _data_priority
+    cdef dict[str, int] _data_len
+    cdef dict[str, int] _data_index
+    cdef list[tuple[uint64_t, str, int]] _heap
+    cdef int _next_data_priority
+    cdef list[Data] _single_data
+    cdef str _single_data_name
+    cdef int _single_data_priority
+    cdef int _single_data_len
+    cdef int _single_data_index
+    cdef bint _is_single_data
+
+    cpdef void _reset_single_data(self)
+    cpdef void add_data(self, str data_name, list data_list, bint append_data=*)
+    cdef void _add_data(self, str data_name, list data_list, bint append_data=*)
+    cpdef void remove_data(self, str data_name)
+    cpdef void _activate_single_data(self)
+    cpdef void _deactivate_single_data(self)
+    cpdef Data next(self)
+    cpdef void _push_data(self, int data_priority, int data_index)
+    cpdef void reset(self)
+    cpdef void _reset_heap(self)
+    cpdef void set_index(self, str data_name, int index)
+    cpdef bint is_done(self)
+    cpdef dict all_data(self)
+    cpdef list data(self, str data_name)

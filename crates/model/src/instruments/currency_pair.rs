@@ -95,9 +95,12 @@ impl CurrencyPair {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -135,7 +138,7 @@ impl CurrencyPair {
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             base_currency,
             quote_currency,
@@ -160,9 +163,13 @@ impl CurrencyPair {
     }
 
     /// Creates a new [`CurrencyPair`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any input parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
@@ -185,7 +192,7 @@ impl CurrencyPair {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             base_currency,
             quote_currency,

@@ -61,8 +61,7 @@ impl OrderBookDelta {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    /// Returns an error if `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
     ///
     /// # Notes
     ///
@@ -95,8 +94,7 @@ impl OrderBookDelta {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
+    /// Panics if `action` is [`BookAction::Add`] or [`BookAction::Update`] and `size` is not positive (> 0).
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
@@ -335,7 +333,7 @@ mod tests {
     #[rstest]
     fn test_json_serialization(stub_delta: OrderBookDelta) {
         let delta = stub_delta;
-        let serialized = delta.as_json_bytes().unwrap();
+        let serialized = delta.to_json_bytes().unwrap();
         let deserialized = OrderBookDelta::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, delta);
     }
@@ -343,7 +341,7 @@ mod tests {
     #[rstest]
     fn test_msgpack_serialization(stub_delta: OrderBookDelta) {
         let delta = stub_delta;
-        let serialized = delta.as_msgpack_bytes().unwrap();
+        let serialized = delta.to_msgpack_bytes().unwrap();
         let deserialized = OrderBookDelta::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, delta);
     }

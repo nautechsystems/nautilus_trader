@@ -23,7 +23,7 @@ use crate::identifiers::order_list_id::OrderListId;
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_list_id_new(ptr: *const c_char) -> OrderListId {
     let value = unsafe { cstr_as_str(ptr) };

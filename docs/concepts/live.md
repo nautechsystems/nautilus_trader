@@ -131,7 +131,7 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
 
 | Setting    | Default | Description                                                                                                                  |
 |------------|---------|------------------------------------------------------------------------------------------------------------------------------|
-| `oms_type` | None    | Specifies the [OMS type](/docs/concepts/execution.md#oms-configuration), for position ID handling and order processing flow. |
+| `oms_type` | None    | Specifies the [OMS type](../concepts/execution#oms-configuration), for position ID handling and order processing flow. |
 
 #### External order claims
 
@@ -217,14 +217,14 @@ methods to produce an execution mass status:
 The system state is then reconciled with the reports, which represent external "reality":
 
 - **Duplicate Check**:
-    - Check for duplicate order IDs and trade IDs.
+  - Check for duplicate order IDs and trade IDs.
 - **Order Reconciliation**:
-    - Generate and apply events necessary to update orders from any cached state to the current state.
-    - If any trade reports are missing, inferred `OrderFilled` events are generated.
-    - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated.
+  - Generate and apply events necessary to update orders from any cached state to the current state.
+  - If any trade reports are missing, inferred `OrderFilled` events are generated.
+  - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated.
 - **Position Reconciliation**:
-    - Ensure the net position per instrument matches the position reports returned from the venue.
-    - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
+  - Ensure the net position per instrument matches the position reports returned from the venue.
+  - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies.
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 

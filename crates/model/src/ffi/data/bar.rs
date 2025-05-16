@@ -32,6 +32,9 @@ use crate::{
     types::{Price, Quantity},
 };
 
+/// # Panics
+///
+/// Panics if `aggregation` or `price_type` do not correspond to valid enum variants.
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_specification_new(
     step: usize,
@@ -82,6 +85,9 @@ pub extern "C" fn bar_specification_ge(lhs: &BarSpecification, rhs: &BarSpecific
     u8::from(lhs >= rhs)
 }
 
+/// # Panics
+///
+/// Panics if `aggregation_source` does not correspond to a valid enum variant.
 #[unsafe(no_mangle)]
 pub extern "C" fn bar_type_new(
     instrument_id: InstrumentId,
@@ -157,7 +163,7 @@ pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> Aggregation
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_char {
     let value = unsafe { cstr_as_str(ptr) };
@@ -171,7 +177,7 @@ pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_type_from_cstr(ptr: *const c_char) -> BarType {
     let value = unsafe { cstr_as_str(ptr) };

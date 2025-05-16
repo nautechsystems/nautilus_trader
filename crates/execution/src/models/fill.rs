@@ -32,6 +32,14 @@ pub struct FillModel {
 
 impl FillModel {
     /// Creates a new [`FillModel`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any probability parameter is out of range [0.0, 1.0].
+    ///
+    /// # Panics
+    ///
+    /// Panics if probability checks fail.
     pub fn new(
         prob_fill_on_limit: f64,
         prob_fill_on_stop: f64,

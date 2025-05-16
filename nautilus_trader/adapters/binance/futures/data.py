@@ -33,6 +33,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -138,11 +139,15 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         # NOTE @trade is an undocumented endpoint for Futures exchanges
         msg = self._decoder_futures_trade_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = msg.data.parse_to_trade_tick(
-            instrument_id=instrument_id,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._handle_data(trade_tick)
+        try:
+            trade_tick: TradeTick = msg.data.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        except ValueError as e:
+            self._log.debug(f"Error handling trade tick message {raw!r}, {e}")
+        else:
+            self._handle_data(trade_tick)
 
     def _handle_mark_price(self, raw: bytes) -> None:
         msg = self._decoder_futures_mark_price_msg.decode(raw)
@@ -157,3 +162,11 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         )
         generic = CustomData(data_type=data_type, data=data)
         self._handle_data(generic)
+        self._handle_data(
+            MarkPriceUpdate(
+                data.instrument_id,
+                data.mark,
+                data.ts_event,
+                data.ts_init,
+            ),
+        )

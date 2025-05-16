@@ -45,6 +45,7 @@ from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport REQ
@@ -758,6 +759,8 @@ cdef class DataEngine(Component):
         elif isinstance(command, SubscribeOrderBook):
             if command.data_type.type == OrderBookDelta:
                 self._handle_subscribe_order_book_deltas(client, command)
+            elif command.data_type.type == OrderBookDepth10:
+                self._handle_subscribe_order_book_depth(client, command)
             else:
                 self._handle_subscribe_order_book_snapshots(client, command)
         elif isinstance(command, SubscribeQuoteTicks):
@@ -829,6 +832,14 @@ cdef class DataEngine(Component):
             return
 
         self._setup_order_book(client, command)
+
+    cpdef void _handle_subscribe_order_book_depth(self, MarketDataClient client, SubscribeOrderBook command):
+        Condition.not_none(client, "client")
+        Condition.not_none(command.instrument_id, "instrument_id")
+        Condition.not_none(command.params, "params")
+
+        self._setup_order_book(client, command)
+
 
     cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, SubscribeOrderBook command):
         Condition.not_none(client, "client")
@@ -1311,8 +1322,9 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe for synthetic instrument `InstrumentClose` data")
             return
 
+        # Only unsubscribe if currently subscribed
         if command.instrument_id in client.subscribed_instrument_close():
-            client.subscribe_instrument_close(command)
+            client.unsubscribe_instrument_close(command)
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
@@ -1380,19 +1392,15 @@ cdef class DataEngine(Component):
         else:
             self._handle_request_data(client, request)
 
-    def _log_request_error(self, RequestData request):
-        self._log.error(f"Cannot handle request: no client registered "
-                        f"for '{request.client_id}', {request}")
-
     cpdef void _handle_request_instruments(self, DataClient client, RequestInstruments request):
         update_catalog_mode = request.params.get("update_catalog_mode", None)
 
         if self._catalogs and update_catalog_mode is None:
-            self._query_catalog(request)
+            self.query_catalog(request)
             return
 
         if client is None:
-            self._log_request_error(request)
+            self._log_request_warning(request)
             return  # No client to handle request
 
         client.request_instruments(request)
@@ -1405,119 +1413,21 @@ cdef class DataEngine(Component):
         )[0]
 
         if last_timestamp:
-            self._query_catalog(request)
+            self.query_catalog(request)
             return
 
         if client is None:
-            self._log_request_error(request)
+            self._log_request_warning(request)
             return  # No client to handle request
 
         client.request_instrument(request)
 
     cpdef void _handle_request_order_book_snapshot(self, DataClient client, RequestOrderBookSnapshot request):
         if client is None:
-            self._log_request_error(request)
+            self._log_request_warning(request)
             return  # No client to handle request
 
         client.request_order_book_snapshot(request)
-
-    cpdef void _date_range_client_request(self, DataClient client, RequestData request):
-        if client is None:
-            self._log_request_error(request)
-            return # No client to handle request
-
-        if isinstance(request, RequestBars):
-            client.request_bars(request)
-        elif isinstance(request, RequestQuoteTicks):
-            client.request_quote_ticks(request)
-        elif isinstance(request, RequestTradeTicks):
-            client.request_trade_ticks(request)
-        else:
-            try:
-                client.request(request)
-            except:
-                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}, {request}")
-
-    def _convert_update_catalog_mode(self, update_catalog_mode: UpdateCatalogMode, catalog_write_mode: CatalogWriteMode) -> CatalogWriteMode | None:
-        if update_catalog_mode is None:
-            return None
-        elif update_catalog_mode is UpdateCatalogMode.MODIFY:
-            return catalog_write_mode
-        elif update_catalog_mode is UpdateCatalogMode.OVERWRITE:
-            return CatalogWriteMode.OVERWRITE
-        elif update_catalog_mode is UpdateCatalogMode.NEWFILE:
-            return CatalogWriteMode.NEWFILE
-
-    cpdef void _handle_date_range_request(
-        self,
-        DataClient client,
-        RequestData request,
-        datetime start_catalog,
-        datetime end_catalog,
-    ):
-        # No catalog to use
-        if start_catalog is None:
-            self._date_range_client_request(client, request)
-            return
-
-        # Capping dates to the now datetime
-        cdef datetime now = self._clock.utc_now()
-        cdef datetime used_start_catalog = min_date(start_catalog, now)
-        cdef datetime used_end_catalog = min_date(end_catalog, now)
-        cdef datetime used_start_request = min_date(request.start, now) if request.start is not None else time_object_to_dt(0)
-        cdef datetime used_end_request = min_date(request.end, now) if request.start is not None else now
-
-        if used_start_request > used_end_request:
-            self._log.error(f"Cannot handle request: incompatible request dates for {request}")
-            return
-
-        # If the request dates are fully outside the catalog dates
-        if used_end_request < used_start_catalog:
-            self._date_range_client_request(client, request)
-            return
-
-        if used_start_request > used_end_catalog:
-            self._date_range_client_request(client, request)
-            return
-
-        # From here the request dates have an intersection with the catalog
-        # Number of requests for the request group that will wait for all requests to be completed.
-        # One request at least for the catalog
-        n_requests = 1
-
-        if used_start_request < used_start_catalog and client is not None:
-            n_requests += 1
-
-        if used_end_request > used_end_catalog and client is not None:
-            n_requests += 1
-
-        self._new_query_group(request.id, n_requests)
-
-        # Client query before the catalog
-        if used_start_request < used_start_catalog and client is not None:
-            new_request = request.with_dates(used_start_request, used_start_catalog)
-            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
-                new_request.params.get("update_catalog_mode", None),
-                CatalogWriteMode.PREPEND
-            )
-            self._date_range_client_request(client, new_request)
-
-        # Catalog query
-        new_request = request.with_dates(max_date(used_start_request, used_start_catalog), min_date(used_end_request, used_end_catalog))
-        new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
-            new_request.params.get("update_catalog_mode", None),
-            None
-        )
-        self._query_catalog(new_request)
-
-        # Client query after the catalog
-        if used_end_request > used_end_catalog and client is not None:
-            new_request = request.with_dates(used_end_catalog, used_end_request)
-            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
-                new_request.params.get("update_catalog_mode", None),
-                CatalogWriteMode.APPEND
-            )
-            self._date_range_client_request(client, new_request)
 
     cpdef void _handle_request_quote_ticks(self, DataClient client, RequestQuoteTicks request):
         start_catalog = self._catalogs_timestamp_bound(
@@ -1593,9 +1503,122 @@ cdef class DataEngine(Component):
             end_catalog,
         )
 
-    cpdef void _query_catalog(self, RequestData request):
+    cpdef void _handle_date_range_request(
+        self,
+        DataClient client,
+        RequestData request,
+        datetime start_catalog,
+        datetime end_catalog,
+    ):
+        cdef DataClient used_client = client
+
+        if type(client) is BacktestMarketDataClient:
+            used_client = None
+
+        # No catalog to use
+        if start_catalog is None:
+            self._date_range_client_request(used_client, request)
+            return
+
+        cdef bint query_past_data = request.params.get("subscription_name") is None
+
+        # Capping dates to the now datetime
+        cdef datetime now = self._clock.utc_now()
+        cdef datetime used_start_catalog = start_catalog
+        cdef datetime used_end_catalog = end_catalog
+        cdef datetime used_start_request = request.start if request.start is not None else time_object_to_dt(0)
+        cdef datetime used_end_request = request.end if request.end is not None else now
+
+        if query_past_data:
+            used_start_catalog = min_date(used_start_catalog, now)
+            used_end_catalog = min_date(used_end_catalog, now)
+            used_start_request = min_date(used_start_request, now)
+            used_end_request = min_date(used_end_request, now)
+
+        if used_start_request > used_end_request:
+            self._log.error(f"Cannot handle request: incompatible request dates for {request}")
+            return
+
+        # If the request dates are fully outside the catalog dates
+        if used_end_request < used_start_catalog or used_start_request > used_end_catalog:
+            if used_client is not None:
+                self._date_range_client_request(used_client, request)
+
+            return
+
+        # From here the request dates have an intersection with the catalog
+        # Number of requests for the request group that will wait for all requests to be completed.
+        # One request at least for the catalog
+        n_requests = 1
+
+        if used_start_request < used_start_catalog and used_client is not None:
+            n_requests += 1
+
+        if used_end_request > used_end_catalog and used_client is not None:
+            n_requests += 1
+
+        self._new_query_group(request.id, n_requests)
+
+        # Client query before the catalog
+        if used_start_request < used_start_catalog and used_client is not None:
+            new_request = request.with_dates(used_start_request, used_start_catalog)
+            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+                new_request.params.get("update_catalog_mode", None),
+                CatalogWriteMode.PREPEND
+            )
+            self._date_range_client_request(used_client, new_request)
+
+        # Catalog query
+        new_request = request.with_dates(max_date(used_start_request, used_start_catalog), min_date(used_end_request, used_end_catalog))
+        new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+            new_request.params.get("update_catalog_mode", None),
+            None
+        )
+        self.query_catalog(new_request)
+
+        # Client query after the catalog
+        if used_end_request > used_end_catalog and used_client is not None:
+            new_request = request.with_dates(used_end_catalog, used_end_request)
+            new_request.params["update_catalog_mode"] = self._convert_update_catalog_mode(
+                new_request.params.get("update_catalog_mode", None),
+                CatalogWriteMode.APPEND
+            )
+            self._date_range_client_request(used_client, new_request)
+
+    def _convert_update_catalog_mode(self, update_catalog_mode: UpdateCatalogMode, catalog_write_mode: CatalogWriteMode) -> CatalogWriteMode | None:
+        if update_catalog_mode is None:
+            return None
+        elif update_catalog_mode == UpdateCatalogMode.MODIFY:
+            return catalog_write_mode
+        elif update_catalog_mode == UpdateCatalogMode.OVERWRITE:
+            return CatalogWriteMode.OVERWRITE
+        elif update_catalog_mode == UpdateCatalogMode.NEWFILE:
+            return CatalogWriteMode.NEWFILE
+
+    cpdef void _date_range_client_request(self, DataClient client, RequestData request):
+        if client is None:
+            self._log_request_warning(request)
+            return # No client to handle request
+
+        if isinstance(request, RequestBars):
+            client.request_bars(request)
+        elif isinstance(request, RequestQuoteTicks):
+            client.request_quote_ticks(request)
+        elif isinstance(request, RequestTradeTicks):
+            client.request_trade_ticks(request)
+        else:
+            try:
+                client.request(request)
+            except:
+                self._log.error(f"Cannot handle request: unrecognized data type {request.data_type}, {request}")
+
+    def _log_request_warning(self, RequestData request):
+        self._log.warning(f"Cannot handle request: no client registered for '{request.client_id}', {request}")
+
+    cpdef void query_catalog(self, RequestData request):
         cdef datetime start = request.start
         cdef datetime end = request.end
+        cdef bint query_past_data = request.params.get("subscription_name") is None
 
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef uint64_t ts_start = dt_to_unix_nanos(start) if start is not None else 0
@@ -1604,7 +1627,7 @@ cdef class DataEngine(Component):
         # Validate request time range
         Condition.is_true(ts_start <= ts_end, f"{ts_start=} was greater than {ts_end=}")
 
-        if end is not None and ts_end > ts_now:
+        if end is not None and ts_end > ts_now and query_past_data:
             self._log.warning(
                 "Cannot request data beyond current time. "
                 f"Truncating `end` to current UNIX nanoseconds {unix_nanos_to_dt(ts_now)}",
@@ -1613,6 +1636,8 @@ cdef class DataEngine(Component):
 
         data = []
 
+        # Note: if some data is contained in several catalogs (one per month for example),
+        # ensure that the DataCatalogConfig list passed to BacktestEngineConfig is ordered in chronological order
         if isinstance(request, RequestInstruments):
             for catalog in self._catalogs.values():
                 data += catalog.instruments()
@@ -1656,11 +1681,18 @@ cdef class DataEngine(Component):
                 )
 
         # Validate data is not from the future
-        if data and data[-1].ts_init > ts_now:
+        if data and data[-1].ts_init > ts_now and query_past_data:
             raise RuntimeError(
                 "Invalid response: Historical data from the future: "
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
+
+        if isinstance(request, RequestInstrument):
+            if len(data) == 0:
+                self._log.error(f"Cannot find instrument for {request.instrument_id}")
+                return
+
+            data = data[0]
 
         params = request.params.copy()
         params["update_catalog_mode"] = None
@@ -1675,6 +1707,7 @@ cdef class DataEngine(Component):
             ts_init=self._clock.timestamp_ns(),
             params=params,
         )
+
         self._handle_response(response)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
@@ -1921,30 +1954,33 @@ cdef class DataEngine(Component):
         if response_2 is None:
             return
 
-        if response_2.data_type.type == Instrument:
-            update_catalog_mode = response_2.params.get("update_catalog_mode", None)
+        cdef bint query_past_data = response.params.get("subscription_name") is None
 
-            if isinstance(response_2.data, list):
-                self._handle_instruments(response_2.data, update_catalog_mode)
-            else:
-                self._handle_instrument(response_2.data, update_catalog_mode)
-        elif response_2.data_type.type == QuoteTick:
-            if response_2.params.get("bars_market_data_type"):
-                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
-                response_2.data_type = DataType(Bar)
-            else:
-                self._handle_quote_ticks(response_2.data)
-        elif response_2.data_type.type == TradeTick:
-            if response_2.params.get("bars_market_data_type"):
-                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
-                response_2.data_type = DataType(Bar)
-            else:
-                self._handle_trade_ticks(response_2.data)
-        elif response_2.data_type.type == Bar:
-            if response_2.params.get("bars_market_data_type"):
-                response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
-            else:
-                self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
+        if query_past_data:
+            if response_2.data_type.type == Instrument:
+                update_catalog_mode = response_2.params.get("update_catalog_mode", None)
+
+                if isinstance(response_2.data, list):
+                    self._handle_instruments(response_2.data, update_catalog_mode)
+                else:
+                    self._handle_instrument(response_2.data, update_catalog_mode)
+            elif response_2.data_type.type == QuoteTick:
+                if response_2.params.get("bars_market_data_type"):
+                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data_type = DataType(Bar)
+                else:
+                    self._handle_quote_ticks(response_2.data)
+            elif response_2.data_type.type == TradeTick:
+                if response_2.params.get("bars_market_data_type"):
+                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                    response_2.data_type = DataType(Bar)
+                else:
+                    self._handle_trade_ticks(response_2.data)
+            elif response_2.data_type.type == Bar:
+                if response_2.params.get("bars_market_data_type"):
+                    response_2.data = self._handle_aggregated_bars(response_2.data, response_2.params)
+                else:
+                    self._handle_bars(response_2.data, response_2.data_type.metadata.get("partial"))
 
         self._msgbus.response(response_2)
 
@@ -2014,17 +2050,21 @@ cdef class DataEngine(Component):
         if len(ticks) == 0:
             return
 
-        if type(ticks[0]) is Bar:
+        # Determine if catalog should be queried/appended (non-PREPEND means last)
+        cdef bint is_last = (update_catalog_mode != CatalogWriteMode.PREPEND)
+
+        # distinguish Bars vs other data types via isinstance to allow subclasses
+        if isinstance(ticks[0], Bar):
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=Bar,
                 bar_type=ticks[0].bar_type,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
         else:
             timestamp_bound_catalog = self._catalogs_timestamp_bound(
                 data_cls=type(ticks[0]),
                 instrument_id=ticks[0].instrument_id,
-                is_last=(update_catalog_mode is not CatalogWriteMode.PREPEND),
+                is_last=is_last,
             )[1]
 
         # We don't want to write in the catalog several times the same instrument
@@ -2032,8 +2072,8 @@ cdef class DataEngine(Component):
             return
 
         if timestamp_bound_catalog is None and len(self._catalogs) > 0:
-            # If more than one catalog exists, the first declared one is the default one
-            last_timestamp_catalog = list(self._catalogs.values())[0]
+            # If more than one catalog exists, use the first declared one as default
+            timestamp_bound_catalog = list(self._catalogs.values())[0]
 
         if timestamp_bound_catalog is not None:
             timestamp_bound_catalog.write_data(ticks, mode=update_catalog_mode)

@@ -150,6 +150,10 @@ impl<T, F> Throttler<T, F> {
     /// Typically used to register callbacks:
     /// - to process buffered messages
     /// - to stop buffering
+    ///
+    /// # Panics
+    ///
+    /// Panics if setting the time alert on the internal clock fails.
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
@@ -393,6 +397,7 @@ mod tests {
         interval: u64,
     }
 
+    #[allow(unsafe_code)]
     impl TestThrottler {
         #[allow(clippy::mut_from_ref)]
         pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
@@ -807,6 +812,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(unsafe_code)]
     fn prop_test() {
         let test_throttler = test_throttler_buffered();
 

@@ -59,8 +59,7 @@ impl TradeTick {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `size` is not positive (> 0).
+    /// Returns an error if `size` is not positive (> 0).
     ///
     /// # Notes
     ///
@@ -91,8 +90,7 @@ impl TradeTick {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `size` is not positive (> 0).
+    /// Panics if `size` is not positive (> 0).
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
@@ -270,7 +268,7 @@ mod tests {
     #[rstest]
     fn test_json_serialization(stub_trade_ethusdt_buyer: TradeTick) {
         let trade = stub_trade_ethusdt_buyer;
-        let serialized = trade.as_json_bytes().unwrap();
+        let serialized = trade.to_json_bytes().unwrap();
         let deserialized = TradeTick::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
     }
@@ -278,7 +276,7 @@ mod tests {
     #[rstest]
     fn test_msgpack_serialization(stub_trade_ethusdt_buyer: TradeTick) {
         let trade = stub_trade_ethusdt_buyer;
-        let serialized = trade.as_msgpack_bytes().unwrap();
+        let serialized = trade.to_msgpack_bytes().unwrap();
         let deserialized = TradeTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
     }

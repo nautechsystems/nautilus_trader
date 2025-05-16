@@ -7,6 +7,7 @@ The core logger operates in a separate thread and uses a multi-producer single-c
 This design ensures that the main thread remains performant, avoiding potential bottlenecks caused by log string formatting or file I/O operations.
 
 Logging output is configurable and supports:
+
 - **stdout/stderr writer** for console output
 - **file writer** for persistent storage of logs
 
@@ -19,15 +20,20 @@ Infrastructure such as [Vector](https://github.com/vectordotdev/vector) can be i
 Logging can be configured by importing the `LoggingConfig` object.
 By default, log events with an 'INFO' `LogLevel` and higher are written to stdout/stderr.
 
-Log level (`LogLevel`) values include (and generally match Rusts `tracing` level filters):
+Log level (`LogLevel`) values include (and generally match Rust's `tracing` level filters).
+
+Python loggers expose the following levels:
+
 - `OFF`
 - `DEBUG`
 - `INFO`
-- `WARNING` or `WARN`
+- `WARNING`
 - `ERROR`
 
-:::info
-See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
+:::warning
+The Python `Logger` does not provide a `trace()` method; `TRACE` level logs are only emitted by the underlying Rust components and cannot be generated directly from Python code.
+
+See the `LoggingConfig` [API Reference](../api_reference/config.md#class-loggingconfig) for further details.
 :::
 
 Logging can be configured in the following ways:
@@ -43,6 +49,8 @@ Logging can be configured in the following ways:
 - ANSI colors in log lines
 - Bypass logging entirely
 - Print Rust config to stdout at initialization
+- Optionally initialize logging via the PyO3 bridge (`use_pyo3`) to capture log events emitted by Rust components
+- Truncate existing log file on startup if it already exists (`clear_log_file`)
 
 ### Standard output logging
 
@@ -58,33 +66,26 @@ For detailed information about log file naming conventions and rotation behavior
 
 #### Log file rotation
 
-The logging system is designed to manage log files efficiently through **daily log file rotation** as its default behavior.
-This means a new log file is created each day based on the system's date, keeping logs neatly organized by day.
-Unless additional rotation settings are applied, all logs for a given day are appended to a single file.
-
-- **Daily rotation**:
-  - Enabled by default when using the automatic naming convention.
-  - A new log file is created each day based on UTC time.
-  - This behavior is disabled if a custom `log_file_name` is specified, meaning the same file will be used indefinitely unless size-based rotation is configured.
+Rotation behavior depends on both the presence of a size limit and whether a custom file name is provided:
 
 - **Size-based rotation**:
-  - Enabled by configuring the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
-  - Before the log file reaches this size, a new file is started.
-  - This allows multiple files to be created within a single day if the size threshold is reached repeatedly.
-  - The `log_file_max_backup_count` parameter (default: 5) determines how many backup files are retained. Older backups are deleted once this limit is exceeded.
-
-To keep disk usage in check, the system includes backup file management:
-
+  - Enabled by specifying the `log_file_max_size` parameter (e.g., `100_000_000` for 100 MB).
+  - When writing a log entry would make the current file exceed this size, the file is closed and a new one is created.
+- **Date-based rotation (default naming only)**:
+  - Applies when no `log_file_max_size` is specified and no custom `log_file_name` is provided.
+  - At each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
+- **No rotation**:
+  - When a custom `log_file_name` is provided without a `log_file_max_size`, logs continue to append to the same file.
 - **Backup file management**:
-  - The maximum number of backup files is controlled by `log_file_max_backup_count` (default: 5).
-  - When this limit is surpassed, the oldest backup files are automatically removed.
+  - Controlled by the `log_file_max_backup_count` parameter (default: 5), limiting the total number of rotated files kept.
+  - When this limit is exceeded, the oldest backup files are automatically removed.
 
 #### Log file naming convention
 
 The default naming convention ensures log files are uniquely identifiable and timestamped.
 The format depends on whether file rotation is enabled:
 
-**With rotation enabled**:
+**With file rotation enabled**:
 
 - **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S:%3f}_{instance_id}.{log|json}`
 - **Example**: `TESTER-001_2025-04-09_210721:521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
@@ -94,15 +95,15 @@ The format depends on whether file rotation is enabled:
   - `{instance_id}`: A unique instance identifier.
   - `{log|json}`: File suffix based on format setting.
 
-**With rotation disabled**:
+**With file rotation disabled**:
 
-  - **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
-  - **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
-  - **Components**:
-    - `{trader_id}`: The trader identifier.
-    - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
-    - `{instance_id}`: A unique instance identifier.
-    - `{log|json}`: File suffix based on format setting.
+- **Format**: `{trader_id}_{%Y-%m-%d}_{instance_id}.{log|json}`
+- **Example**: `TESTER-001_2025-04-09_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
+- **Components**:
+  - `{trader_id}`: The trader identifier.
+  - `{%Y-%m-%d}`: Date only (YYYY-MM-DD).
+  - `{instance_id}`: A unique instance identifier.
+  - `{log|json}`: File suffix based on format setting.
 
 **Custom naming**:
 
@@ -153,6 +154,7 @@ It's possible to use `Logger` objects directly, and these can be initialized any
 
 If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `TradingNode`,
 then you can activate logging in the following way:
+
 ```python
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import Logger

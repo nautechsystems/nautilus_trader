@@ -1,6 +1,7 @@
 # Coding Standards
 
 ## Code Style
+
 The current codebase can be used as a guide for formatting conventions.
 Additional guidelines are provided below.
 
@@ -8,8 +9,7 @@ Additional guidelines are provided below.
 
 [Black](https://github.com/psf/black) is a PEP-8 compliant opinionated formatter and used during the pre-commit step.
 
-We philosophically agree with the *Black* formatting style, however it does not currently run over the Cython parts of the codebase.
-So there you could say we are “handcrafting towards”  *Black* stylistic conventions for consistency.
+We agree with Black’s style, but Black does not format Cython files. We therefore manually maintain Black-style formatting in Cython code for consistency.
 
 ### Formatting
 
@@ -40,10 +40,10 @@ There are two reasons for this;
 
 *“Always use if foo is None: (or is not None) to check for a None value. E.g., when testing whether a variable or argument that defaults to None was set to some other value. The other value might be a value that’s false in a boolean context!”*
 
-Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`.
+There are still areas that aren’t performance-critical where truthiness checks for `None` (`if foo is None:` vs `if not foo:`) will be acceptable for clarity.
 
 :::note
-To be clear, it's still encouraged to use Python truthiness `is` and `not` to check if collections are `None` or empty.
+Use truthiness to check for empty collections (e.g., `if not my_list:`) rather than comparing explicitly to `None` or empty.
 :::
 
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
@@ -52,19 +52,19 @@ We welcome all feedback on where the codebase departs from PEP-8 for no apparent
 
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase. This needs to be adhered to consistently to ensure the docs build correctly.
 
-### Flake8
+### Ruff
 
-[Flake8](https://github.com/pycqa/flake8) is utilized to lint the codebase. Current ignores can be found in the top-level `pre-commit-config.yaml`, with the justifications also commented.
+[ruff](https://astral.sh/ruff) is utilized to lint the codebase. Ruff rules can be found in the top-level `pyproject.toml`, with ignore justifications typically commented.
 
 ### Commit messages
 
 Here are some guidelines for the style of your commit messages:
 
-1. Limit subject titles to 50 characters or fewer. Capitalize subject line and do not end with period.
+1. Limit subject titles to 60 characters or fewer. Capitalize subject line and do not end with period.
 
 2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
 
-3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 80 character width. You can use bullet points.
+3. Optional: Use the body to explain change. Separate from subject with a blank line. Keep under 100 character width. You can use bullet points with or without terminating periods.
 
 4. Optional: Provide # references to relevant issues or tickets.
 

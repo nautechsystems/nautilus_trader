@@ -5,6 +5,7 @@ simultaneously (per instance). Several interacting components are involved in ex
 crucial to understand the possible flows of execution messages (commands and events).
 
 The main execution-related components include:
+
 - `Strategy`
 - `ExecAlgorithm` (execution algorithms)
 - `OrderEmulator`
@@ -16,6 +17,7 @@ The main execution-related components include:
 
 The `Strategy` base class inherits from `Actor` and so contains all of the common data related
 methods. It also provides methods for managing orders and trade execution:
+
 - `submit_order(...)`
 - `submit_order_list(...)`
 - `modify_order(...)`
@@ -38,6 +40,7 @@ The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, 
 individual order parameters (as explained below).
 
 This diagram illustrates message flow (commands and events) across the Nautilus execution components.
+
 ```
                   ┌───────────────────┐
                   │                   │
@@ -173,15 +176,15 @@ demonstrates how to initialize and register a TWAP execution algorithm directly 
 `BacktestEngine` (assuming an engine is already initialized):
 
 ```python
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 
-# Instantiate and add your execution algorithm
+# `engine` is an initialized BacktestEngine instance
 exec_algorithm = TWAPExecAlgorithm()
 engine.add_exec_algorithm(exec_algorithm)
 ```
 
 For this particular algorithm, two parameters must be specified:
+
 - `horizon_secs`
 - `interval_secs`
 
@@ -190,18 +193,23 @@ the `interval_secs` parameter sets the time between individual order executions.
 determine how a primary order is split into a series of spawned orders.
 
 ```python
+from decimal import Decimal
+from nautilus_trader.model.data import BarType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
+
 # Configure your strategy
 config = EMACrossTWAPConfig(
-    instrument_id=ETHUSDT_BINANCE.id,
+    instrument_id=TestInstrumentProvider.ethusdt_binance().id,
     bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
     trade_size=Decimal("0.05"),
     fast_ema_period=10,
     slow_ema_period=20,
-    twap_horizon_secs=10.0,  # <-- execution algorithm param
-    twap_interval_secs=2.5,  # <-- execution algorithm param
+    twap_horizon_secs=10.0,   # execution algorithm parameter (total horizon in seconds)
+    twap_interval_secs=2.5,    # execution algorithm parameter (seconds between orders)
 )
 
-# Instantiate and add your strategy
+# Instantiate your strategy
 strategy = EMACrossTWAP(config=config)
 ```
 
@@ -220,11 +228,13 @@ over the wire, such as ints, floats, and strings).
 To implement a custom execution algorithm you must define a class which inherits from `ExecAlgorithm`.
 
 An execution algorithm is a type of `Actor`, so it's capable of the following:
+
 - Request and subscribe to data
 - Access the `Cache`
 - Set time alerts and/or timers using a `Clock`
 
 Additionally it can:
+
 - Access the central `Portfolio`
 - Spawn secondary orders from a received primary (original) order
 

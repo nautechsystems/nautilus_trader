@@ -39,23 +39,58 @@ use ustr::Ustr;
 
 use crate::sql::models::enums::TrailingOffsetTypeModel;
 
+#[derive(Debug)]
 pub struct OrderEventAnyModel(pub OrderEventAny);
+
+#[derive(Debug)]
 pub struct OrderAcceptedModel(pub OrderAccepted);
+
+#[derive(Debug)]
 pub struct OrderCancelRejectedModel(pub OrderCancelRejected);
+
+#[derive(Debug)]
 pub struct OrderCanceledModel(pub OrderCanceled);
+
+#[derive(Debug)]
 pub struct OrderDeniedModel(pub OrderDenied);
+
+#[derive(Debug)]
 pub struct OrderEmulatedModel(pub OrderEmulated);
+
+#[derive(Debug)]
 pub struct OrderExpiredModel(pub OrderExpired);
+
+#[derive(Debug)]
 pub struct OrderFilledModel(pub OrderFilled);
+
+#[derive(Debug)]
 pub struct OrderInitializedModel(pub OrderInitialized);
+
+#[derive(Debug)]
 pub struct OrderModifyRejectedModel(pub OrderModifyRejected);
+
+#[derive(Debug)]
 pub struct OrderPendingCancelModel(pub OrderPendingCancel);
+
+#[derive(Debug)]
 pub struct OrderPendingUpdateModel(pub OrderPendingUpdate);
+
+#[derive(Debug)]
 pub struct OrderRejectedModel(pub OrderRejected);
+
+#[derive(Debug)]
 pub struct OrderReleasedModel(pub OrderReleased);
+
+#[derive(Debug)]
 pub struct OrderSubmittedModel(pub OrderSubmitted);
+
+#[derive(Debug)]
 pub struct OrderTriggeredModel(pub OrderTriggered);
+
+#[derive(Debug)]
 pub struct OrderUpdatedModel(pub OrderUpdated);
+
+#[derive(Debug)]
 pub struct OrderSnapshotModel(pub OrderSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
@@ -63,52 +98,52 @@ impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
         let kind = row.get::<String, _>("kind");
         if kind == "OrderAccepted" {
             let model = OrderAcceptedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Accepted(model.0)))
+            Ok(Self(OrderEventAny::Accepted(model.0)))
         } else if kind == "OrderCancelRejected" {
             let model = OrderCancelRejectedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::CancelRejected(model.0)))
+            Ok(Self(OrderEventAny::CancelRejected(model.0)))
         } else if kind == "OrderCanceled" {
             let model = OrderCanceledModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Canceled(model.0)))
+            Ok(Self(OrderEventAny::Canceled(model.0)))
         } else if kind == "OrderDenied" {
             let model = OrderDeniedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Denied(model.0)))
+            Ok(Self(OrderEventAny::Denied(model.0)))
         } else if kind == "OrderEmulated" {
             let model = OrderEmulatedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Emulated(model.0)))
+            Ok(Self(OrderEventAny::Emulated(model.0)))
         } else if kind == "OrderExpired" {
             let model = OrderExpiredModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Expired(model.0)))
+            Ok(Self(OrderEventAny::Expired(model.0)))
         } else if kind == "OrderFilled" {
             let model = OrderFilledModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Filled(model.0)))
+            Ok(Self(OrderEventAny::Filled(model.0)))
         } else if kind == "OrderInitialized" {
             let model = OrderInitializedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Initialized(model.0)))
+            Ok(Self(OrderEventAny::Initialized(model.0)))
         } else if kind == "OrderModifyRejected" {
             let model = OrderModifyRejectedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::ModifyRejected(model.0)))
+            Ok(Self(OrderEventAny::ModifyRejected(model.0)))
         } else if kind == "OrderPendingCancel" {
             let model = OrderPendingCancelModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::PendingCancel(model.0)))
+            Ok(Self(OrderEventAny::PendingCancel(model.0)))
         } else if kind == "OrderPendingUpdate" {
             let model = OrderPendingUpdateModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::PendingUpdate(model.0)))
+            Ok(Self(OrderEventAny::PendingUpdate(model.0)))
         } else if kind == "OrderRejected" {
             let model = OrderRejectedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Rejected(model.0)))
+            Ok(Self(OrderEventAny::Rejected(model.0)))
         } else if kind == "OrderReleased" {
             let model = OrderReleasedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Released(model.0)))
+            Ok(Self(OrderEventAny::Released(model.0)))
         } else if kind == "OrderSubmitted" {
             let model = OrderSubmittedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Submitted(model.0)))
+            Ok(Self(OrderEventAny::Submitted(model.0)))
         } else if kind == "OrderTriggered" {
             let model = OrderTriggeredModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Triggered(model.0)))
+            Ok(Self(OrderEventAny::Triggered(model.0)))
         } else if kind == "OrderUpdated" {
             let model = OrderUpdatedModel::from_row(row)?;
-            Ok(OrderEventAnyModel(OrderEventAny::Updated(model.0)))
+            Ok(Self(OrderEventAny::Updated(model.0)))
         } else {
             panic!("Unknown order event kind: {kind} in Postgres transformation")
         }
@@ -257,7 +292,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             exec_spawn_id,
             tags,
         );
-        Ok(OrderInitializedModel(order_event))
+        Ok(Self(order_event))
     }
 }
 
@@ -292,7 +327,7 @@ impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
             ts_init,
             false,
         );
-        Ok(OrderAcceptedModel(order_event))
+        Ok(Self(order_event))
     }
 }
 
@@ -385,7 +420,7 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
             position_id,
             commission,
         );
-        Ok(OrderFilledModel(order_event))
+        Ok(Self(order_event))
     }
 }
 
@@ -449,7 +484,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
             ts_event,
             ts_init,
         );
-        Ok(OrderSubmittedModel(order_event))
+        Ok(Self(order_event))
     }
 }
 
@@ -663,6 +698,6 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
             ts_last,
         };
 
-        Ok(OrderSnapshotModel(snapshot))
+        Ok(Self(snapshot))
     }
 }

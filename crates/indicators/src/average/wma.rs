@@ -54,11 +54,20 @@ impl Display for WeightedMovingAverage {
 
 impl WeightedMovingAverage {
     /// Creates a new [`WeightedMovingAverage`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the length of `weights` does not match `period`.
     #[must_use]
     pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
         Self::new_checked(period, weights, price_type).expect(FAILED)
     }
 
+    /// Creates a new [`WeightedMovingAverage`] instance with the given period and weights.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `period` does not equal the length of `weights`.
     pub fn new_checked(
         period: usize,
         weights: Vec<f64>,

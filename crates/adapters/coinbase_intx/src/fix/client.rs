@@ -31,6 +31,7 @@ use std::{
 };
 
 use base64::prelude::*;
+use nautilus_common::logging::{log_task_started, log_task_stopped};
 use nautilus_core::{python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
@@ -52,7 +53,7 @@ use crate::{
 };
 
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
     endpoint: String,
     api_key: String,
@@ -115,31 +116,31 @@ impl CoinbaseIntxFixClient {
 
     /// Returns the FIX endpoint being used by the client.
     #[must_use]
-    pub fn endpoint(&self) -> &str {
+    pub const fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
     /// Returns the public API key being used by the client.
     #[must_use]
-    pub fn api_key(&self) -> &str {
+    pub const fn api_key(&self) -> &str {
         self.api_key.as_str()
     }
 
     /// Returns the Coinbase International portfolio ID being used by the client.
     #[must_use]
-    pub fn portfolio_id(&self) -> &str {
+    pub const fn portfolio_id(&self) -> &str {
         self.portfolio_id.as_str()
     }
 
     /// Returns the sender company ID being used by the client.
     #[must_use]
-    pub fn sender_comp_id(&self) -> &str {
+    pub const fn sender_comp_id(&self) -> &str {
         self.sender_comp_id.as_str()
     }
 
     /// Returns the target company ID being used by the client.
     #[must_use]
-    pub fn target_comp_id(&self) -> &str {
+    pub const fn target_comp_id(&self) -> &str {
         self.target_comp_id.as_str()
     }
 
@@ -161,8 +162,9 @@ impl CoinbaseIntxFixClient {
             url: self.endpoint.clone(),
             mode: Mode::Tls,
             suffix: vec![FIX_DELIMITER],
+            #[cfg(feature = "python")]
             py_handler: None, // Using handler from arg (TODO: refactor this config pattern)
-            heartbeat: None,  // Using FIX heartbeats
+            heartbeat: None, // Using FIX heartbeats
             reconnect_timeout_ms: Some(10000),
             reconnect_delay_initial_ms: Some(5000),
             reconnect_delay_max_ms: Some(30000),
@@ -284,7 +286,7 @@ impl CoinbaseIntxFixClient {
         let client_clone = self.clone();
 
         self.processing_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'maintain FIX connection'");
+            log_task_started("maintain-fix-connection");
 
             let mut last_logon_attempt = std::time::Instant::now()
                 .checked_sub(Duration::from_secs(10))
@@ -314,7 +316,9 @@ impl CoinbaseIntxFixClient {
         let target_comp_id = self.target_comp_id.clone();
 
         self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'FIX heartbeat' at {heartbeat_secs}s intervals");
+            log_task_started("heartbeat");
+            tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
+
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
@@ -340,7 +344,7 @@ impl CoinbaseIntxFixClient {
                 tokio::time::sleep(interval).await;
             }
 
-            tracing::debug!("Stopped task 'FIX heartbeat'");
+            log_task_stopped("heartbeat");
         })));
 
         Ok(())

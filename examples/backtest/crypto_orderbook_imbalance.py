@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from nautilus_trader.adapters.binance import BINANCE_VENUE
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -32,7 +33,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -49,13 +49,11 @@ if __name__ == "__main__":
     engine = BacktestEngine(config=config)
 
     # Add a trading venue (multiple venues possible)
-    BINANCE = Venue("BINANCE")
-
     # Ensure the book type matches the data
     book_type = BookType.L2_MBP
 
     engine.add_venue(
-        venue=BINANCE,
+        venue=BINANCE_VENUE,
         oms_type=OmsType.NETTING,
         account_type=AccountType.CASH,
         base_currency=None,  # Multi-currency account
@@ -114,7 +112,7 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(BINANCE))
+        print(engine.trader.generate_account_report(BINANCE_VENUE))
         print(engine.trader.generate_order_fills_report())
         print(engine.trader.generate_positions_report())
 

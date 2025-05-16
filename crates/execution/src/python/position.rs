@@ -141,12 +141,22 @@ impl PositionStatusReport {
         self.is_short()
     }
 
+    /// Creates a `PositionStatusReport` from a Python dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Python exception if conversion from dict fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
         from_dict_pyo3(py, values)
     }
 
+    /// Converts the `PositionStatusReport` to a Python dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Python exception if conversion to dict fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

@@ -44,10 +44,12 @@ pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
 #[unsafe(no_mangle)]
+#[allow(unsafe_code)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
 
 /// The sentinel value for an unset or null price.
@@ -102,9 +104,9 @@ impl Price {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
-    /// - If `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// Returns an error if:
+    /// - `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
+    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
     ///
     /// # Notes
     ///
@@ -125,8 +127,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }
@@ -135,8 +136,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn from_raw(raw: PriceRaw, precision: u8) -> Self {
         if raw == PRICE_UNDEF {
             check_predicate_true(
@@ -160,8 +160,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -172,8 +171,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn max(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -187,8 +185,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
+    /// Panics if a correctness check fails. See [`Price::new_checked`] for more details.
     #[must_use]
     pub fn min(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
@@ -468,10 +465,10 @@ impl<'de> Deserialize<'de> for Price {
 /// Returns an error if the validation check fails.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
     if value.raw == PRICE_UNDEF {
-        anyhow::bail!("{FAILED}: invalid `Price` for '{param}', was PRICE_UNDEF")
+        anyhow::bail!("invalid `Price` for '{param}', was PRICE_UNDEF")
     }
     if !value.is_positive() {
-        anyhow::bail!("{FAILED}: invalid `Price` for '{param}' not positive, was {value}")
+        anyhow::bail!("invalid `Price` for '{param}' not positive, was {value}")
     }
     Ok(())
 }

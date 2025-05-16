@@ -481,6 +481,12 @@ impl OrderTestBuilder {
         )
     }
 
+    /// Builds the order, consuming the provided parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if required fields (instrument ID, quantity, price, offsets, etc.) are not set,
+    /// or if internal calls to `.expect(...)` or `.unwrap()` fail during order construction.
     pub fn build(&self) -> OrderAny {
         let mut order = match self.kind {
             OrderType::Market => OrderAny::Market(MarketOrder::new(
@@ -504,36 +510,33 @@ impl OrderTestBuilder {
                 self.get_exec_spawn_id(),
                 self.get_tags(),
             )),
-            OrderType::Limit => OrderAny::Limit(
-                LimitOrder::new(
-                    self.get_trader_id(),
-                    self.get_strategy_id(),
-                    self.get_instrument_id(),
-                    self.get_client_order_id(),
-                    self.get_side(),
-                    self.get_quantity(),
-                    self.get_price(),
-                    self.get_time_in_force(),
-                    self.get_expire_time(),
-                    self.get_post_only(),
-                    self.get_reduce_only(),
-                    self.get_quote_quantity(),
-                    self.get_display_qty(),
-                    self.get_emulation_trigger(),
-                    self.get_trigger_instrument_id(),
-                    self.get_contingency_type(),
-                    self.get_order_list_id(),
-                    self.get_linked_order_ids(),
-                    self.get_parent_order_id(),
-                    self.get_exec_algorithm_id(),
-                    self.get_exec_algorithm_params(),
-                    self.get_exec_spawn_id(),
-                    self.get_tags(),
-                    self.get_init_id(),
-                    self.get_ts_init(),
-                )
-                .unwrap(),
-            ),
+            OrderType::Limit => OrderAny::Limit(LimitOrder::new(
+                self.get_trader_id(),
+                self.get_strategy_id(),
+                self.get_instrument_id(),
+                self.get_client_order_id(),
+                self.get_side(),
+                self.get_quantity(),
+                self.get_price(),
+                self.get_time_in_force(),
+                self.get_expire_time(),
+                self.get_post_only(),
+                self.get_reduce_only(),
+                self.get_quote_quantity(),
+                self.get_display_qty(),
+                self.get_emulation_trigger(),
+                self.get_trigger_instrument_id(),
+                self.get_contingency_type(),
+                self.get_order_list_id(),
+                self.get_linked_order_ids(),
+                self.get_parent_order_id(),
+                self.get_exec_algorithm_id(),
+                self.get_exec_algorithm_params(),
+                self.get_exec_spawn_id(),
+                self.get_tags(),
+                self.get_init_id(),
+                self.get_ts_init(),
+            )),
             OrderType::StopMarket => OrderAny::StopMarket(StopMarketOrder::new(
                 self.get_trader_id(),
                 self.get_strategy_id(),
@@ -627,7 +630,6 @@ impl OrderTestBuilder {
                 self.get_expire_time(),
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
-                self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
                 self.get_contingency_type(),

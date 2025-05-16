@@ -8,12 +8,18 @@ The package is not a development dependency because it doesn't currently support
 
 You can install the package via PyPI:
 
-    pip install memray
+```bash
+pip install memray
+```
 
 To profile using memray, first invoke the script using the memray CLI:
 
-    memray run --live-port 8100 --live-remote tests/mem_leak_tests/memray_backtest.py
+```bash
+memray run --live-port 8100 --live-remote tests/mem_leak_tests/memray_backtest.py
+```
 
 Then from another shell, connect to the memray profiler dashboard:
 
-    memray live 8100
+```bash
+memray live 8100
+```

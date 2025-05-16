@@ -22,6 +22,11 @@ use nautilus_model::{
 use rust_decimal::prelude::ToPrimitive;
 
 pub trait FeeModel {
+    /// Calculates commission for a fill.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if commission calculation fails.
     fn get_commission(
         &self,
         order: &OrderAny,
@@ -69,6 +74,10 @@ pub struct FixedFeeModel {
 
 impl FixedFeeModel {
     /// Creates a new [`FixedFeeModel`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
     pub fn new(commission: Money, change_commission_once: Option<bool>) -> anyhow::Result<Self> {
         if commission.as_f64() < 0.0 {
             anyhow::bail!("Commission must be greater than or equal to zero.")
@@ -227,17 +236,10 @@ mod tests {
             .price(price)
             .quantity(Quantity::from(100_000))
             .build();
-        let order_filled =
-            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
-        let expected_commission_amount =
-            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let fill = TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
+        let expected_commission_amount = fill.quantity().as_f64() * price.as_f64() * maker_fee;
         let commission = fee_model
-            .get_commission(
-                &order_filled,
-                Quantity::from(100_000),
-                Price::from("1.0"),
-                &aud_usd,
-            )
+            .get_commission(&fill, Quantity::from(100_000), Price::from("1.0"), &aud_usd)
             .unwrap();
         assert_eq!(commission.as_f64(), expected_commission_amount);
     }
@@ -255,17 +257,10 @@ mod tests {
             .quantity(Quantity::from(100_000))
             .build();
 
-        let order_filled =
-            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
-        let expected_commission_amount =
-            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let fill = TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
+        let expected_commission_amount = fill.quantity().as_f64() * price.as_f64() * maker_fee;
         let commission = fee_model
-            .get_commission(
-                &order_filled,
-                Quantity::from(100_000),
-                Price::from("1.0"),
-                &aud_usd,
-            )
+            .get_commission(&fill, Quantity::from(100_000), Price::from("1.0"), &aud_usd)
             .unwrap();
         assert_eq!(commission.as_f64(), expected_commission_amount);
     }

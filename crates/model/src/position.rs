@@ -83,6 +83,13 @@ pub struct Position {
 
 impl Position {
     /// Creates a new [`Position`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - The instrument ID does not match the fill’s `instrument_id`.
+    /// - The fill’s `order_side` is `NoOrderSide`.
+    /// - The fill’s `position_id` is `None`.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
         assert_eq!(instrument.id(), fill.instrument_id);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
@@ -145,6 +152,11 @@ impl Position {
         self.trade_ids = filtered_trade_ids;
     }
 
+    /// Applies an `OrderFilled` event to this position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `fill.trade_id` is already present in the position’s `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
         assert!(
             !self.trade_ids.contains(&fill.trade_id),
@@ -460,6 +472,11 @@ impl Position {
         result
     }
 
+    /// Calculates the notional value based on the last price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.base_currency` is `None`.
     #[must_use]
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
@@ -475,6 +492,11 @@ impl Position {
         }
     }
 
+    /// Returns the last `OrderFilled` event for the position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there are no events in the position.
     #[must_use]
     pub fn last_event(&self) -> OrderFilled {
         *self

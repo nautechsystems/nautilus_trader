@@ -24,7 +24,7 @@ use std::{
 
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
@@ -56,7 +56,7 @@ use crate::{
 };
 
 /// Provides a WebSocket client for connecting to [Coinbase International](https://www.coinbase.com/en/international-exchange).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
@@ -116,7 +116,7 @@ impl CoinbaseIntxWebSocketClient {
 
     /// Returns the websocket url being used by the client.
     #[must_use]
-    pub fn url(&self) -> &str {
+    pub const fn url(&self) -> &str {
         self.url.as_str()
     }
 
@@ -157,7 +157,9 @@ impl CoinbaseIntxWebSocketClient {
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
             heartbeat: self.heartbeat,
             heartbeat_msg: None,
+            #[cfg(feature = "python")]
             handler: Consumer::Python(None),
+            #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None, // Use default
@@ -194,8 +196,8 @@ impl CoinbaseIntxWebSocketClient {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the websocket is not connected.
+    /// This function panics if:
+    /// - The websocket is not connected.
     /// - If `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = NautilusWsMessage> + 'static {
         let rx = self
@@ -611,7 +613,7 @@ impl CoinbaseIntxFeedHandler {
             }
         }
 
-        tracing::debug!("Stopped message streaming");
+        log_task_stopped("message-streaming");
         None
     }
 }

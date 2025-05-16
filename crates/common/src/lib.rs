@@ -28,14 +28,14 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `stubs`: Enables type stubs for use in testing scenarios.
-#![warn(rustc::all)]
-#![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
-#![deny(missing_debug_implementations)]
-// #![deny(clippy::missing_errors_doc)]
 
-// Uncomment once we've added trivial `Debug` impls everywhere
-// #![warn(missing_debug_implementations)]
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod actor;
 pub mod cache;

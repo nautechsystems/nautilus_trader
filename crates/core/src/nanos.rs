@@ -28,6 +28,12 @@
 //! - Flexible parsing and serialization.
 //!
 //! # Parsing and Serialization
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap
+)]
 //!
 //! `UnixNanos` can be created from and serialized to various formats:
 //!
@@ -76,6 +82,12 @@ impl UnixNanos {
     #[must_use]
     pub const fn max() -> Self {
         Self(u64::MAX)
+    }
+
+    /// Returns `true` if the value of this instance is zero.
+    #[must_use]
+    pub const fn is_zero(&self) -> bool {
+        self.0 == 0
     }
 
     /// Returns the underlying value as `u64`.
@@ -405,6 +417,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_is_zero() {
+        assert!(UnixNanos::default().is_zero());
+        assert!(!UnixNanos::max().is_zero());
+    }
+
+    #[rstest]
     fn test_from_u64() {
         let nanos = UnixNanos::from(123);
         assert_eq!(nanos.as_u64(), 123);
@@ -643,9 +661,9 @@ mod tests {
     #[rstest]
     #[case("123", 123)] // Integer string
     #[case("1234.567", 1_234_567_000_000)] // Float string (seconds to nanos)
-    #[case("2024-02-10", 1707523200000000000)] // Simple date (midnight UTC)
-    #[case("2024-02-10T14:58:43Z", 1707577123000000000)] // RFC3339 without fractions
-    #[case("2024-02-10T14:58:43.456789Z", 1707577123456789000)] // RFC3339 with fractions
+    #[case("2024-02-10", 1_707_523_200_000_000_000)] // Simple date (midnight UTC)
+    #[case("2024-02-10T14:58:43Z", 1_707_577_123_000_000_000)] // RFC3339 without fractions
+    #[case("2024-02-10T14:58:43.456789Z", 1_707_577_123_456_789_000)] // RFC3339 with fractions
     fn test_from_str_formats(#[case] input: &str, #[case] expected: u64) {
         let parsed: UnixNanos = input.parse().unwrap();
         assert_eq!(parsed.as_u64(), expected);
@@ -664,14 +682,14 @@ mod tests {
     fn test_deserialize_u64() {
         let json = "123456789";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.as_u64(), 123456789);
+        assert_eq!(deserialized.as_u64(), 123_456_789);
     }
 
     #[rstest]
     fn test_deserialize_string_with_int() {
         let json = "\"123456789\"";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.as_u64(), 123456789);
+        assert_eq!(deserialized.as_u64(), 123_456_789);
     }
 
     #[rstest]
@@ -689,8 +707,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("\"2024-02-10T14:58:43.456789Z\"", 1707577123456789000)]
-    #[case("\"2024-02-10T14:58:43Z\"", 1707577123000000000)]
+    #[case("\"2024-02-10T14:58:43.456789Z\"", 1_707_577_123_456_789_000)]
+    #[case("\"2024-02-10T14:58:43Z\"", 1_707_577_123_000_000_000)]
     fn test_deserialize_timestamp_strings(#[case] input: &str, #[case] expected: u64) {
         let deserialized: UnixNanos = serde_json::from_str(input).unwrap();
         assert_eq!(deserialized.as_u64(), expected);

@@ -1,0 +1,70 @@
+{
+  "default": false, // default state for all rules
+  // MD001/heading-increment : Heading levels should only increment by one level at a time : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md001.md
+  "MD001": true,
+  // MD003/heading-style : Heading style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md003.md
+  "MD003": {
+    // Heading style
+    "style": "consistent"
+  },
+  // MD004/ul-style : Unordered list style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md004.md
+  "MD004": {
+    // List style
+    "style": "consistent"
+  },
+  // MD005/list-indent : Inconsistent indentation for list items at the same level : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md005.md
+  "MD005": true,
+  // MD007/ul-indent : Unordered list indentation : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md007.md
+  "MD007": {
+    // Spaces for indent
+    "indent": 2,
+    // Whether to indent the first level of the list
+    "start_indented": false,
+    // Spaces for first level indent (when start_indented is set)
+    "start_indent": 2
+  },
+  // MD009/no-trailing-spaces : Trailing spaces : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md009.md
+  "MD009": {
+    // Spaces for line break
+    "br_spaces": 2,
+    // Allow spaces for empty lines in list items
+    "list_item_empty_lines": false,
+    // Include unnecessary breaks
+    "strict": true
+  },
+  // MD010/no-hard-tabs : Hard tabs : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md010.md
+  "MD010": {
+    // Include code blocks
+    "code_blocks": true,
+    // Fenced code languages to ignore
+    "ignore_code_languages": [],
+    // Number of spaces for each hard tab
+    "spaces_per_tab": 1
+  },
+  // MD011/no-reversed-links : Reversed link syntax : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md011.md
+  "MD011": true,
+  // MD012/no-multiple-blanks : Multiple consecutive blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md012.md
+  "MD012": {
+    // Consecutive blank lines
+    "maximum": 1
+  },
+  // MD031/blanks-around-fences : Fenced code blocks should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md031.md
+  "MD031": {
+    // Include list items
+    "list_items": true
+  },
+  // MD032/blanks-around-lists : Lists should be surrounded by blank lines : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md032.md
+  "MD032": true,
+  // MD034/no-bare-urls : Bare URL used : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md034.md
+  "MD034": true,
+  // MD046/code-block-style : Code block style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md046.md
+  "MD046": {
+    // Block style
+    "style": "fenced"
+  },
+  // MD049/emphasis-style : Emphasis style : https://github.com/DavidAnson/markdownlint/blob/v0.37.4/doc/md049.md
+  "MD049": {
+    // Emphasis style
+    "style": "asterisk"
+  }
+}

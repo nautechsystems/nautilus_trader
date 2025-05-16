@@ -1,9 +1,9 @@
 # Adapters
 
 The NautilusTrader design integrates data providers and/or trading venues
-through adapter implementations, these can be found in the top level `adapters` subpackage.
+through adapter implementations. These can be found in the top-level `adapters` subpackage.
 
-An integrations adapter is _typically_ comprised of the following main components:
+An integration adapter is *typically* comprised of the following main components:
 
 - `HttpClient`
 - `WebSocketClient`
@@ -14,18 +14,23 @@ An integrations adapter is _typically_ comprised of the following main component
 ## Instrument providers
 
 Instrument providers do as their name suggests - instantiating Nautilus
-`Instrument` objects by parsing the publisher or venues raw API.
+`Instrument` objects by parsing the raw API of the publisher or venue.
 
 The use cases for the instruments available from an `InstrumentProvider` are either:
+
 - Used standalone to discover the instruments available for an integration, using these for research or backtesting purposes
-- Used in a `sandbox` or `live` [environment context](/concepts/architecture.md#environment-contexts) for consumption by actors/strategies
+- Used in a `sandbox` or `live` [environment context](architecture.md#environment-contexts) for consumption by actors/strategies
 
 ### Research and backtesting
 
 Here is an example of discovering the current instruments for the Binance Futures testnet:
+
 ```python
+import asyncio
+import os
+
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.factories import get_cached_binance_http_client
+from nautilus_trader.adapters.binance import get_cached_binance_http_client
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 

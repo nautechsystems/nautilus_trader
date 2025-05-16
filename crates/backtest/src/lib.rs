@@ -29,12 +29,12 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
+#![deny(unsafe_code)]
 #![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// #![deny(clippy::missing_errors_doc)]
-
-// Uncomment once we've added trivial `Debug` impls everywhere
-// #![warn(missing_debug_implementations)]
 
 pub mod accumulator;
 pub mod config;

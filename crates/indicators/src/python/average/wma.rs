@@ -27,6 +27,11 @@ use crate::{
 
 #[pymethods]
 impl WeightedMovingAverage {
+    /// Creates a new [`WeightedMovingAverage`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if `period` does not equal the length of `weights`.
     #[new]
     #[pyo3(signature = (period, weights, price_type=None))]
     pub fn py_new(

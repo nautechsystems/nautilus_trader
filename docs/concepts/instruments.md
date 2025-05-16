@@ -1,15 +1,21 @@
 # Instruments
 
 The `Instrument` base class represents the core specification for any tradable asset/contract. There are
-currently a number of subclasses representing a range of _asset classes_ and _instrument classes_ which are supported by the platform:
+currently a number of subclasses representing a range of *asset classes* and *instrument classes* which are supported by the platform:
+
 - `Equity` (generic Equity)
 - `FuturesContract` (generic Futures Contract)
 - `FuturesSpread` (generic Futures Spread)
 - `OptionContract` (generic Option Contract)
 - `OptionSpread` (generic Option Spread)
+- `BinaryOption` (generic Binary Option instrument)
+- `Cfd` (Contract for Difference instrument)
+- `Commodity` (commodity instrument in a spot/cash market)
 - `CurrencyPair` (represents a Fiat FX or Cryptocurrency pair in a spot/cash market)
+- `CryptoOption` (Crypto Option instrument)
 - `CryptoPerpetual` (Perpetual Futures Contract a.k.a. Perpetual Swap)
 - `CryptoFuture` (Deliverable Futures Contract with Crypto assets as underlying, and for price quotes and settlement)
+- `IndexInstrument` (generic Index instrument)
 - `BettingInstrument` (Sports, gaming, or other betting)
 
 ## Symbology
@@ -17,8 +23,8 @@ currently a number of subclasses representing a range of _asset classes_ and _in
 All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
 For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETHUSDT-PERP.BINANCE`.
 
-All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets),
-and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
+All native symbols *should* be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets),
+and the `{symbol.venue}` combination *must* be unique for a Nautilus system.
 
 :::warning
 The correct instrument must be matched to a market dataset such as ticks or order book data for logically sound operation.
@@ -42,7 +48,7 @@ from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumen
 from nautilus_trader.model import InstrumentId
 
 provider = BinanceSpotInstrumentProvider(client=binance_http_client)
-await self.provider.load_all_async()
+await provider.load_all_async()
 
 btcusdt = InstrumentId.from_str("BTCUSDT.BINANCE")
 instrument = provider.find(btcusdt)
@@ -55,13 +61,14 @@ from nautilus_trader.model.instruments import Instrument
 
 instrument = Instrument(...)  # <-- provide all necessary parameters
 ```
+
 See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 ## Live trading
 
 Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the
 latest instrument definitions for the exchange. Refer to a particular `Instrument`
-object by pass the matching `InstrumentId` to data and execution related methods, and classes which require one.
+object by passing the matching `InstrumentId` to data and execution related methods and classes that require one.
 
 ## Finding instruments
 
@@ -76,11 +83,13 @@ instrument = self.cache.instrument(instrument_id)
 ```
 
 It's also possible to subscribe to any changes to a particular instrument:
+
 ```python
 self.subscribe_instrument(instrument_id)
 ```
 
 Or subscribe to all instrument changes for an entire venue:
+
 ```python
 from nautilus_trader.model import Venue
 
@@ -93,7 +102,9 @@ be passed to the actors/strategies `on_instrument()` method. A user can override
 to take upon receiving an instrument update:
 
 ```python
-def on_instrument(instrument: Instrument) -> None:
+from nautilus_trader.model.instruments import Instrument
+
+def on_instrument(self, instrument: Instrument) -> None:
     # Take some action on an instrument update
     pass
 ```
@@ -101,18 +112,19 @@ def on_instrument(instrument: Instrument) -> None:
 ## Precisions and increments
 
 The instrument objects are a convenient way to organize the specification of an
-instrument through _read-only_ properties. Correct price and quantity precisions, as well as
+instrument through *read-only* properties. Correct price and quantity precisions, as well as
 minimum price and size increments, multipliers and standard lot sizes, are available.
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise invalid
-values for prices and quantities _can_ result in the exchange rejecting orders.
+values for prices and quantities *can* result in the exchange rejecting orders.
 :::
 
 ## Limits
 
 Certain value limits are optional for instruments and can be `None`, these are exchange
 dependent and can include:
+
 - `max_quantity` (maximum quantity for a single order)
 - `min_quantity` (minimum quantity for a single order)
 - `max_notional` (maximum value of a single order)
@@ -122,7 +134,7 @@ dependent and can include:
 
 :::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
-published limits _can_ result in the exchange rejecting orders.
+published limits *can* result in the exchange rejecting orders.
 :::
 
 ## Prices and quantities
@@ -160,6 +172,7 @@ When setting up an exchange venue, you'll specify one of these account types:
 To understand trading on margin, let’s start with some key terms:
 
 **Notional Value**: The total contract value in the quote currency. It represents the full market value of your position. For example, with EUR/USD futures on CME (symbol 6E).
+
 - Each contract represents 125,000 EUR (EUR is base currency, USD is quote currency).
 - If the current market price is 1.1000, the notional value equals 125,000 EUR × 1.1000 (price of EUR/USD) = 137,500 USD.
 
@@ -269,13 +282,16 @@ To use any fee model in your trading system, whether built-in or custom, you spe
 Here's an example using the custom per-contract fee model:
 
 ```python
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.objects import Money, Currency
+
 engine.add_venue(
     venue=venue,
     oms_type=OmsType.NETTING,
     account_type=AccountType.MARGIN,
     base_currency=USD,
-    fee_model=PerContractFeeModel(Money(2.50, USD)),  # Our custom fee-model injected here: 2.50 USD / per 1 filled contract
-    starting_balances=[Money(1_000_000, USD)],
+    fee_model=PerContractFeeModel(Money(2.50, USD)),  # 2.50 USD per contract
+    starting_balances=[Money(1_000_000, USD)],  # Starting with 1,000,000 USD balance
 )
 ```
 
@@ -285,6 +301,7 @@ Even small discrepancies in commission calculations can significantly impact str
 :::
 
 ## Additional info
+
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
 included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user

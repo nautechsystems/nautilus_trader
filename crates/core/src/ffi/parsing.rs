@@ -30,7 +30,11 @@ use crate::{
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if `ptr` is null, or if the pointed data is not valid UTF-8 or valid JSON array of strings.
 #[must_use]
 pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -52,9 +56,14 @@ pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
     }
 }
 
+/// Convert a slice of `String` into a C string pointer (JSON encoded).
+///
+/// # Panics
+///
+/// Panics if JSON serialization fails or if the generated string contains interior null bytes.
 #[must_use]
-pub fn string_vec_to_bytes(strings: Vec<String>) -> *const c_char {
-    let json_string = serde_json::to_string(&strings).unwrap();
+pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
+    let json_string = serde_json::to_string(strings).unwrap();
     let c_string = CString::new(json_string).unwrap();
     c_string.into_raw()
 }
@@ -63,7 +72,11 @@ pub fn string_vec_to_bytes(strings: Vec<String>) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if `ptr` is non-null but the data is not valid UTF-8.
 #[must_use]
 pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
     if ptr.is_null() {
@@ -87,7 +100,11 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if `ptr` is non-null but the data is not valid UTF-8.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
     if ptr.is_null() {
@@ -111,7 +128,11 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if `ptr` is non-null but the data is not valid UTF-8 or valid JSON array of strings.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
     if ptr.is_null() {
@@ -135,12 +156,11 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -152,12 +172,11 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -204,7 +223,7 @@ mod tests {
             .map(String::from)
             .collect::<Vec<String>>();
 
-        let ptr = string_vec_to_bytes(strings.clone());
+        let ptr = string_vec_to_bytes(&strings);
 
         let result = unsafe { bytes_to_string_vec(ptr) };
         assert_eq!(result, strings);
@@ -213,7 +232,7 @@ mod tests {
     #[rstest]
     fn test_string_vec_to_bytes_empty() {
         let strings = Vec::new();
-        let ptr = string_vec_to_bytes(strings.clone());
+        let ptr = string_vec_to_bytes(&strings);
 
         let result = unsafe { bytes_to_string_vec(ptr) };
         assert_eq!(result, strings);

@@ -103,9 +103,12 @@ impl CryptoFuture {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -148,7 +151,7 @@ impl CryptoFuture {
         check_positive_quantity(size_increment, stringify!(size_increment))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             underlying,
             quote_currency,
@@ -178,9 +181,13 @@ impl CryptoFuture {
     }
 
     /// Creates a new [`CryptoFuture`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Currency,
         quote_currency: Currency,
@@ -208,7 +215,7 @@ impl CryptoFuture {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             underlying,
             quote_currency,

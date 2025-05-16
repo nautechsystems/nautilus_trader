@@ -49,6 +49,9 @@ pub extern "C" fn quote_tick_new(
     )
 }
 
+/// # Panics
+///
+/// Panics if any field of the two `QuoteTick` instances differs.
 #[unsafe(no_mangle)]
 pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
     assert_eq!(lhs.ask_price, rhs.ask_price);

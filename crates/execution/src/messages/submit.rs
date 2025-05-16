@@ -48,6 +48,11 @@ pub struct SubmitOrder {
 impl SubmitOrder {
     /// Creates a new [`SubmitOrder`] instance.
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new `SubmitOrder` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parameters are invalid.
     pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
@@ -93,6 +98,7 @@ pub trait SubmitOrderHandler {
     fn handle_submit_order(&self, command: SubmitOrder);
 }
 
+#[derive(Debug)]
 pub enum SubmitOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

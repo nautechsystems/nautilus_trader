@@ -26,7 +26,7 @@ use pyo3::PyResult;
 ///
 /// # Errors
 ///
-/// This function returns an error if `input` does not match any known variant of `E`.
+/// Returns an error if `input` does not match any known variant of `E`.
 pub fn parse_enum<E>(input: &str, param: &str) -> PyResult<E>
 where
     E: std::str::FromStr<Err = ParseError> + IntoEnumIterator + ToString,

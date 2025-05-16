@@ -24,6 +24,8 @@ The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
+from libc.stdint cimport uint64_t
+
 from collections import defaultdict
 from decimal import Decimal
 
@@ -56,6 +58,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport Venue

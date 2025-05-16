@@ -16,11 +16,11 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig

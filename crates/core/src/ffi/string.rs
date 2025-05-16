@@ -18,19 +18,20 @@ use std::{
     str,
 };
 
+#[cfg(feature = "python")]
 use pyo3::{Bound, Python, ffi};
 use ustr::Ustr;
 
+#[cfg(feature = "python")]
 /// Returns an owned string from a valid Python object pointer.
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -41,12 +42,11 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -58,12 +58,11 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -75,12 +74,11 @@ pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer or NULL.
+/// Assumes `ptr` is a valid C string pointer or NULL.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     if ptr.is_null() {
@@ -94,12 +92,11 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -111,7 +108,7 @@ pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer or NULL.
+/// Assumes `ptr` is a valid C string pointer or NULL.
 #[must_use]
 pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     if ptr.is_null() {
@@ -121,7 +118,11 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     }
 }
 
-/// Create a C string pointer to newly allocated memory from a [&str].
+/// Create a C string pointer to newly allocated memory from a [`&str`].
+///
+/// # Panics
+///
+/// Panics if the input string contains interior null bytes.
 #[must_use]
 pub fn str_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
@@ -131,12 +132,11 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -149,11 +149,13 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "python")]
     use pyo3::types::PyString;
     use rstest::*;
 
     use super::*;
 
+    #[cfg(feature = "python")]
     #[cfg_attr(miri, ignore)]
     #[rstest]
     fn test_pystr_to_string() {
@@ -164,8 +166,9 @@ mod tests {
         assert_eq!(result, "test string1");
     }
 
+    #[cfg(feature = "python")]
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_pystr_to_string_with_null_ptr() {
         // Create a null Python object pointer
         let ptr: *mut ffi::PyObject = std::ptr::null_mut();
@@ -194,7 +197,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_cstr_to_vec_with_null_ptr() {
         // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();

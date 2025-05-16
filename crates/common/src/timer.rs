@@ -54,7 +54,7 @@ use crate::runtime::get_runtime;
 ///
 /// # Panics
 ///
-/// This function panics if `interval_ns` is zero.
+/// Panics if `interval_ns` is zero.
 #[must_use]
 pub fn create_valid_interval(interval_ns: u64) -> NonZeroU64 {
     NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be positive")
@@ -101,7 +101,7 @@ impl TimeEvent {
     ///
     /// # Safety
     ///
-    /// - Assumes `name` is a valid string.
+    /// Assumes `name` is a valid string.
     #[must_use]
     pub const fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
@@ -149,6 +149,11 @@ impl Debug for TimeEventCallback {
 }
 
 impl TimeEventCallback {
+    /// Invokes the callback for the given `TimeEvent`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying Python callback invocation fails (e.g., raises an exception).
     pub fn call(&self, event: TimeEvent) {
         match self {
             #[cfg(feature = "python")]
@@ -176,7 +181,9 @@ impl From<PyObject> for TimeEventCallback {
 }
 
 // SAFETY: Message handlers cannot be sent across thread boundaries
+#[allow(unsafe_code)]
 unsafe impl Send for TimeEventCallback {}
+#[allow(unsafe_code)]
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
@@ -199,6 +206,11 @@ impl TimeEventHandlerV2 {
         Self { event, callback }
     }
 
+    /// Executes the handler by invoking its callback for the associated event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying callback invocation fails (e.g., a Python callback raises an exception).
     pub fn run(self) {
         let Self { event, callback } = self;
         callback.call(event);
@@ -248,7 +260,7 @@ impl TestTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     pub fn new(
         name: Ustr,
@@ -367,7 +379,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     #[cfg(not(feature = "clock_v2"))]
     pub fn new(
@@ -395,7 +407,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
-    /// This function panics if `name` is not a valid string.
+    /// Panics if `name` is not a valid string.
     #[must_use]
     #[cfg(feature = "clock_v2")]
     pub fn new(

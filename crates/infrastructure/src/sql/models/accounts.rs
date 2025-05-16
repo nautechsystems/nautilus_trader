@@ -21,6 +21,7 @@ use nautilus_model::{
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
+#[derive(Debug)]
 pub struct AccountEventModel(pub AccountState);
 
 impl<'r> FromRow<'r, PgRow> for AccountEventModel {
@@ -47,6 +48,6 @@ impl<'r> FromRow<'r, PgRow> for AccountEventModel {
             ts_init,
             base_currency,
         );
-        Ok(AccountEventModel(account_event))
+        Ok(Self(account_event))
     }
 }

@@ -1,4 +1,5 @@
 # Testing
+
 The test suite is divided into broad categories of tests including:
 
 - Unit tests
@@ -9,11 +10,17 @@ The test suite is divided into broad categories of tests including:
 
 The performance tests exist to aid development of performance-critical components.
 
-Tests can be run using [Pytest](https://docs.pytest.org).
+Tests can be run using [pytest](https://docs.pytest.org), which is our primary test runner. We recommend using parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
 
-If you’re using PyCharm then tests should run directly by right clicking on the respective folder (or top-level tests folder) and clicking ‘Run pytest’.
+If you’re using PyCharm, right-click on the tests folder or test file and select “Run pytest.”
 
-Alternatively you can use the `pytest` command from the root level tests directory, or the other subdirectories.
+Alternatively, run:
+
+```bash
+pytest
+```
+
+from the repository root to discover and execute all tests.
 
 ## Mocks
 
@@ -58,7 +65,7 @@ run `make cargo-test-debug` instead of `make cargo-test`.
 In IntellijIdea, to debug parametrised tests starting with `#[rstest]` with arguments defined in the header of the test
 you need to modify the run configuration of the test so it looks like
 `test --package nautilus-model --lib data::bar::tests::test_get_time_bar_start::case_1`
-(remove ` -- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to
+(remove `-- --exact` at the end of the string and append `::case_n` where `n` is an integer corresponding to
 the n-th parametrised test starting at 1).
 The reason for this is [here](https://github.com/rust-lang/rust-analyzer/issues/8964#issuecomment-871592851)
 (the test is expanded into a module with several functions named `case_n`).

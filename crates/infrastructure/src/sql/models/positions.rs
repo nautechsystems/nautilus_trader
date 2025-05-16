@@ -24,6 +24,7 @@ use nautilus_model::{
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
 
+#[derive(Debug)]
 pub struct PositionSnapshotModel(pub PositionSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
@@ -117,6 +118,6 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             ts_init,
         };
 
-        Ok(PositionSnapshotModel(snapshot))
+        Ok(Self(snapshot))
     }
 }

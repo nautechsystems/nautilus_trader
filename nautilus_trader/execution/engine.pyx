@@ -22,8 +22,7 @@ includes sending commands to, and receiving events from, the trading venue
 endpoints via its registered execution clients.
 
 The engine employs a simple fan-in fan-out messaging pattern to execute
-`TradingCommand` messages, and process `AccountState` or `OrderEvent` type
-messages.
+`TradingCommand` messages and `OrderEvent` messages.
 
 Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
@@ -48,7 +47,6 @@ from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport LogColor
-from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
@@ -57,17 +55,15 @@ from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
-from nautilus_trader.core.rust.model cimport OrderStatus
-from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PositionSide
-from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
+from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -90,11 +86,11 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.trading.strategy cimport Strategy
 
 
 cdef class ExecutionEngine(Component):
@@ -149,6 +145,8 @@ cdef class ExecutionEngine(Component):
             trader_id=msgbus.trader_id,
             clock=clock,
         )
+
+        self._pending_position_events = []
 
         # Configuration
         self.debug: bool = config.debug
@@ -313,9 +311,9 @@ cdef class ExecutionEngine(Component):
 
         return self._external_order_claims.get(instrument_id)
 
-    cpdef set get_external_order_claims_instruments(self):
+    cpdef set[InstrumentId] get_external_order_claims_instruments(self):
         """
-        Get all external order claims instrument IDs.
+        Get all instrument IDs registered for external order claims.
 
         Returns
         -------
@@ -326,16 +324,16 @@ cdef class ExecutionEngine(Component):
 
     cpdef set[ExecutionClient] get_clients_for_orders(self, list[Order] orders):
         """
-        Get all execution clients for the given orders.
+        Get all execution clients corresponding to the given orders.
 
         Parameters
         ----------
-        order : list[Order]
-            The orders for the execution clients.
+        orders : list[Order]
+            The orders to locate associated execution clients for.
 
         Returns
         -------
-        list[ExecutionClient]
+        set[ExecutionClient]
 
         """
         Condition.not_none(orders, "orders")
@@ -362,7 +360,8 @@ cdef class ExecutionEngine(Component):
 
         for venue in venues:
             client = self._routing_map.get(venue, self._default_client)
-            clients.add(client)
+            if client is not None:
+                clients.add(client)
 
         return clients
 
@@ -401,15 +400,29 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_in(client.id, self._clients, "client.id", "_clients")
 
-        self._clients[client.id] = client
+        cdef str routing_log = ""
 
-        routing_log = ""
+        # Default routing client
         if client.venue is None:
-            if self._default_client is None:
-                self._default_client = client
-                routing_log = " for default routing"
+            if self._default_client is not None:
+                raise ValueError(
+                    f"Default execution client already registered ("
+                    f"{self._default_client.id!r}); use register_default_client to override"
+                )
+            self._default_client = client
+            routing_log = " for default routing"
+        # Venue-specific routing
         else:
+            if client.venue in self._routing_map:
+                existing = self._routing_map[client.venue]
+                raise ValueError(
+                    f"Execution client for venue {client.venue!r} "
+                    f"already registered ({existing.id!r})"
+                )
             self._routing_map[client.venue] = client
+
+        # Finally register in client registry
+        self._clients[client.id] = client
 
         self._log.info(f"Registered ExecutionClient-{client}{routing_log}")
 
@@ -528,13 +541,20 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(client, "client")
         Condition.is_in(client.id, self._clients, "client.id", "self._clients")
 
+        # Remove client from registry
         del self._clients[client.id]
 
-        if client.venue is None:
-            if self._default_client == client:
-                self._default_client = None
-        else:
-            del self._routing_map[client.venue]
+        # Clear default routing client if it matches
+        if self._default_client is not None and self._default_client == client:
+            self._default_client = None
+
+        # Remove any venue-specific routing entries for this client
+        cdef list to_remove = []
+        for venue, mapped_client in self._routing_map.items():
+            if mapped_client == client:
+                to_remove.append(venue)
+        for venue in to_remove:
+            del self._routing_map[venue]
 
         self._log.info(f"Deregistered {client}")
 
@@ -1027,6 +1047,27 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
+        # Publish pending position events from snapshot to prevent recursion issues
+        cdef list to_publish = self._pending_position_events.copy()
+
+        # Clear pending events so nested calls append to a fresh list
+        self._pending_position_events.clear()
+
+        cdef:
+            PositionEvent pos_event
+            Position position
+        for pos_event in to_publish:
+            self._msgbus.publish_c(
+                topic=f"events.position.{pos_event.strategy_id}",
+                msg=pos_event,
+            )
+            if self.snapshot_positions:
+                position = self._cache.position(pos_event.position_id)
+                self._create_position_state_snapshot(
+                    position,
+                    open_only=isinstance(pos_event, PositionOpened),
+                )
+
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
         # Check for strategy OMS override
@@ -1147,13 +1188,13 @@ cdef class ExecutionEngine(Component):
             return
 
         self._cache.update_order(order)
+        if self.snapshot_orders:
+            self._create_order_state_snapshot(order)
 
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id}",
             msg=event,
         )
-        if self.snapshot_orders:
-            self._create_order_state_snapshot(order)
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
@@ -1199,8 +1240,6 @@ cdef class ExecutionEngine(Component):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
-            if self.snapshot_positions:
-                self._create_position_state_snapshot(position, open_only=True)
         else:
             try:
                 # Always snapshot opening positions to handle NETTING OMS
@@ -1219,10 +1258,7 @@ cdef class ExecutionEngine(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id}",
-            msg=event,
-        )
+        self._pending_position_events.append(event)
 
         return position
 
@@ -1235,8 +1271,6 @@ cdef class ExecutionEngine(Component):
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)
-        if self.snapshot_positions:
-            self._create_position_state_snapshot(position, open_only=False)
 
         cdef PositionEvent event
         if position.is_closed_c():
@@ -1254,10 +1288,7 @@ cdef class ExecutionEngine(Component):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id}",
-            msg=event,
-        )
+        self._pending_position_events.append(event)
 
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill):
         return (

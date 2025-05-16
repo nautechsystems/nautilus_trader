@@ -37,8 +37,7 @@ impl ComponentId {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string.
+    /// Returns an error if `value` is not a valid string.
     ///
     /// # Notes
     ///
@@ -53,8 +52,7 @@ impl ComponentId {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `value` is not a valid string.
+    /// Panics if `value` is not a valid string.
     pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

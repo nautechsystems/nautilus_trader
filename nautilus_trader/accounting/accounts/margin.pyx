@@ -554,8 +554,6 @@ cdef class MarginAccount(Account):
         """
         Calculate the initial (order) margin.
 
-        Pre‑reserves `notional + (2 × taker_fee × notional)` to cover a full round‑trip commission.
-
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
 
@@ -592,7 +590,6 @@ cdef class MarginAccount(Account):
 
         adjusted_notional = notional / leverage
         margin = adjusted_notional * instrument.margin_init
-        margin += adjusted_notional * instrument.taker_fee * Decimal(2)
 
         if instrument.is_inverse and not use_quote_for_inverse:
             return Money(margin, instrument.base_currency)
@@ -647,7 +644,6 @@ cdef class MarginAccount(Account):
 
         adjusted_notional = notional / leverage
         margin = adjusted_notional * instrument.margin_maint
-        margin += adjusted_notional * instrument.taker_fee
 
         if instrument.is_inverse and not use_quote_for_inverse:
             return Money(margin, instrument.base_currency)

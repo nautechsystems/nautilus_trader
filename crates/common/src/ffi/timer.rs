@@ -37,7 +37,14 @@ pub struct TimeEventHandler {
     pub callback_ptr: *mut c_char,
 }
 
+// Legacy conversion from TimeEventHandlerV2 to pure-C TimeEventHandler
+// Only supports Python callbacks; available when `python` feature is enabled
+#[cfg(feature = "python")]
 impl From<TimeEventHandlerV2> for TimeEventHandler {
+    /// # Panics
+    ///
+    /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
+    /// since only Python callbacks are supported by the legacy `TimeEventHandler`.
     fn from(value: TimeEventHandlerV2) -> Self {
         Self {
             event: value.event,
@@ -51,9 +58,27 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
     }
 }
 
+// Fallback conversion for non-Python callbacks: Rust callbacks only
+#[cfg(not(feature = "python"))]
+impl From<TimeEventHandlerV2> for TimeEventHandler {
+    fn from(value: TimeEventHandlerV2) -> Self {
+        // Only Rust callbacks are supported in non-python builds
+        match value.callback {
+            TimeEventCallback::Rust(_) => TimeEventHandler {
+                event: value.event,
+                callback_ptr: std::ptr::null_mut(),
+            },
+            #[cfg(feature = "python")]
+            TimeEventCallback::Python(_) => {
+                unreachable!("Python callback not supported without python feature")
+            }
+        }
+    }
+}
+
 /// # Safety
 ///
-/// - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
+/// Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn time_event_new(
     name_ptr: *const c_char,

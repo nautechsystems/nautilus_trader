@@ -17,9 +17,9 @@
 import asyncio
 from decimal import Decimal
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.config import InstrumentProviderConfig

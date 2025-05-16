@@ -62,6 +62,9 @@ pub trait Account: 'static + Send {
     fn starting_balances(&self) -> HashMap<Currency, Money>;
     fn balances(&self) -> HashMap<Currency, AccountBalance>;
     fn apply(&mut self, event: AccountState);
+    /// # Errors
+    ///
+    /// Returns an error if calculating locked balance fails.
     fn calculate_balance_locked(
         &mut self,
         instrument: InstrumentAny,
@@ -70,12 +73,18 @@ pub trait Account: 'static + Send {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money>;
+    /// # Errors
+    ///
+    /// Returns an error if calculating P&Ls fails.
     fn calculate_pnls(
         &self,
         instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>>;
+    /// # Errors
+    ///
+    /// Returns an error if calculating commission fails.
     fn calculate_commission(
         &self,
         instrument: InstrumentAny,

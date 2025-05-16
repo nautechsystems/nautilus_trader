@@ -21,10 +21,13 @@ pub mod queries;
 
 use std::time::Duration;
 
-use nautilus_common::msgbus::database::{DatabaseConfig, MessageBusConfig};
+use nautilus_common::{
+    logging::log_task_awaiting,
+    msgbus::database::{DatabaseConfig, MessageBusConfig},
+};
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
-use redis::*;
+use redis::RedisError;
 use semver::Version;
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
@@ -35,7 +38,8 @@ const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
     if let Some(handle) = handle {
-        tracing::debug!("Awaiting task '{task_name}'");
+        log_task_awaiting(task_name);
+
         let timeout = Duration::from_secs(2);
         match tokio::time::timeout(timeout, handle).await {
             Ok(result) => {
@@ -50,58 +54,77 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
     }
 }
 
-/// Parse a Redis connection url from the given database config.
+/// Parses a Redis connection URL from the given database config, returning the
+/// full URL and a redacted version with the password obfuscated.
+///
+/// Authentication matrix handled:
+/// ┌───────────┬───────────┬────────────────────────────┐
+/// │ Username  │ Password  │ Resulting user-info part   │
+/// ├───────────┼───────────┼────────────────────────────┤
+/// │ non-empty │ non-empty │ user:pass@                 │
+/// │ empty     │ non-empty │ :pass@                     │
+/// │ empty     │ empty     │ (omitted)                  │
+/// └───────────┴───────────┴────────────────────────────┘
+///
+/// # Panics
+///
+/// Panics if a username is provided without a corresponding password.
+#[must_use]
 pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     let host = config.host.unwrap_or("127.0.0.1".to_string());
     let port = config.port.unwrap_or(6379);
-    let username = config.username.unwrap_or("".to_string());
-    let password = config.password.unwrap_or("".to_string());
-    let use_ssl = config.ssl;
+    let username = config.username.unwrap_or_default();
+    let password = config.password.unwrap_or_default();
+    let ssl = config.ssl;
 
-    let redacted_password = if password.len() > 4 {
-        format!("{}...{}", &password[..2], &password[password.len() - 2..],)
-    } else {
-        password.to_string()
+    // Redact the password for logging/metrics: keep the first & last two chars.
+    let redact_pw = |pw: &str| {
+        if pw.len() > 4 {
+            format!("{}...{}", &pw[..2], &pw[pw.len() - 2..])
+        } else {
+            pw.to_owned()
+        }
     };
 
-    let auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{}:{}@", username, password)
-    } else {
-        String::new()
+    // Build the `userinfo@` portion for both the real and redacted URLs.
+    let (auth, auth_redacted) = match (username.is_empty(), password.is_empty()) {
+        // user:pass@
+        (false, false) => (
+            format!("{username}:{password}@"),
+            format!("{username}:{}@", redact_pw(&password)),
+        ),
+        // :pass@
+        (true, false) => (
+            format!(":{password}@"),
+            format!(":{}@", redact_pw(&password)),
+        ),
+        // username but no password ⇒  configuration error
+        (false, true) => panic!(
+            "Redis config error: username supplied without password. \
+            Either supply a password or omit the username."
+        ),
+        // no credentials
+        (true, true) => (String::new(), String::new()),
     };
 
-    let redacted_auth_part = if !username.is_empty() && !password.is_empty() {
-        format!("{}:{}@", username, redacted_password)
-    } else {
-        String::new()
-    };
+    let scheme = if ssl { "rediss" } else { "redis" };
 
-    let url = format!(
-        "redis{}://{}{}:{}",
-        if use_ssl { "s" } else { "" },
-        auth_part,
-        host,
-        port
-    );
-
-    let redacted_url = format!(
-        "redis{}://{}{}:{}",
-        if use_ssl { "s" } else { "" },
-        redacted_auth_part,
-        host,
-        port
-    );
+    let url = format!("{scheme}://{auth}{host}:{port}");
+    let redacted_url = format!("{scheme}://{auth_redacted}{host}:{port}");
 
     (url, redacted_url)
 }
-
-/// Create a new Redis database connection from the given database config.
+/// Creates a new Redis connection manager based on the provided database `config` and connection name.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Constructing the Redis client fails.
+/// - Establishing or configuring the connection manager fails.
 ///
 /// In case of reconnection issues, the connection will retry reconnection
 /// `number_of_retries` times, with an exponentially increasing delay, calculated as
 /// `rand(0 .. factor * (exponent_base ^ current-try))`.
-///
-/// Apply a maximum delay. No retry delay will be longer than this `max_delay` .
 ///
 /// The new connection will time out operations after `response_timeout` has passed.
 /// Each connection attempt to the server will time out after `connection_timeout`.
@@ -113,8 +136,8 @@ pub async fn create_redis_connection(
     let (redis_url, redacted_url) = get_redis_url(config.clone());
     tracing::debug!("Connecting to {redacted_url}");
 
-    let connection_timeout = Duration::from_secs(config.connection_timeout as u64);
-    let response_timeout = Duration::from_secs(config.response_timeout as u64);
+    let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
+    let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
     let number_of_retries = config.number_of_retries;
     let exponent_base = config.exponent_base;
     let factor = config.factor;
@@ -151,7 +174,11 @@ pub async fn create_redis_connection(
     Ok(con)
 }
 
-/// Flush the Redis database for the given connection.
+/// Flushes the entire Redis database for the specified connection.
+///
+/// # Errors
+///
+/// Returns an error if the FLUSHDB command fails.
 pub async fn flush_redis(
     con: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<(), RedisError> {
@@ -159,6 +186,7 @@ pub async fn flush_redis(
 }
 
 /// Parse the stream key from the given identifiers and config.
+#[must_use]
 pub fn get_stream_key(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -184,7 +212,11 @@ pub fn get_stream_key(
     stream_key
 }
 
-/// Parses the Redis version from the "INFO" command output.
+/// Retrieves and parses the Redis server version via the INFO command.
+///
+/// # Errors
+///
+/// Returns an error if the INFO command fails or version parsing fails.
 pub async fn get_redis_version(
     conn: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<Version> {
@@ -206,7 +238,7 @@ pub async fn get_redis_version(
 }
 
 fn parse_redis_version(version_str: &str) -> anyhow::Result<Version> {
-    let mut components = version_str.split('.').map(|s| s.parse::<u64>());
+    let mut components = version_str.split('.').map(str::parse::<u64>);
 
     let major = components.next().unwrap_or(Ok(0))?;
     let minor = components.next().unwrap_or(Ok(0))?;
@@ -231,6 +263,20 @@ mod tests {
         let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://127.0.0.1:6379");
         assert_eq!(redacted_url, "redis://127.0.0.1:6379");
+    }
+
+    #[rstest]
+    fn test_get_redis_url_password_only() {
+        // Username omitted, but password present
+        let config_json = json!({
+            "host": "example.com",
+            "port": 6380,
+            "password": "secretpw",   // >4 chars ⇒ will be redacted
+        });
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
+        assert_eq!(url, "redis://:secretpw@example.com:6380");
+        assert_eq!(redacted_url, "redis://:se...pw@example.com:6380");
     }
 
     #[rstest]

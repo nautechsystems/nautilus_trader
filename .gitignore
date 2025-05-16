@@ -70,6 +70,7 @@ env/
 .cursorignore
 .DS_Store
 .null-ls*
+CODEX.md
 PERF.JSON
 output.json
 

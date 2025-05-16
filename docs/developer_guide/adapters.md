@@ -3,16 +3,16 @@
 ## Introduction
 
 This developer guide provides instructions on how to develop an integration adapter for the NautilusTrader platform.
-Adapters provide connectivity to trading venues and data providers - translating their raw API
-into a unified interface and normalized domain model.
+Adapters provide connectivity to trading venues and data providers—translating raw venue APIs into Nautilus’s unified interface and normalized domain model.
 
 ## Structure of an adapter
 
 An adapter typically consists of several components:
+
 1. **Instrument Provider**: Supplies instrument definitions
 2. **Data Client**: Handles live market data feeds and historical data requests
 3. **Execution Client**: Handles order execution and management
-5. **Configuration**: Configures the client settings
+4. **Configuration**: Configures the client settings
 
 ## Adapter implementation steps
 
@@ -21,7 +21,7 @@ An adapter typically consists of several components:
 3. Implement the Data Client by inheriting from either the `LiveDataClient` and `LiveMarketDataClient` class as applicable, providing implementations for the required methods
 4. Implement the Execution Client by inheriting from `LiveExecutionClient` and providing implementations for the required methods
 5. Create configuration classes to hold your adapter’s settings
-6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected
+6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected (see the [Testing Guide](testing.md)).
 
 ## Template for building an adapter
 
@@ -43,16 +43,17 @@ class TemplateInstrumentProvider(InstrumentProvider):
     """
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        raise NotImplementedError("method `load_all_async` must be implemented in the subclass")
+        raise NotImplementedError("implement `load_all_async` in your adapter subclass")
 
     async def load_ids_async(self, instrument_ids: list[InstrumentId], filters: dict | None = None) -> None:
-        raise NotImplementedError("method `load_ids_async` must be implemented in the subclass")
+        raise NotImplementedError("implement `load_ids_async` in your adapter subclass")
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
-        raise NotImplementedError("method `load_async` must be implemented in the subclass")
+        raise NotImplementedError("implement `load_async` in your adapter subclass")
 ```
 
 **Key Methods**:
+
 - `load_all_async`: Loads all instruments asynchronously, optionally applying filters
 - `load_ids_async`: Loads specific instruments by their IDs
 - `load_async`: Loads a single instrument by its ID
@@ -74,28 +75,29 @@ class TemplateLiveDataClient(LiveDataClient):
     """
 
     async def _connect(self) -> None:
-        raise NotImplementedError("method `_connect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_connect` in your adapter subclass")
 
     async def _disconnect(self) -> None:
-        raise NotImplementedError("method `_disconnect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_disconnect` in your adapter subclass")
 
     def reset(self) -> None:
-        raise NotImplementedError("method `reset` must be implemented in the subclass")
+        raise NotImplementedError("implement `reset` in your adapter subclass")
 
     def dispose(self) -> None:
-        raise NotImplementedError("method `dispose` must be implemented in the subclass")
+        raise NotImplementedError("implement `dispose` in your adapter subclass")
 
     async def _subscribe(self, data_type: DataType) -> None:
-        raise NotImplementedError("method `_subscribe` must be implemented in the subclass")
+        raise NotImplementedError("implement `_subscribe` in your adapter subclass")
 
     async def _unsubscribe(self, data_type: DataType) -> None:
-        raise NotImplementedError("method `_unsubscribe` must be implemented in the subclass")
+        raise NotImplementedError("implement `_unsubscribe` in your adapter subclass")
 
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        raise NotImplementedError("method `_request` must be implemented in the subclass")
+        raise NotImplementedError("implement `_request` in your adapter subclass")
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the data provider
 - `_disconnect`: Closes the connection to the data provider
 - `reset`: Resets the state of the client
@@ -122,31 +124,32 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
 
     async def _connect(self) -> None:
-        raise NotImplementedError("method `_connect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_connect` in your adapter subclass")
 
     async def _disconnect(self) -> None:
-        raise NotImplementedError("method `_disconnect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_disconnect` in your adapter subclass")
 
     def reset(self) -> None:
-        raise NotImplementedError("method `reset` must be implemented in the subclass")
+        raise NotImplementedError("implement `reset` in your adapter subclass")
 
     def dispose(self) -> None:
-        raise NotImplementedError("method `dispose` must be implemented in the subclass")
+        raise NotImplementedError("implement `dispose` in your adapter subclass")
 
     async def _subscribe_instruments(self) -> None:
-        raise NotImplementedError("method `_subscribe_instruments` must be implemented in the subclass")
+        raise NotImplementedError("implement `_subscribe_instruments` in your adapter subclass")
 
     async def _unsubscribe_instruments(self) -> None:
-        raise NotImplementedError("method `_unsubscribe_instruments` must be implemented in the subclass")
+        raise NotImplementedError("implement `_unsubscribe_instruments` in your adapter subclass")
 
     async def _subscribe_order_book_deltas(self, instrument_id: InstrumentId, book_type: BookType, depth: int | None = None, kwargs: dict | None = None) -> None:
-        raise NotImplementedError("method `_subscribe_order_book_deltas` must be implemented in the subclass")
+        raise NotImplementedError("implement `_subscribe_order_book_deltas` in your adapter subclass")
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
-        raise NotImplementedError("method `_unsubscribe_order_book_deltas` must be implemented in the subclass")
+        raise NotImplementedError("implement `_unsubscribe_order_book_deltas` in your adapter subclass")
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `reset`: Resets the state of the client
@@ -174,25 +177,25 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     """
 
     async def _connect(self) -> None:
-        raise NotImplementedError("method `_connect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_connect` in your adapter subclass")
 
     async def _disconnect(self) -> None:
-        raise NotImplementedError("method `_disconnect` must be implemented in the subclass")
+        raise NotImplementedError("implement `_disconnect` in your adapter subclass")
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError("method `_submit_order` must be implemented in the subclass")
+        raise NotImplementedError("implement `_submit_order` in your adapter subclass")
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError("method `_modify_order` must be implemented in the subclass")
+        raise NotImplementedError("implement `_modify_order` in your adapter subclass")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError("method `_cancel_order` must be implemented in the subclass")
+        raise NotImplementedError("implement `_cancel_order` in your adapter subclass")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError("method `_cancel_all_orders` must be implemented in the subclass")
+        raise NotImplementedError("implement `_cancel_all_orders` in your adapter subclass")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        raise NotImplementedError("method `_batch_cancel_orders` must be implemented in the subclass")
+        raise NotImplementedError("implement `_batch_cancel_orders` in your adapter subclass")
 
     async def generate_order_status_report(
         self, instrument_id: InstrumentId, client_order_id: ClientOrderId | None = None, venue_order_id: VenueOrderId | None = None
@@ -216,6 +219,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 ```
 
 **Key Methods**:
+
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `_submit_order`: Submits a new order to the venue
@@ -257,6 +261,7 @@ class TemplateExecClientConfig(LiveExecClientConfig):
 ```
 
 **Key Attributes**:
+
 - `api_key`: The API key for authenticating with the data provider
 - `api_secret`: The API secret for authenticating with the data provider
 - `base_url`: The base URL for connecting to the data provider’s API

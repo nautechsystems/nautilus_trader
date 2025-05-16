@@ -120,6 +120,11 @@ impl ArcherMovingAveragesTrends {
         }
     }
 
+    /// Updates the adaptive moving average with a new data point.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no previous data available to compute the update.
     pub fn update_raw(&mut self, close: f64) {
         self.fast_ma.update_raw(close);
         self.slow_ma.update_raw(close);

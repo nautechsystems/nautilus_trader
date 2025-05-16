@@ -101,9 +101,12 @@ impl FuturesSpread {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         exchange: Option<Ustr>,
@@ -140,7 +143,7 @@ impl FuturesSpread {
         check_positive_quantity(lot_size, stringify!(lot_size))?;
 
         Ok(Self {
-            id,
+            id: instrument_id,
             raw_symbol,
             asset_class,
             exchange,
@@ -169,9 +172,13 @@ impl FuturesSpread {
     }
 
     /// Creates a new [`FuturesSpread`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any input parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: InstrumentId,
+        instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         exchange: Option<Ustr>,
@@ -196,7 +203,7 @@ impl FuturesSpread {
         ts_init: UnixNanos,
     ) -> Self {
         Self::new_checked(
-            id,
+            instrument_id,
             raw_symbol,
             asset_class,
             exchange,

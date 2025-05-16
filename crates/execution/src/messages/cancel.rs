@@ -42,6 +42,11 @@ pub struct CancelOrder {
 impl CancelOrder {
     /// Creates a new [`CancelOrder`] instance.
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new `CancelOrder` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parameters are invalid.
     pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
@@ -79,6 +84,7 @@ pub trait CancelOrderHandler {
     fn handle_cancel_order(&self, order: &OrderAny);
 }
 
+#[derive(Debug)]
 pub enum CancelOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

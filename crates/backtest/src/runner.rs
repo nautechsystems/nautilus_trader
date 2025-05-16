@@ -26,18 +26,13 @@ use std::{
 use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::SubscribeCommand,
-    runner::{DataEvent, DataQueue, DataResponseQueue, GlobalDataQueue},
+    runner::{DataQueue, GlobalDataQueue},
 };
 use nautilus_data::engine::DataEngine;
 
-pub struct SyncDataQueue(VecDeque<DataEvent>);
-
-impl DataQueue for SyncDataQueue {
-    fn push(&mut self, event: DataEvent) {
-        self.0.push_back(event);
-    }
-}
-
+/// # Panics
+///
+/// Panics if the global data queue has not been initialized.
 #[must_use]
 pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
     DATA_QUEUE
@@ -49,6 +44,9 @@ pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if setting the global data queue fails or it is already set.
 pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
     DATA_QUEUE
         .try_with(|deque| {
@@ -59,6 +57,9 @@ pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
 
 pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
+/// # Panics
+///
+/// Panics if the global clock has not been initialized.
 #[must_use]
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
@@ -71,6 +72,9 @@ pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
         .expect("Should be able to access thread local storage")
 }
 
+/// # Panics
+///
+/// Panics if setting the global clock fails or it is already set.
 pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
@@ -82,6 +86,10 @@ pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
 pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscribeCommand>>>;
 
 /// Get globally shared message bus command queue
+///
+/// # Panics
+///
+/// Panics if the global message bus commands have not been initialized.
 #[must_use]
 pub fn get_msgbus_cmd() -> MessageBusCommands {
     MSGBUS_CMD
@@ -101,12 +109,12 @@ pub trait Runner {
     fn run(&mut self, engine: &mut DataEngine);
 }
 
-pub struct BacktestRunner {
-    pub dq: DataResponseQueue,
+#[derive(Debug)]
+pub struct SyncRunner {
     pub clock: Rc<RefCell<TestClock>>,
 }
 
-// TODO: Untangle puzzle later
+// TODO: Untangle puzzle later (can use common trait once message bus wired up)
 // impl Runner for BacktestRunner {
 //     fn new() -> Self {
 //         let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -151,9 +159,8 @@ pub struct BacktestRunner {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use futures::StreamExt;
     use nautilus_common::{
-        clock::{LiveClock, TestClock},
+        clock::TestClock,
         timer::{TimeEvent, TimeEventCallback},
     };
     use rstest::rstest;
@@ -166,10 +173,11 @@ mod tests {
         set_clock(test_clock.clone());
 
         // component/actor adding an alert
-        get_clock().borrow_mut().set_time_alert_ns(
+        let _ = get_clock().borrow_mut().set_time_alert_ns(
             "hola",
             2.into(),
             Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
+            None,
         );
 
         // runner pulling advancing and pulling from event stream

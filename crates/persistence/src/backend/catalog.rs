@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
+use std::{fmt::Debug, path::PathBuf};
 
 use datafusion::arrow::record_batch::RecordBatch;
 use heck::ToSnakeCase;
@@ -37,6 +37,14 @@ pub struct ParquetDataCatalog {
     base_path: PathBuf,
     batch_size: usize,
     session: DataBackendSession,
+}
+
+impl Debug for ParquetDataCatalog {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ParquetDataCatalog))
+            .field("base_path", &self.base_path)
+            .finish()
+    }
 }
 
 impl ParquetDataCatalog {

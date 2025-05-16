@@ -23,13 +23,9 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Debug, Display},
-    hash::Hash,
-};
+use std::fmt::{Debug, Display};
 
-use indexmap::IndexMap;
+use crate::collections::{MapLike, SetLike};
 
 /// A message prefix that can be used with calls to `expect` or other assertion-related functions.
 ///
@@ -71,7 +67,7 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 ///
 /// # Errors
 ///
-/// This function returns an error if `s` is empty.
+/// Returns an error if `s` is empty.
 #[inline(always)]
 pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     if s.as_ref().is_empty() {
@@ -84,10 +80,10 @@ pub fn check_nonempty_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result
 ///
 /// # Errors
 ///
-/// This function returns an error:
-/// - If `s` is an empty string.
-/// - If `s` consists solely of whitespace characters.
-/// - If `s` contains one or more non-ASCII characters.
+/// Returns an error if:
+/// - `s` is an empty string.
+/// - `s` consists solely of whitespace characters.
+/// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
 pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
     let s = s.as_ref();
@@ -118,13 +114,12 @@ pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()
 ///
 /// # Errors
 ///
-/// This function returns an error:
-/// - If `s` is an empty string.
-/// - If `s` consists solely of whitespace characters.
-/// - If `s` contains one or more non-ASCII characters.
+/// Returns an error if:
+/// - `s` is an empty string.
+/// - `s` consists solely of whitespace characters.
+/// - `s` contains one or more non-ASCII characters.
 #[inline(always)]
 pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
-    let s = s.as_ref();
     if let Some(s) = s {
         check_valid_string(s, param)?;
     }
@@ -152,8 +147,8 @@ pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> any
 /// Returns an error if the validation check fails.
 #[inline(always)]
 pub fn check_equal<T: PartialEq + Debug + Display>(
-    lhs: T,
-    rhs: T,
+    lhs: &T,
+    rhs: &T,
     lhs_param: &str,
     rhs_param: &str,
 ) -> anyhow::Result<()> {
@@ -375,13 +370,16 @@ pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> 
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+pub fn check_map_empty<M>(map: &M, param: &str) -> anyhow::Result<()>
+where
+    M: MapLike,
+{
     if !map.is_empty() {
         anyhow::bail!(
             "the '{param}' map `&<{}, {}>` was not empty",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<M::Key>(),
+            std::any::type_name::<M::Value>(),
+        );
     }
     Ok(())
 }
@@ -392,13 +390,16 @@ pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
+pub fn check_map_not_empty<M>(map: &M, param: &str) -> anyhow::Result<()>
+where
+    M: MapLike,
+{
     if map.is_empty() {
         anyhow::bail!(
             "the '{param}' map `&<{}, {}>` was empty",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<M::Key>(),
+            std::any::type_name::<M::Value>(),
+        );
     }
     Ok(())
 }
@@ -409,22 +410,21 @@ pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Re
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_not_in_map<K, V>(
-    key: &K,
-    map: &HashMap<K, V>,
+pub fn check_key_not_in_map<M>(
+    key: &M::Key,
+    map: &M,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash + Eq + Display + Clone,
-    V: Debug,
+    M: MapLike,
 {
     if map.contains_key(key) {
         anyhow::bail!(
             "the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<M::Key>(),
+            std::any::type_name::<M::Value>(),
+        );
     }
     Ok(())
 }
@@ -435,74 +435,21 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_key_in_map<K, V>(
-    key: &K,
-    map: &HashMap<K, V>,
+pub fn check_key_in_map<M>(
+    key: &M::Key,
+    map: &M,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
 where
-    K: Hash + Eq + Display + Clone,
-    V: Debug,
+    M: MapLike,
 {
     if !map.contains_key(key) {
         anyhow::bail!(
             "the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
-}
-
-/// Checks the `key` is **not** in the `map`.
-///
-/// # Errors
-///
-/// Returns an error if the validation check fails.
-#[inline(always)]
-pub fn check_key_not_in_index_map<K, V>(
-    key: &K,
-    map: &IndexMap<K, V>,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
-where
-    K: Hash + Eq + Display + Clone,
-    V: Debug,
-{
-    if map.contains_key(key) {
-        anyhow::bail!(
-            "the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
-}
-
-/// Checks the `key` is in the `map`.
-///
-/// # Errors
-///
-/// Returns an error if the validation check fails.
-#[inline(always)]
-pub fn check_key_in_index_map<K, V>(
-    key: &K,
-    map: &IndexMap<K, V>,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
-where
-    K: Hash + Eq + Display + Clone,
-    V: Debug,
-{
-    if !map.contains_key(key) {
-        anyhow::bail!(
-            "the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<M::Key>(),
+            std::any::type_name::<M::Value>(),
+        );
     }
     Ok(())
 }
@@ -513,20 +460,20 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_not_in_set<V>(
-    member: &V,
-    set: &HashSet<V>,
+pub fn check_member_not_in_set<S>(
+    member: &S::Item,
+    set: &S,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash + Eq + Display + Clone,
+    S: SetLike,
 {
     if set.contains(member) {
         anyhow::bail!(
             "the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<S::Item>(),
+        );
     }
     Ok(())
 }
@@ -537,20 +484,20 @@ where
 ///
 /// Returns an error if the validation check fails.
 #[inline(always)]
-pub fn check_member_in_set<V>(
-    member: &V,
-    set: &HashSet<V>,
+pub fn check_member_in_set<S>(
+    member: &S::Item,
+    set: &S,
     member_name: &str,
     set_name: &str,
 ) -> anyhow::Result<()>
 where
-    V: Hash + Eq + Display + Clone,
+    S: SetLike,
 {
     if !set.contains(member) {
         anyhow::bail!(
             "the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
+            std::any::type_name::<S::Item>(),
+        );
     }
     Ok(())
 }
@@ -560,7 +507,10 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::fmt::Display;
+    use std::{
+        collections::{HashMap, HashSet},
+        fmt::Display,
+    };
 
     use rstest::rstest;
 
@@ -658,7 +608,7 @@ mod tests {
         #[case] rhs_param: &str,
         #[case] expected: bool,
     ) {
-        let result = check_equal(lhs, rhs, lhs_param, rhs_param).is_ok();
+        let result = check_equal(&lhs, &rhs, lhs_param, rhs_param).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -919,36 +869,6 @@ mod tests {
         #[case] expected: bool,
     ) {
         let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(&IndexMap::<u32, u32>::new(), 5, "key", "map", true)] // empty map
-    #[case(&IndexMap::from([(1, 10), (2, 20)]), 1, "key", "map", false)] // key exists
-    #[case(&IndexMap::from([(1, 10), (2, 20)]), 5, "key", "map", true)] // key doesn't exist
-    fn test_check_key_not_in_index_map(
-        #[case] map: &IndexMap<u32, u32>,
-        #[case] key: u32,
-        #[case] key_name: &str,
-        #[case] map_name: &str,
-        #[case] expected: bool,
-    ) {
-        let result = check_key_not_in_index_map(&key, map, key_name, map_name).is_ok();
-        assert_eq!(result, expected);
-    }
-
-    #[rstest]
-    #[case(&IndexMap::<u32, u32>::new(), 5, "key", "map", false)] // empty map
-    #[case(&IndexMap::from([(1, 10), (2, 20)]), 1, "key", "map", true)] // key exists
-    #[case(&IndexMap::from([(1, 10), (2, 20)]), 5, "key", "map", false)] // key doesn't exist
-    fn test_check_key_in_index_map(
-        #[case] map: &IndexMap<u32, u32>,
-        #[case] key: u32,
-        #[case] key_name: &str,
-        #[case] map_name: &str,
-        #[case] expected: bool,
-    ) {
-        let result = check_key_in_index_map(&key, map, key_name, map_name).is_ok();
         assert_eq!(result, expected);
     }
 

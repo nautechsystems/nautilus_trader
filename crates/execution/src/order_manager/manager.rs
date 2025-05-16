@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
@@ -48,6 +48,14 @@ pub struct OrderManager {
     cancel_order_handler: Option<CancelOrderHandlerAny>,
     modify_order_handler: Option<ModifyOrderHandlerAny>,
     submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
+}
+
+impl Debug for OrderManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderManager))
+            .field("pending_commands", &self.submit_order_commands.len())
+            .finish()
+    }
 }
 
 impl OrderManager {
@@ -130,6 +138,9 @@ impl OrderManager {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if creating a new submit order fails.
     pub fn create_new_submit_order(
         &mut self,
         order: &OrderAny,
@@ -256,6 +267,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the OTO child order cannot be found for the given client order ID.
     pub fn handle_order_filled(&mut self, filled: OrderFilled) {
         let order = if let Some(order) = self.cache.borrow().order(&filled.client_order_id).cloned()
         {
@@ -377,6 +391,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a contingent order cannot be found for the given client order ID.
     pub fn handle_contingencies(&mut self, order: OrderAny) {
         let (filled_qty, leaves_qty, is_spawn_active) =
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
@@ -454,6 +471,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if an OCO contingent order cannot be found for the given client order ID.
     pub fn handle_contingencies_update(&mut self, order: OrderAny) {
         let quantity = match order.exec_spawn_id() {
             Some(exec_spawn_id) => {

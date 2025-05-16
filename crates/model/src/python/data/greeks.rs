@@ -125,6 +125,11 @@ impl BlackScholesGreeksResult {
     }
 }
 
+/// Computes Black-Scholes greeks for given parameters.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the greeks calculation fails.
 #[pyfunction]
 #[pyo3(name = "black_scholes_greeks")]
 #[allow(clippy::too_many_arguments)]
@@ -142,6 +147,11 @@ pub fn py_black_scholes_greeks(
     Ok(result)
 }
 
+/// Computes the implied volatility for an option given its parameters and market price.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if implied volatility calculation fails.
 #[pyfunction]
 #[pyo3(name = "imply_vol")]
 pub fn py_imply_vol(
@@ -157,6 +167,11 @@ pub fn py_imply_vol(
     Ok(vol)
 }
 
+/// Computes implied volatility and option greeks for given parameters and market price.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if calculation fails.
 #[pyfunction]
 #[pyo3(name = "imply_vol_and_greeks")]
 #[allow(clippy::too_many_arguments)]

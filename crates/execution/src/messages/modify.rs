@@ -46,6 +46,11 @@ pub struct ModifyOrder {
 impl ModifyOrder {
     /// Creates a new [`ModifyOrder`] instance.
     #[allow(clippy::too_many_arguments)]
+    /// Creates a new `ModifyOrder` message.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if parameters are invalid.
     pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
@@ -99,6 +104,7 @@ pub trait ModifyOrderHandler {
     fn handle_modify_order(&self, order: &mut OrderAny, quantity: Quantity);
 }
 
+#[derive(Debug)]
 pub enum ModifyOrderHandlerAny {
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
 }

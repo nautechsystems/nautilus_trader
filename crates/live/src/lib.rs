@@ -29,4 +29,13 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+pub mod data;
 pub mod runner;

@@ -63,6 +63,11 @@ impl CashAccount {
         false
     }
 
+    /// Recalculates the account balance for the specified currency based on current margins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails during balance update.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => *balance,
@@ -427,7 +432,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("800032 USD"));
+        assert_eq!(balance_locked, Money::from("800000 USD"));
     }
 
     #[rstest]
@@ -444,7 +449,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        assert_eq!(balance_locked, Money::from("1000040 AUD"));
+        assert_eq!(balance_locked, Money::from("1000000 AUD"));
     }
 
     #[rstest]

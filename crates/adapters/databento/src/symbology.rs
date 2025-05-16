@@ -19,7 +19,6 @@ use ahash::AHashMap;
 use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
 use indexmap::IndexMap;
-use nautilus_core::correctness::check_slice_not_empty;
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 
 use super::types::PublisherId;
@@ -40,10 +39,13 @@ impl MetadataCache {
     }
 
     pub fn symbol_map_for_date(&mut self, date: time::Date) -> dbn::Result<&PitSymbolMap> {
-        Ok(self
-            .date_metadata_map
-            .entry(date)
-            .or_insert_with(|| self.metadata.symbol_map_for_date(date).unwrap()))
+        // Insert metadata for date if missing
+        if !self.date_metadata_map.contains_key(&date) {
+            let map = self.metadata.symbol_map_for_date(date)?;
+            self.date_metadata_map.insert(date, map);
+        }
+        // SAFETY: Key just inserted if absent
+        Ok(self.date_metadata_map.get(&date).unwrap())
     }
 }
 
@@ -63,7 +65,9 @@ pub fn decode_nautilus_instrument_id(
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &HashMap<Symbol, Venue>,
 ) -> anyhow::Result<InstrumentId> {
-    let publisher = record.publisher().expect("Invalid `publisher` for record");
+    let publisher = record
+        .publisher()
+        .map_err(|e| anyhow::anyhow!("Invalid `publisher` for record: {e}"))?;
     let publisher_id = publisher as PublisherId;
     let venue = publisher_venue_map
         .get(&publisher_id)
@@ -112,7 +116,7 @@ pub fn get_nautilus_instrument_id_for_record(
     let duration = time::Duration::nanoseconds(nanoseconds as i64);
     let datetime = time::OffsetDateTime::UNIX_EPOCH
         .checked_add(duration)
-        .unwrap(); // SAFETY: Relying on correctness of record timestamps
+        .ok_or_else(|| anyhow::anyhow!("Timestamp overflow for record"))?;
     let date = datetime.date();
     let symbol_map = metadata.symbol_map_for_date(date)?;
     let raw_symbol = symbol_map
@@ -143,10 +147,10 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
 }
 
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
-    check_slice_not_empty(symbols, stringify!(symbols)).unwrap();
-
-    // SAFETY: We checked len so know there must be at least one symbol
-    let first_symbol = symbols.first().unwrap();
+    if symbols.is_empty() {
+        anyhow::bail!("No symbols provided");
+    }
+    let first_symbol = symbols[0];
     let first_stype = infer_symbology_type(first_symbol);
 
     for symbol in symbols {
@@ -194,10 +198,32 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     fn test_check_consistent_symbology_when_empty_symbols() {
         let symbols: Vec<&str> = vec![];
-        let _ = check_consistent_symbology(&symbols);
+        assert!(check_consistent_symbology(&symbols).is_err());
+    }
+
+    #[rstest]
+    fn test_instrument_id_to_symbol_string_updates_map() {
+        use nautilus_model::identifiers::Venue;
+        let symbol = Symbol::from("TEST");
+        let venue = Venue::from("XNAS");
+        let instrument_id = InstrumentId::new(symbol, venue);
+        let mut map: HashMap<Symbol, Venue> = HashMap::new();
+
+        // First call should insert the mapping
+        let sym_str = instrument_id_to_symbol_string(instrument_id, &mut map);
+        assert_eq!(sym_str, "TEST");
+        assert_eq!(map.get(&Symbol::from("TEST")), Some(&Venue::from("XNAS")));
+
+        // Call again with same symbol but different venue should not override existing
+        let other = Venue::from("XLON");
+        let inst2 = InstrumentId::new(Symbol::from("TEST"), other);
+        let sym_str2 = instrument_id_to_symbol_string(inst2, &mut map);
+        assert_eq!(sym_str2, "TEST");
+
+        // Venue remains the original
+        assert_eq!(map.get(&Symbol::from("TEST")), Some(&Venue::from("XNAS")));
     }
 
     #[rstest]
