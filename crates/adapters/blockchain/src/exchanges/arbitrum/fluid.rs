@@ -13,15 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use std::sync::LazyLock;
+
+use nautilus_model::defi::{
+    chain::chains,
+    dex::{AmmType, Dex},
+};
+
+use crate::exchanges::extended::DexExtended;
+
+/// Fluid DEX on Arbitrum
+pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
+    let dex = Dex::new(
+        chains::ARBITRUM.clone(),
+        "Fluid DEX",
+        "0x91716C4EDA1Fb55e84Bf8b4c7085f84285c19085",
+        AmmType::CLAMM,
+        "",
+    );
+    DexExtended::new(dex)
+});

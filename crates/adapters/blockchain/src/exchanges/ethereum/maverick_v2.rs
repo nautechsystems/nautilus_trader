@@ -13,15 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use std::sync::LazyLock;
+
+use nautilus_model::defi::{
+    chain::chains,
+    dex::{AmmType, Dex},
+};
+
+use crate::exchanges::extended::DexExtended;
+
+/// Maverick V2 DEX on Ethereum
+pub static MAVERICK_V2: LazyLock<DexExtended> = LazyLock::new(|| {
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "Maverick V2",
+        "0x42cc45D0F0AC1Ff6A8c4820B9B9AB73c0784BBCb",
+        AmmType::CLAMM,
+        "",
+    );
+    DexExtended::new(dex)
+});

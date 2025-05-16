@@ -13,15 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[cfg(feature = "hypersync")]
-pub mod cache;
-pub mod config;
-pub mod contracts;
-#[cfg(feature = "hypersync")]
-pub mod data;
-pub mod events;
-#[cfg(feature = "hypersync")]
-pub mod exchanges;
-#[cfg(feature = "hypersync")]
-pub mod hypersync;
-pub mod rpc;
+use std::sync::LazyLock;
+
+use nautilus_model::defi::{
+    chain::chains,
+    dex::{AmmType, Dex},
+};
+
+use crate::exchanges::extended::DexExtended;
+
+/// PancakeSwap V3 DEX on Base
+pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
+    let dex = Dex::new(
+        chains::BASE.clone(),
+        "PancakeSwap V3",
+        "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+        AmmType::CLAMM,
+        "",
+    );
+    DexExtended::new(dex)
+});
