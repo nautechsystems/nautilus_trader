@@ -271,7 +271,7 @@ mod tests {
     fn test_nan_poisoning_and_reset_recovery() {
         let mut ema = ExponentialMovingAverage::new(4, None);
         for x in 0..3 {
-            ema.update_raw(x as f64);
+            ema.update_raw(f64::from(x));
             assert!(ema.value().is_finite());
         }
 

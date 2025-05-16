@@ -25,7 +25,7 @@ use crate::cache::rows::TokenRow;
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
 pub struct BlockchainCacheDatabase {
-    /// PostgreSQL connection pool used for database operations
+    /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
 }
 
@@ -41,13 +41,13 @@ impl BlockchainCacheDatabase {
     /// Seeds the database with a blockchain chain record.
     pub async fn seed_chain(&self, chain: &Chain) -> anyhow::Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO chain (
                 chain_id, name
             ) VALUES ($1,$2)
             ON CONFLICT (chain_id)
             DO NOTHING
-        "#,
+        ",
         )
         .bind(chain.chain_id as i32)
         .bind(chain.name.to_string())
@@ -60,7 +60,7 @@ impl BlockchainCacheDatabase {
     /// Adds or updates a DEX (Decentralized Exchange) record in the database.
     pub async fn add_dex(&self, dex: &Dex) -> anyhow::Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO dex (
                 chain_id, name, factory_address
             ) VALUES ($1, $2, $3)
@@ -68,7 +68,7 @@ impl BlockchainCacheDatabase {
             DO UPDATE
             SET
                 factory_address = $3
-        "#,
+        ",
         )
         .bind(dex.chain.chain_id as i32)
         .bind(dex.name.as_ref())
@@ -82,7 +82,7 @@ impl BlockchainCacheDatabase {
     /// Adds or updates a liquidity pool/pair record in the database.
     pub async fn add_pool(&self, pool: &Pool) -> anyhow::Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO pool (
                 chain_id, address, dex_name, creation_block,
                 token0_chain, token0_address,
@@ -100,7 +100,7 @@ impl BlockchainCacheDatabase {
                 token1_address = $8,
                 fee = $9,
                 tick_spacing = $10
-        "#,
+        ",
         )
         .bind(pool.chain.chain_id as i32)
         .bind(pool.address.as_str())
@@ -121,7 +121,7 @@ impl BlockchainCacheDatabase {
     /// Adds or updates a token record in the database.
     pub async fn add_token(&self, token: &Token) -> anyhow::Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO token (
                 chain_id, address, name, symbol, decimals
             ) VALUES ($1, $2, $3, $4, $5)
@@ -131,13 +131,13 @@ impl BlockchainCacheDatabase {
                 name = $3,
                 symbol = $4,
                 decimals = $5
-        "#,
+        ",
         )
         .bind(token.chain.chain_id as i32)
         .bind(token.address.as_str())
         .bind(token.name.as_str())
         .bind(token.symbol.as_str())
-        .bind(token.decimals as i32)
+        .bind(i32::from(token.decimals))
         .execute(&self.pool)
         .await
         .map(|_| ())

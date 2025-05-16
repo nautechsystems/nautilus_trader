@@ -60,7 +60,7 @@ fn decode_hex_response(encoded_response: &str) -> Vec<u8> {
 impl Erc20Contract {
     /// Creates a new ERC20 contract interface with the specified RPC client.
     #[must_use]
-    pub fn new(client: Arc<BlockchainHttpRpcClient>) -> Self {
+    pub const fn new(client: Arc<BlockchainHttpRpcClient>) -> Self {
         Self { client }
     }
 
@@ -92,8 +92,7 @@ impl Erc20Contract {
                 match ERC20::nameCall::abi_decode_returns(&bytes) {
                     Ok(decoded_name) => Ok(decoded_name),
                     Err(e) => Err(BlockchainRpcClientError::AbiDecodingError(format!(
-                        "Error decoding ERC20 contract name with error {}",
-                        e
+                        "Error decoding ERC20 contract name with error {e}"
                     ))),
                 }
             }

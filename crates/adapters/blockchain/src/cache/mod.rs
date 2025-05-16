@@ -60,7 +60,7 @@ impl BlockchainCache {
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         // Seed target adapter chain in database
         if let Some(database) = &self.database {
-            database.seed_chain(&self.chain).await?
+            database.seed_chain(&self.chain).await?;
         }
         self.load_tokens().await?;
         Ok(())
@@ -68,7 +68,7 @@ impl BlockchainCache {
 
     /// Adds a DEX to the cache with the specified identifier.
     pub async fn add_dex(&mut self, dex_id: String, dex: DexExtended) -> anyhow::Result<()> {
-        log::info!("Adding dex {} to the cache", dex_id);
+        log::info!("Adding dex {dex_id} to the cache");
         if let Some(database) = &self.database {
             database.add_dex(&dex).await?;
         }

@@ -42,6 +42,7 @@ pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
 /// Returns a vector of references to all Base Dexes
+#[must_use]
 pub fn all() -> Vec<&'static DexExtended> {
     vec![
         &*AERODROME_SLIPSTREAM,
@@ -59,6 +60,7 @@ pub fn all() -> Vec<&'static DexExtended> {
 }
 
 /// Returns a map of Base DEX name to Dex reference for easy lookup
+#[must_use]
 pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     let mut map = HashMap::new();
     map.insert("aerodrome_slipstream", &*AERODROME_SLIPSTREAM);

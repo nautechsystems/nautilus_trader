@@ -24,6 +24,7 @@ use serde::de::DeserializeOwned;
 use crate::rpc::error::BlockchainRpcClientError;
 
 /// Client for making HTTP-based RPC requests to blockchain nodes.
+///
 /// This client is designed to interact with Ethereum-compatible blockchain networks, providing
 /// methods to execute RPC calls and handle responses in a type-safe manner.
 pub struct BlockchainHttpRpcClient {
@@ -41,8 +42,8 @@ impl BlockchainHttpRpcClient {
         });
         let http_client = HttpClient::new(HashMap::new(), vec![], Vec::new(), default_quota, None);
         Self {
-            http_client,
             http_rpc_url,
+            http_client,
         }
     }
 
@@ -52,7 +53,7 @@ impl BlockchainHttpRpcClient {
         rpc_request: serde_json::Value,
     ) -> Result<Bytes, BlockchainRpcClientError> {
         let body_bytes = serde_json::to_vec(&rpc_request).map_err(|e| {
-            BlockchainRpcClientError::ClientError(format!("Failed to serialize request: {}", e))
+            BlockchainRpcClientError::ClientError(format!("Failed to serialize request: {e}"))
         })?;
 
         match self
@@ -89,7 +90,8 @@ impl BlockchainHttpRpcClient {
         }
     }
 
-    /// Creates a properly formatted eth_call JSON-RPC request object targeting a specific contract address with encoded function data.
+    /// Creates a properly formatted `eth_call` JSON-RPC request object targeting a specific contract address with encoded function data.
+    #[must_use]
     pub fn construct_eth_call(&self, to: &str, call_data: &[u8]) -> serde_json::Value {
         let encoded_data = hex::encode(call_data);
         let call = serde_json::json!({

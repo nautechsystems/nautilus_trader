@@ -124,7 +124,7 @@ impl BlockchainDataClient {
         );
         self.cache
             .initialize_database(pg_connect_options.into())
-            .await
+            .await;
     }
 
     /// Establishes connections to the data providers and cache.
@@ -149,11 +149,7 @@ impl BlockchainDataClient {
         from_block: Option<u32>,
     ) -> anyhow::Result<()> {
         let from_block = from_block.unwrap_or(0);
-        log::info!(
-            "Syncing dex exchange pools for {} from block {}",
-            dex_id,
-            from_block
-        );
+        log::info!("Syncing dex exchange pools for {dex_id} from block {from_block}");
 
         let dex = if let Some(dex) = self.cache.get_dex(dex_id) {
             dex.clone()
@@ -184,7 +180,7 @@ impl BlockchainDataClient {
                 token_info.symbol,
                 token_info.decimals,
             );
-            log::info!("Saving fetched token {} in the cache.", token);
+            log::info!("Saving fetched token {token} in the cache.");
             self.cache.add_token(token).await.unwrap();
         }
     }
