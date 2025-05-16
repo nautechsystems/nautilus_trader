@@ -598,11 +598,15 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-#[must_use]
 pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
     let topic_bytes = topic.as_bytes();
     let pattern_bytes = pattern.as_bytes();
 
+    is_matching_fast(topic_bytes, pattern_bytes)
+}
+
+#[must_use]
+pub fn is_matching_fast(topic: &[u8], pattern: &[u8]) -> bool {
     // Stack to store states for backtracking (topic_idx, pattern_idx)
     let mut stack = vec![(0, 0)];
 
@@ -619,7 +623,7 @@ pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
             }
 
             // Handle '*' wildcard
-            if pattern_bytes[j] == b'*' {
+            if pattern[j] == b'*' {
                 // Try skipping '*' entirely first
                 stack.push((i, j + 1));
 
@@ -631,9 +635,7 @@ pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
                 break;
             }
             // Handle '?' or exact character match
-            else if i < topic.len()
-                && (pattern_bytes[j] == b'?' || topic_bytes[i] == pattern_bytes[j])
-            {
+            else if i < topic.len() && (pattern[j] == b'?' || topic[i] == pattern[j]) {
                 // Continue matching linearly without stack operations
                 i += 1;
                 j += 1;
