@@ -12,7 +12,7 @@ Released on TBD (UTC).
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
-- Introduce HyperSync client to blockchain adapter (#2606), thanks @filipmacek
+- Introduced HyperSync client to blockchain adapter (#2606), thanks @filipmacek
 
 ### Breaking Changes
 None
@@ -47,6 +47,7 @@ None
 - Upgraded `tokio` crate to v1.45.0
 
 ### Fixes
+- Fixed portfolio account updates leading to incorrect balances (#2632, #2637), thanks for reporting @bartolootrit and @DeirhX
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed authentication for Redis when password provided with no username
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
