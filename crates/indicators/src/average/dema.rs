@@ -281,7 +281,7 @@ mod tests {
     #[rstest]
     fn test_inner_ema_values_are_reset(mut indicator_dema_10: DoubleExponentialMovingAverage) {
         for i in 1..=3 {
-            indicator_dema_10.update_raw(i as f64);
+            indicator_dema_10.update_raw(f64::from(i));
         }
         assert_ne!(indicator_dema_10.ema1.value(), 0.0);
         assert_ne!(indicator_dema_10.ema2.value(), 0.0);

@@ -81,7 +81,7 @@ impl DatabentoLiveClient {
                     Python::with_gil(|py| match instrument_any_to_pyobject(py, data) {
                         Ok(py_obj) => call_python(py, &callback, py_obj),
                         Err(e) => tracing::error!("Failed creating instrument: {e}"),
-                    })
+                    });
                 }
                 LiveMessage::Status(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py_any_unwrap(py);

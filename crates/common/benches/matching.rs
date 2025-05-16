@@ -31,10 +31,7 @@ fn create_topics(n: usize, rng: &mut StdRng) -> Vec<Ustr> {
         let model = model[rng.random_range(0..model.len())];
         let venue = venue[rng.random_range(0..venue.len())];
         let instrument = instrument[rng.random_range(0..instrument.len())];
-        topics.push(Ustr::from(&format!(
-            "{}.{}.{}.{}",
-            cat, model, venue, instrument
-        )));
+        topics.push(Ustr::from(&format!("{cat}.{model}.{venue}.{instrument}")));
     }
     topics
 }
@@ -50,9 +47,9 @@ fn bench_matching(c: &mut Criterion) {
         for ele in [1, 10, 100, 1000] {
             let topics = create_topics(ele, &mut rng);
 
-            custom_group.bench_function(format!("{} topics", ele), |b| {
+            custom_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
-                    for topic in topics.iter() {
+                    for topic in &topics {
                         black_box(is_matching(&pattern_ustr, topic));
                     }
                 });
@@ -69,10 +66,10 @@ fn bench_matching(c: &mut Criterion) {
         for ele in [1, 10, 100, 1000] {
             let topics = create_topics(ele, &mut rng);
 
-            regex_group.bench_function(format!("{} topics", ele), |b| {
+            regex_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
                     let regex = Regex::new(pattern).unwrap();
-                    for topic in topics.iter() {
+                    for topic in &topics {
                         black_box(regex.is_match(topic));
                     }
                 });
@@ -89,9 +86,9 @@ fn bench_matching(c: &mut Criterion) {
         for ele in [1, 10, 100, 1000] {
             let topics = create_topics(ele, &mut rng);
 
-            iter_group.bench_function(format!("{} topics", ele), |b| {
+            iter_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
-                    for topic in topics.iter() {
+                    for topic in &topics {
                         black_box(is_matching_backtracking(&pattern_ustr, topic));
                     }
                 });

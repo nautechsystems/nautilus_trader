@@ -115,12 +115,12 @@ impl OrderMatchingCore {
     }
 
     #[must_use]
-    pub fn get_orders_bid(&self) -> &[PassiveOrderAny] {
+    pub const fn get_orders_bid(&self) -> &[PassiveOrderAny] {
         self.orders_bid.as_slice()
     }
 
     #[must_use]
-    pub fn get_orders_ask(&self) -> &[PassiveOrderAny] {
+    pub const fn get_orders_ask(&self) -> &[PassiveOrderAny] {
         self.orders_ask.as_slice()
     }
 

@@ -38,35 +38,35 @@ impl CoinbaseIntxFixClient {
     #[getter]
     #[pyo3(name = "endpoint")]
     #[must_use]
-    pub fn py_endpoint(&self) -> &str {
+    pub const fn py_endpoint(&self) -> &str {
         self.endpoint()
     }
 
     #[getter]
     #[pyo3(name = "api_key")]
     #[must_use]
-    pub fn py_api_key(&self) -> &str {
+    pub const fn py_api_key(&self) -> &str {
         self.api_key()
     }
 
     #[getter]
     #[pyo3(name = "portfolio_id")]
     #[must_use]
-    pub fn py_portfolio_id(&self) -> &str {
+    pub const fn py_portfolio_id(&self) -> &str {
         self.portfolio_id()
     }
 
     #[getter]
     #[pyo3(name = "sender_comp_id")]
     #[must_use]
-    pub fn py_sender_comp_id(&self) -> &str {
+    pub const fn py_sender_comp_id(&self) -> &str {
         self.sender_comp_id()
     }
 
     #[getter]
     #[pyo3(name = "target_comp_id")]
     #[must_use]
-    pub fn py_target_comp_id(&self) -> &str {
+    pub const fn py_target_comp_id(&self) -> &str {
         self.target_comp_id()
     }
 
