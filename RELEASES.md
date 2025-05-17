@@ -45,7 +45,9 @@ None
 - Implemented `_subscribe_instrument` for dYdX and Bybit (#2636), thanks @davidsblom
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
 - Refined `BacktestDataIterator` correctness (#2591), thanks @faysou
+- Refined formatting of IB adapter files (#2639), thanks @faysou
 - Optimized message bus topic-matching logic in Rust by 100× (#2634), thanks @twitu
+- Changed to faster message bus pattern matching logic from Rust (#2643), thanks @twitu
 - Upgraded Rust (MSRV) to 1.87.0
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `databento` crate to v0.25.0
