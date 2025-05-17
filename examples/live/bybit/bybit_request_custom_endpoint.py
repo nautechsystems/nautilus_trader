@@ -17,6 +17,8 @@
 import os
 from datetime import timedelta
 
+from nautilus_trader.adapters.bybit import BYBIT
+from nautilus_trader.adapters.bybit import BYBIT_CLIENT_ID
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
@@ -33,16 +35,12 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import DataType
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading import Strategy
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 
 class RequestDemoStrategyConfig(StrategyConfig, frozen=True):
@@ -77,7 +75,7 @@ class RequestDemoStrategy(Strategy):
             BybitTickerData,
             metadata={"symbol": self.config.instrument_id.symbol},
         )
-        self.request_data(data_type, ClientId("BYBIT"))
+        self.request_data(data_type, BYBIT_CLIENT_ID)
 
     def on_historical_data(self, data: Data) -> None:
         if isinstance(data, BybitTickerData):
@@ -96,7 +94,7 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
     ),
     data_clients={
-        "BYBIT": BybitDataClientConfig(
+        BYBIT: BybitDataClientConfig(
             api_key=api_key,
             api_secret=api_secret,
             product_types=[BybitProductType.LINEAR],
@@ -105,7 +103,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "BYBIT": BybitExecClientConfig(
+        BYBIT: BybitExecClientConfig(
             api_key=api_key,
             api_secret=api_secret,
             product_types=[BybitProductType.LINEAR],
@@ -133,8 +131,8 @@ strategy_config = RequestDemoStrategyConfig(
 strategy_config = RequestDemoStrategy(config=strategy_config)
 
 node.trader.add_strategy(strategy_config)
-node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
-node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
+node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
+node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
 node.build()
 
 if __name__ == "__main__":

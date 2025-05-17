@@ -140,13 +140,14 @@ data and execution clients. To achieve this, add a `BYBIT` section to your clien
 configuration(s):
 
 ```python
+from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BYBIT": {
+        BYBIT: {
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
@@ -155,7 +156,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BYBIT": {
+        BYBIT: {
             "api_key": "YOUR_BYBIT_API_KEY",
             "api_secret": "YOUR_BYBIT_API_SECRET",
             "base_url_http": None,  # Override with custom endpoint
@@ -169,6 +170,7 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
@@ -177,8 +179,8 @@ from nautilus_trader.live.node import TradingNode
 node = TradingNode(config=config)
 
 # Register the client factories with the node
-node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
-node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
+node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
+node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
 
 # Finally build the node
 node.build()
