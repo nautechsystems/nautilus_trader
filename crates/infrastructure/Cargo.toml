@@ -55,6 +55,7 @@ rust_decimal = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
@@ -68,7 +69,6 @@ redis = { version = "0.31.0", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ], optional = true }
-sqlx = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
