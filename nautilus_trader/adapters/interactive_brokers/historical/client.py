@@ -127,11 +127,13 @@ class HistoricInteractiveBrokersClient:
                 load_contracts=frozenset(contracts) if contracts else None,
                 load_ids=frozenset(instrument_ids) if instrument_ids else None,
             )
+
         provider = InteractiveBrokersInstrumentProvider(
             self._client,
             instrument_provider_config,
         )
         await provider.load_all_async()
+
         return list(provider._instruments.values())
 
     async def _prepare_request_bars_parameters(
@@ -158,6 +160,7 @@ class HistoricInteractiveBrokersClient:
         # Adjust start and end time based on the timezone
         if start_date_time:
             start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
+
         end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
 
         if start_date_time and start_date_time >= end_date_time:
@@ -165,12 +168,14 @@ class HistoricInteractiveBrokersClient:
 
         if duration:
             pattern = r"^\d+\s[SDWMY]$"
+
             if not re.match(pattern, duration):
                 raise ValueError("duration must be in format: 'int S|D|W|M|Y'")
 
         # Prepare contracts and instrument_ids
         contracts = contracts or []
         instrument_ids = instrument_ids or []
+
         if not contracts and not instrument_ids:
             raise ValueError("Either contracts or instrument_ids must be provided")
 
@@ -243,7 +248,6 @@ class HistoricInteractiveBrokersClient:
 
         # Ensure instruments are fetched and cached
         await self._fetch_instruments_if_not_cached(contracts)
-
         data: list[Bar] = []
 
         for contract in contracts:
@@ -264,7 +268,6 @@ class HistoricInteractiveBrokersClient:
                         f"{instrument_id}: Requesting historical bars: {bar_type} ending on '{segment_end_date_time}' "
                         f"with duration '{segment_duration}'",
                     )
-
                     bars = await self._client.get_historical_bars(
                         bar_type,
                         contract,
@@ -273,6 +276,7 @@ class HistoricInteractiveBrokersClient:
                         segment_duration,
                         timeout=timeout,
                     )
+
                     if bars:
                         self.log.info(
                             f"{instrument_id}: Number of bars retrieved in batch: {len(bars)}",
@@ -327,10 +331,13 @@ class HistoricInteractiveBrokersClient:
             raise ValueError(
                 "tick_type must be one of: 'TRADES' (for TradeTicks), 'BID_ASK' (for QuoteTicks)",
             )
+
         if start_date_time >= end_date_time:
             raise ValueError("Start date must be before end date.")
+
         start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
         end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+
         if (end_date_time - start_date_time) > pd.Timedelta(days=1):
             self.log.warning(
                 "Requesting tick data for more than 1 day may take a long time, particularly for liquid instruments. "
@@ -339,6 +346,7 @@ class HistoricInteractiveBrokersClient:
 
         contracts = contracts or []
         instrument_ids = instrument_ids or []
+
         if not contracts and not instrument_ids:
             raise ValueError("Either contracts or instrument_ids must be provided")
 
@@ -354,16 +362,16 @@ class HistoricInteractiveBrokersClient:
 
         # Ensure instruments are fetched and cached
         await self._fetch_instruments_if_not_cached(contracts)
-
         data: list[TradeTick | QuoteTick] = []
+
         for contract in contracts:
             instrument_id = ib_contract_to_instrument_id(contract)
             current_start_date_time = start_date_time
+
             while True:
                 self.log.info(
                     f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
                 )
-
                 ticks: list[TradeTick | QuoteTick] = await self._client.get_historical_ticks(
                     contract=contract,
                     tick_type=tick_type,
@@ -429,8 +437,10 @@ class HistoricInteractiveBrokersClient:
 
         if min_timestamp.floor("S") == max_timestamp.floor("S"):
             max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
+
         if len(ticks) <= 50:
             max_timestamp = max_timestamp.floor("S") + pd.Timedelta(minutes=1)
+
         if max_timestamp >= end_date_time:
             return None, False
 
@@ -453,6 +463,7 @@ class HistoricInteractiveBrokersClient:
         """
         for contract in contracts:
             instrument_id = ib_contract_to_instrument_id(contract)
+
             if not self._client._cache.instrument(instrument_id):
                 self.log.info(f"Fetching Instrument for: {instrument_id}")
                 await self.request_instruments(contracts=[contract])
@@ -528,6 +539,7 @@ class HistoricInteractiveBrokersClient:
         )
 
         results = []
+
         if years:
             results.append((end_date, f"{years} Y"))
 

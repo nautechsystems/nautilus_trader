@@ -74,6 +74,7 @@ class InteractiveBrokersEWrapper(EWrapper):
             del prms["self"]
         else:
             prms = fnParams
+
         self._log.debug(f"Msg handled: function={fnName} data={prms}")
 
     def error(

@@ -142,6 +142,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.remove(self.id)
+
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
 
@@ -289,6 +290,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
 
         await self.instrument_provider.load_async(request.instrument_id)
+
         if instrument := self.instrument_provider.find(request.instrument_id):
             self._handle_data(instrument)
         else:
@@ -316,6 +318,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             request.start,
             request.end,
         )
+
         if not ticks:
             self._log.warning(f"No quote tick data received for {request.instrument_id}")
             return
@@ -342,6 +345,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             request.start,
             request.end,
         )
+
         if not ticks:
             self._log.warning(f"No trades received for {request.instrument_id}")
             return
@@ -363,6 +367,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end = pd.Timestamp.utcnow()
 
         ticks: list[QuoteTick | TradeTick] = []
+
         while (start and end > start) or (len(ticks) < limit > 0):
             await self._client.wait_until_ready()
             ticks_part = await self._client.get_historical_ticks(
@@ -372,12 +377,15 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 use_rth=self._use_regular_trading_hours,
                 timeout=self._request_timeout,
             )
+
             if not ticks_part:
                 break
+
             end = pd.Timestamp(min(ticks_part, key=attrgetter("ts_init")).ts_init, tz="UTC")
             ticks.extend(ticks_part)
 
         ticks.sort(key=lambda x: x.ts_init)
+
         return ticks
 
     async def _request_bars(self, request: RequestBars) -> None:
@@ -392,10 +400,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         limit = request.limit
+
         if not request.start and limit == 0:
             limit = 1000
 
         end = request.end
+
         if not request.end:
             end = pd.Timestamp.utcnow()
 
@@ -406,6 +416,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             duration_str = "7 D" if request.bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
 
         bars: list[Bar] = []
+
         while (request.start and end > request.start) or (len(bars) < limit > 0):
             bars_part: list[Bar] = await self._client.get_historical_bars(
                 bar_type=request.bar_type,
@@ -416,8 +427,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 timeout=self._request_timeout,
             )
             bars.extend(bars_part)
+
             if not bars_part or request.start:
                 break
+
             end = pd.Timestamp(min(bars, key=attrgetter("ts_event")).ts_event, tz="UTC")
 
         if bars:

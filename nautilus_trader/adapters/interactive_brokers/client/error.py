@@ -63,6 +63,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         msg = f"{error_string} (code: {error_code}, {req_id=})."
+
         if error_code in self.SUPPRESS_ERROR_LOGGING_CODES:
             self._log.debug(msg)
         else:
@@ -143,12 +144,15 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         subscription = self._subscriptions.get(req_id=req_id)
+
         if not subscription:
             return
+
         if error_code in [10189, 366, 102]:
             # Handle specific subscription-related error codes
             self._log.warning(f"{error_code}: {error_string}")
             subscription.cancel()
+
             if iscoroutinefunction(subscription.handle):
                 self._create_task(subscription.handle())
             else:
@@ -156,6 +160,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         elif error_code == 10182:
             # Handle disconnection error
             self._log.warning(f"{error_code}: {error_string}")
+
             if self._is_ib_connected.is_set():
                 self._log.info(
                     f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`.",
@@ -183,10 +188,12 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         request = self._requests.get(req_id=req_id)
+
         if error_code == 200:
             self._log.debug(f"{error_code}: {error_string}, {request}")
         else:
             self._log.warning(f"{error_code}: {error_string}, {request}")
+
         self._end_request(req_id, success=False)
 
     async def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
@@ -205,6 +212,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
         """
         order_ref = self._order_id_to_order_ref.get(req_id, None)
+
         if not order_ref:
             self._log.warning(f"Order reference not found for req_id {req_id}")
             return
