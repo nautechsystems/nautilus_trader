@@ -16,11 +16,13 @@
 from typing import Final
 
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
 BYBIT: Final[str] = "BYBIT"
 BYBIT_VENUE: Final[Venue] = Venue(BYBIT)
+BYBIT_CLIENT_ID: Final[ClientId] = ClientId(BYBIT)
 
 BYBIT_ALL_PRODUCTS: Final[list[BybitProductType]] = [
     BybitProductType.SPOT,

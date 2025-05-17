@@ -18,11 +18,13 @@ Define constants used in the dYdX adapter.
 
 from typing import Final
 
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
 DYDX: Final[str] = "DYDX"
 DYDX_VENUE: Final[Venue] = Venue(DYDX)
+DYDX_CLIENT_ID: Final[ClientId] = ClientId(DYDX)
 
 FEE_SCALING: Final[int] = 1_000_000
 DEFAULT_CURRENCY: Final[str] = "USDC"

@@ -17,11 +17,13 @@ from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
 BINANCE: Final[str] = "BINANCE"
 BINANCE_VENUE: Final[Venue] = Venue(BINANCE)
+BINANCE_CLIENT_ID: Final[ClientId] = ClientId(BINANCE)
 
 BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
 BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")
