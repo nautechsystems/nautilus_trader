@@ -178,6 +178,16 @@ cdef extern from "../includes/common.h":
         # The callable raw pointer.
         char *callback_ptr;
 
+    # Match a topic and a string pattern using iterative backtracking algorithm
+    # pattern can contains -
+    # '*' - match 0 or more characters after this
+    # '?' - match any character once
+    # 'a-z' - match the specific character
+    #
+    # # Safety
+    # - Passing `NULL` pointer will result in panic
+    uint8_t is_matching_ffi(const char *topic, const char *pattern);
+
     TestClock_API test_clock_new();
 
     void test_clock_drop(TestClock_API clock);

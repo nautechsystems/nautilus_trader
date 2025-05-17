@@ -64,6 +64,7 @@ from nautilus_trader.core.rust.common cimport component_state_from_cstr
 from nautilus_trader.core.rust.common cimport component_state_to_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
+from nautilus_trader.core.rust.common cimport is_matching_ffi
 from nautilus_trader.core.rust.common cimport live_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport live_clock_drop
 from nautilus_trader.core.rust.common cimport live_clock_new
@@ -2694,6 +2695,9 @@ cdef inline bint contains_wildcard(str topic_or_pattern):
 
 
 cdef inline bint is_matching(str topic, str pattern):
+    return is_matching_ffi(pystr_to_cstr(topic), pystr_to_cstr(pattern))
+
+cdef inline bint is_matching_old(str topic, str pattern):
     if not contains_wildcard(topic) and not contains_wildcard(pattern):
         return topic == pattern
 
@@ -2730,6 +2734,8 @@ cdef inline bint is_matching(str topic, str pattern):
 def is_matching_py(str topic, str pattern) -> bool:
     return is_matching(topic, pattern)
 
+def is_matching_old_py(str topic, str pattern) -> bool:
+    return is_matching_old(topic, pattern)
 
 cdef class Subscription:
     """

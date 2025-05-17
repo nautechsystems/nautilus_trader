@@ -64,10 +64,10 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 ///
 /// Panics if `ptr` is null.
 #[must_use]
-pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
+pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> &'static [u8] {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let cstr = unsafe { CStr::from_ptr(ptr) };
-    cstr.to_bytes().to_vec()
+    cstr.to_bytes()
 }
 
 /// Convert a C string pointer into an owned `Option<Ustr>`.
