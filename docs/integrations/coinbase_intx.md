@@ -31,7 +31,7 @@ No additional `coinbase_intx` installation is required; the adapter’s core com
 
 ## Examples
 
-You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase_intx).
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/coinbase_intx).
 These examples demonstrate how to set up live market data feeds and execution clients for trading on Coinbase International.
 
 ## Overview

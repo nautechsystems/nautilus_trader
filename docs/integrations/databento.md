@@ -42,7 +42,7 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Examples
 
-You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
 
 ## Databento documentation
 
