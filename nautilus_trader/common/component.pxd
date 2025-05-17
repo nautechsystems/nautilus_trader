@@ -314,6 +314,7 @@ cdef class MessageBus:
 
 
 cdef bint is_matching(str topic, str pattern)
+cdef bint is_matching_old(str topic, str pattern)
 
 
 cdef class Subscription:
