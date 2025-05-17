@@ -245,6 +245,11 @@ impl SocketClientInner {
     async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting");
 
+        if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+            tracing::debug!("Reconnect aborted due to disconnect state");
+            return Ok(());
+        }
+
         tokio::time::timeout(self.reconnect_timeout, async {
             let SocketConfig {
                 url,
@@ -262,7 +267,13 @@ impl SocketClientInner {
             } = &self.config;
             // Create a fresh connection
             let connector = self.connector.clone();
+            // Attempt to connect; abort early if a disconnect was requested
             let (reader, new_writer) = Self::tls_connect_with_server(url, *mode, connector).await?;
+
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after connect)");
+                return Ok(());
+            }
             tracing::debug!("Connected");
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
@@ -272,11 +283,23 @@ impl SocketClientInner {
             // Delay before closing connection
             tokio::time::sleep(Duration::from_millis(100)).await;
 
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after delay)");
+                return Ok(());
+            }
+
             if !self.read_task.is_finished() {
                 self.read_task.abort();
                 log_task_aborted("read");
             }
 
+            // If a disconnect was requested during reconnect, do not proceed to reactivate
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (before spawn read)");
+                return Ok(());
+            }
+
+            // Mark as active only if not disconnecting
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
@@ -780,17 +803,25 @@ impl SocketClient {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
-
+                            // Only invoke Python reconnect handler if still active
                             #[cfg(feature = "python")]
-                            if let Some(ref handler) = post_reconnection {
-                                Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => {
-                                        tracing::debug!("Called `post_reconnection` handler");
+                            {
+                                if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                    if let Some(ref handler) = post_reconnection {
+                                        Python::with_gil(|py| match handler.call0(py) {
+                                            Ok(_) => tracing::debug!(
+                                                "Called `post_reconnection` handler"
+                                            ),
+                                            Err(e) => tracing::error!(
+                                                "Error calling `post_reconnection` handler: {e}"
+                                            ),
+                                        });
                                     }
-                                    Err(e) => tracing::error!(
-                                        "Error calling `post_reconnection` handler: {e}"
-                                    ),
-                                });
+                                } else {
+                                    tracing::debug!(
+                                        "Skipping post_reconnection handlers due to disconnect state"
+                                    );
+                                }
                             }
                         }
                         Err(e) => {
@@ -1202,5 +1233,70 @@ def handler(bytes_data):
 
         client.close().await;
         server_task.abort();
+    }
+}
+
+#[cfg(test)]
+mod rust_tests {
+    use tokio::{
+        net::TcpListener,
+        task,
+        time::{Duration, sleep},
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_reconnect_then_close() {
+        // Bind an ephemeral port
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server task: accept one connection and then drop it
+        let server = task::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let _ = sock.shutdown();
+            }
+            // Keep listener alive briefly to avoid premature exit
+            sleep(Duration::from_secs(1)).await;
+        });
+
+        // Configure client with a short reconnect backoff
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            #[cfg(feature = "python")]
+            py_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        // Connect client (handler=None)
+        let client = {
+            #[cfg(feature = "python")]
+            {
+                SocketClient::connect(config.clone(), None, None, None, None)
+                    .await
+                    .unwrap()
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                SocketClient::connect(config.clone(), None).await.unwrap()
+            }
+        };
+
+        // Allow server to drop connection and client to notice
+        sleep(Duration::from_millis(100)).await;
+
+        // Now close the client
+        client.close().await;
+        assert!(client.is_closed());
+        server.abort();
     }
 }

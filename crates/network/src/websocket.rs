@@ -247,9 +247,20 @@ impl WebSocketClientInner {
     pub async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting");
 
+        if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+            tracing::debug!("Reconnect aborted due to disconnect state");
+            return Ok(());
+        }
+
         tokio::time::timeout(self.reconnect_timeout, async {
+            // Attempt to connect; abort early if a disconnect was requested
             let (new_writer, reader) =
                 Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
+
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after connect)");
+                return Ok(());
+            }
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
                 tracing::error!("{e}");
@@ -258,6 +269,11 @@ impl WebSocketClientInner {
             // Delay before closing connection
             tokio::time::sleep(Duration::from_millis(100)).await;
 
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after delay)");
+                return Ok(());
+            }
+
             if let Some(ref read_task) = self.read_task.take() {
                 if !read_task.is_finished() {
                     read_task.abort();
@@ -265,6 +281,13 @@ impl WebSocketClientInner {
                 }
             }
 
+            // If a disconnect was requested during reconnect, do not proceed to reactivate
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (before spawn read)");
+                return Ok(());
+            }
+
+            // Mark as active only if not disconnecting
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
@@ -885,24 +908,32 @@ impl WebSocketClient {
                 if mode.is_reconnect() || (mode.is_active() && !inner.is_alive()) {
                     match inner.reconnect().await {
                         Ok(()) => {
-                            tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
 
-                            if let Some(ref callback) = post_reconnection {
-                                callback();
-                            }
+                            // Only invoke callbacks if not in disconnect state
+                            if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                if let Some(ref callback) = post_reconnection {
+                                    callback();
+                                }
 
-                            // TODO: Python based websocket handlers deprecated (will be removed)
-                            #[cfg(feature = "python")]
-                            if let Some(ref handler) = py_post_reconnection {
-                                Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => {
-                                        tracing::debug!("Called `post_reconnection` handler");
-                                    }
-                                    Err(e) => tracing::error!(
-                                        "Error calling `post_reconnection` handler: {e}"
-                                    ),
-                                });
+                                // TODO: Python based websocket handlers deprecated (will be removed)
+                                #[cfg(feature = "python")]
+                                if let Some(ref callback) = py_post_reconnection {
+                                    Python::with_gil(|py| match callback.call0(py) {
+                                        Ok(_) => {
+                                            tracing::debug!("Called `post_reconnection` handler")
+                                        }
+                                        Err(e) => tracing::error!(
+                                            "Error calling `post_reconnection` handler: {e}"
+                                        ),
+                                    });
+                                }
+
+                                tracing::debug!("Reconnected successfully");
+                            } else {
+                                tracing::debug!(
+                                    "Skipping post_reconnection handlers due to disconnect state"
+                                );
                             }
                         }
                         Err(e) => {
@@ -1191,5 +1222,75 @@ mod tests {
         // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
+    }
+}
+
+#[cfg(test)]
+mod rust_tests {
+    use tokio::{
+        net::TcpListener,
+        task,
+        time::{Duration, sleep},
+    };
+    use tokio_tungstenite::accept_async;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_reconnect_then_disconnect() {
+        // Bind an ephemeral port
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server task: accept one ws connection then close it
+        let server = task::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let ws = accept_async(stream).await.unwrap();
+            drop(ws);
+            // Keep alive briefly
+            sleep(Duration::from_secs(1)).await;
+        });
+
+        // Build a rust consumer for incoming messages (unused here)
+        let (consumer, _rx) = Consumer::rust_consumer();
+
+        // Configure client with short reconnect backoff
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![],
+            handler: consumer,
+            heartbeat: None,
+            heartbeat_msg: None,
+            #[cfg(feature = "python")]
+            ping_handler: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+        };
+
+        // Connect the client
+        let client = {
+            #[cfg(feature = "python")]
+            {
+                WebSocketClient::connect(config.clone(), None, None, None, vec![], None)
+                    .await
+                    .unwrap()
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                WebSocketClient::connect(config.clone(), vec![], None)
+                    .await
+                    .unwrap()
+            }
+        };
+
+        // Allow server to drop connection and client to detect
+        sleep(Duration::from_millis(100)).await;
+        // Now immediately disconnect the client
+        client.disconnect().await;
+        assert!(client.is_disconnected());
+        server.abort();
     }
 }
