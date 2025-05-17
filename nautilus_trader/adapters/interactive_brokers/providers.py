@@ -77,6 +77,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def initialize(self, reload: bool = False) -> None:
         await super().initialize(reload)
+
         # Trigger contract loading only if `load_ids_on_start` is False and `load_contracts_on_start` is True
         if not self._load_ids_on_start and self._load_contracts_on_start:
             self._loaded = False
@@ -100,6 +101,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 for i in self._load_ids_on_start
             ]:
                 await self.load_async(instrument_id)
+
         # Load IBContracts
         if self._load_contracts_on_start:
             for contract in [
@@ -114,9 +116,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> list[ContractDetails]:
         try:
             details = await self._client.get_contract_details(contract=contract)
+
             if not details:
                 self._log.debug(f"No contract details returned for {contract}")
                 return []
+
             [qualified] = details
             self._log.info(
                 f"Contract qualified for {qualified.contract.localSymbol}."
@@ -127,6 +131,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         except ValueError as e:
             self._log.debug(f"No contract details found for the given kwargs {contract}, {e}")
             return []
+
         min_expiry = pd.Timestamp.now() + pd.Timedelta(
             days=(contract.min_expiry_days or self._min_expiry_days or 0),
         )
@@ -172,6 +177,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                         max_expiry=max_expiry,
                     )
                 details.extend(option_contracts_detail)
+
         return details
 
     async def get_future_chain_details(
@@ -191,6 +197,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             ),
         )
         self._log.debug(f"Got {details=}")
+
         return details
 
     async def get_option_chain_details_by_range(
@@ -202,12 +209,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     ) -> list[ContractDetails]:
         chains = await self._client.get_option_chains(underlying)
         filtered_chains = [chain for chain in chains if chain[0] == (exchange or "SMART")]
-
         details = []
+
         for chain in filtered_chains:
             expirations = sorted(
                 exp for exp in chain[1] if (min_expiry <= pd.Timestamp(exp) <= max_expiry)
             )
+
             for expiration in expirations:
                 option_contracts_detail = await self.get_option_chain_details_by_expiry(
                     underlying=underlying,
@@ -240,6 +248,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             f"{underlying.symbol}.{underlying.primaryExchange or underlying.exchange} expiring on {last_trading_date}",
         )
         self._log.debug(f"Got {option_details=}")
+
         return option_details
 
     async def load_async(

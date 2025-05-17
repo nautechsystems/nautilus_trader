@@ -50,6 +50,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         """
         name = str(contract)
+
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
             request = self._requests.add(
@@ -61,9 +62,12 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
                     contract=contract,
                 ),
             )
+
             if not request:
                 return None
+
             request.handle()
+
             return await self._await_request(request, 10, supress_timeout_warning=True)
         else:
             return await self._await_request(request, 10, supress_timeout_warning=True)
@@ -83,6 +87,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         """
         name = f"MatchingSymbols-{pattern}"
+
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
             request = self._requests.add(
@@ -94,9 +99,12 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
                     pattern=pattern,
                 ),
             )
+
             if not request:
                 return None
+
             request.handle()
+
             return await self._await_request(request, 20)
         else:
             self._log.info(f"Request already exist for {request}")
@@ -117,6 +125,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
 
         """
         name = f"OptionChains-{underlying!s}"
+
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
             request = self._requests.add(
@@ -131,9 +140,12 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
                     underlyingConId=underlying.conId,
                 ),
             )
+
             if not request:
                 return None
+
             request.handle()
+
             return await self._await_request(request, 20)
         else:
             self._log.info(f"Request already exist for {request}")
@@ -152,6 +164,7 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
         """
         if not (request := self._requests.get(req_id=req_id)):
             return
+
         request.result.append(contract_details)
 
     async def process_contract_details_end(self, *, req_id: int) -> None:
@@ -199,4 +212,5 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
         if request := self._requests.get(req_id=req_id):
             for contract_description in contract_descriptions:
                 request.result.append(IBContract(**contract_description.contract.__dict__))
+
             self._end_request(req_id)

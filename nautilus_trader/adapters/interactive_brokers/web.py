@@ -168,22 +168,29 @@ def load_product_list(
         "limit": str(limit),
     }
     page = 0
+
     while True:
         page += 1
         params.update({"page": str(page)})
+
         if debug:
             print(f"Requesting instruments using {params=}")
+
         response = requests.get(url, params=params, timeout=30)
         tree = fromstring(response.content)
         tables = tree.xpath('//table[@class="table table-striped table-bordered"]')
+
         if not tables:
             break
         try:
             symbol_table = tables[2]
         except IndexError:
             break
+
         products = list(_parse_products(symbol_table))
+
         if not products:
             break
+
         print(f"Found {len(products)} products for {page=}")
         yield from products

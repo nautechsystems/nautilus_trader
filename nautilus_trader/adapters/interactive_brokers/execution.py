@@ -169,7 +169,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             "FullInitMarginReq",
             "FullMaintMarginReq",
         }
-
         self._account_summary_loaded: asyncio.Event = asyncio.Event()
 
         # Hot caches
@@ -213,8 +212,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.discard(self.id)
+
         if self._client.is_running and self._client.registered_nautilus_clients == set():
             self._client.stop()
+
         self._set_connected(False)
 
     async def generate_order_status_report(
@@ -223,12 +224,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     ) -> OrderStatusReport | None:
         PyCondition.type_or_none(command.client_order_id, ClientOrderId, "client_order_id")
         PyCondition.type_or_none(command.venue_order_id, VenueOrderId, "venue_order_id")
+
         if not (command.client_order_id or command.venue_order_id):
             self._log.debug("Both `client_order_id` and `venue_order_id` cannot be None")
             return None
 
         report = None
         ib_orders = await self._client.get_open_orders(self.account_id.get_id())
+
         for ib_order in ib_orders:
             if (command.client_order_id and command.client_order_id.value == ib_order.orderRef) or (
                 command.venue_order_id
@@ -239,6 +242,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ):
                 report = await self._parse_ib_order_to_order_status_report(ib_order)
                 break
+
         if report is None:
             self._log.warning(
                 f"Order {command.client_order_id=}, {command.venue_order_id} not found, canceling",
@@ -248,6 +252,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order_status="Cancelled",
                 reason="Not found in query",
             )
+
         return report
 
     async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder) -> OrderStatusReport:
@@ -255,7 +260,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument = await self.instrument_provider.find_with_contract_id(
             ib_order.contract.conId,
         )
-
         total_qty = (
             Quantity.from_int(0)
             if ib_order.totalQuantity == UNSET_DECIMAL
@@ -266,10 +270,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if ib_order.filledQuantity == UNSET_DECIMAL
             else Quantity.from_str(str(ib_order.filledQuantity))
         )
+
         if total_qty.as_double() > filled_qty.as_double() > 0:
             order_status = OrderStatus.PARTIALLY_FILLED
         else:
             order_status = MAP_ORDER_STATUS[ib_order.order_state.status]
+
         ts_init = self._clock.timestamp_ns()
         price = (
             None if ib_order.lmtPrice == UNSET_DOUBLE else instrument.make_price(ib_order.lmtPrice)
@@ -277,8 +283,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         expire_time = (
             timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
         )
-
         mapped_order_type_info = ib_to_nautilus_order_type[ib_order.orderType]
+
         if isinstance(mapped_order_type_info, tuple):
             order_type, time_in_force = mapped_order_type_info
         else:
@@ -311,6 +317,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # trailing_offset=,
         )
         self._log.debug(f"Received {order_status!r}")
+
         return order_status
 
     async def generate_order_status_reports(
@@ -318,17 +325,22 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GenerateOrderStatusReports,
     ) -> list[OrderStatusReport]:
         report = []
+
         # Create the Filled OrderStatusReport from Open Positions
         positions: list[IBPosition] = await self._client.get_positions(
             self.account_id.get_id(),
         )
+
         if not positions:
             return []
+
         ts_init = self._clock.timestamp_ns()
+
         for position in positions:
             self._log.debug(
                 f"Infer OrderStatusReport from open position {position.contract.__dict__}",
             )
+
             if position.quantity > 0:
                 order_side = OrderSide.BUY
             elif position.quantity < 0:
@@ -339,6 +351,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+
             if instrument is None:
                 self._log.error(
                     f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
@@ -373,9 +386,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ib_orders: list[IBOrder] = await self._client.get_open_orders(
             self.account_id.get_id(),
         )
+
         for ib_order in ib_orders:
             order_status = await self._parse_ib_order_to_order_status_report(ib_order)
             report.append(order_status)
+
         return report
 
     async def generate_fill_reports(
@@ -383,6 +398,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GenerateFillReports,
     ) -> list[FillReport]:
         self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
+
         return []  # TODO: Implement
 
     async def generate_position_status_reports(
@@ -393,10 +409,13 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         positions: list[IBPosition] | None = await self._client.get_positions(
             self.account_id.get_id(),
         )
+
         if not positions:
             return []
+
         for position in positions:
             self._log.debug(f"Trying PositionStatusReport for {position.contract.conId}")
+
             if position.quantity > 0:
                 side = PositionSide.LONG
             elif position.quantity < 0:
@@ -407,6 +426,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+
             if instrument is None:
                 self._log.error(
                     f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
@@ -439,6 +459,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         ib_order = IBOrder()
         time_in_force = order.time_in_force
+
         for key, field, fn in MAP_ORDER_FIELDS:
             if value := getattr(order, key, None):
                 if key == "order_type" and time_in_force == TimeInForce.AT_THE_CLOSE:
@@ -457,6 +478,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 )
 
             ib_order.auxPrice = float(order.trailing_offset)
+
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
                 ib_order.triggerMethod = MAP_TRIGGER_METHOD[order.trigger_type]
@@ -480,6 +502,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     def _attach_order_tags(self, ib_order: IBOrder, order: Order) -> IBOrder:
         tags: dict = {}
+
         for ot in order.tags:
             if ot.startswith("IBOrderTags:"):
                 tags = IBOrderTags.parse(ot.replace("IBOrderTags:", "")).dict()
@@ -541,6 +564,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                             reason=f"The order has been rejected due to the rejection of the order with "
                             f"{order.client_order_id!r} in the list",
                         )
+
                 return
 
         # Mark last order to transmit
@@ -550,6 +574,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # Map the Parent Order Ids
             if parent_id := order_id_map.get(ib_order.parentId):
                 ib_order.parentId = parent_id
+
             # Place orders
             order_ref = ib_order.orderRef
             self._client.place_order(ib_order)
@@ -565,6 +590,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
         self._log.info(f"Nautilus order status is {nautilus_order.status_string()}")
+
         try:
             ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)
         except ValueError as e:
@@ -576,22 +602,28 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         ib_order.orderId = int(command.venue_order_id.value)
+
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
+
             if parent_nautilus_order:
                 ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
             else:
                 ib_order.parentId = 0
+
         if command.quantity and command.quantity != ib_order.totalQuantity:
             ib_order.totalQuantity = command.quantity.as_double()
+
         if command.price and command.price.as_double() != getattr(ib_order, "lmtPrice", None):
             ib_order.lmtPrice = command.price.as_double()
+
         if command.trigger_price and command.trigger_price.as_double() != getattr(
             ib_order,
             "auxPrice",
             None,
         ):
             ib_order.auxPrice = command.trigger_price.as_double()
+
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
 
@@ -599,6 +631,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.not_none(command, "command")
 
         venue_order_id = command.venue_order_id
+
         if venue_order_id:
             self._client.cancel_order(int(venue_order_id.value))
         else:
@@ -609,6 +642,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
         ):
             venue_order_id = order.venue_order_id
+
             if venue_order_id:
                 self._client.cancel_order(int(venue_order_id.value))
             else:
@@ -629,20 +663,22 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         for currency in self._account_summary:
             if not currency:
                 continue
+
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
                 self._log.info(f"{self._account_summary}", LogColor.GREEN)
                 # free = self._account_summary[currency]["FullAvailableFunds"]
                 locked = self._account_summary[currency]["FullMaintMarginReq"]
                 total = self._account_summary[currency]["NetLiquidation"]
+
                 if total - locked < locked:
                     total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
+
                 free = total - locked
                 account_balance = AccountBalance(
                     total=Money(total, Currency.from_str(currency)),
                     free=Money(free, Currency.from_str(currency)),
                     locked=Money(locked, Currency.from_str(currency)),
                 )
-
                 margin_balance = MarginBalance(
                     initial=Money(
                         self._account_summary[currency]["FullInitMarginReq"],
@@ -653,7 +689,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                         currency=Currency.from_str(currency),
                     ),
                 )
-
                 self.generate_account_state(
                     balances=[account_balance],
                     margins=[margin_balance],
@@ -735,6 +770,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 f"ClientOrderId not available, order={order.__dict__}, state={order_state.__dict__}",
             )
             return
+
         if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
             self.create_task(self.handle_order_status_report(order))
             return
@@ -814,6 +850,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         nautilus_order = self._cache.order(ClientOrderId(order_ref))
+
         if nautilus_order:
             self._handle_order_event(
                 status=status,
