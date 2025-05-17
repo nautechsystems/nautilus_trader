@@ -18,7 +18,7 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
@@ -180,16 +180,24 @@ impl WebSocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let rate_limiter = slf.rate_limiter.clone();
         let writer_tx = slf.writer_tx.clone();
+        let mode = slf.connection_mode.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if !ConnectionMode::from_atomic(&mode).is_active() {
+                let msg = "Cannot send data: connection not active".to_string();
+                tracing::error!("{msg}");
+                return Err(to_pyruntime_err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    msg,
+                )));
+            }
             rate_limiter.await_keys_ready(keys).await;
             tracing::trace!("Sending binary: {data:?}");
 
             let msg = Message::Binary(data.into());
-            if let Err(e) = writer_tx.send(WriterCommand::Send(msg)) {
-                tracing::error!("{e}");
-            }
-            Ok(())
+            writer_tx
+                .send(WriterCommand::Send(msg))
+                .map_err(to_pyruntime_err)
         })
     }
 
@@ -218,16 +226,23 @@ impl WebSocketClient {
         let data = Utf8Bytes::from(data_str);
         let rate_limiter = slf.rate_limiter.clone();
         let writer_tx = slf.writer_tx.clone();
+        let mode = slf.connection_mode.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            if !ConnectionMode::from_atomic(&mode).is_active() {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "Cannot send text: connection not active",
+                );
+                return Err(to_pyruntime_err(err));
+            }
             rate_limiter.await_keys_ready(keys).await;
             tracing::trace!("Sending text: {data}");
 
             let msg = Message::Text(data);
-            if let Err(e) = writer_tx.send(WriterCommand::Send(msg)) {
-                tracing::error!("{e}");
-            }
-            Ok(())
+            writer_tx
+                .send(WriterCommand::Send(msg))
+                .map_err(to_pyruntime_err)
         })
     }
 
@@ -244,14 +259,22 @@ impl WebSocketClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         let writer_tx = slf.writer_tx.clone();
-        tracing::trace!("Sending pong: {data_str}");
+        let mode = slf.connection_mode.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let msg = Message::Pong(data.into());
-            if let Err(e) = writer_tx.send(WriterCommand::Send(msg)) {
-                tracing::error!("{e}");
+            if !ConnectionMode::from_atomic(&mode).is_active() {
+                let err = std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "Cannot send pong: connection not active",
+                );
+                return Err(to_pyruntime_err(err));
             }
-            Ok(())
+            tracing::trace!("Sending pong: {data_str}");
+
+            let msg = Message::Pong(data.into());
+            writer_tx
+                .send(WriterCommand::Send(msg))
+                .map_err(to_pyruntime_err)
         })
     }
 }
@@ -445,7 +468,7 @@ counter = Counter()
 
         // Send messages that increment the count
         for _ in 0..N {
-            client.send_bytes(b"ping".to_vec(), None).await;
+            client.send_bytes(b"ping".to_vec(), None).await.unwrap();
             success_count += 1;
         }
 
@@ -463,12 +486,12 @@ counter = Counter()
         assert_eq!(count_value, success_count);
 
         // Close the connection => client should reconnect automatically
-        client.send_close_message().await;
+        client.send_close_message().await.unwrap();
 
         // Send messages that increment the count
         sleep(Duration::from_secs(2)).await;
         for _ in 0..N {
-            client.send_bytes(b"ping".to_vec(), None).await;
+            client.send_bytes(b"ping".to_vec(), None).await.unwrap();
             success_count += 1;
         }
 

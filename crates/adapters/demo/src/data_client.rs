@@ -200,7 +200,9 @@ impl DataClient for MockDataClient {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
-            websocket_client.send_text("SKIP".to_string(), None).await;
+            if let Err(err) = websocket_client.send_text("SKIP".to_string(), None).await {
+                tracing::error!("Error sending SKIP message: {err:?}");
+            }
         });
         Ok(())
     }
@@ -209,7 +211,9 @@ impl DataClient for MockDataClient {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
-            websocket_client.send_text("STOP".to_string(), None).await;
+            if let Err(err) = websocket_client.send_text("STOP".to_string(), None).await {
+                tracing::error!("Error sending STOP message: {err:?}");
+            }
         });
         Ok(())
     }
