@@ -52,7 +52,7 @@ config_node = TradingNodeConfig(
         use_pyo3=True,
     ),
     data_engine=LiveDataEngineConfig(
-        external_clients=[ClientId("BYBIT")],
+        external_clients=[ClientId(BINANCE)],
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,

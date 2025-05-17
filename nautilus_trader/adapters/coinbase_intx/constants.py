@@ -22,8 +22,8 @@ from nautilus_trader.model.identifiers import Venue
 
 
 COINBASE_INTX: Final[str] = "COINBASE_INTX"
-COINBASE_INTX_CLIENT_ID: Final[ClientId] = ClientId(COINBASE_INTX)
 COINBASE_INTX_VENUE: Final[Venue] = Venue(COINBASE_INTX)
+COINBASE_INTX_CLIENT_ID: Final[ClientId] = ClientId(COINBASE_INTX)
 
 COINBASE_INTX_SUPPORTED_ORDER_TYPES: Final[set[OrderType]] = {
     OrderType.MARKET,

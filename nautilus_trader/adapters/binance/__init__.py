@@ -27,6 +27,7 @@ subpackage's top level, so downstream code can simply import from
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE
+from nautilus_trader.adapters.binance.common.constants import BINANCE_CLIENT_ID
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.types import BinanceBar
@@ -76,6 +77,7 @@ NAUTILUS_ARROW_SCHEMA[BinanceBar] = pa.schema(
 
 __all__ = [
     "BINANCE",
+    "BINANCE_CLIENT_ID",
     "BINANCE_VENUE",
     "BinanceAccountType",
     "BinanceDataClientConfig",

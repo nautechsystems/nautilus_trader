@@ -25,6 +25,7 @@ subpackage's top level, so downstream code can simply import from
 
 """
 from nautilus_trader.adapters.bybit.common.constants import BYBIT
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_CLIENT_ID
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
@@ -40,6 +41,7 @@ from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 
 __all__ = [
     "BYBIT",
+    "BYBIT_CLIENT_ID",
     "BYBIT_VENUE",
     "BybitDataClientConfig",
     "BybitExecClientConfig",
