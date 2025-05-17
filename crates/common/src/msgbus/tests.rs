@@ -188,7 +188,7 @@ fn test_matching_subscriptions() {
     msgbus::subscribe(topic, handler4, Some(2));
     let topic = Ustr::from(topic);
 
-    let subs = msgbus.borrow().matching_subscriptions(&topic);
+    let subs = msgbus.borrow_mut().matching_subscriptions(&topic);
     assert_eq!(subs.len(), 4);
     assert_eq!(subs[0].handler_id, handler_id4);
     assert_eq!(subs[1].handler_id, handler_id3);
@@ -315,4 +315,25 @@ fn test_matching_backtracking() {
             regex_pattern
         );
     }
+}
+
+#[rstest]
+fn test_subscription_pattern_matching() {
+    let msgbus = get_message_bus();
+    let handler1 = get_stub_shareable_handler(Some(Ustr::from("1")));
+    let handler2 = get_stub_shareable_handler(Some(Ustr::from("2")));
+    let handler3 = get_stub_shareable_handler(Some(Ustr::from("3")));
+
+    msgbus::subscribe("data.quotes.*", handler1, None);
+    msgbus::subscribe("data.trades.*", handler2, None);
+    msgbus::subscribe("data.*.BINANCE.*", handler3, None);
+    assert_eq!(msgbus.borrow().subscriptions().len(), 3);
+
+    let topic = Ustr::from("data.quotes.BINANCE.ETHUSDT");
+    assert_eq!(msgbus.borrow().find_pattern_matches(&topic).len(), 2);
+
+    let matches = msgbus.borrow_mut().matching_subscriptions(&topic);
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0].handler_id, Ustr::from("1"));
+    assert_eq!(matches[1].handler_id, Ustr::from("3"));
 }

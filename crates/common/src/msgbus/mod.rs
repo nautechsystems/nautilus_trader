@@ -98,6 +98,27 @@ pub fn send(endpoint: &Ustr, message: &dyn Any) {
     }
 }
 
+/// Sends the [`DataResponse`] to the registered correlation ID handler.
+pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
+    let handler = get_message_bus()
+        .borrow()
+        .get_response_handler(correlation_id)
+        .cloned();
+
+    if let Some(handler) = handler {
+        handler.0.handle(message);
+    }
+}
+
+/// Publish [`Data`] to a topic.
+pub fn publish_data(topic: &Ustr, message: Data) {
+    let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+
+    for sub in matching_subs {
+        sub.handler.0.handle(&message);
+    }
+}
+
 /// Sends the response to the handler registered for the `correlation_id` (if found).
 pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     let handler = get_message_bus()
@@ -125,7 +146,7 @@ pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessa
 /// Publishes the `message` to the `topic`.
 pub fn publish(topic: &Ustr, message: &dyn Any) {
     log::trace!("Publishing topic '{topic}' {message:?}");
-    let matching_subs = get_message_bus().borrow().matching_subscriptions(topic);
+    let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
 
     log::trace!("Matched {} subscriptions", matching_subs.len());
 
@@ -243,7 +264,8 @@ pub struct Subscription {
     pub handler: ShareableMessageHandler,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
-    /// The topic for the subscription.
+    /// The topic for the subscription. TODO: In case of subscription the topic
+    /// behaves as a pattern. Consider renaming and updating docs.
     pub topic: Ustr,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
@@ -405,8 +427,13 @@ impl MessageBus {
     /// Returns the count of subscribers for the given `pattern`.
     #[must_use]
     pub fn subscriptions_count<T: AsRef<str>>(&self, pattern: T) -> usize {
-        self.matching_subscriptions(&Ustr::from(pattern.as_ref()))
-            .len()
+        self.patterns
+            .get(&Ustr::from(pattern.as_ref()))
+            .map(|subs| subs.len())
+            .unwrap_or_else(|| {
+                self.find_pattern_matches(&Ustr::from(pattern.as_ref()))
+                    .len()
+            })
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -459,30 +486,31 @@ impl MessageBus {
         self.correlation_index.get(correlation_id)
     }
 
+    /// Finds the subscriptions which match the given `pattern`.
+    pub fn find_pattern_matches(&self, topic: &Ustr) -> Vec<Subscription> {
+        self.subscriptions
+            .iter()
+            .filter_map(|(sub, _)| {
+                if is_matching_backtracking(topic, &sub.topic) {
+                    Some(sub.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     #[must_use]
-    pub fn matching_subscriptions(&self, pattern: &Ustr) -> Vec<Subscription> {
-        let mut matching_subs: Vec<Subscription> = Vec::new();
-
-        // Collect matching subscriptions from direct subscriptions
-        matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching_backtracking(&sub.topic, pattern) {
-                Some(sub.clone())
-            } else {
-                None
-            }
-        }));
-
-        // Collect matching subscriptions from pattern-based subscriptions
-        // TODO: Improve efficiency of this
-        for subs in self.patterns.values() {
-            let filtered_subs: Vec<Subscription> = subs.to_vec();
-
-            matching_subs.extend(filtered_subs);
-        }
-
-        // Sort into priority order
-        matching_subs.sort();
-        matching_subs
+    /// Finds the subscriptions which match the given `topic` and caches the
+    /// results in the `patterns` map.
+    pub fn matching_subscriptions(&mut self, topic: &Ustr) -> Vec<Subscription> {
+        self.patterns.get(topic).cloned().unwrap_or_else(|| {
+            let mut matches = self.find_pattern_matches(topic);
+            matches.sort();
+            self.patterns.insert(*topic, matches.clone());
+            // TODO: Update mapping from subscription to patterns
+            matches
+        })
     }
 
     /// Register a response handler for a specific correlation ID.
@@ -536,22 +564,6 @@ impl MessageBus {
     //         client.through_execute(message);
     //     }
     // }
-
-    /// Send a [`DataResponse`] to an endpoint that must be an actor.
-    pub fn send_response(&self, message: DataResponse) {
-        if let Some(handler) = self.get_response_handler(message.correlation_id()) {
-            handler.0.handle(&message);
-        }
-    }
-
-    /// Publish [`Data`] to a topic.
-    pub fn publish_data(&self, topic: &Ustr, message: Data) {
-        let matching_subs = self.matching_subscriptions(topic);
-
-        for sub in matching_subs {
-            sub.handler.0.handle(&message);
-        }
-    }
 
     /// Register message bus globally
     pub fn register_message_bus(self) -> Rc<RefCell<MessageBus>> {
