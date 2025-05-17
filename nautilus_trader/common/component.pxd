@@ -313,10 +313,6 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic)
 
 
-cdef bint is_matching(str topic, str pattern)
-cdef bint is_matching_old(str topic, str pattern)
-
-
 cdef class Subscription:
     cdef readonly str topic
     """The topic for the subscription.\n\n:returns: `str`"""
