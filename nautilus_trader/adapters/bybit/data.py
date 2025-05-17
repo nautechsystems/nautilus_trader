@@ -730,19 +730,26 @@ class BybitDataClient(LiveMarketDataClient):
         msg = self._decoder_ws_trade.decode(raw)
         try:
             for data in msg.data:
-                instrument_id = self._get_cached_instrument_id(data.s, product_type)
-                instrument = self._cache.instrument(instrument_id)
-                if instrument is None:
-                    self._log.error(f"Cannot parse trade data: no instrument for {instrument_id}")
-                    return
+                try:
+                    instrument_id = self._get_cached_instrument_id(data.s, product_type)
+                    instrument = self._cache.instrument(instrument_id)
+                    if instrument is None:
+                        self._log.error(
+                            f"Cannot parse trade data: no instrument for {instrument_id}",
+                        )
+                        return
 
-                trade: TradeTick = data.parse_to_trade_tick(
-                    instrument_id,
-                    price_precision=instrument.price_precision,
-                    size_precision=instrument.size_precision,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self._handle_data(trade)
+                    trade: TradeTick = data.parse_to_trade_tick(
+                        instrument_id,
+                        price_precision=instrument.price_precision,
+                        size_precision=instrument.size_precision,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    self._handle_data(trade)
+                except ValueError as e:
+                    # Handle ValueError for each trade in case the volume is 0
+                    # or the price is not valid.
+                    self._log.error(f"Failed to parse trade tick: {msg}", e)
         except Exception as e:
             self._log.exception(f"Failed to parse trade tick: {msg}", e)
 
