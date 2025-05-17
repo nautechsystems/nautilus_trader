@@ -144,6 +144,8 @@ class TOBQuoterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     trade_size: Decimal
+    enable_buys: bool = True
+    enable_sells: bool = True
     dry_run: bool = False
 
 
@@ -301,6 +303,10 @@ class TOBQuoter(Strategy):
             self.log.error("No instrument loaded")
             return
 
+        if not self.config.enable_buys:
+            self.log.warning("BUY orders not enabled, skipping")
+            return
+
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
@@ -317,6 +323,10 @@ class TOBQuoter(Strategy):
     def create_sell_order(self, price: Price) -> None:
         if not self.instrument:
             self.log.error("No instrument loaded")
+            return
+
+        if not self.config.enable_sells:
+            self.log.warning("SELL orders not enabled, skipping")
             return
 
         order: LimitOrder = self.order_factory.limit(
@@ -358,7 +368,9 @@ strat_config1 = TOBQuoterConfig(
     instrument_id=instrument_id1,
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
-    dry_run=True,  # This event has now ended and should not be traded
+    enable_buys=True,
+    enable_sells=True,
+    dry_run=False,
 )
 # strat_config2 = TOBQuoterConfig(
 #     instrument_id=instrument_id2,
