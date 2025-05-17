@@ -37,8 +37,8 @@ pub mod timer;
 /// # Safety
 /// - Passing `NULL` pointer will result in panic
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn is_matching_ffi(topic: *const c_char, pattern: *const c_char) -> bool {
+pub unsafe extern "C" fn is_matching_ffi(topic: *const c_char, pattern: *const c_char) -> u8 {
     let topic = unsafe { cstr_to_bytes(topic) };
     let pattern = unsafe { cstr_to_bytes(pattern) };
-    is_matching_fast(topic, pattern)
+    is_matching_fast(topic, pattern) as u8
 }

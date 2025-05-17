@@ -310,7 +310,7 @@ typedef struct TimeEventHandler_t {
  * # Safety
  * - Passing `NULL` pointer will result in panic
  */
-bool is_matching_ffi(const char *topic, const char *pattern);
+uint8_t is_matching_ffi(const char *topic, const char *pattern);
 
 struct TestClock_API test_clock_new(void);
 

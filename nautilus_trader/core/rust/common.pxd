@@ -186,7 +186,7 @@ cdef extern from "../includes/common.h":
     #
     # # Safety
     # - Passing `NULL` pointer will result in panic
-    bool is_matching_ffi(const char *topic, const char *pattern);
+    uint8_t is_matching_ffi(const char *topic, const char *pattern);
 
     TestClock_API test_clock_new();
 
