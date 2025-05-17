@@ -912,6 +912,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         msg: PolymarketUserTrade,
         venue_order_id: VenueOrderId,
     ) -> None:
+        self._log.debug(f"Waiting for trade ack for {venue_order_id!r}...")
+
         start_time = self._clock.timestamp()
         client_order_id = self._cache.client_order_id(venue_order_id)
         while client_order_id is None:
@@ -1023,12 +1025,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._loop.create_task(self._update_account_state())
 
     def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
+        self._log.debug(f"Handling trade message, {wait_for_ack=}")
+
         if msg.trader_side == PolymarketLiquiditySide.MAKER:
-            return  # Handled by order update
+            self._log.debug("Liquidity side is MAKER, handled by order update")
+            return
 
         venue_order_id = msg.venue_order_id(self._wallet_address)
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
         instrument = self._cache.instrument(instrument_id)
+
         if instrument is None:
             raise ValueError(f"Cannot handle ws message: instrument {instrument_id} not found")
 
@@ -1037,8 +1043,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
-
         strategy_id = None
+
         if client_order_id:
             strategy_id = self._cache.strategy_id_for_order(client_order_id)
 
@@ -1054,8 +1060,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         self._loop.create_task(self._update_account_state())
-
         order = self._cache.order(client_order_id)
+
         if order.is_closed:
             return  # Already closed (only status update)
 
