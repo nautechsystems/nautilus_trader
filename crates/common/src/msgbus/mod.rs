@@ -165,6 +165,15 @@ pub fn deregister<T: AsRef<str>>(endpoint: T) {
 }
 
 /// Subscribes the given `handler` to the `topic` with an optional `priority`.
+///
+/// # Warnings
+///
+/// Assigning priority handling is an advanced feature which *shouldn't
+/// normally be needed by most users*. **Only assign a higher priority to the
+/// subscription if you are certain of what you're doing**. If an inappropriate
+/// priority is assigned then the handler may receive messages before core
+/// system components have been able to process necessary calculations and
+/// produce potential side effects for logically sound behavior.
 pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, priority: Option<u8>) {
     let topic = Ustr::from(topic.as_ref());
 
@@ -229,22 +238,15 @@ pub fn subscriptions_count<T: AsRef<str>>(topic: T) -> usize {
 /// This is an internal class intended to be used by the message bus to organize
 /// topics and their subscribers.
 ///
-/// # Warnings
-///
-/// Assigning priority handling is an advanced feature which *shouldn't
-/// normally be needed by most users*. **Only assign a higher priority to the
-/// subscription if you are certain of what you're doing**. If an inappropriate
-/// priority is assigned then the handler may receive messages before core
-/// system components have been able to process necessary calculations and
-/// produce potential side effects for logically sound behavior.
+
 #[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.
     pub handler: ShareableMessageHandler,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
-    /// The topic for the subscription.
-    pub topic: Ustr,
+    /// The pattern for the subscription.
+    pub pattern: Ustr,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
@@ -255,13 +257,13 @@ impl Subscription {
     /// Creates a new [`Subscription`] instance.
     #[must_use]
     pub fn new<T: AsRef<str>>(
-        topic: T,
+        pattern: T,
         handler: ShareableMessageHandler,
         priority: Option<u8>,
     ) -> Self {
         Self {
             handler_id: handler.0.id(),
-            topic: Ustr::from(topic.as_ref()),
+            pattern: Ustr::from(pattern.as_ref()),
             handler,
             priority: priority.unwrap_or(0),
         }
@@ -270,7 +272,7 @@ impl Subscription {
 
 impl PartialEq<Self> for Subscription {
     fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic && self.handler_id == other.handler_id
+        self.pattern == other.pattern && self.handler_id == other.handler_id
     }
 }
 
@@ -290,7 +292,7 @@ impl Ord for Subscription {
 
 impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.topic.hash(state);
+        self.pattern.hash(state);
         self.handler_id.hash(state);
     }
 }
@@ -390,7 +392,7 @@ impl MessageBus {
     pub fn topics(&self) -> Vec<&str> {
         self.subscriptions
             .keys()
-            .map(|s| s.topic.as_str())
+            .map(|s| s.pattern.as_str())
             .collect()
     }
 
@@ -465,7 +467,7 @@ impl MessageBus {
 
         // Collect matching subscriptions from direct subscriptions
         matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
-            if is_matching_backtracking(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.pattern, pattern) {
                 Some(sub.clone())
             } else {
                 None
@@ -511,7 +513,7 @@ impl MessageBus {
         pattern: &'a Ustr,
     ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching_backtracking(&sub.topic, pattern) {
+            if is_matching_backtracking(&sub.pattern, pattern) {
                 Some(&sub.handler)
             } else {
                 None
