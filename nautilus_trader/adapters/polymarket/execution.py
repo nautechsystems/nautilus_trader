@@ -29,6 +29,7 @@ from py_clob_client.clob_types import AssetType
 from py_clob_client.exceptions import PolyApiException
 
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_INVALID_API_KEY
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
@@ -201,14 +202,20 @@ class PolymarketExecutionClient(LiveExecutionClient):
         for instrument in instruments:
             await self._maintain_active_market(instrument.id)
 
-        if self._ws_client.is_disconnected():
-            await self._ws_client.connect()
+        try:
+            if self._ws_client.is_disconnected():
+                await self._ws_client.connect()
 
-        await self._update_account_state()
+            await self._update_account_state()
 
-        # Wait for account to initialize
-        while self.get_account() is None:
-            await asyncio.sleep(0.01)
+            # Wait for account to initialize
+            while self.get_account() is None:
+                await asyncio.sleep(0.01)
+        except PolyApiException as e:
+            self._log.error(repr(e))
+            if e.error_msg["error"] == POLYMARKET_INVALID_API_KEY:
+                await self._ws_client.disconnect()
+            raise e
 
     async def _disconnect(self) -> None:
         # Shutdown websockets

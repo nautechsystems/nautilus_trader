@@ -32,3 +32,5 @@ VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
     TimeInForce.GTD,
     TimeInForce.FOK,
 }
+
+POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"
