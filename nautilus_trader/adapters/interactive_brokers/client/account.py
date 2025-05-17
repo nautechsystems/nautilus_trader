@@ -57,6 +57,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         """
         name = "accountSummary"
+
         if not (subscription := self._subscriptions.get(name=name)):
             req_id = self._next_req_id()
             subscription = self._subscriptions.add(
@@ -73,9 +74,11 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
                     reqId=req_id,
                 ),
             )
+
         # Allow fetching all tags upon request even if already subscribed
         if not subscription:
             return
+
         subscription.handle()
 
     def unsubscribe_account_summary(self, account_id: str) -> None:
@@ -90,6 +93,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
         """
         name = "accountSummary"
+
         if subscription := self._subscriptions.get(name=name):
             self._subscriptions.remove(subscription.req_id)
             self._eclient.cancelAccountSummary(reqId=subscription.req_id)
@@ -113,24 +117,31 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         """
         self._log.debug(f"Requesting open positions for {account_id}")
         name = "OpenPositions"
+
         if not (request := self._requests.get(name=name)):
             request = self._requests.add(
                 req_id=self._next_req_id(),
                 name=name,
                 handle=self._eclient.reqPositions,
             )
+
             if not request:
                 return None
+
             request.handle()
             all_positions = await self._await_request(request, 30)
         else:
             all_positions = await self._await_request(request, 30)
+
         if not all_positions:
             return None
+
         positions = []
+
         for position in all_positions:
             if position.account_id == account_id:
                 positions.append(position)
+
         return positions
 
     async def process_account_summary(
@@ -146,6 +157,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         Receive account information.
         """
         name = f"accountSummary-{account_id}"
+
         if handler := self._event_subscriptions.get(name, None):
             handler(tag, value, currency)
 
@@ -158,6 +170,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         """
         self._account_ids = {a for a in accounts_list.split(",") if a}
         self._log.debug(f"Managed accounts set: {self._account_ids}")
+
         if self._next_valid_order_id >= 0 and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `managedAccounts`", LogColor.BLUE)
             self._is_ib_connected.set()

@@ -161,11 +161,13 @@ def _extract_isin(details: IBContractDetails) -> int:
         for tag_value in details.secIdList:
             if tag_value.tag == "ISIN":
                 return tag_value.value
+
     raise ValueError("No ISIN found")
 
 
 def _tick_size_to_precision(tick_size: float | Decimal) -> int:
     tick_size_str = f"{tick_size:.10f}"
+
     return len(tick_size_str.partition(".")[2].rstrip("0"))
 
 
@@ -178,12 +180,14 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "CMDTY": "COMMODITY",
         "FUT": "INDEX",
     }
+
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 
 
 def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
     details.contract = IBContract(**details.contract.__dict__)
     details = IBContractDetails(**details.__dict__)
+
     return details
 
 
@@ -198,6 +202,7 @@ def parse_instrument(
         symbology_method=symbology_method,
         databento_venue=databento_venue,
     )
+
     if security_type == "STK":
         return parse_equity_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "IND":
@@ -221,10 +226,12 @@ def parse_instrument(
 def contract_details_to_dict(details: IBContractDetails) -> dict:
     dict_details = details.dict().copy()
     dict_details["contract"] = details.contract.dict().copy()
+
     if dict_details.get("secIdList"):
         dict_details["secIdList"] = {
             tag_value.tag: tag_value.value for tag_value in dict_details["secIdList"]
         }
+
     return dict_details
 
 
@@ -421,6 +428,7 @@ def parse_cfd_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
+
     if RE_CFD_CASH.match(details.contract.localSymbol):
         return Cfd(
             instrument_id=instrument_id,
@@ -481,6 +489,7 @@ def parse_commodity_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
+
     return Commodity(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -551,6 +560,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     contract: IBContract,
 ) -> InstrumentId:
     security_type = contract.secType
+
     if security_type == "STK":
         symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
         venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
@@ -595,6 +605,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
         venue = None
     if symbol and venue:
         return InstrumentId(Symbol(symbol), Venue(venue))
+
     raise ValueError(f"Unknown {contract=}")
 
 
