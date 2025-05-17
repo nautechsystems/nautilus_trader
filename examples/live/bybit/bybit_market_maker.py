@@ -16,6 +16,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.bybit import BYBIT
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitExecClientConfig
 from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
@@ -36,9 +37,6 @@ from nautilus_trader.model.identifiers import TraderId
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
@@ -94,7 +92,7 @@ config_node = TradingNodeConfig(
     #     heartbeat_interval_secs=1,
     # ),
     data_clients={
-        "BYBIT": BybitDataClientConfig(
+        BYBIT: BybitDataClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
@@ -106,7 +104,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "BYBIT": BybitExecClientConfig(
+        BYBIT: BybitExecClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
@@ -148,8 +146,8 @@ strategy = VolatilityMarketMaker(config=strat_config)
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
-node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
+node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
+node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
 node.build()
 
 
