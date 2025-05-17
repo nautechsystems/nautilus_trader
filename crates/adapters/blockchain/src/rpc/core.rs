@@ -111,7 +111,9 @@ impl CoreBlockchainRpcClient {
             self.pending_subscription_request
                 .insert(self.request_id, event_type);
             self.request_id += 1;
-            client.send_text(msg.to_string(), None).await;
+            if let Err(err) = client.send_text(msg.to_string(), None).await {
+                log::error!("Error sending subscribe message: {err:?}");
+            }
             Ok(())
         } else {
             Err(BlockchainRpcClientError::ClientError(String::from(
@@ -133,7 +135,9 @@ impl CoreBlockchainRpcClient {
                 "jsonrpc": "2.0",
                 "params": [subscription_id]
             });
-            client.send_text(msg.to_string(), None).await;
+            if let Err(err) = client.send_text(msg.to_string(), None).await {
+                log::error!("Error sending unsubscribe message: {err:?}");
+            }
             Ok(())
         } else {
             Err(BlockchainRpcClientError::ClientError(String::from(

@@ -48,4 +48,5 @@ mod tls;
 #[cfg(feature = "python")]
 pub mod python;
 
+pub mod error;
 pub mod ratelimiter;

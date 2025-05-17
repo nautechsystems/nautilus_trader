@@ -56,6 +56,7 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    error::SendError,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
@@ -639,8 +640,6 @@ impl WebSocketClient {
 
         let connection_mode = inner.connection_mode.clone();
 
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-
         let writer_tx = inner.writer_tx.clone();
         if let Err(e) = writer_tx.send(WriterCommand::Update(writer)) {
             tracing::error!("{e}");
@@ -655,6 +654,8 @@ impl WebSocketClient {
             #[cfg(feature = "python")]
             None, // no post_disconnection
         );
+
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Ok((
             reader,
@@ -799,52 +800,69 @@ impl WebSocketClient {
     }
 
     /// Sends the given text `data` to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
-    pub async fn send_text(&self, data: String, keys: Option<Vec<String>>) {
+    pub async fn send_text(
+        &self,
+        data: String,
+        keys: Option<Vec<String>>,
+    ) -> std::result::Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
-            tracing::error!("Cannot send data - connection not active");
-            return;
+            return Err(SendError::Closed);
         }
 
         tracing::trace!("Sending text: {data:?}");
 
         let msg = Message::Text(data.into());
-        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
-            tracing::error!("Error sending message: {e}");
-        }
+        self.writer_tx
+            .send(WriterCommand::Send(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     /// Sends the given bytes `data` to the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
     #[allow(unused_variables)]
-    pub async fn send_bytes(&self, data: Vec<u8>, keys: Option<Vec<String>>) {
+    pub async fn send_bytes(
+        &self,
+        data: Vec<u8>,
+        keys: Option<Vec<String>>,
+    ) -> std::result::Result<(), SendError> {
         self.rate_limiter.await_keys_ready(keys).await;
 
         if !self.is_active() {
-            tracing::error!("Cannot send data - connection not active");
-            return;
+            return Err(SendError::Closed);
         }
 
         tracing::trace!("Sending bytes: {data:?}");
 
         let msg = Message::Binary(data.into());
-        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
-            tracing::error!("Error sending message: {e}");
-        }
+        self.writer_tx
+            .send(WriterCommand::Send(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     /// Sends a close message to the server.
-    pub async fn send_close_message(&self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns a websocket error if unable to send.
+    pub async fn send_close_message(&self) -> std::result::Result<(), SendError> {
         if !self.is_active() {
-            tracing::error!("Cannot send close message - connection not active");
-            return;
+            return Err(SendError::Closed);
         }
 
         let msg = Message::Close(None);
-        if let Err(e) = self.writer_tx.send(WriterCommand::Send(msg)) {
-            tracing::error!("Error sending close message: {e}");
-        }
+        self.writer_tx
+            .send(WriterCommand::Send(msg))
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     fn spawn_controller_task(
@@ -953,6 +971,16 @@ impl WebSocketClient {
 
             log_task_stopped("controller");
         })
+    }
+}
+
+// Abort controller task on drop to clean up background tasks
+impl Drop for WebSocketClient {
+    fn drop(&mut self) {
+        if !self.controller_task.is_finished() {
+            self.controller_task.abort();
+            log_task_aborted("controller");
+        }
     }
 }
 
@@ -1144,10 +1172,10 @@ mod tests {
         let client = setup_test_client(server.port).await;
 
         // 1) Send normal message
-        client.send_text("Hello".into(), None).await;
+        client.send_text("Hello".into(), None).await.unwrap();
 
         // 2) Trigger forced close from server
-        client.send_text("close-now".into(), None).await;
+        client.send_text("close-now".into(), None).await.unwrap();
 
         // 3) Wait a bit => read loop sees close => reconnect
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -1191,11 +1219,11 @@ mod tests {
         .unwrap();
 
         // First 2 should succeed
-        client.send_text("test1".into(), None).await;
-        client.send_text("test2".into(), None).await;
+        client.send_text("test1".into(), None).await.unwrap();
+        client.send_text("test2".into(), None).await.unwrap();
 
         // Third should error
-        client.send_text("test3".into(), None).await;
+        client.send_text("test3".into(), None).await.unwrap();
 
         // Cleanup
         client.disconnect().await;
@@ -1211,7 +1239,7 @@ mod tests {
         for i in 0..10 {
             let client = client.clone();
             handles.push(task::spawn(async move {
-                client.send_text(format!("test{i}"), None).await;
+                client.send_text(format!("test{i}"), None).await.unwrap();
             }));
         }
 

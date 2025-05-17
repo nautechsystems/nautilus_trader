@@ -275,7 +275,9 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = &self.inner {
-            inner.send_text(json_txt, None).await;
+            if let Err(err) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {err:?}");
+            }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
                 "Cannot send message: not connected".to_string(),
@@ -325,7 +327,9 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = &self.inner {
-            inner.send_text(json_txt, None).await;
+            if let Err(err) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {err:?}");
+            }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
                 "Cannot send message: not connected".to_string(),

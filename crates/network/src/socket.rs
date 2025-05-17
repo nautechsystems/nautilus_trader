@@ -53,6 +53,7 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    error::SendError,
     fix::process_fix_buffer,
     logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
@@ -688,59 +689,41 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns any I/O error.
-    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), std::io::Error> {
+    /// Returns an error if sending fails.
+    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         if self.is_closed() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            ));
+            return Err(SendError::Closed);
         }
 
         let timeout = Duration::from_secs(2);
         let check_interval = Duration::from_millis(1);
 
         if !self.is_active() {
-            tracing::debug!("Waiting for client to become ACTIVE before sending (2s)...");
-            match tokio::time::timeout(timeout, async {
-                while !self.is_active() {
+            tracing::debug!("Waiting for client to become ACTIVE before sending...");
+
+            let inner = tokio::time::timeout(timeout, async {
+                loop {
+                    if self.is_active() {
+                        return Ok(());
+                    }
                     if matches!(
                         self.connection_mode(),
                         ConnectionMode::Disconnect | ConnectionMode::Closed
                     ) {
-                        return Err("Client disconnected waiting to send");
+                        return Err(());
                     }
-
                     tokio::time::sleep(check_interval).await;
                 }
-
-                Ok(())
             })
             .await
-            {
-                Ok(Ok(())) => tracing::debug!("Client now active"),
-                Ok(Err(e)) => {
-                    tracing::error!(
-                        "Failed to send data ({}): {e}",
-                        String::from_utf8_lossy(&data)
-                    );
-                    return Ok(());
-                }
-                Err(_) => {
-                    tracing::error!(
-                        "Failed to send data ({}): timeout waiting to become ACTIVE",
-                        String::from_utf8_lossy(&data)
-                    );
-                    return Ok(());
-                }
-            }
+            .map_err(|_| SendError::Timeout)?;
+            inner.map_err(|_| SendError::Closed)?;
         }
 
         let msg = WriterCommand::Send(data.into());
-        if let Err(e) = self.writer_tx.send(msg) {
-            tracing::error!("{e}");
-        }
-        Ok(())
+        self.writer_tx
+            .send(msg)
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     fn spawn_controller_task(
@@ -841,6 +824,16 @@ impl SocketClient {
 
             log_task_stopped("controller");
         })
+    }
+}
+
+// Abort controller task on drop to clean up background tasks
+impl Drop for SocketClient {
+    fn drop(&mut self) {
+        if !self.controller_task.is_finished() {
+            self.controller_task.abort();
+            log_task_aborted("controller");
+        }
     }
 }
 
