@@ -308,7 +308,8 @@ typedef struct TimeEventHandler_t {
  * 'a-z' - match the specific character
  *
  * # Safety
- * - Passing `NULL` pointer will result in panic
+ *
+ * Passing `NULL` pointers will result in a panic.
  */
 uint8_t is_matching_ffi(const char *topic, const char *pattern);
 
