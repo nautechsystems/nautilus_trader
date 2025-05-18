@@ -56,6 +56,8 @@ None
 
 ### Fixes
 - Fixed portfolio account updates leading to incorrect balances (#2632, #2637), thanks for reporting @bartolootrit and @DeirhX
+- Fixed portfolio handling of `OrderExpired` events not updating state (margin requirements may change)
+- Fixed event handling for `ExecutionEngine` so it fully updates the `Portfolio` before to publishing execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed authentication for Redis when password provided with no username
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl

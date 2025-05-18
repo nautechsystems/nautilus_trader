@@ -53,6 +53,7 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -75,6 +76,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef tuple[OrderEvent] _UPDATE_ORDER_EVENTS = (
     OrderAccepted,
     OrderCanceled,
+    OrderExpired,
     OrderRejected,
     OrderUpdated,
     OrderFilled,
@@ -167,11 +169,12 @@ cdef class Portfolio(PortfolioFacade):
 
         # Register endpoints
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)
+        self._msgbus.register(endpoint="Portfolio.update_order", handler=self.update_order)
+        self._msgbus.register(endpoint="Portfolio.update_position", handler=self.update_position)
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
-        self._msgbus.subscribe(topic="events.position.*", handler=self.update_position, priority=10)
-        self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
+        self._msgbus.subscribe(topic="events.order.*", handler=self.on_order_event, priority=10)
+        self._msgbus.subscribe(topic="events.position.*", handler=self.on_position_event, priority=10)
 
         if config.use_mark_prices:
             self._msgbus.subscribe(topic="data.mark_prices.*", handler=self.update_mark_price, priority=10)
@@ -533,12 +536,9 @@ cdef class Portfolio(PortfolioFacade):
             self._log.debug(f"Added pending calculation for {instrument.id}")
             self._pending_calcs.add(instrument.id)
         else:
-            self._msgbus.publish_c(
-                topic=f"events.account.{account.id}",
-                msg=account_state,
-            )
+            self.update_account(account_state)
 
-        self._log.debug(f"Updated {event}")
+        self._log.debug(f"Updated from {event}")
 
     cpdef void update_position(self, PositionEvent event):
         """
@@ -587,11 +587,72 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
-        self._accounts.update_positions(
+        cdef AccountState account_state = self._accounts.update_positions(
             account=account,
             instrument=instrument,
             positions_open=positions_open,
             ts_event=event.ts_event,
+        )
+
+        if account_state is not None:
+            self.update_account(account_state)
+
+    cpdef void on_order_event(self, OrderEvent event):
+        """
+        Actions to be performed on receiving an order event.
+
+        Parameters
+        ----------
+        event : OrderEvent
+            The event received.
+
+        """
+        Condition.not_none(event, "event")
+
+        if event.account_id is None:
+            return  # No account assigned for event
+
+        if not isinstance(event, _UPDATE_ORDER_EVENTS):
+            return  # No change to account state
+
+        if isinstance(event, OrderFilled):
+            return  # Will publish account event when position event is received
+
+        cdef Account account = self._cache.account(event.account_id)
+        if account is None:
+            return  # No account registered
+
+        cdef AccountState account_state = account.last_event_c()
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id}",
+            msg=account_state,
+        )
+
+    cpdef void on_position_event(self, PositionEvent event):
+        """
+        Actions to be performed on receiving a position event.
+
+        Parameters
+        ----------
+        event : PositionEvent
+            The event received.
+
+        """
+        Condition.not_none(event, "event")
+
+        if event.account_id is None:
+            return  # No account assigned for event
+
+        cdef Account account = self._cache.account(event.account_id)
+        if account is None:
+            return  # No account registered
+
+        cdef AccountState account_state = account.last_event_c()
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id}",
+            msg=account_state,
         )
 
     def _reset(self) -> None:
