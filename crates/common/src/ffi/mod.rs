@@ -35,7 +35,8 @@ pub mod timer;
 /// 'a-z' - match the specific character
 ///
 /// # Safety
-/// - Passing `NULL` pointer will result in panic
+///
+/// Passing `NULL` pointers will result in a panic.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn is_matching_ffi(topic: *const c_char, pattern: *const c_char) -> u8 {
     let topic = unsafe { cstr_to_bytes(topic) };
