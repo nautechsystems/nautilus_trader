@@ -33,13 +33,14 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::HashMap,
-    fmt::Debug,
+    fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
+    ops::Deref,
     rc::Rc,
     sync::OnceLock,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
@@ -185,7 +186,7 @@ pub fn deregister<T: AsRef<str>>(endpoint: T) {
         .shift_remove(&endpoint);
 }
 
-/// Subscribes the given `handler` to the `topic` with an optional `priority`.
+/// Subscribes the given `handler` to the `pattern` with an optional `priority`.
 ///
 /// # Warnings
 ///
@@ -195,35 +196,35 @@ pub fn deregister<T: AsRef<str>>(endpoint: T) {
 /// priority is assigned then the handler may receive messages before core
 /// system components have been able to process necessary calculations and
 /// produce potential side effects for logically sound behavior.
-pub fn subscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler, priority: Option<u8>) {
-    let topic = Ustr::from(topic.as_ref());
+pub fn subscribe<T: AsRef<str>>(
+    pattern: T,
+    handler: ShareableMessageHandler,
+    priority: Option<u8>,
+) {
+    let pattern = Ustr::from(pattern.as_ref());
 
-    log::debug!("Subscribing {handler:?} for topic '{topic}'");
+    log::debug!("Subscribing {handler:?} for pattern '{pattern}'");
 
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
 
-    let sub = Subscription::new(topic, handler, priority);
-    if msgbus_ref_mut.subscriptions.contains_key(&sub) {
+    let sub = Subscription::new(pattern, handler, priority);
+    if msgbus_ref_mut.subscriptions.contains(&sub) {
         log::warn!("{sub:?} already exists");
         return;
     }
 
     // Find existing patterns which match this topic
-    let mut matches = Vec::new();
-    for (pattern, subs) in msgbus_ref_mut.patterns.iter_mut() {
-        if is_matching_backtracking(&Ustr::from(topic.as_ref()), pattern) {
+    for (topic, subs) in msgbus_ref_mut.topics.iter_mut() {
+        if is_matching_backtracking(&Ustr::from(topic.as_ref()), &pattern) {
+            // TODO: Consider binary_search and then insert
             subs.push(sub.clone());
             subs.sort();
-            // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
-            matches.push(*pattern);
             log::debug!("Added subscription for '{topic}'");
         }
     }
 
-    matches.sort();
-
-    msgbus_ref_mut.subscriptions.insert(sub, matches);
+    msgbus_ref_mut.subscriptions.insert(sub);
 }
 
 /// Unsubscribes the `handler` from the `topic`.
@@ -233,12 +234,9 @@ pub fn unsubscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) {
     log::debug!("Unsubscribing {handler:?} from topic '{topic}'");
 
     let sub = Subscription::new(topic, handler, None);
-    let removed = get_message_bus()
-        .borrow_mut()
-        .subscriptions
-        .shift_remove(&sub);
+    let removed = get_message_bus().borrow_mut().subscriptions.remove(&sub);
 
-    if removed.is_some() {
+    if removed {
         log::debug!("Handler for topic '{topic}' was removed");
     } else {
         log::debug!("No matching handler for topic '{topic}' was found");
@@ -247,11 +245,72 @@ pub fn unsubscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) {
 
 pub fn is_subscribed<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) -> bool {
     let sub = Subscription::new(topic, handler, None);
-    get_message_bus().borrow().subscriptions.contains_key(&sub)
+    get_message_bus().borrow().subscriptions.contains(&sub)
 }
 
 pub fn subscriptions_count<T: AsRef<str>>(topic: T) -> usize {
     get_message_bus().borrow().subscriptions_count(topic)
+}
+
+/// A string pattern for a subscription. The pattern is used to match topics.
+///
+/// A pattern is made of characters:
+/// - `*` - match 0 or more characters
+/// - `?` - match any character once
+/// - `a-z` - match the specific character
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Pattern(pub Ustr);
+
+impl<T: AsRef<str>> From<T> for Pattern {
+    fn from(value: T) -> Self {
+        Self(Ustr::from(value.as_ref()))
+    }
+}
+
+impl Deref for Pattern {
+    type Target = Ustr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for Pattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A string topic for publishing data. It is a fully qualified pattern i.e.
+/// wildcard characters are not allowed.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Topic(pub Ustr);
+
+impl Topic {
+    pub fn validate<T: AsRef<str>>(topic: T) -> bool {
+        let topic = Ustr::from(topic.as_ref());
+        !topic.chars().any(|c| c == '*' || c == '?')
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Topic {
+    fn from(value: T) -> Self {
+        Self(Ustr::from(value.as_ref()))
+    }
+}
+
+impl Deref for Topic {
+    type Target = Ustr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for Topic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 /// Represents a subscription to a particular topic.
@@ -267,7 +326,7 @@ pub struct Subscription {
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
     /// The pattern for the subscription.
-    pub pattern: Ustr,
+    pub pattern: Pattern,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
@@ -284,7 +343,7 @@ impl Subscription {
     ) -> Self {
         Self {
             handler_id: handler.0.id(),
-            pattern: Ustr::from(pattern.as_ref()),
+            pattern: Pattern::from(pattern),
             handler,
             priority: priority.unwrap_or(0),
         }
@@ -354,14 +413,11 @@ pub struct MessageBus {
     pub has_backing: bool,
     /// The switchboard for built-in endpoints.
     pub switchboard: MessagingSwitchboard,
-    /// Mapping from topic to the corresponding handler
-    /// a topic can be a string with wildcards
-    /// * '?' - any character
-    /// * '*' - any number of any characters
-    subscriptions: IndexMap<Subscription, Vec<Ustr>>,
-    /// Maps a pattern to all the handlers registered for it
+    /// Active subscriptions.
+    subscriptions: AHashSet<Subscription>,
+    /// Maps a topic to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
-    patterns: IndexMap<Ustr, Vec<Subscription>>,
+    topics: IndexMap<Topic, Vec<Subscription>>,
     /// Index of endpoint addresses and their handlers.
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
     /// Index of request correlation IDs and their response handlers.
@@ -388,8 +444,8 @@ impl MessageBus {
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
             switchboard: MessagingSwitchboard::default(),
-            subscriptions: IndexMap::new(),
-            patterns: IndexMap::new(),
+            subscriptions: AHashSet::new(),
+            topics: IndexMap::new(),
             endpoints: IndexMap::new(),
             correlation_index: AHashMap::new(),
             has_backing: false,
@@ -408,46 +464,41 @@ impl MessageBus {
         self.endpoints.keys().map(Ustr::as_str).collect()
     }
 
-    /// Returns the topics for active subscriptions.
+    /// Returns actively subscribed patterns.
     #[must_use]
-    pub fn topics(&self) -> Vec<&str> {
+    pub fn patterns(&self) -> Vec<&str> {
         self.subscriptions
-            .keys()
+            .iter()
             .map(|s| s.pattern.as_str())
             .collect()
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
-    #[must_use]
-    pub fn has_subscribers<T: AsRef<str>>(&self, pattern: T) -> bool {
-        self.matching_handlers(&Ustr::from(pattern.as_ref()))
-            .next()
-            .is_some()
+    /// Returns whether there are subscribers for the given `topic`.
+    pub fn has_subscribers<T: AsRef<str>>(&self, topic: T) -> bool {
+        self.subscriptions_count(topic) > 0
     }
 
-    /// Returns the count of subscribers for the given `pattern`.
+    /// Returns the count of subscribers for the given `topic`.
     #[must_use]
-    pub fn subscriptions_count<T: AsRef<str>>(&self, pattern: T) -> usize {
-        self.patterns
-            .get(&Ustr::from(pattern.as_ref()))
+    pub fn subscriptions_count<T: AsRef<str>>(&self, topic: T) -> usize {
+        let topic = Topic::from(topic);
+        self.topics
+            .get(&topic)
             .map(|subs| subs.len())
-            .unwrap_or_else(|| {
-                self.find_pattern_matches(&Ustr::from(pattern.as_ref()))
-                    .len()
-            })
+            .unwrap_or_else(|| self.find_topic_matches(&topic).len())
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
+    /// Returns active subscriptions.
     #[must_use]
     pub fn subscriptions(&self) -> Vec<&Subscription> {
-        self.subscriptions.keys().collect()
+        self.subscriptions.iter().collect()
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
+    /// Returns the handler IDs for actively subscribed patterns.
     #[must_use]
     pub fn subscription_handler_ids(&self) -> Vec<&str> {
         self.subscriptions
-            .keys()
+            .iter()
             .map(|s| s.handler_id.as_str())
             .collect()
     }
@@ -458,11 +509,15 @@ impl MessageBus {
         self.endpoints.contains_key(&Ustr::from(endpoint.as_ref()))
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
+    /// Returns whether the given `handler` is subscribed to the given `pattern`.
     #[must_use]
-    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler: ShareableMessageHandler) -> bool {
-        let sub = Subscription::new(topic, handler, None);
-        self.subscriptions.contains_key(&sub)
+    pub fn is_subscribed<T: AsRef<str>>(
+        &self,
+        pattern: T,
+        handler: ShareableMessageHandler,
+    ) -> bool {
+        let sub = Subscription::new(pattern, handler, None);
+        self.subscriptions.contains(&sub)
     }
 
     /// Close the message bus which will close the sender channel and join the thread.
@@ -487,11 +542,11 @@ impl MessageBus {
         self.correlation_index.get(correlation_id)
     }
 
-    /// Finds the subscriptions which match the given `pattern`.
-    pub fn find_pattern_matches(&self, topic: &Ustr) -> Vec<Subscription> {
+    /// Finds the subscriptions with pattern matching the given `topic`.
+    pub fn find_topic_matches(&self, topic: &Ustr) -> Vec<Subscription> {
         self.subscriptions
             .iter()
-            .filter_map(|(sub, _)| {
+            .filter_map(|sub| {
                 if is_matching_backtracking(topic, &sub.pattern) {
                     Some(sub.clone())
                 } else {
@@ -505,11 +560,11 @@ impl MessageBus {
     /// Finds the subscriptions which match the given `topic` and caches the
     /// results in the `patterns` map.
     pub fn matching_subscriptions(&mut self, topic: &Ustr) -> Vec<Subscription> {
-        self.patterns.get(topic).cloned().unwrap_or_else(|| {
-            let mut matches = self.find_pattern_matches(topic);
+        let topic = Topic::from(topic);
+        self.topics.get(&topic).cloned().unwrap_or_else(|| {
+            let mut matches = self.find_topic_matches(&topic);
             matches.sort();
-            self.patterns.insert(*topic, matches.clone());
-            // TODO: Update mapping from subscription to patterns
+            self.topics.insert(topic, matches.clone());
             matches
         })
     }
@@ -533,19 +588,6 @@ impl MessageBus {
         self.correlation_index.insert(*correlation_id, handler);
 
         Ok(())
-    }
-
-    fn matching_handlers<'a>(
-        &'a self,
-        pattern: &'a Ustr,
-    ) -> impl Iterator<Item = &'a ShareableMessageHandler> {
-        self.subscriptions.iter().filter_map(move |(sub, _)| {
-            if is_matching_backtracking(&sub.pattern, pattern) {
-                Some(&sub.handler)
-            } else {
-                None
-            }
-        })
     }
 }
 

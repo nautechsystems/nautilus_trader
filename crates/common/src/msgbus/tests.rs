@@ -45,7 +45,7 @@ fn test_endpoints_when_no_endpoints() {
 #[rstest]
 fn test_topics_when_no_subscriptions() {
     let msgbus = get_message_bus();
-    assert!(msgbus.borrow().topics().is_empty());
+    assert!(msgbus.borrow().patterns().is_empty());
     assert!(!msgbus.borrow().has_subscribers("my-topic"));
 }
 
@@ -149,7 +149,7 @@ fn test_subscribe() {
     msgbus::subscribe(topic, handler, Some(1));
 
     assert!(msgbus.borrow().has_subscribers(topic));
-    assert_eq!(msgbus.borrow().topics(), vec![topic]);
+    assert_eq!(msgbus.borrow().patterns(), vec![topic]);
 }
 
 #[rstest]
@@ -162,7 +162,7 @@ fn test_unsubscribe() {
     msgbus::unsubscribe(topic, handler);
 
     assert!(!msgbus.borrow().has_subscribers(topic));
-    assert!(msgbus.borrow().topics().is_empty());
+    assert!(msgbus.borrow().patterns().is_empty());
 }
 
 #[rstest]
@@ -330,7 +330,7 @@ fn test_subscription_pattern_matching() {
     assert_eq!(msgbus.borrow().subscriptions().len(), 3);
 
     let topic = Ustr::from("data.quotes.BINANCE.ETHUSDT");
-    assert_eq!(msgbus.borrow().find_pattern_matches(&topic).len(), 2);
+    assert_eq!(msgbus.borrow().find_topic_matches(&topic).len(), 2);
 
     let matches = msgbus.borrow_mut().matching_subscriptions(&topic);
     assert_eq!(matches.len(), 2);
