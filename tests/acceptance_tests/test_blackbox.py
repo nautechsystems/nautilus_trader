@@ -291,8 +291,8 @@ def test_cash_account_trades_macd_event_sequencing() -> None:
     # -- First entry sequence
     assert isinstance(strategy.events[0], OrderInitialized)
     assert isinstance(strategy.events[1], OrderSubmitted)
-    assert isinstance(strategy.events[2], AccountState)
-    assert isinstance(strategy.events[3], OrderFilled)
+    assert isinstance(strategy.events[2], OrderFilled)
+    assert isinstance(strategy.events[3], AccountState)
     assert isinstance(strategy.events[4], OrderInitialized)  # Follow-up order
     assert isinstance(strategy.events[5], OrderSubmitted)
     assert isinstance(strategy.events[6], PositionOpened)
@@ -304,15 +304,15 @@ def test_cash_account_trades_macd_event_sequencing() -> None:
     assert isinstance(strategy.events[10], OrderSubmitted)
     assert isinstance(strategy.events[11], AccountState)
     assert isinstance(strategy.events[12], OrderCanceled)
-    assert isinstance(strategy.events[13], AccountState)
-    assert isinstance(strategy.events[14], OrderFilled)
+    assert isinstance(strategy.events[13], OrderFilled)
+    assert isinstance(strategy.events[14], AccountState)
     assert isinstance(strategy.events[15], PositionClosed)
 
     # -- Second entry sequence
     assert isinstance(strategy.events[16], OrderInitialized)
     assert isinstance(strategy.events[17], OrderSubmitted)
-    assert isinstance(strategy.events[18], AccountState)
-    assert isinstance(strategy.events[19], OrderFilled)
+    assert isinstance(strategy.events[18], OrderFilled)
+    assert isinstance(strategy.events[19], AccountState)
     assert isinstance(strategy.events[20], OrderInitialized)  # Follow-up order
     assert isinstance(strategy.events[21], OrderSubmitted)
     assert isinstance(strategy.events[22], PositionOpened)

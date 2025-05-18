@@ -146,7 +146,7 @@ cdef class ExecutionEngine(Component):
             clock=clock,
         )
 
-        self._pending_position_events = []
+        self._pending_position_events: list[PositionEvent] = []
 
         # Configuration
         self.debug: bool = config.debug
@@ -1047,11 +1047,15 @@ cdef class ExecutionEngine(Component):
         else:
             self._apply_event_to_order(order, event)
 
-        # Publish pending position events from snapshot to prevent recursion issues
-        cdef list to_publish = self._pending_position_events.copy()
+        # Pop position events which are pending publishing to prevent recursion issues
+        cdef list[PositionEvent] to_publish = self._pending_position_events
+        self._pending_position_events = []
 
-        # Clear pending events so nested calls append to a fresh list
-        self._pending_position_events.clear()
+        # Publish events
+        self._msgbus.publish_c(
+            topic=f"events.order.{event.strategy_id}",
+            msg=event,
+        )
 
         cdef:
             PositionEvent pos_event
@@ -1061,12 +1065,6 @@ cdef class ExecutionEngine(Component):
                 topic=f"events.position.{pos_event.strategy_id}",
                 msg=pos_event,
             )
-            if self.snapshot_positions:
-                position = self._cache.position(pos_event.position_id)
-                self._create_position_state_snapshot(
-                    position,
-                    open_only=isinstance(pos_event, PositionOpened),
-                )
 
     cpdef OmsType _determine_oms_type(self, OrderFilled fill):
         cdef ExecutionClient client
@@ -1191,8 +1189,8 @@ cdef class ExecutionEngine(Component):
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
-        self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id}",
+        self._msgbus.send(
+            endpoint="Portfolio.update_order",
             msg=event,
         )
 
@@ -1260,6 +1258,14 @@ cdef class ExecutionEngine(Component):
 
         self._pending_position_events.append(event)
 
+        if self.snapshot_positions:
+            self._create_position_state_snapshot(position, open_only=True)
+
+        self._msgbus.send(
+            endpoint="Portfolio.update_position",
+            msg=event,
+        )
+
         return position
 
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
@@ -1289,6 +1295,14 @@ cdef class ExecutionEngine(Component):
             )
 
         self._pending_position_events.append(event)
+
+        if self.snapshot_positions:
+            self._create_position_state_snapshot(position, open_only=False)
+
+        self._msgbus.send(
+            endpoint="Portfolio.update_position",
+            msg=event,
+        )
 
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill):
         return (
