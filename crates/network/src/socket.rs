@@ -717,7 +717,7 @@ impl SocketClient {
             })
             .await
             .map_err(|_| SendError::Timeout)?;
-            inner.map_err(|_| SendError::Closed)?;
+            inner.map_err(|()| SendError::Closed)?;
         }
 
         let msg = WriterCommand::Send(data.into());
