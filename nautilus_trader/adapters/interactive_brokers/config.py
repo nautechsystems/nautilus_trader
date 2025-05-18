@@ -66,6 +66,7 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
 
     def __repr__(self):
         masked_username = self._mask_sensitive_info(self.username)
+
         return (
             f"DockerizedIBGatewayConfig(username={masked_username}, "
             f"password=********, trading_mode='{self.trading_mode}', "
@@ -76,6 +77,7 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     def _mask_sensitive_info(value: str | None) -> str:
         if value is None:
             return "None"
+
         return value[0] + "*" * (len(value) - 2) + value[-1] if len(value) > 2 else "*" * len(value)
 
 
@@ -134,6 +136,7 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, InteractiveBrokersInstrumentProviderConfig):
             return False
+
         return (
             self.load_ids == other.load_ids
             and self.load_contracts == other.load_contracts

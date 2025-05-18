@@ -64,6 +64,7 @@ from nautilus_trader.core.rust.common cimport component_state_from_cstr
 from nautilus_trader.core.rust.common cimport component_state_to_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
 from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
+from nautilus_trader.core.rust.common cimport is_matching_ffi
 from nautilus_trader.core.rust.common cimport live_clock_cancel_timer
 from nautilus_trader.core.rust.common cimport live_clock_drop
 from nautilus_trader.core.rust.common cimport live_clock_new
@@ -2689,41 +2690,8 @@ cdef class MessageBus:
         return subs_array
 
 
-cdef inline bint contains_wildcard(str topic_or_pattern):
-    return '?' in topic_or_pattern or '*' in topic_or_pattern
-
-
 cdef inline bint is_matching(str topic, str pattern):
-    if not contains_wildcard(topic) and not contains_wildcard(pattern):
-        return topic == pattern
-
-    # Get length of string and wildcard pattern
-    cdef int n = len(topic)
-    cdef int m = len(pattern)
-
-    # Create a DP lookup table
-    cdef np.ndarray[np.int8_t, ndim=2] t = np.empty((n + 1, m + 1), dtype=np.int8)
-    t.fill(False)
-
-    # If both pattern and string are empty: match
-    t[0, 0] = True
-
-    # Handle empty string case (i == 0)
-    cdef int j
-    for j in range(1, m + 1):
-        if pattern[j - 1] == '*':
-            t[0, j] = t[0, j - 1]
-
-    # Build a matrix in a bottom-up manner
-    cdef int i
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            if pattern[j - 1] == '*':
-                t[i, j] = t[i - 1, j] or t[i, j - 1]
-            elif pattern[j - 1] == '?' or topic[i - 1] == pattern[j - 1]:
-                t[i, j] = t[i - 1, j - 1]
-
-    return t[n, m]
+    return is_matching_ffi(pystr_to_cstr(topic), pystr_to_cstr(pattern))
 
 
 # Python wrapper for test access

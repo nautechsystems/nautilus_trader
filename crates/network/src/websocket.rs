@@ -939,7 +939,7 @@ impl WebSocketClient {
                                 if let Some(ref callback) = py_post_reconnection {
                                     Python::with_gil(|py| match callback.call0(py) {
                                         Ok(_) => {
-                                            tracing::debug!("Called `post_reconnection` handler")
+                                            tracing::debug!("Called `post_reconnection` handler");
                                         }
                                         Err(e) => tracing::error!(
                                             "Error calling `post_reconnection` handler: {e}"

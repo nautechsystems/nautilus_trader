@@ -110,6 +110,7 @@ class Base(ABC):
         for req_id, req_name in self._req_id_to_name.items():
             if req_name == name:
                 return req_id
+
         return None
 
     def _validation_check(self, req_id: int, name: Any) -> None:
@@ -197,6 +198,7 @@ class Base(ABC):
         """
         if req_id is None:
             req_id = self._name_to_req_id(name)
+
             if req_id is None:
                 return  # If no matching req_id is found, exit the method
 
@@ -215,8 +217,10 @@ class Base(ABC):
 
         """
         result: list = []
+
         for req_id in self._req_id_to_name:
             result.append(self.get(req_id=req_id))
+
         return result
 
     @abstractmethod
@@ -284,6 +288,7 @@ class Subscriptions(Base):
         """
         super().add_req_id(req_id, name, handle, cancel)
         self._req_id_to_last[req_id] = None
+
         return self.get(req_id=req_id)
 
     def remove(self, req_id: int | None = None, name: str | tuple | None = None) -> None:
@@ -303,6 +308,7 @@ class Subscriptions(Base):
         """
         if not req_id:
             req_id = self._name_to_req_id(name)
+
         if req_id:
             super().remove_req_id(req_id)
             self._req_id_to_last.pop(req_id, None)
@@ -329,8 +335,10 @@ class Subscriptions(Base):
         """
         if not req_id:
             req_id = self._name_to_req_id(name)
+
         if not req_id or not (name := self._req_id_to_name.get(req_id, None)):
             return None
+
         return Subscription(
             req_id=req_id,
             name=name,
@@ -411,6 +419,7 @@ class Requests(Base):
         super().add_req_id(req_id, name, handle, cancel)
         self._req_id_to_future[req_id] = asyncio.Future()
         self._req_id_to_result[req_id] = []
+
         return self.get(req_id=req_id)
 
     def remove(self, req_id: int | None = None, name: str | tuple | None = None) -> None:
@@ -431,6 +440,7 @@ class Requests(Base):
         """
         if not req_id:
             req_id = self._name_to_req_id(name)
+
         if req_id:
             super().remove_req_id(req_id)
             self._req_id_to_future.pop(req_id, None)
@@ -458,8 +468,10 @@ class Requests(Base):
         """
         if not req_id:
             req_id = self._name_to_req_id(name)
+
         if not req_id or not (name := self._req_id_to_name.get(req_id, None)):
             return None
+
         return Request(
             req_id=req_id,
             name=name,
