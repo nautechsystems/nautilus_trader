@@ -45,12 +45,11 @@ pub struct ModifyOrder {
 
 impl ModifyOrder {
     /// Creates a new [`ModifyOrder`] instance.
-    #[allow(clippy::too_many_arguments)]
-    /// Creates a new `ModifyOrder` message.
     ///
     /// # Errors
     ///
     /// Returns an error if parameters are invalid.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,

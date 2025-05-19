@@ -33,7 +33,7 @@ pub struct Token {
 }
 
 impl Token {
-    /// Creates a new `Token` instance with the specified properties.
+    /// Creates a new [`Token`] instance with the specified properties.
     #[must_use]
     pub fn new(
         chain: SharedChain,
