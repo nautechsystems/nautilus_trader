@@ -2911,6 +2911,11 @@ class TestDataEngine:
         assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_4_minute_bar
         assert handler[0].data["bars"][bar_type_3.standard()][-1] == last_5_minute_bar
 
+        bars_0 = self.data_engine._cache.bars(bar_type_0.standard())
+        bars_2 = self.data_engine._cache.bars(bar_type_2.standard())
+        assert bars_0
+        assert bars_2
+
     def test_request_aggregated_bars_with_quotes(self):
         # Arrange
         loader = DatabentoDataLoader()
@@ -3003,6 +3008,9 @@ class TestDataEngine:
         assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
         assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
 
+        bars_2 = self.data_engine._cache.bars(bar_type_2.standard())
+        assert bars_2
+
     def test_request_aggregated_bars_with_trades(self):
         # Arrange
         loader = DatabentoDataLoader()
@@ -3094,6 +3102,9 @@ class TestDataEngine:
 
         assert handler[0].data["bars"][bar_type_1.standard()][-1] == last_1_minute_bar
         assert handler[0].data["bars"][bar_type_2.standard()][-1] == last_2_minute_bar
+
+        bars_2 = self.data_engine._cache.bars(bar_type_2.standard())
+        assert bars_2
 
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
