@@ -11,6 +11,7 @@ NautilusTrader's design, architecture, and implementation philosophy prioritizes
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 
 ## Scripts
+
 You can run some example scripts and provide target RPC environment variables. These examples demonstrate how to connect to blockchain nodes and subscribe to various events.
 
 You can configure the required environment variables in two ways:
@@ -50,11 +51,12 @@ Running `target/debug/live_blocks_rpc`
 2025-04-25T14:54:48.951608000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346765, timestamp=2025-04-25T14:54:47+00:00, hash=0x18a3c9f1e3eec06b45edc1f632565e5c23089dc4ad0892b00fda9e4ffcc9bf91)
 2025-04-25T14:55:00.646992000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346766, timestamp=2025-04-25T14:54:59+00:00, hash=0x110436e41463daeacd1501fe53d38c310573abc136672a12054e1f33797ffeb9)
 2025-04-25T14:55:14.369337000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346767, timestamp=2025-04-25T14:55:11+00:00, hash=0x54e7dbcfc14c058e22c70cbacabe4872e84bd6d3b976258f0d364ae99226b314)
-^C2025-04-25T14:55:38.314022000Z [INFO] TRADER-001.live_blocks: Shutdown signal received, shutting down...
+2025-04-25T14:55:38.314022000Z [INFO] TRADER-001.live_blocks: Shutdown signal received, shutting down...
 
 ```
 
 ### Sync dex, tokens and pool for Uniswap V3 on Ethereum
+
 This script demonstrates how to use the blockchain data client to discover and cache Uniswap V3 pools and their associated tokens. It queries the Ethereum blockchain for pool creation events emitted by the Uniswap V3 factory contract, retrieves token metadata (name, symbol, decimals) for each token in the pools via smart contract calls, and stores everything in a local Postgres database.
 
 ```
