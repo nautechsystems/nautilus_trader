@@ -16,10 +16,10 @@
 
 from typing import Any
 
-from nautilus_trader.adapters.coinbase_intx.config import CoinbaseIntxDataClientConfig
-from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
-from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveDataClientFactory
-from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveExecClientFactory
+from nautilus_trader.adapters.coinbase_intx import COINBASE_INTX
+from nautilus_trader.adapters.coinbase_intx import CoinbaseIntxDataClientConfig
+from nautilus_trader.adapters.coinbase_intx import CoinbaseIntxLiveDataClientFactory
+from nautilus_trader.adapters.coinbase_intx import CoinbaseIntxLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig

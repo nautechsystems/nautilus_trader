@@ -210,7 +210,7 @@ See the Coinbase International [Create order](https://docs.cdp.coinbase.com/intx
 An example configuration could be:
 
 ```python
-from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
+from nautilus_trader.adapters.coinbase_intx import COINBASE_INTX, CoinbaseIntxDataClientConfig, CoinbaseIntxExecClientConfig
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
@@ -238,9 +238,7 @@ strat_config = TOBQuoterConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.coinbase_intx.constants import COINBASE_INTX
-from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveDataClientFactory
-from nautilus_trader.adapters.coinbase_intx.factories import CoinbaseIntxLiveExecClientFactory
+from nautilus_trader.adapters.coinbase_intx import COINBASE_INTX, CoinbaseIntxLiveDataClientFactory, CoinbaseIntxLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
