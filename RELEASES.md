@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added convenient re-exports for Polymarket adapter (constants, configs, factories)
 - Added convenient re-exports for Tardis adapter (constants, configs, factories, loaders)
 - Added support for `FillModel`, `LatencyModel` and `FeeModel` in BacktestNode (#2601), thanks @faysou
+- Added bars caching from `request_aggregated_bars` (#2649), thanks @faysou
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
@@ -42,6 +43,8 @@ None
 - Improved Cython-Rust indicator parity for `AdaptiveMovingAverage` (AMA) (#2626), thanks @nicolad
 - Improved Cython-Rust indicator parity for `DoubleExponentialMovingAverage` (DEMA) (#2633), thanks @nicolad
 - Improved Cython-Rust indicator parity for `ExponentialMovingAverage` (EMA) (#2642), thanks @nicolad
+- Improved Cython-Rust indicator parity for `HullMovingAverage` (HMA) (#2648), thanks @nicolad
+- Improved Cython-Rust indicator parity for `LinearRegression` (#2651), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved error handling on API key authentication errors for Polymarket
 - Improved exception on deserializing order from cache database
