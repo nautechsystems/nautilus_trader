@@ -4957,6 +4957,8 @@ dependencies = [
 name = "nautilus-system"
 version = "0.48.0"
 dependencies = [
+ "anyhow",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",

@@ -23,6 +23,7 @@ use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::{Clock, LiveClock, TestClock},
     enums::Environment,
+    logging::{init_logging, init_tracing, logger::LogGuard, writer::FileWriterConfig},
     msgbus::{MessageBus, set_message_bus},
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -50,6 +51,8 @@ pub struct NautilusKernel {
     pub cache: Rc<RefCell<Cache>>,
     /// The clock driving the kernel.
     pub clock: Rc<RefCell<dyn Clock>>,
+    /// Guard for the logging subsystem (keeps logger thread alive).
+    pub log_guard: LogGuard,
     /// The data engine instance.
     pub data_engine: DataEngine,
     /// The execution engine instance.
@@ -63,10 +66,27 @@ pub struct NautilusKernel {
 }
 
 impl NautilusKernel {
-    #[must_use]
-    pub fn new(name: Ustr, config: NautilusKernelConfig) -> Self {
+    /// Create a new [`NautilusKernel`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the logging subsystem fails to initialize.
+    pub fn new(name: Ustr, config: NautilusKernelConfig) -> anyhow::Result<Self> {
         let instance_id = config.instance_id.unwrap_or_default();
         let machine_id = String::new(); // TODO: Implement
+
+        let _ = init_tracing();
+
+        // Initialize logging subsystem
+        let file_config = FileWriterConfig::default();
+        let log_guard = init_logging(
+            config.trader_id,
+            instance_id,
+            config.logging.clone(),
+            file_config,
+        )?;
+
+        log::info!("Building system kernel");
 
         let msgbus = MessageBus::new(
             config.trader_id,
@@ -85,19 +105,20 @@ impl NautilusKernel {
 
         let ts_created = clock.borrow().timestamp_ns();
 
-        Self {
+        Ok(Self {
             name,
             instance_id,
             machine_id,
             config,
             cache,
             clock,
+            log_guard,
             data_engine,
             exec_engine,
             ts_created,
             ts_started: None,
             ts_shutdown: None,
-        }
+        })
     }
 
     /// Initialize the shared clock based on the environment.

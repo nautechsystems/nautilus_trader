@@ -77,10 +77,15 @@ impl Debug for BacktestEngine {
 }
 
 impl BacktestEngine {
-    #[must_use]
-    pub fn new(config: BacktestEngineConfig) -> Self {
-        let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone());
-        Self {
+    /// Create a new [`BacktestEngine`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the core NautilusKernel fails to initialize.
+    pub fn new(config: BacktestEngineConfig) -> anyhow::Result<Self> {
+        let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone())?;
+
+        Ok(Self {
             instance_id: kernel.instance_id,
             config,
             accumulator: TimeEventAccumulator::new(),
@@ -97,7 +102,7 @@ impl BacktestEngine {
             run_finished: None,
             backtest_start: None,
             backtest_end: None,
-        }
+        })
     }
 
     /// # Errors
@@ -377,7 +382,7 @@ mod tests {
     #[allow(clippy::missing_panics_doc)] // OK for testing
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
         let config = config.unwrap_or_default();
-        let mut engine = BacktestEngine::new(config);
+        let mut engine = BacktestEngine::new(config).unwrap();
         engine
             .add_venue(
                 Venue::from("BINANCE"),
