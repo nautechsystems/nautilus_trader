@@ -302,7 +302,7 @@ Providing the instrument ID improves loading performance, while specifying the p
 To load the data, create a script similar to the following:
 
 ```python
-from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
+from nautilus_trader.adapters.tardis import TardisCSVDataLoader
 from nautilus_trader.model import InstrumentId
 
 
