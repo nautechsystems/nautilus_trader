@@ -24,6 +24,7 @@ use sqlx::{PgPool, postgres::PgConnectOptions};
 use crate::cache::rows::TokenRow;
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
+#[derive(Debug)]
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,

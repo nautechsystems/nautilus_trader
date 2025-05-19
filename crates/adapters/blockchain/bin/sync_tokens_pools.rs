@@ -20,7 +20,7 @@ use nautilus_common::logging::{
     logger::{Logger, LoggerConfig},
     writer::FileWriterConfig,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, env::get_env_var};
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
@@ -72,9 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => chains::ETHEREUM.clone(), // default
     };
     let chain = Arc::new(chain);
-    let http_rpc_url = std::env::var("RPC_HTTP_URL").expect("RPC_HTTP_URL must be set");
-    let blockchain_adapter_config = BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true);
-    let mut data_client = BlockchainDataClient::new(chain, blockchain_adapter_config);
+    let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
+    let blockchain_config = BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true);
+
+    let mut data_client = BlockchainDataClient::new(chain, blockchain_config);
     data_client.initialize_cache_database(None).await;
 
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();

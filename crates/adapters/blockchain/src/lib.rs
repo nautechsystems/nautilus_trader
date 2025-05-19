@@ -13,6 +13,35 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
+//! liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies
+//! with real-time and historical on-chain data.
+//!
+//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+//! algorithmic trading platform, providing quantitative traders with the ability to backtest
+//! portfolios of automated trading strategies on historical data with an event-driven engine,
+//! and also deploy those same strategies live, with no code changes.
+//!
+//! This crate provides a [Coinbase International](https://www.coinbase.com/en/international-exchange) integration adapter.
+//!
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case, i.e. whether to provide Python bindings
+//! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+//! or as part of a Rust only build.
+//!
+//! - `hypersync`: Enables the [HyperSync](https://envio.dev/#hypersync) client integration.
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 pub mod config;
 pub mod contracts;
 pub mod events;

@@ -50,6 +50,7 @@ use crate::{
 /// This client supports two primary data sources:
 /// 1. Direct RPC connections to blockchain nodes (via WebSocket).
 /// 2. HyperSync API for efficient historical data queries.
+#[derive(Debug)]
 pub struct BlockchainDataClient {
     /// The blockchain being targeted by this client instance.
     pub chain: SharedChain,
@@ -66,6 +67,11 @@ pub struct BlockchainDataClient {
 }
 
 impl BlockchainDataClient {
+    /// Creates a new [`BlockchainDataClient`] instance for the specified chain and configuration.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `use_hypersync_for_live_data` is false and `wss_rpc_url` is `None` in the provided config.
     #[must_use]
     pub fn new(chain: SharedChain, config: BlockchainAdapterConfig) -> Self {
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
@@ -82,6 +88,7 @@ impl BlockchainDataClient {
         ));
         let erc20_contract = Erc20Contract::new(http_rpc_client);
         let cache = BlockchainCache::new(chain.clone());
+
         Self {
             chain,
             cache,
@@ -245,6 +252,10 @@ impl BlockchainDataClient {
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
+    ///
+    /// # Panics
+    ///
+    /// Panics if using the RPC client and the block subscription request fails.
     pub async fn subscribe_blocks(&mut self) {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_blocks().await.unwrap();
@@ -254,6 +265,10 @@ impl BlockchainDataClient {
     }
 
     /// Unsubscribes from block events.
+    ///
+    /// # Panics
+    ///
+    /// Panics if using the RPC client and the block unsubscription request fails.
     pub async fn unsubscribe_blocks(&mut self) {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.unsubscribe_blocks().await.unwrap();

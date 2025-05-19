@@ -20,6 +20,7 @@ use crate::rpc::{
     types::BlockchainMessage,
 };
 
+#[derive(Debug)]
 pub struct ArbitrumRpcClient {
     base_client: CoreBlockchainRpcClient,
 }

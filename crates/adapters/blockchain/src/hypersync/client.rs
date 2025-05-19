@@ -33,6 +33,7 @@ use crate::{
 const BLOCK_POLLING_INTERVAL_MS: u64 = 50;
 
 /// A client for interacting with a HyperSync API to retrieve blockchain data.
+#[derive(Debug)]
 pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum).
     chain: SharedChain,
@@ -45,6 +46,11 @@ pub struct HyperSyncClient {
 }
 
 impl HyperSyncClient {
+    /// Creates a new [`HyperSyncClient`] instance for the given chain and message sender.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the chain's `hypersync_url` is invalid or if the underlying client cannot be initialized.
     #[must_use]
     pub fn new(
         chain: SharedChain,
