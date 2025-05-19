@@ -41,21 +41,28 @@ pub struct TokenInfo {
 
 /// Interface for interacting with ERC20 token contracts on a blockchain.
 ///
-/// This struct provides methods to fetch token metadata (name, symbol, decimals)
-/// from ERC20-compliant tokens on any EVM-compatible blockchain.
+/// This struct provides methods to fetch token metadata (name, symbol, decimals).
+/// From ERC20-compliant tokens on any EVM-compatible blockchain.
 #[derive(Debug)]
 pub struct Erc20Contract {
-    /// The HTTP RPC client used to communicate with the blockchain node
+    /// The HTTP RPC client used to communicate with the blockchain node.
     client: Arc<BlockchainHttpRpcClient>,
 }
 
 /// Decodes a hexadecimal string response from a blockchain RPC call.
-fn decode_hex_response(encoded_response: &str) -> Vec<u8> {
+/// Decodes a hexadecimal string response from a blockchain RPC call.
+///
+/// # Errors
+///
+/// Returns an `BlockchainRpcClientError::AbiDecodingError` if the hex decoding fails.
+fn decode_hex_response(encoded_response: &str) -> Result<Vec<u8>, BlockchainRpcClientError> {
     // Remove the "0x" prefix if present
     let encoded_str = encoded_response
         .strip_prefix("0x")
         .unwrap_or(encoded_response);
-    hex::decode(encoded_str).unwrap()
+    hex::decode(encoded_str).map_err(|e| {
+        BlockchainRpcClientError::AbiDecodingError(format!("Error decoding hex response: {e}"))
+    })
 }
 
 impl Erc20Contract {
@@ -93,20 +100,19 @@ impl Erc20Contract {
         let rpc_request = self
             .client
             .construct_eth_call(token_address, name_call.as_slice());
-        match self.client.execute_eth_call::<String>(rpc_request).await {
-            Ok(encoded_name) => {
-                let bytes = decode_hex_response(&encoded_name);
-                match ERC20::nameCall::abi_decode_returns(&bytes) {
-                    Ok(decoded_name) => Ok(decoded_name),
-                    Err(e) => Err(BlockchainRpcClientError::AbiDecodingError(format!(
-                        "Error decoding ERC20 contract name with error {e}"
-                    ))),
-                }
-            }
-            Err(e) => Err(BlockchainRpcClientError::ClientError(format!(
-                "Error fetching name: {e}",
-            ))),
-        }
+        let encoded_name = self
+            .client
+            .execute_eth_call::<String>(rpc_request)
+            .await
+            .map_err(|e| {
+                BlockchainRpcClientError::ClientError(format!("Error fetching name: {e}"))
+            })?;
+        let bytes = decode_hex_response(&encoded_name)?;
+        ERC20::nameCall::abi_decode_returns(&bytes).map_err(|e| {
+            BlockchainRpcClientError::AbiDecodingError(format!(
+                "Error decoding ERC20 contract name with error {e}"
+            ))
+        })
     }
 
     /// Fetches the symbol of an ERC20 token.
@@ -115,20 +121,19 @@ impl Erc20Contract {
         let rpc_request = self
             .client
             .construct_eth_call(token_address, symbol_call.as_slice());
-        match self.client.execute_eth_call::<String>(rpc_request).await {
-            Ok(encoded_symbol) => {
-                let bytes = decode_hex_response(&encoded_symbol);
-                match ERC20::symbolCall::abi_decode_returns(&bytes) {
-                    Ok(decoded_symbol) => Ok(decoded_symbol),
-                    Err(e) => Err(BlockchainRpcClientError::AbiDecodingError(format!(
-                        "Error decoding ERC20 contract symbol with error {e}",
-                    ))),
-                }
-            }
-            Err(e) => Err(BlockchainRpcClientError::ClientError(format!(
-                "Error fetching symbol: {e}",
-            ))),
-        }
+        let encoded_symbol = self
+            .client
+            .execute_eth_call::<String>(rpc_request)
+            .await
+            .map_err(|e| {
+                BlockchainRpcClientError::ClientError(format!("Error fetching symbol: {e}"))
+            })?;
+        let bytes = decode_hex_response(&encoded_symbol)?;
+        ERC20::symbolCall::abi_decode_returns(&bytes).map_err(|e| {
+            BlockchainRpcClientError::AbiDecodingError(format!(
+                "Error decoding ERC20 contract symbol with error {e}"
+            ))
+        })
     }
 
     /// Fetches the number of decimals used by an ERC20 token.
@@ -137,19 +142,18 @@ impl Erc20Contract {
         let rpc_request = self
             .client
             .construct_eth_call(token_address, decimals_call.as_slice());
-        match self.client.execute_eth_call::<String>(rpc_request).await {
-            Ok(encoded_decimals) => {
-                let bytes = decode_hex_response(&encoded_decimals);
-                match ERC20::decimalsCall::abi_decode_returns(&bytes) {
-                    Ok(decoded_decimals) => Ok(decoded_decimals),
-                    Err(e) => Err(BlockchainRpcClientError::AbiDecodingError(format!(
-                        "Error decoding ERC20 contract decimals with error {e}",
-                    ))),
-                }
-            }
-            Err(e) => Err(BlockchainRpcClientError::ClientError(format!(
-                "Error fetching decimals: {e}",
-            ))),
-        }
+        let encoded_decimals = self
+            .client
+            .execute_eth_call::<String>(rpc_request)
+            .await
+            .map_err(|e| {
+                BlockchainRpcClientError::ClientError(format!("Error fetching decimals: {e}"))
+            })?;
+        let bytes = decode_hex_response(&encoded_decimals)?;
+        ERC20::decimalsCall::abi_decode_returns(&bytes).map_err(|e| {
+            BlockchainRpcClientError::AbiDecodingError(format!(
+                "Error decoding ERC20 contract decimals with error {e}"
+            ))
+        })
     }
 }

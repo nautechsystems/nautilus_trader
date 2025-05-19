@@ -18,7 +18,7 @@ use enum_dispatch::enum_dispatch;
 use crate::rpc::{
     chains::{
         arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
-        polygon::PolygonRpclient,
+        polygon::PolygonRpcClient,
     },
     error::BlockchainRpcClientError,
     types::BlockchainMessage,
@@ -35,7 +35,7 @@ pub mod utils;
 #[derive(Debug)]
 pub enum BlockchainRpcClientAny {
     Ethereum(EthereumRpcClient),
-    Polygon(PolygonRpclient),
+    Polygon(PolygonRpcClient),
     Base(BaseRpcClient),
     Arbitrum(ArbitrumRpcClient),
 }
