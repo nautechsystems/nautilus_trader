@@ -32,7 +32,9 @@ use std::{
 
 use base64::prelude::*;
 use nautilus_common::logging::{log_task_started, log_task_stopped};
-use nautilus_core::{python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    env::get_env_var, python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime,
+};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 use pyo3::prelude::*;
@@ -45,7 +47,7 @@ use super::{
     parse::convert_to_order_status_report,
 };
 use crate::{
-    common::{consts::COINBASE_INTX, credential::get_env_var},
+    common::consts::COINBASE_INTX,
     fix::{
         messages::{fix_exec_type, fix_message_type, fix_tag},
         parse::convert_to_fill_report,

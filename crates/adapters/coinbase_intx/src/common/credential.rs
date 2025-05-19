@@ -17,18 +17,6 @@ use base64::prelude::*;
 use ring::hmac;
 use ustr::Ustr;
 
-/// Returns the environment variable for the given `key`.
-///
-/// # Errors
-///
-/// Returns an error if the environment variable is not set.
-pub fn get_env_var(key: &str) -> anyhow::Result<String> {
-    match std::env::var(key) {
-        Ok(var) => Ok(var),
-        Err(_) => anyhow::bail!("environment variable '{key}' must be set"),
-    }
-}
-
 /// Coinbase International API credentials for signing requests.
 ///
 /// Uses HMAC SHA256 for request signing as per API specifications.

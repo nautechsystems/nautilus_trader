@@ -25,7 +25,9 @@ use std::{
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
 use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     identifiers::InstrumentId,
@@ -48,9 +50,7 @@ use super::{
 };
 use crate::{
     common::{
-        consts::COINBASE_INTX_WS_URL,
-        credential::{Credential, get_env_var},
-        parse::bar_spec_as_coinbase_channel,
+        consts::COINBASE_INTX_WS_URL, credential::Credential, parse::bar_spec_as_coinbase_channel,
     },
     websocket::parse::{parse_instrument_any, parse_trade_msg},
 };
