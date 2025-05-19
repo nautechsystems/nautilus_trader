@@ -17,7 +17,7 @@ use nautilus_model::defi::block::Block;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
-/// Represents normalized blockchain messages
+/// Represents normalized blockchain messages.
 #[derive(Debug, Clone)]
 pub enum BlockchainMessage {
     Block(Block),

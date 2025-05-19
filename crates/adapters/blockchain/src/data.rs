@@ -34,7 +34,7 @@ use crate::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
             arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
-            polygon::PolygonRpclient,
+            polygon::PolygonRpcClient,
         },
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
@@ -109,7 +109,7 @@ impl BlockchainDataClient {
                 BlockchainRpcClientAny::Ethereum(EthereumRpcClient::new(wss_rpc_url))
             }
             Blockchain::Polygon => {
-                BlockchainRpcClientAny::Polygon(PolygonRpclient::new(wss_rpc_url))
+                BlockchainRpcClientAny::Polygon(PolygonRpcClient::new(wss_rpc_url))
             }
             Blockchain::Base => BlockchainRpcClientAny::Base(BaseRpcClient::new(wss_rpc_url)),
             Blockchain::Arbitrum => {
@@ -169,17 +169,21 @@ impl BlockchainDataClient {
             .request_pool_created_events(from_block, &dex)
             .await;
         for pool in pools {
-            self.process_token(pool.token0.to_string()).await;
-            self.process_token(pool.token1.to_string()).await;
+            self.process_token(pool.token0.to_string()).await?;
+            self.process_token(pool.token1.to_string()).await?;
             self.process_pool(&dex, pool).await?;
         }
         Ok(())
     }
 
     /// Processes a token by address, fetching and caching its metadata if not already cached.
-    async fn process_token(&mut self, token_address: String) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching token info or adding to cache fails.
+    async fn process_token(&mut self, token_address: String) -> anyhow::Result<()> {
         if self.cache.get_token(&token_address).is_none() {
-            let token_info = self.tokens.fetch_token_info(&token_address).await.unwrap();
+            let token_info = self.tokens.fetch_token_info(&token_address).await?;
             let token = Token::new(
                 self.chain.clone(),
                 token_address,
@@ -188,8 +192,9 @@ impl BlockchainDataClient {
                 token_info.decimals,
             );
             log::info!("Saving fetched token {token} in the cache.");
-            self.cache.add_token(token).await.unwrap();
+            self.cache.add_token(token).await?;
         }
+        Ok(())
     }
 
     /// Processes a pool creation event by creating and caching a `Pool` entity.

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 /// Determines if a JSON message is a subscription response from the blockchain RPC server.
+///
 /// Example response:
 /// ```json
 /// { "id": 1, "jsonrpc": "2.0", "result": "0x9cef478923ff08bf67fde6c64013158d"}
@@ -24,6 +25,7 @@ pub fn is_subscription_confirmation_response(json: &serde_json::Value) -> bool {
 }
 
 /// Determines if a JSON message is a subscription event notification from the blockchain RPC server.
+///
 /// Example response:
 /// ```json
 /// {

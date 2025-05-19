@@ -22,8 +22,6 @@
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! This crate provides a [Coinbase International](https://www.coinbase.com/en/international-exchange) integration adapter.
-//!
 //! # Feature flags
 //!
 //! This crate provides feature flags to control source code inclusion during compilation,

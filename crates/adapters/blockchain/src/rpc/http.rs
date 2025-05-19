@@ -31,7 +31,7 @@ use crate::rpc::error::BlockchainRpcClientError;
 pub struct BlockchainHttpRpcClient {
     /// The HTTP URL for the blockchain node's RPC endpoint.
     http_rpc_url: String,
-    /// The HTTP client for making RPC http-based requests
+    /// The HTTP client for making RPC http-based requests.
     http_client: HttpClient,
 }
 

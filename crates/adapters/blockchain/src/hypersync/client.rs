@@ -181,7 +181,7 @@ impl HyperSyncClient {
         self.blocks_subscription_task = Some(task);
     }
 
-    /// Unsubscribes to the new blocks by stopping the background watch task
+    /// Unsubscribes to the new blocks by stopping the background watch task.
     pub fn unsubscribe_blocks(&mut self) {
         if let Some(task) = self.blocks_subscription_task.take() {
             task.abort();
