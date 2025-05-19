@@ -36,6 +36,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BarIntervalType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
@@ -1714,42 +1715,150 @@ class TestTimeBarAggregator:
                 clock,
             )
 
+
+
+
     @pytest.mark.parametrize(
-        ("bar_spec", "expected"),
+        ("bar_aggregation", "step", "time_bars_origin"),
+        [
+            [BarAggregation.MILLISECOND, 20, pd.Timedelta(seconds=1)],
+            [BarAggregation.SECOND, 2, pd.Timedelta(milliseconds=-1)],
+            [BarAggregation.SECOND, 12, pd.Timedelta(seconds=12)],
+            [BarAggregation.MINUTE, 30, pd.Timedelta(minutes=30)],
+            [BarAggregation.MINUTE, 30, pd.Timedelta(minutes=30, seconds=1)],
+            [BarAggregation.MINUTE, 1, pd.Timedelta(minutes=1)],
+            [BarAggregation.HOUR, 2, pd.Timedelta(hours=2)],
+            [BarAggregation.HOUR, 2, pd.Timedelta(hours=2, microseconds=1)],
+            [BarAggregation.DAY, 1, pd.Timedelta(days=1)],
+            [BarAggregation.WEEK, 1, pd.Timedelta(weeks=1)],
+            [BarAggregation.WEEK, 1, pd.Timedelta(weeks=1, nanoseconds=1)],
+            [BarAggregation.MONTH, 3, pd.Timedelta(days=28, nanoseconds=1)],
+            [BarAggregation.MONTH, 3, pd.Timedelta(days=29)],
+        ]
+    )
+    def test_instantiate_given_invalid_time_bars_origin_raises_value_error(self, bar_aggregation: BarAggregation, step: int, time_bars_origin: pd.Timedelta):
+        # Arrange
+        clock = TestClock()
+        handler = []
+        instrument = AUDUSD_SIM
+        bar_spec = BarSpecification(step, bar_aggregation, PriceType.LAST)
+        bar_type = BarType(instrument.id, bar_spec)
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            TimeBarAggregator(
+                instrument,
+                bar_type,
+                handler.append,
+                clock,
+                time_bars_origin=time_bars_origin
+            )
+
+
+
+    @pytest.mark.parametrize(
+        ("bar_spec", "time_bars_origin", "expected1", "expected2"),
         [
             [
+                BarSpecification(1, BarAggregation.MILLISECOND, PriceType.MID),
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 1000).value,
+            ],
+            [
+                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.MID),
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 5000).value,
+            ],
+            [
+                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.MID),
+                pd.Timedelta(nanoseconds=1),
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0, 1).value,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0, 5000, nanosecond=1).value,
+            ],
+            [
+                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.MID),
+                pd.Timedelta(nanoseconds=999_999),
+                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0, 999_999).value,
+                (pd.Timestamp(1990, 1, 1, 0, 0, 0, 0, 5000) + pd.Timedelta(nanoseconds=999_999)).value,
+            ],
+            [
                 BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 0, 0, 10).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 0, 10).value,
             ],
             [
                 BarSpecification(60, BarAggregation.SECOND, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 0, 1, 0).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 1, 0).value,
             ],
             [
-                BarSpecification(300, BarAggregation.SECOND, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 0, 5, 0).value,
+                BarSpecification(12, BarAggregation.SECOND, PriceType.MID),
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 0, 12).value,
             ],
             [
                 BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 0, 1).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 1).value,
+            ],
+            [
+                BarSpecification(10, BarAggregation.MINUTE, PriceType.MID),
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 0, 10).value,
             ],
             [
                 BarSpecification(60, BarAggregation.MINUTE, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 1, 0).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 1, 0).value,
             ],
             [
                 BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
-                pd.Timestamp(1970, 1, 1, 1, 0).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 1, 1, 0).value,
             ],
             [
                 BarSpecification(1, BarAggregation.DAY, PriceType.MID),
-                pd.Timestamp(1970, 1, 2, 0, 0).value,
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 2, 0, 0).value,
             ],
+            [
+                BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
+                None,
+                pd.Timestamp(1990, 1, 1, 0, 0).value,
+                pd.Timestamp(1990, 1, 8, 0, 0).value, # Based on the calendar
+            ],
+            # TODO: Not working because of a potential bug in Pandas
+            #[
+            #    BarSpecification(12, BarAggregation.MONTH, PriceType.MID),
+            #    None,
+            #    pd.Timestamp(1990, 1, 1, 0, 0).value,
+            #    pd.Timestamp(1991, 1, 1, 0, 0).value,
+            #],
         ],
     )
-    def test_instantiate_with_various_bar_specs(self, bar_spec, expected):
+    def test_instantiate_and_update_timer_with_various_bar_specs(
+            self,
+            bar_spec: BarSpecification,
+            time_bars_origin: pd.Timedelta,
+            expected1: pd.Timestamp,
+            expected2: pd.Timestamp
+    ):
         # Arrange
+        start_time_ns = pd.Timestamp(1990, 1, 1).value
+
         clock = TestClock()
+        clock.set_time(start_time_ns)
+
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_type = BarType(instrument_id, bar_spec)
@@ -1760,10 +1869,18 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
+            time_bars_origin=time_bars_origin
         )
 
-        # Assert
-        assert aggregator.next_close_ns == expected
+        # Assert 1 (pd.Timestamp for the error output readability)
+        assert pd.Timestamp(aggregator.next_close_ns) == pd.Timestamp(expected1)
+
+        # Arrange
+        events = clock.advance_time(start_time_ns)
+        events[0].handle()
+
+        # Assert 2 (pd.Timestamp for the error output readability)
+        assert pd.Timestamp(aggregator.next_close_ns) == pd.Timestamp(expected2)
 
     def test_update_timer_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
@@ -2470,16 +2587,16 @@ class TestTimeBarAggregator:
     @pytest.mark.parametrize(
         "timestamp_on_close, interval_type, ts_event1, ts_event2",
         [
-            (False, "left-open", 0, 60_000_000_000),
-            (False, "right-open", 0, 60_000_000_000),
-            (True, "left-open", 60_000_000_000, 120_000_000_000),
-            (True, "right-open", 0, 60_000_000_000),
+            (False, BarIntervalType.LEFT_OPEN, 0, 60_000_000_000),
+            (False, BarIntervalType.RIGHT_OPEN, 0, 60_000_000_000),
+            (True, BarIntervalType.LEFT_OPEN, 60_000_000_000, 120_000_000_000),
+            (True, BarIntervalType.RIGHT_OPEN, 0, 60_000_000_000),
         ],
     )
     def test_timebar_aggregator_interval_types(
         self,
         timestamp_on_close: bool,
-        interval_type: str,
+        interval_type: BarIntervalType,
         ts_event1: int,
         ts_event2: int,
     ) -> None:

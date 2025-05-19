@@ -132,6 +132,7 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarIntervalType
 from nautilus_trader.model.functions cimport aggregation_source_from_str
 from nautilus_trader.model.functions cimport aggressor_side_from_str
 from nautilus_trader.model.functions cimport aggressor_side_to_str
@@ -279,6 +280,29 @@ cdef class BarSpecification:
         PriceType price_type,
     ) -> None:
         Condition.positive_int(step, "step")
+
+        def validate_step(subunits: int):
+            if subunits % step != 0:
+                raise ValueError(
+                    f"Invalid step in bar_type.spec.step: "
+                    f"{step} for aggregation={aggregation}. "
+                    f"step must divide {subunits} (so it is periodic)."
+                )
+
+        if aggregation == BarAggregation.MILLISECOND:
+            validate_step(1000)
+        elif aggregation == BarAggregation.SECOND:
+            validate_step(60)
+        elif aggregation == BarAggregation.MINUTE:
+            validate_step(60)
+        elif aggregation == BarAggregation.HOUR:
+            validate_step(24)
+        elif aggregation == BarAggregation.DAY:
+            validate_step(1)
+        elif aggregation == BarAggregation.WEEK:
+            validate_step(1)
+        elif aggregation == BarAggregation.MONTH:
+            validate_step(12)
 
         self._mem = bar_specification_new(
             step,

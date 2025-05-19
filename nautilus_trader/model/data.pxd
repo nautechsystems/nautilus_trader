@@ -104,6 +104,12 @@ cpdef enum BarAggregation:
     MONTH = 16
 
 
+cpdef enum BarIntervalType:
+    LEFT_OPEN=0
+    RIGHT_OPEN=1
+
+
+
 cdef class BarSpecification:
     cdef BarSpecification_t _mem
 
