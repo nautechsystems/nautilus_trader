@@ -100,7 +100,9 @@ fn get_weights(size: usize) -> Vec<f64> {
 impl HullMovingAverage {
     /// Creates a new [`HullMovingAverage`] instance.
     ///
-    /// Panics if `period == 0`.
+    /// # Panics
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         assert!(
@@ -165,8 +167,10 @@ impl MovingAverage for HullMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::{Bar, QuoteTick, TradeTick};
-    use nautilus_model::enums::PriceType;
+    use nautilus_model::{
+        data::{Bar, QuoteTick, TradeTick},
+        enums::PriceType,
+    };
     use rstest::rstest;
 
     use crate::{
