@@ -16,12 +16,12 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET
-from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
-from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
-from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
-from nautilus_trader.adapters.polymarket.factories import PolymarketLiveDataClientFactory
-from nautilus_trader.adapters.polymarket.factories import PolymarketLiveExecClientFactory
+from nautilus_trader.adapters.polymarket import POLYMARKET
+from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketLiveDataClientFactory
+from nautilus_trader.adapters.polymarket import PolymarketLiveExecClientFactory
+from nautilus_trader.adapters.polymarket import get_polymarket_instrument_id
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
