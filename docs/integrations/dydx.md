@@ -66,7 +66,7 @@ By default, all orders are sent as short-term orders. To construct long-term ord
 an order like this:
 
 ```python
-from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
+from nautilus_trader.adapters.dydx import DYDXOrderTags
 
 order: LimitOrder = self.order_factory.limit(
     instrument_id=self.instrument_id,
@@ -84,7 +84,7 @@ order: LimitOrder = self.order_factory.limit(
 To specify the number of blocks that an order is active:
 
 ```python
-from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
+from nautilus_trader.adapters.dydx import DYDXOrderTags
 
 order: LimitOrder = self.order_factory.limit(
     instrument_id=self.instrument_id,
@@ -166,8 +166,8 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
-from nautilus_trader.adapters.dydx.factories import DYDXLiveExecClientFactory
+from nautilus_trader.adapters.dydx import DYDXLiveDataClientFactory
+from nautilus_trader.adapters.dydx import DYDXLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
