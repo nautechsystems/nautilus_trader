@@ -27,7 +27,9 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_core::{
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+};
 use nautilus_execution::reports::{
     fill::FillReport, order::OrderStatusReport, position::PositionStatusReport,
 };
@@ -64,7 +66,7 @@ use super::{
 use crate::{
     common::{
         consts::COINBASE_INTX_REST_URL,
-        credential::{Credential, get_env_var},
+        credential::Credential,
         enums::{CoinbaseIntxOrderType, CoinbaseIntxSide, CoinbaseIntxTimeInForce},
     },
     http::{

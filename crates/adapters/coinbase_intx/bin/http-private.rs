@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_coinbase_intx::http::client::CoinbaseIntxHttpClient;
+use nautilus_core::env::get_env_var;
 use nautilus_model::identifiers::{AccountId, Symbol};
 use tracing::level_filters::LevelFilter;
 
@@ -41,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     client.add_instrument(instrument);
 
     // Otherwise, the client can return Nautilus domain objects
-    let portfolio_id = std::env::var("COINBASE_INTX_PORTFOLIO_ID").unwrap(); // Must be set
+    let portfolio_id = get_env_var("COINBASE_INTX_PORTFOLIO_ID")?;
     let account_id = AccountId::from(format!("COINBASE_INTX-{portfolio_id}"));
     let reports = client
         .request_order_status_reports(account_id, symbol)
