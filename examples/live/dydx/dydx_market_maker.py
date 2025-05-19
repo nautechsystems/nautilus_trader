@@ -16,10 +16,10 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
-from nautilus_trader.adapters.dydx.config import DYDXExecClientConfig
-from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
-from nautilus_trader.adapters.dydx.factories import DYDXLiveExecClientFactory
+from nautilus_trader.adapters.dydx import DYDXDataClientConfig
+from nautilus_trader.adapters.dydx import DYDXExecClientConfig
+from nautilus_trader.adapters.dydx import DYDXLiveDataClientFactory
+from nautilus_trader.adapters.dydx import DYDXLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
