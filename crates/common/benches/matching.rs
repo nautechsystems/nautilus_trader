@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use nautilus_common::msgbus::{Pattern, Topic, is_matching, is_matching_backtracking};
+use nautilus_common::msgbus::{
+    Pattern, Topic,
+    matching::{is_matching, is_matching_backtracking},
+};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use regex::Regex;
 use ustr::Ustr;
