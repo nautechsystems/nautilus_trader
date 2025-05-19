@@ -88,31 +88,40 @@ impl Indicator for HullMovingAverage {
     }
 }
 
-fn _get_weights(size: usize) -> Vec<f64> {
-    let mut weights: Vec<f64> = (1..=size).map(|x| x as f64).collect();
-    let divisor: f64 = weights.iter().sum();
-    weights = weights.iter().map(|x| x / divisor).collect();
-    weights
+fn get_weights(size: usize) -> Vec<f64> {
+    let mut w: Vec<f64> = (1..=size).map(|x| x as f64).collect();
+    let divisor: f64 = w.iter().sum();
+    for v in &mut w {
+        *v /= divisor;
+    }
+    w
 }
 
 impl HullMovingAverage {
     /// Creates a new [`HullMovingAverage`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        let period_halved = period / 2;
-        let period_sqrt = (period as f64).sqrt() as usize;
+        assert!(
+            period > 0,
+            "HullMovingAverage: period must be > 0 (received {period})"
+        );
 
-        let w1 = _get_weights(period_halved);
-        let w2 = _get_weights(period);
-        let w3 = _get_weights(period_sqrt);
+        let half = usize::max(1, period / 2);
+        let root = usize::max(1, (period as f64).sqrt() as usize);
 
-        let ma1 = WeightedMovingAverage::new(period_halved, w1, price_type);
-        let ma2 = WeightedMovingAverage::new(period, w2, price_type);
-        let ma3 = WeightedMovingAverage::new(period_sqrt, w3, price_type);
+        let pt = price_type.unwrap_or(PriceType::Last);
+
+        let ma1 = WeightedMovingAverage::new(half, get_weights(half), Some(pt));
+        let ma2 = WeightedMovingAverage::new(period, get_weights(period), Some(pt));
+        let ma3 = WeightedMovingAverage::new(root, get_weights(root), Some(pt));
 
         Self {
             period,
-            price_type: price_type.unwrap_or(PriceType::Last),
+            price_type: pt,
             value: 0.0,
             count: 0,
             has_inputs: false,
@@ -158,7 +167,10 @@ impl MovingAverage for HullMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+    use nautilus_model::{
+        data::{Bar, QuoteTick, TradeTick},
+        enums::PriceType,
+    };
     use rstest::rstest;
 
     use crate::{
@@ -255,5 +267,139 @@ mod tests {
         assert_eq!(indicator_hma_10.ma3.value, 0.0);
         assert!(!indicator_hma_10.has_inputs);
         assert!(!indicator_hma_10.initialized);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "HullMovingAverage: period must be > 0")]
+    fn test_new_with_zero_period_panics() {
+        let _ = HullMovingAverage::new(0, None);
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(5)]
+    #[case(128)]
+    #[case(10_000)]
+    fn test_new_with_positive_period_constructs(#[case] period: usize) {
+        let hma = HullMovingAverage::new(period, None);
+        assert_eq!(hma.period, period);
+        assert_eq!(hma.count(), 0);
+        assert!(!hma.initialized());
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid)]
+    #[case(PriceType::Ask)]
+    #[case(PriceType::Last)]
+    fn test_price_type_propagates_to_inner_wmas(#[case] pt: PriceType) {
+        let hma = HullMovingAverage::new(10, Some(pt));
+        assert_eq!(hma.price_type, pt);
+        assert_eq!(hma.ma1.price_type, pt);
+        assert_eq!(hma.ma2.price_type, pt);
+        assert_eq!(hma.ma3.price_type, pt);
+    }
+
+    #[rstest]
+    fn test_price_type_defaults_to_last() {
+        let hma = HullMovingAverage::new(10, None);
+        assert_eq!(hma.price_type, PriceType::Last);
+        assert_eq!(hma.ma1.price_type, PriceType::Last);
+        assert_eq!(hma.ma2.price_type, PriceType::Last);
+        assert_eq!(hma.ma3.price_type, PriceType::Last);
+    }
+
+    #[rstest]
+    #[case(10.0)]
+    #[case(-5.5)]
+    #[case(42.42)]
+    #[case(0.0)]
+    fn period_one_degenerates_to_price(#[case] price: f64) {
+        let mut hma = HullMovingAverage::new(1, None);
+
+        for _ in 0..5 {
+            hma.update_raw(price);
+            assert!(
+                (hma.value() - price).abs() < f64::EPSILON,
+                "HMA(1) should equal last price {price}, got {}",
+                hma.value()
+            );
+            assert!(hma.initialized(), "HMA(1) must initialise immediately");
+        }
+    }
+
+    #[rstest]
+    #[case(3, 123.456_f64)]
+    #[case(13, 0.001_f64)]
+    fn constant_series_yields_constant_value(#[case] period: usize, #[case] constant: f64) {
+        let mut hma = HullMovingAverage::new(period, None);
+
+        for _ in 0..(period * 4) {
+            hma.update_raw(constant);
+            assert!(
+                (hma.value() - constant).abs() < 1e-12,
+                "Expected {constant}, got {}",
+                hma.value()
+            );
+        }
+        assert!(hma.initialized());
+    }
+
+    #[rstest]
+    fn alternating_extremes_bounded() {
+        let mut hma = HullMovingAverage::new(50, None);
+        let lows_highs = [0.0_f64, 1_000.0_f64];
+
+        for i in 0..200 {
+            let price = lows_highs[i & 1];
+            hma.update_raw(price);
+
+            let v = hma.value();
+            assert!((0.0..=1_000.0).contains(&v), "HMA out of bounds: {v}");
+        }
+    }
+
+    #[rstest]
+    #[case(2)]
+    #[case(17)]
+    #[case(128)]
+    fn initialized_boundary(#[case] period: usize) {
+        let mut hma = HullMovingAverage::new(period, None);
+
+        for i in 0..(period - 1) {
+            hma.update_raw(i as f64);
+            assert!(!hma.initialized(), "HMA wrongly initialised at count {i}");
+        }
+
+        hma.update_raw(0.0);
+        assert!(
+            hma.initialized(),
+            "HMA should initialise at exactly {period} ticks"
+        );
+    }
+
+    #[rstest]
+    #[case(2)]
+    #[case(3)]
+    fn small_periods_do_not_panic(#[case] period: usize) {
+        let mut hma = HullMovingAverage::new(period, None);
+        for i in 0..(period * 5) {
+            hma.update_raw(i as f64);
+        }
+        assert!(hma.initialized());
+    }
+
+    #[rstest]
+    fn negative_prices_supported() {
+        let mut hma = HullMovingAverage::new(10, None);
+        let prices = [-5.0, -4.0, -3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5];
+
+        for &p in &prices {
+            hma.update_raw(p);
+            let v = hma.value();
+            assert!(
+                v.is_finite(),
+                "HMA produced a non-finite value {v} from negative prices"
+            );
+        }
     }
 }
