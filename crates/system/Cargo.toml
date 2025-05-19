@@ -39,6 +39,8 @@ nautilus-risk = { workspace = true }
 nautilus-execution = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-persistence = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
 
