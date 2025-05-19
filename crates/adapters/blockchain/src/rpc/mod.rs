@@ -32,6 +32,7 @@ pub mod types;
 pub mod utils;
 
 #[enum_dispatch(BlockchainRpcClient)]
+#[derive(Debug)]
 pub enum BlockchainRpcClientAny {
     Ethereum(EthereumRpcClient),
     Polygon(PolygonRpclient),

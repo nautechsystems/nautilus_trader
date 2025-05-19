@@ -43,6 +43,7 @@ pub struct TokenInfo {
 ///
 /// This struct provides methods to fetch token metadata (name, symbol, decimals)
 /// from ERC20-compliant tokens on any EVM-compatible blockchain.
+#[derive(Debug)]
 pub struct Erc20Contract {
     /// The HTTP RPC client used to communicate with the blockchain node
     client: Arc<BlockchainHttpRpcClient>,
@@ -65,6 +66,12 @@ impl Erc20Contract {
     }
 
     /// Fetches complete token information (name, symbol, decimals) from an ERC20 contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any of the contract calls fail.
+    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
+    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
     pub async fn fetch_token_info(
         &self,
         token_address: &str,

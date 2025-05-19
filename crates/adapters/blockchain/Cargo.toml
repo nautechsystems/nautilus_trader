@@ -27,11 +27,11 @@ features = ["defi", "python"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-model = { workspace = true, features = ["defi"] }
-nautilus-core = { workspace = true }
-nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
 nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
+nautilus-model = { workspace = true, features = ["defi"] }
+nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }

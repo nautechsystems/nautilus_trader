@@ -24,6 +24,7 @@ pub mod database;
 pub mod rows;
 
 /// Provides caching functionality for various blockchain domain objects.
+#[derive(Debug)]
 pub struct BlockchainCache {
     /// The blockchain chain this cache is associated with.
     chain: SharedChain,

@@ -35,6 +35,7 @@ use crate::rpc::{
 /// - Subscription lifecycle (creation, tracking, and termination)
 /// - Message serialization and deserialization of RPC messages
 /// - Event type mapping and dispatching
+#[derive(Debug)]
 pub struct CoreBlockchainRpcClient {
     /// The blockchain network type this client connects to.
     chain: Chain,
@@ -68,6 +69,10 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Establishes a WebSocket connection to the blockchain node and sets up the message channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let (tx, rx) = tokio::sync::mpsc::channel(100);
         let user_agent = (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
@@ -155,6 +160,14 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if expected fields (`id`, `result`) are missing or cannot be converted when handling subscription confirmations or events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC channel encounters an error or if deserialization of the message fails.
     pub async fn next_rpc_message(
         &mut self,
     ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
@@ -236,12 +249,20 @@ impl CoreBlockchainRpcClient {
     }
 
     /// Subscribes to real-time block updates from the blockchain node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails or if the client is not connected.
     pub async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.subscribe_events(RpcEventType::NewBlock, String::from("newHeads"))
             .await
     }
 
     /// Cancels the subscription to real-time block updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails or if the client is not connected.
     pub async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError> {
         self.unsubscribe_events(String::from("newHeads")).await?;
 

@@ -30,7 +30,7 @@ pub struct DexExtended {
 }
 
 impl DexExtended {
-    /// Creates a new `DexExtended` wrapper around a domain `Dex` object.
+    /// Creates a new [`DexExtended`] wrapper around a domain `Dex` object.
     #[must_use]
     pub fn new(dex: Dex) -> Self {
         Self {

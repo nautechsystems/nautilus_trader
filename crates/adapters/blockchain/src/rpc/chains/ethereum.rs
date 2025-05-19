@@ -20,6 +20,7 @@ use crate::rpc::{
     types::BlockchainMessage,
 };
 
+#[derive(Debug)]
 pub struct EthereumRpcClient {
     base_client: CoreBlockchainRpcClient,
 }

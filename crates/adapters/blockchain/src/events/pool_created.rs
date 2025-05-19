@@ -34,7 +34,7 @@ pub struct PoolCreated {
 }
 
 impl PoolCreated {
-    /// Creates a new `PoolCreated` instance with the specified parameters.
+    /// Creates a new [`PoolCreated`] instance with the specified parameters.
     #[must_use]
     pub const fn new(
         block_number: u64,

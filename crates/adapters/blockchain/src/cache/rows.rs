@@ -19,6 +19,7 @@ use sqlx::{FromRow, Row, postgres::PgRow};
 ///
 /// Implements `FromRow` trait to automatically convert PostgreSQL results into `TokenRow`
 /// objects that can be transformed into domain entity `Token` objects.
+#[derive(Debug)]
 pub struct TokenRow {
     pub address: String,
     pub name: String,
