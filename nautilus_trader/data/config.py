@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.enums import BarIntervalType
 
 
 class DataEngineConfig(NautilusConfig, frozen=True):
@@ -25,10 +26,10 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    time_bars_interval_type : str, default 'left-open'
+    time_bars_interval_type : BarIntervalType, default 'BarIntervalType.LEFT_OPEN'
         Determines the type of interval used for time aggregation.
-        - 'left-open': start time is excluded and end time is included (default).
-        - 'right-open': start time is included and end time is excluded.
+        - 'LEFT_OPEN': start time is excluded and end time is included (default).
+        - 'RIGHT_OPEN': start time is included and end time is excluded.
     time_bars_timestamp_on_close : bool, default True
         If time bar aggregators will timestamp `ts_event` on bar close.
         If False, then will timestamp on bar open.
@@ -54,7 +55,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     """
 
-    time_bars_interval_type: str = "left-open"
+    time_bars_interval_type: BarIntervalType = BarIntervalType.LEFT_OPEN
     time_bars_timestamp_on_close: bool = True
     time_bars_skip_first_non_full_bar: bool = False
     time_bars_build_with_no_updates: bool = True

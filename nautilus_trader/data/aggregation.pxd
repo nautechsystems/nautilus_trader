@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from cpython.datetime cimport datetime
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
@@ -120,6 +121,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void stop(self)
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
+    cpdef void _invalidate_skip_first_non_full_bar_on_exact_start(self, datetime now, datetime start_time)
     cpdef void _set_build_timer(self)
     cdef void _batch_pre_update(self, uint64_t time_ns)
     cdef void _batch_post_update(self, uint64_t time_ns)

@@ -153,3 +153,4 @@ class TestDataType:
         assert isinstance(hash(data_type), int)
         assert str(data_type) == "Data{'category': 1, 'code': 0}"
         assert repr(data_type) == "DataType(type=Data, metadata={'category': 1, 'code': 0})"
+

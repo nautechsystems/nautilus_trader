@@ -18,7 +18,6 @@ from typing import Callable
 
 import pandas as pd
 
-from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
@@ -34,6 +33,7 @@ from nautilus_trader.core.rust.model cimport FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport QuantityRaw
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarIntervalType
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -682,10 +682,10 @@ cdef class TimeBarAggregator(BarAggregator):
         The bar handler for the aggregator.
     clock : Clock
         The clock for the aggregator.
-    interval_type : str, default 'left-open'
+    interval_type : BarIntervalType, default 'BarIntervalType.LEFT_OPEN'
         Determines the type of interval used for time aggregation.
-        - 'left-open': start time is excluded and end time is included (default).
-        - 'right-open': start time is included and end time is excluded.
+        - 'LEFT_OPEN': start time is excluded and end time is included (default).
+        - 'RIGHT_OPEN': start time is included and end time is excluded.
     timestamp_on_close : bool, default True
         If True, then timestamp will be the bar close time.
         If False, then timestamp will be the bar open time.
@@ -712,7 +712,7 @@ cdef class TimeBarAggregator(BarAggregator):
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Clock clock not None,
-        str interval_type = "left-open",
+        BarIntervalType interval_type = BarIntervalType.LEFT_OPEN,
         bint timestamp_on_close = True,
         bint skip_first_non_full_bar = False,
         bint build_with_no_updates = True,
@@ -726,20 +726,22 @@ cdef class TimeBarAggregator(BarAggregator):
         )
         self._clock = clock
 
-        if interval_type == "left-open":
+        self._time_bars_origin_offset = time_bars_origin_offset
+        self._skip_first_non_full_bar = skip_first_non_full_bar
+        self._timestamp_on_close = timestamp_on_close
+        self._build_with_no_updates = build_with_no_updates
+        self._bar_build_delay = bar_build_delay
+
+        if interval_type == BarIntervalType.LEFT_OPEN:
             self._is_left_open = True
-        elif interval_type == "right-open":
+        elif interval_type == BarIntervalType.RIGHT_OPEN:
             self._is_left_open = False
         else:
             raise ValueError(
-                f"Invalid interval_type: {interval_type}. Must be 'left-open' or 'right-open'.",
+                f"Invalid interval_type: {interval_type}. Must be BarIntervalType.LEFT_OPEN or BarIntervalType.RIGHT_OPEN.",
             )
 
-        self._timestamp_on_close = timestamp_on_close
-        self._skip_first_non_full_bar = skip_first_non_full_bar
-        self._build_with_no_updates = build_with_no_updates
-        self._time_bars_origin_offset = time_bars_origin_offset
-        self._bar_build_delay = bar_build_delay
+        self._validate_input_values()
 
         self._timer_name = None
         self._build_on_next_tick = False
@@ -755,6 +757,30 @@ cdef class TimeBarAggregator(BarAggregator):
         self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
         self._stored_close_ns = 0
 
+
+    def _validate_input_values(self):
+        cdef BarAggregation aggregation = self.bar_type.spec.aggregation
+
+        if self._time_bars_origin is not None and self._time_bars_origin < pd.Timedelta(seconds=0):
+            raise ValueError("Invalid time_bars_origin: It must be positive.")
+
+        def validate(sup_time_bars_origin: pd.Timedelta):
+            if self._time_bars_origin is not None:
+                if self._time_bars_origin >= sup_time_bars_origin:
+                    raise ValueError(
+                        f"Invalid time_bars_origin: "
+                        f"{self._time_bars_origin} for aggregation={self.bar_type}. "
+                        f"Must be smaller than {sup_time_bars_origin}."
+                    )
+
+        if aggregation != BarAggregation.MONTH:
+            validate(self._get_interval())
+        else:
+            # Days of February in common year
+            # To prevent "quasi-chaotic" indicator behavior
+            validate(pd.Timedelta(days=28, nanoseconds=1)) #
+
+
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
@@ -768,8 +794,8 @@ cdef class TimeBarAggregator(BarAggregator):
             The timestamp (UTC).
 
         """
-        step = self.bar_type.spec.step
-        aggregation = self.bar_type.spec.aggregation
+        cdef int step = self.bar_type.spec.step
+        cdef BarAggregation aggregation = self.bar_type.spec.aggregation
 
         if aggregation == BarAggregation.MILLISECOND:
             start_time = now.floor(freq="s")
@@ -780,10 +806,11 @@ cdef class TimeBarAggregator(BarAggregator):
             if now < start_time:
                 start_time -= pd.Timedelta(seconds=1)
 
-            while start_time <= now:
+            while start_time < now:
                 start_time += pd.Timedelta(milliseconds=step)
 
             start_time -= pd.Timedelta(milliseconds=step)
+
         elif aggregation == BarAggregation.SECOND:
             start_time = now.floor(freq="min")
 
@@ -793,10 +820,11 @@ cdef class TimeBarAggregator(BarAggregator):
             if now < start_time:
                 start_time -= pd.Timedelta(minutes=1)
 
-            while start_time <= now:
+            while start_time < now:
                 start_time += pd.Timedelta(seconds=step)
 
             start_time -= pd.Timedelta(seconds=step)
+
         elif aggregation == BarAggregation.MINUTE:
             start_time = now.floor(freq="h")
 
@@ -806,10 +834,11 @@ cdef class TimeBarAggregator(BarAggregator):
             if now < start_time:
                 start_time -= pd.Timedelta(hours=1)
 
-            while start_time <= now:
+            while start_time < now:
                 start_time += pd.Timedelta(minutes=step)
 
             start_time -= pd.Timedelta(minutes=step)
+
         elif aggregation == BarAggregation.HOUR:
             start_time = now.floor(freq="d")
 
@@ -819,26 +848,29 @@ cdef class TimeBarAggregator(BarAggregator):
             if now < start_time:
                 start_time -= pd.Timedelta(days=1)
 
-            while start_time <= now:
+            while start_time < now:
                 start_time += pd.Timedelta(hours=step)
 
             start_time -= pd.Timedelta(hours=step)
+
         elif aggregation == BarAggregation.DAY:
             start_time = now.floor(freq="d")
 
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
-            if now < start_time:
+            if now <= start_time:
                 start_time -= pd.Timedelta(days=1)
+
         elif aggregation == BarAggregation.WEEK:
             start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
 
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
-            if now < start_time:
+            if now <= start_time:
                 start_time -= pd.Timedelta(weeks=1)
+
         elif aggregation == BarAggregation.MONTH:
             start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
 
@@ -848,10 +880,11 @@ cdef class TimeBarAggregator(BarAggregator):
             if now < start_time:
                 start_time -= pd.DateOffset(years=1)
 
-            while start_time <= now:
+            while start_time < now:
                 start_time += pd.DateOffset(months=step)
 
             start_time -= pd.DateOffset(months=step)
+
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
@@ -859,6 +892,7 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         return start_time
+
 
     cdef timedelta _get_interval(self):
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
@@ -910,14 +944,22 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
+    cpdef void _invalidate_skip_first_non_full_bar_on_exact_start(self, datetime now, datetime start_time):
+        # TODO: Make tests for this behavior
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH and start_time - self.interval == now:
+            self._skip_first_non_full_bar = False
+        # TODO: Bug in Pandas break this. Use inequality instead
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH and start_time - pd.DateOffset(months=step) == now:
+            self._skip_first_non_full_bar = False
+
+
     cpdef void _set_build_timer(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
 
-        if start_time == now:
-            self._skip_first_non_full_bar = False
+        self._invalidate_skip_first_non_full_bar_on_exact_start(now, start_time)
 
         start_time += timedelta(microseconds=self._bar_build_delay)
         self._log.debug(f"Timer {start_time=}")
@@ -956,11 +998,19 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
+    def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
+        super().start_batch_update(handler, time_ns)
+
+
     def _start_batch_time(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step
         self._batch_mode = True
 
-        start_time = self.get_start_time(unix_nanos_to_dt(time_ns))
+        cdef datetime given_start_time = unix_nanos_to_dt(time_ns)
+        cdef datetime start_time = self.get_start_time(given_start_time)
+        #TODO: Test this behavior
+        self._invalidate_skip_first_non_full_bar_on_exact_start(given_start_time, start_time)
+
         self._batch_open_ns = dt_to_unix_nanos(start_time)
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:
@@ -1076,11 +1126,28 @@ cdef class TimeBarAggregator(BarAggregator):
             self._batch_post_update(ts_init)
 
     cpdef void _build_bar(self, TimeEvent event):
+        cdef int step = self.bar_type.spec.step
+
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+            # On receiving this event, timer should now have a new `next_time_ns`
+            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
+        else:
+            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=step)
+
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+            )
+
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
+
         if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
             # _build_on_next_tick is used to avoid a race condition between a data update and a TimeEvent from the timer
             self._build_on_next_tick = True
-            self._stored_close_ns = self.next_close_ns
+            self._stored_close_ns = event.ts_event
             return
 
         if not self._build_with_no_updates and self._builder.count == 0:
@@ -1098,19 +1165,3 @@ cdef class TimeBarAggregator(BarAggregator):
         # Close time becomes the next open time
         self._stored_open_ns = event.ts_event
 
-        cdef int step = self.bar_type.spec.step
-
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
-            # On receiving this event, timer should now have a new `next_time_ns`
-            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
-        else:
-            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=step)
-
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=alert_time,
-                callback=self._build_bar,
-                override=True,
-            )
-
-            self.next_close_ns = dt_to_unix_nanos(alert_time)

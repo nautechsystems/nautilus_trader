@@ -23,6 +23,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.model.data cimport BarIntervalType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
@@ -98,7 +99,7 @@ cdef class DataEngine(Component):
     cdef readonly dict[UUID4, int] _query_group_n_components
     cdef readonly dict[UUID4, list] _query_group_components
 
-    cdef readonly str _time_bars_interval_type
+    cdef readonly BarIntervalType _time_bars_interval_type
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly bint _time_bars_skip_first_non_full_bar
     cdef readonly bint _time_bars_build_with_no_updates
