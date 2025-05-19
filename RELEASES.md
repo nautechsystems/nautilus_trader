@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added convenient re-exports for Binance adapter (constants, configs, factories, loaders, types)
 - Added convenient re-exports for Bybit adapter (constants, configs, factories, loaders, types)
 - Added convenient re-exports for Coinbase International adapter (constants, configs, factories)
+- Added convenient re-exports for Databento adapter (constants, configs, factories, loaders, types)
 - Added support for `FillModel`, `LatencyModel` and `FeeModel` in BacktestNode (#2601), thanks @faysou
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit

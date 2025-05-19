@@ -233,7 +233,7 @@ Or requesting the previous days `statistics` schema for the `ES.FUT` parent symb
 
 ```python
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
-from nautilus_trader.adapters.databento import DatabentoStatisics
+from nautilus_trader.adapters.databento import DatabentoStatistics
 from nautilus_trader.model import DataType
 
 instrument_id = InstrumentId.from_str("ES.FUT.GLBX")
@@ -242,7 +242,7 @@ metadata = {
     "start": "2024-03-06",
 }
 self.request_data(
-    data_type=DataType(DatabentoImbalance, metadata=metadata),
+    data_type=DataType(DatabentoStatistics, metadata=metadata),
     client_id=DATABENTO_CLIENT_ID,
 )
 ```
