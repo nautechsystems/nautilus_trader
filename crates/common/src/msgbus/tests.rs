@@ -21,10 +21,11 @@ use rstest::rstest;
 use ustr::Ustr;
 
 use crate::msgbus::{
-    self, MessageBus, get_message_bus, is_matching, is_matching_backtracking,
+    self, MessageBus, Pattern, Topic, get_message_bus, is_matching, is_matching_backtracking,
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
     },
+    subscriptions_count,
 };
 
 #[rstest]
@@ -168,7 +169,7 @@ fn test_unsubscribe() {
 #[rstest]
 fn test_matching_subscriptions() {
     let msgbus = get_message_bus();
-    let topic = "my-topic";
+    let pattern = "my-topic";
 
     let handler_id1 = Ustr::from("1");
     let handler1 = get_stub_shareable_handler(Some(handler_id1));
@@ -182,11 +183,14 @@ fn test_matching_subscriptions() {
     let handler_id4 = Ustr::from("4");
     let handler4 = get_stub_shareable_handler(Some(handler_id4));
 
-    msgbus::subscribe(topic, handler1, None);
-    msgbus::subscribe(topic, handler2, None);
-    msgbus::subscribe(topic, handler3, Some(1));
-    msgbus::subscribe(topic, handler4, Some(2));
-    let topic = Ustr::from(topic);
+    msgbus::subscribe(pattern, handler1, None);
+    msgbus::subscribe(pattern, handler2, None);
+    msgbus::subscribe(pattern, handler3, Some(1));
+    msgbus::subscribe(pattern, handler4, Some(2));
+
+    assert_eq!(subscriptions_count(pattern), 0);
+
+    let topic = Ustr::from(pattern);
 
     let subs = msgbus.borrow_mut().matching_subscriptions(&topic);
     assert_eq!(subs.len(), 4);
@@ -220,7 +224,7 @@ fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected
         expected
     );
     assert_eq!(
-        is_matching_backtracking(&Ustr::from(topic), &Ustr::from(pattern)),
+        is_matching_backtracking(Topic::from(topic), Pattern::from(pattern)),
         expected
     );
 }
@@ -306,7 +310,7 @@ fn test_matching_backtracking() {
         let regex_pattern = convert_pattern_to_regex(&pattern);
         let regex = Regex::new(&regex_pattern).unwrap();
         assert_eq!(
-            is_matching_backtracking(&Ustr::from(topic), &Ustr::from(&pattern)),
+            is_matching_backtracking(Topic::from(topic), Pattern::from(&pattern)),
             regex.is_match(topic),
             "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
             i,
@@ -329,10 +333,10 @@ fn test_subscription_pattern_matching() {
     msgbus::subscribe("data.*.BINANCE.*", handler3, None);
     assert_eq!(msgbus.borrow().subscriptions().len(), 3);
 
-    let topic = Ustr::from("data.quotes.BINANCE.ETHUSDT");
-    assert_eq!(msgbus.borrow().find_topic_matches(&topic).len(), 2);
+    let topic = "data.quotes.BINANCE.ETHUSDT";
+    assert_eq!(msgbus.borrow().find_topic_matches(topic.into()).len(), 2);
 
-    let matches = msgbus.borrow_mut().matching_subscriptions(&topic);
+    let matches = msgbus.borrow_mut().matching_subscriptions(topic);
     assert_eq!(matches.len(), 2);
     assert_eq!(matches[0].handler_id, Ustr::from("1"));
     assert_eq!(matches[1].handler_id, Ustr::from("3"));

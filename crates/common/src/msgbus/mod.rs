@@ -32,7 +32,7 @@ mod tests;
 use std::{
     any::Any,
     cell::RefCell,
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     fmt::{self, Debug, Display},
     hash::{Hash, Hasher},
     ops::Deref,
@@ -40,7 +40,7 @@ use std::{
     sync::OnceLock,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::UUID4;
@@ -201,14 +201,21 @@ pub fn subscribe<T: AsRef<str>>(
     handler: ShareableMessageHandler,
     priority: Option<u8>,
 ) {
-    let pattern = Ustr::from(pattern.as_ref());
+    let pattern = Pattern::from(pattern);
+    inner_subscribe(pattern, handler, priority);
+}
 
-    log::debug!("Subscribing {handler:?} for pattern '{pattern}'");
-
+fn inner_subscribe(pattern: Pattern, handler: ShareableMessageHandler, priority: Option<u8>) {
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
-
     let sub = Subscription::new(pattern, handler, priority);
+
+    log::debug!(
+        "Subscribing {:?} for pattern '{}'",
+        sub.handler,
+        sub.pattern
+    );
+
     if msgbus_ref_mut.subscriptions.contains(&sub) {
         log::warn!("{sub:?} already exists");
         return;
@@ -216,7 +223,7 @@ pub fn subscribe<T: AsRef<str>>(
 
     // Find existing patterns which match this topic
     for (topic, subs) in msgbus_ref_mut.topics.iter_mut() {
-        if is_matching_backtracking(&Ustr::from(topic.as_ref()), &pattern) {
+        if is_matching_backtracking(*topic, sub.pattern) {
             // TODO: Consider binary_search and then insert
             subs.push(sub.clone());
             subs.sort();
@@ -227,24 +234,39 @@ pub fn subscribe<T: AsRef<str>>(
     msgbus_ref_mut.subscriptions.insert(sub);
 }
 
-/// Unsubscribes the `handler` from the `topic`.
-pub fn unsubscribe<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) {
-    let topic = Ustr::from(topic.as_ref());
+/// Unsubscribes the `handler` from the `pattern`.
+pub fn unsubscribe<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) {
+    let pattern = Pattern::from(pattern);
+    inner_unsubscribe(pattern, handler);
+}
 
-    log::debug!("Unsubscribing {handler:?} from topic '{topic}'");
+fn inner_unsubscribe(pattern: Pattern, handler: ShareableMessageHandler) {
+    log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
 
-    let sub = Subscription::new(topic, handler, None);
+    let sub = Subscription::new(pattern, handler, None);
+
+    get_message_bus()
+        .borrow_mut()
+        .topics
+        .values_mut()
+        .for_each(|subs| {
+            if let Ok(index) = subs.binary_search(&sub) {
+                subs.remove(index);
+            }
+        });
+
     let removed = get_message_bus().borrow_mut().subscriptions.remove(&sub);
 
     if removed {
-        log::debug!("Handler for topic '{topic}' was removed");
+        log::debug!("Handler for pattern '{pattern}' was removed");
     } else {
-        log::debug!("No matching handler for topic '{topic}' was found");
+        log::debug!("No matching handler for pattern '{pattern}' was found");
     }
 }
 
-pub fn is_subscribed<T: AsRef<str>>(topic: T, handler: ShareableMessageHandler) -> bool {
-    let sub = Subscription::new(topic, handler, None);
+pub fn is_subscribed<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) -> bool {
+    let pattern = Pattern::from(pattern);
+    let sub = Subscription::new(pattern, handler, None);
     get_message_bus().borrow().subscriptions.contains(&sub)
 }
 
@@ -258,7 +280,7 @@ pub fn subscriptions_count<T: AsRef<str>>(topic: T) -> usize {
 /// - `*` - match 0 or more characters
 /// - `?` - match any character once
 /// - `a-z` - match the specific character
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern(pub Ustr);
 
 impl<T: AsRef<str>> From<T> for Pattern {
@@ -281,9 +303,15 @@ impl Display for Pattern {
     }
 }
 
+impl From<Topic> for Pattern {
+    fn from(value: Topic) -> Self {
+        Self(value.0)
+    }
+}
+
 /// A string topic for publishing data. It is a fully qualified pattern i.e.
 /// wildcard characters are not allowed.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Topic(pub Ustr);
 
 impl Topic {
@@ -336,14 +364,10 @@ pub struct Subscription {
 impl Subscription {
     /// Creates a new [`Subscription`] instance.
     #[must_use]
-    pub fn new<T: AsRef<str>>(
-        pattern: T,
-        handler: ShareableMessageHandler,
-        priority: Option<u8>,
-    ) -> Self {
+    pub fn new(pattern: Pattern, handler: ShareableMessageHandler, priority: Option<u8>) -> Self {
         Self {
             handler_id: handler.0.id(),
-            pattern: Pattern::from(pattern),
+            pattern,
             handler,
             priority: priority.unwrap_or(0),
         }
@@ -414,7 +438,7 @@ pub struct MessageBus {
     /// The switchboard for built-in endpoints.
     pub switchboard: MessagingSwitchboard,
     /// Active subscriptions.
-    subscriptions: AHashSet<Subscription>,
+    subscriptions: BTreeSet<Subscription>,
     /// Maps a topic to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
     topics: IndexMap<Topic, Vec<Subscription>>,
@@ -444,7 +468,7 @@ impl MessageBus {
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
             switchboard: MessagingSwitchboard::default(),
-            subscriptions: AHashSet::new(),
+            subscriptions: BTreeSet::new(),
             topics: IndexMap::new(),
             endpoints: IndexMap::new(),
             correlation_index: AHashMap::new(),
@@ -485,7 +509,7 @@ impl MessageBus {
         self.topics
             .get(&topic)
             .map(|subs| subs.len())
-            .unwrap_or_else(|| self.find_topic_matches(&topic).len())
+            .unwrap_or_else(|| self.find_topic_matches(topic).len())
     }
 
     /// Returns active subscriptions.
@@ -516,6 +540,7 @@ impl MessageBus {
         pattern: T,
         handler: ShareableMessageHandler,
     ) -> bool {
+        let pattern = Pattern::from(pattern);
         let sub = Subscription::new(pattern, handler, None);
         self.subscriptions.contains(&sub)
     }
@@ -543,11 +568,11 @@ impl MessageBus {
     }
 
     /// Finds the subscriptions with pattern matching the given `topic`.
-    pub fn find_topic_matches(&self, topic: &Ustr) -> Vec<Subscription> {
+    fn find_topic_matches(&self, topic: Topic) -> Vec<Subscription> {
         self.subscriptions
             .iter()
             .filter_map(|sub| {
-                if is_matching_backtracking(topic, &sub.pattern) {
+                if is_matching_backtracking(topic, sub.pattern) {
                     Some(sub.clone())
                 } else {
                     None
@@ -559,10 +584,14 @@ impl MessageBus {
     #[must_use]
     /// Finds the subscriptions which match the given `topic` and caches the
     /// results in the `patterns` map.
-    pub fn matching_subscriptions(&mut self, topic: &Ustr) -> Vec<Subscription> {
+    pub fn matching_subscriptions<T: AsRef<str>>(&mut self, topic: T) -> Vec<Subscription> {
         let topic = Topic::from(topic);
+        self.inner_matching_subscriptions(topic)
+    }
+
+    fn inner_matching_subscriptions(&mut self, topic: Topic) -> Vec<Subscription> {
         self.topics.get(&topic).cloned().unwrap_or_else(|| {
-            let mut matches = self.find_topic_matches(&topic);
+            let mut matches = self.find_topic_matches(topic);
             matches.sort();
             self.topics.insert(topic, matches.clone());
             matches
@@ -653,7 +682,7 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-pub fn is_matching_backtracking(topic: &Ustr, pattern: &Ustr) -> bool {
+pub fn is_matching_backtracking(topic: Topic, pattern: Pattern) -> bool {
     let topic_bytes = topic.as_bytes();
     let pattern_bytes = pattern.as_bytes();
 

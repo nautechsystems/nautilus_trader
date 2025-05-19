@@ -62,9 +62,7 @@ impl MessageBus {
     #[staticmethod]
     pub fn py_publish(topic: &str, message: PyObject) {
         let topic = Ustr::from(topic);
-        let matching_subs = get_message_bus()
-            .borrow_mut()
-            .matching_subscriptions(&topic);
+        let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
 
         for sub in matching_subs {
             sub.handler.0.handle(&message);
