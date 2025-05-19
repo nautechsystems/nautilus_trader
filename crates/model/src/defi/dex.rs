@@ -20,17 +20,17 @@ use crate::defi::{amm::Pool, chain::Chain};
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone)]
 pub enum AmmType {
-    /// Constant Product Automated Market Maker
+    /// Constant Product Automated Market Maker.
     CPAMM,
-    /// Concentrated Liquidity Automated Market Maker
+    /// Concentrated Liquidity Automated Market Maker.
     CLAMM,
-    /// Enhanced CLAMM with Additional Features (Uniswap V4 with Hooks)
+    /// Enhanced CLAMM with Additional Features (Uniswap V4 with Hooks).
     CLAMEnhanced,
-    /// Specialized AMM for Stable Assets (Curve Style)
+    /// Specialized AMM for Stable Assets (Curve Style).
     StableSwap,
-    /// AMM with customizable token weights (e.g., Balancer style)
+    /// AMM with customizable token weights (e.g., Balancer style).
     WeightedPool,
-    /// Advanced pool type that can nest other pools (Balancer V3)
+    /// Advanced pool type that can nest other pools (Balancer V3).
     ComposablePool,
 }
 
@@ -52,7 +52,7 @@ pub struct Dex {
 }
 
 impl Dex {
-    /// Creates a new `Dex` instance with the specified properties.
+    /// Creates a new [`Dex`] instance with the specified properties.
     #[must_use]
     pub fn new(
         chain: Chain,
@@ -71,7 +71,8 @@ impl Dex {
         }
     }
 
-    /// Returns a unique identifier for this DEX, combining chain and name
+    /// Returns a unique identifier for this DEX, combining chain and name.
+    ///
     /// Format: "{chain_id}:{name_snake_case}"
     pub fn id(&self) -> String {
         format!(

@@ -37,9 +37,9 @@ pub struct Pool {
 }
 
 impl Pool {
-    #[allow(clippy::too_many_arguments)]
-    /// Creates a new `Pool` instance with the specified properties.
+    /// Creates a new [`Pool`] instance with the specified properties.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: SharedChain,
         dex: Dex,

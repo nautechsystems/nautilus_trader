@@ -56,7 +56,7 @@ pub struct FeatherBuffer {
 }
 
 impl FeatherBuffer {
-    /// Creates a new `FileWriter` using the given path, schema and maximum buffer size.
+    /// Creates a new [`FeatherBuffer`] using the given path, schema and maximum buffer size.
     pub fn new(schema: &Schema, rotation_config: RotationConfig) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(Vec::new(), schema)?;
         let mut max_buffer_size = 1_000_000_000_000; // 1 GB
@@ -152,7 +152,7 @@ pub struct FeatherWriter {
 }
 
 impl FeatherWriter {
-    /// Creates a new `FileWriterManager` instance.
+    /// Creates a new [`FeatherWriter`] instance.
     pub fn new(
         base_path: String,
         store: Arc<dyn ObjectStore>,
