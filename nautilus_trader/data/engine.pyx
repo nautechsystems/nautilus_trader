@@ -2131,8 +2131,6 @@ cdef class DataEngine(Component):
             elif params["bars_market_data_type"] == "trade_ticks":
                 self._cache.add_trade_ticks(ticks)
                 result["trade_ticks"] = ticks
-            elif params["bars_market_data_type"] == "bars":
-                self._cache.add_bars(ticks)
 
         if params["bars_market_data_type"] == "bars":
             bars_result[params["bar_type"]] = ticks
@@ -2189,6 +2187,7 @@ cdef class DataEngine(Component):
         for bar_type in bars_result:
             if len(bars_result[bar_type]) > 0:
                 result["bars"][bar_type] = bars_result[bar_type]
+                self._cache.add_bars(bars_result[bar_type])
 
         return result
 
