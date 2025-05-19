@@ -487,16 +487,21 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
 
-                    let msg = record.get::<dbn::StatusMsg>().expect("Invalid `StatusMsg`");
+                    let msg = match record.get::<dbn::StatusMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `StatusMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_status_msg(msg, instrument_id, Some(ts_init)) {
@@ -534,18 +539,21 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
 
-                    let msg = record
-                        .get::<dbn::ImbalanceMsg>()
-                        .expect("Invalid `ImbalanceMsg`");
+                    let msg = match record.get::<dbn::ImbalanceMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `ImbalanceMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init)) {
@@ -583,15 +591,20 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
-                    let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
+                    let msg = match record.get::<dbn::StatMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `StatMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))

@@ -39,13 +39,14 @@ impl MetadataCache {
     }
 
     pub fn symbol_map_for_date(&mut self, date: time::Date) -> dbn::Result<&PitSymbolMap> {
-        // Insert metadata for date if missing
         if !self.date_metadata_map.contains_key(&date) {
             let map = self.metadata.symbol_map_for_date(date)?;
             self.date_metadata_map.insert(date, map);
         }
-        // SAFETY: Key just inserted if absent
-        Ok(self.date_metadata_map.get(&date).unwrap())
+
+        self.date_metadata_map
+            .get(&date)
+            .ok_or_else(|| dbn::Error::decode(format!("metadata cache missing for date {date}")))
     }
 }
 
