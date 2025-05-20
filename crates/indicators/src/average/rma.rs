@@ -29,18 +29,13 @@ use crate::indicator::{Indicator, MovingAverage};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
 pub struct WilderMovingAverage {
-    #[pyo3(get)]
     pub period: usize,
-    #[pyo3(get)]
     pub price_type: PriceType,
-    #[pyo3(get)]
-    pub value: f64,
-    #[pyo3(get)]
-    pub count: usize,
-    #[pyo3(get)]
-    pub initialized: bool,
     pub alpha: f64,
-    pub has_inputs: bool,
+    pub value: f64,
+    pub count: usize,
+    pub initialized: bool,
+    has_inputs: bool,
 }
 
 impl Display for WilderMovingAverage {
