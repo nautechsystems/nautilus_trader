@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 2Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -90,7 +105,6 @@ impl Display for Topic {
 /// This is an internal class intended to be used by the message bus to organize
 /// topics and their subscribers.
 ///
-
 #[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.
