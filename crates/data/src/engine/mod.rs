@@ -57,7 +57,7 @@ use nautilus_common::{
         UnsubscribeCommand,
     },
     msgbus::{
-        self, get_message_bus,
+        self,
         handler::ShareableMessageHandler,
         switchboard::{self},
     },
@@ -650,7 +650,7 @@ impl DataEngine {
             _ => todo!(),
         }
 
-        get_message_bus().borrow().send_response(resp);
+        msgbus::send_response(resp.correlation_id(), &resp);
     }
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
