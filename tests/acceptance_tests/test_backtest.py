@@ -159,7 +159,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 385
+        assert account.event_count == 207
         assert account.balance_total(USD) == Money(996_814.33, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
@@ -227,18 +227,15 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 2_827
+        assert account.event_count == 1_519
         assert str(account.events[0]).startswith(
             "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_000_000.00 USD, locked=0.00 USD, free=1_000_000.00 USD)], margins=[]",  # noqa: E501
         )
         assert str(account.events[1]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=0.00 USD, free=999_980.00 USD)], margins=[]",  # noqa: E501
-        )
-        assert str(account.events[2]).startswith(
             "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=999_980.00 USD, locked=3_000.00 USD, free=996_980.00 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",  # noqa: E501
         )
-        assert str(account.events[3]).startswith(
-            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=3_000.00 USD, free=995_841.57 USD)], margins=[MarginBalance(initial=0.00 USD, maintenance=3_000.00 USD, instrument_id=USD/JPY.SIM)]",  # noqa: E501
+        assert str(account.events[2]).startswith(
+            "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=False, balances=[AccountBalance(total=998_841.57 USD, locked=0.00 USD, free=998_841.57 USD)], margins=[]",  # noqa: E501
         )
         assert account.balance_total(USD) == Money(1_023_530.50, USD)
 
@@ -312,7 +309,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 1_170
+        assert account.event_count == 600
         assert account.balance_total(GBP) == Money(961_069.95, GBP)
 
     def test_run_ema_cross_stop_entry_trail_strategy(self):
@@ -346,7 +343,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 35
+        assert account.event_count == 33
         assert account.balance_total(GBP) == Money(1_008_966.94, GBP)
 
     def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
@@ -380,7 +377,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 14_938
+        assert account.event_count == 7_480
         assert account.balance_total(GBP) == Money(241_080.17, GBP)
 
 
@@ -467,7 +464,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 11_962
+        assert account.event_count == 5_994
         assert account.balance_total(USD) == Money(1_088_115.65, USD)
 
 
@@ -657,7 +654,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 347
+        assert account.event_count == 175
         assert account.balance_total(AUD) == Money(991_881.44, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -686,7 +683,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert self.engine.cache.positions_open_count() == 0
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 195
+        assert account.event_count == 99
         assert account.balance_total(AUD) == Money(996_361.60, AUD)
 
 
@@ -749,7 +746,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         assert self.engine.iteration == 69_806
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 121
+        assert account.event_count == 61
         assert account.commission(USDT) == Money(127.56763570, USDT)
         assert account.balance_total(USDT) == Money(998_869.96375810, USDT)
 
@@ -875,7 +872,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         assert self.engine.iteration == 4_216
         account = self.engine.portfolio.account(self.venue)
         assert account is not None
-        assert account.event_count == 3_878
+        assert account.event_count == 3_067
         assert account.balance_total(GBP) == Money(924.64, GBP)
 
 
@@ -1281,9 +1278,19 @@ def test_correct_account_balance_from_issue_2632() -> None:
     assert engine.cache.positions_total_count() == 1
     assert engine.cache.orders_open_count() == 0
     assert engine.cache.positions_open_count() == 0
+
     account = engine.portfolio.account(binance)
     assert account is not None
-    assert account.event_count == 5
+    assert account.event_count == 3
+    assert str(account.events[0]).startswith(
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=True, balances=[AccountBalance(total=1_000_000.00000000 USDT, locked=0.00000000 USDT, free=1_000_000.00000000 USDT)], margins=[]",  # noqa: E501
+    )
+    assert str(account.events[1]).startswith(
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=999_768.11500000 USDT, locked=1_159.42500000 USDT, free=998_608.69000000 USDT)], margins=[MarginBalance(initial=0.00000000 USDT, maintenance=1_159.42500000 USDT, instrument_id=BTCUSDT-PERP.BINANCE)],",  # noqa: E501
+    )
+    assert str(account.events[2]).startswith(
+        "AccountState(account_id=BINANCE-001, account_type=MARGIN, base_currency=USDT, is_reported=False, balances=[AccountBalance(total=1_000_245.87500000 USDT, locked=0.00000000 USDT, free=1_000_245.87500000 USDT)], margins=[]",  # noqa: E501
+    )
     assert account.balance_total(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_free(USDT) == Money(1_000_245.87500000, USDT)
     assert account.balance_locked(USDT) == Money(0, USDT)

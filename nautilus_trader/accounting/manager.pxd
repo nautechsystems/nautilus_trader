@@ -33,12 +33,12 @@ cdef class AccountsManager:
     cdef Logger _log
     cdef CacheFacade _cache
 
-    cpdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
-    cpdef AccountState update_orders(self, Account account, Instrument instrument, list orders_open, uint64_t ts_event)
-    cpdef AccountState update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
-    cdef AccountState _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
-    cdef AccountState _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
-    cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl)
-    cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls)
-    cdef AccountState _generate_account_state(self, Account account, uint64_t ts_event)
+    cpdef AccountState generate_account_state(self, Account account, uint64_t ts_event)
+    cpdef void update_balances(self, Account account, Instrument instrument, OrderFilled fill)
+    cpdef bint update_orders(self, Account account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cpdef bint update_positions(self, MarginAccount account, Instrument instrument, list positions_open, uint64_t ts_event)
+    cdef bint _update_balance_locked(self, CashAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cdef bint _update_margin_init(self, MarginAccount account, Instrument instrument, list orders_open, uint64_t ts_event)
+    cdef bint _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl)
+    cdef bint _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls)
     cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
