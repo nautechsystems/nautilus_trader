@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{DefaultHasher, Hash, Hasher};
-
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -24,8 +22,9 @@ use ustr::Ustr;
 
 use crate::msgbus::{
     self, MessageBus,
-    core::{Pattern, Subscription, Topic},
+    core::{Pattern, Topic},
     get_message_bus,
+    handler::ShareableMessageHandler,
     matching::{is_matching, is_matching_backtracking},
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
@@ -348,4 +347,240 @@ fn test_subscription_pattern_matching() {
     assert_eq!(matches.len(), 2);
     assert_eq!(matches[0].handler_id, Ustr::from("3"));
     assert_eq!(matches[1].handler_id, Ustr::from("1"));
+}
+
+/// A simple reference model for subscription behavior
+struct SimpleSubscriptionModel {
+    /// Stores (pattern, handler_id) tuples for active subscriptions
+    subscriptions: Vec<(String, String)>,
+}
+
+impl SimpleSubscriptionModel {
+    /// Create a new empty model
+    fn new() -> Self {
+        Self {
+            subscriptions: Vec::new(),
+        }
+    }
+
+    /// Subscribe a handler to a pattern in the model
+    fn subscribe(&mut self, pattern: &str, handler_id: &str) {
+        let subscription = (pattern.to_string(), handler_id.to_string());
+        if !self.subscriptions.contains(&subscription) {
+            self.subscriptions.push(subscription);
+        }
+    }
+
+    /// Unsubscribe a handler from a pattern in the model
+    fn unsubscribe(&mut self, pattern: &str, handler_id: &str) -> bool {
+        let subscription = (pattern.to_string(), handler_id.to_string());
+        if let Some(idx) = self.subscriptions.iter().position(|s| s == &subscription) {
+            self.subscriptions.remove(idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if a handler is subscribed to a pattern in the model
+    fn is_subscribed(&self, pattern: &str, handler_id: &str) -> bool {
+        self.subscriptions
+            .contains(&(pattern.to_string(), handler_id.to_string()))
+    }
+
+    /// Get all subscriptions that match a topic according to the matching rules
+    fn matching_subscriptions(&self, topic: &str) -> Vec<(String, String)> {
+        let topic = Topic::from(topic);
+
+        self.subscriptions
+            .iter()
+            .filter(|(pat, _)| is_matching_backtracking(topic, Pattern::from(pat.as_str())))
+            .map(|(pat, id)| (pat.clone(), id.clone()))
+            .collect()
+    }
+
+    /// Count of active subscriptions
+    fn subscription_count(&self) -> usize {
+        self.subscriptions.len()
+    }
+}
+
+#[rstest]
+fn subscription_model_fuzz_testing() {
+    let mut rng = StdRng::seed_from_u64(42);
+
+    let msgbus = get_message_bus();
+    let mut model = SimpleSubscriptionModel::new();
+
+    // Map from handler_id to handler
+    let mut handlers: Vec<(String, ShareableMessageHandler)> = Vec::new();
+
+    // Generate some patterns
+    let patterns = generate_test_patterns(&mut rng);
+
+    // Generate some handler IDs
+    let handler_ids: Vec<String> = (0..50).map(|i| format!("handler_{i}")).collect();
+
+    // Initialize handlers
+    for id in &handler_ids {
+        let handler = get_stub_shareable_handler(Some(Ustr::from(id)));
+        handlers.push((id.clone(), handler));
+    }
+
+    let num_operations = 50_000;
+    for op_num in 0..num_operations {
+        let operation = rng.random_range(0..4);
+
+        match operation {
+            // Subscribe
+            0 => {
+                let pattern_idx = rng.random_range(0..patterns.len());
+                let handler_idx = rng.random_range(0..handlers.len());
+                let pattern = &patterns[pattern_idx];
+                let (handler_id, handler) = &handlers[handler_idx];
+
+                // Apply to reference model
+                model.subscribe(pattern, handler_id);
+
+                // Apply to message bus
+                msgbus::subscribe(pattern, handler.clone(), None);
+
+                assert_eq!(
+                    model.subscription_count(),
+                    msgbus.borrow().subscriptions().len()
+                );
+                assert_eq!(
+                    model.is_subscribed(pattern, handler_id),
+                    true,
+                    "Op {}: is_subscribed should return true after subscribe",
+                    op_num
+                );
+            }
+
+            // Unsubscribe
+            1 => {
+                if model.subscription_count() > 0 {
+                    let sub_idx = rng.random_range(0..model.subscription_count());
+                    let (pattern, handler_id) = model.subscriptions[sub_idx].clone();
+
+                    // Apply to reference model
+                    model.unsubscribe(&pattern, &handler_id);
+
+                    // Find handler
+                    let handler = handlers
+                        .iter()
+                        .find(|(id, _)| id == &handler_id)
+                        .map(|(_, h)| h.clone())
+                        .unwrap();
+
+                    // Apply to message bus
+                    msgbus::unsubscribe(&pattern, handler.clone());
+
+                    assert_eq!(
+                        model.subscription_count(),
+                        msgbus.borrow().subscriptions().len()
+                    );
+                    assert_eq!(
+                        model.is_subscribed(&pattern, &handler_id),
+                        false,
+                        "Op {}: is_subscribed should return false after unsubscribe",
+                        op_num
+                    );
+                }
+            }
+
+            // Check is_subscribed
+            2 => {
+                // Get a random pattern and handler
+                let pattern_idx = rng.random_range(0..patterns.len());
+                let handler_idx = rng.random_range(0..handlers.len());
+                let pattern = &patterns[pattern_idx];
+                let (handler_id, handler) = &handlers[handler_idx];
+
+                let expected = model.is_subscribed(pattern, handler_id);
+                let actual = msgbus.borrow().is_subscribed(pattern, handler.clone());
+
+                assert_eq!(
+                    expected, actual,
+                    "Op {}: Subscription state mismatch for pattern '{}', handler '{}': expected={}, actual={}",
+                    op_num, pattern, handler_id, expected, actual
+                );
+            }
+
+            // Check matching_subscriptions
+            3 => {
+                // Generate a topic
+                let topic = create_topic(&mut rng);
+
+                let actual_matches = msgbus.borrow_mut().matching_subscriptions(&topic);
+                let expected_matches = model.matching_subscriptions(&topic);
+
+                assert_eq!(
+                    expected_matches.len(),
+                    actual_matches.len(),
+                    "Op {}: Match count mismatch for topic '{}': expected={}, actual={}",
+                    op_num,
+                    topic,
+                    expected_matches.len(),
+                    actual_matches.len()
+                );
+
+                for sub in &actual_matches {
+                    assert!(
+                        expected_matches
+                            .contains(&(sub.pattern.to_string(), sub.handler_id.to_string())),
+                        "Op {}: Expected match not found: pattern='{}', handler_id='{}'",
+                        op_num,
+                        sub.pattern,
+                        sub.handler_id
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+// Helper function to generate diverse test patterns
+fn generate_test_patterns(rng: &mut StdRng) -> Vec<String> {
+    let mut patterns = vec![
+        "data.*.*.*".to_string(),
+        "*.*.BINANCE.*".to_string(),
+        "events.order.*".to_string(),
+        "data.*.*.?USDT".to_string(),
+        "*.trades.*.BTC*".to_string(),
+        "*.*.*.*".to_string(),
+    ];
+
+    // Add some random patterns
+    for _ in 0..50 {
+        match rng.random_range(0..10) {
+            // Use existing pattern
+            0..=1 => {
+                let idx = rng.random_range(0..patterns.len());
+                patterns.push(patterns[idx].clone());
+            }
+            // Generate new pattern from topic
+            _ => {
+                let topic = create_topic(rng);
+                let pattern = generate_pattern_from_topic(&topic, rng);
+                patterns.push(pattern);
+            }
+        }
+    }
+
+    patterns
+}
+
+fn create_topic(rng: &mut StdRng) -> Ustr {
+    let cat = ["data", "info", "order"];
+    let model = ["quotes", "trades", "orderbooks", "depths"];
+    let venue = ["BINANCE", "BYBIT", "OKX", "FTX", "KRAKEN"];
+    let instrument = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "DOGEUSDT"];
+
+    let cat = cat[rng.random_range(0..cat.len())];
+    let model = model[rng.random_range(0..model.len())];
+    let venue = venue[rng.random_range(0..venue.len())];
+    let instrument = instrument[rng.random_range(0..instrument.len())];
+    Ustr::from(&format!("{cat}.{model}.{venue}.{instrument}"))
 }
