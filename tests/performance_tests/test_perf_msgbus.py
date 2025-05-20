@@ -18,7 +18,9 @@ import random
 from nautilus_trader.common.component import is_matching_py
 
 
-def generate_topics(n: int) -> list[str]:
+def generate_topics(n: int, seed: int) -> list[str]:
+    random.seed(seed)
+
     cat = ["data", "info", "order"]
     model = ["quotes", "trades", "orderbooks", "depths"]
     venue = ["BINANCE", "BYBIT", "OKX", "FTX", "KRAKEN"]
@@ -37,7 +39,7 @@ def generate_topics(n: int) -> list[str]:
 
 
 def test_topic_pattern_matching(benchmark) -> None:
-    topics = generate_topics(1000)
+    topics = generate_topics(1000, 42)
     pattern = "data.*.BINANCE.ETH???"
 
     def match_topics():

@@ -21,7 +21,7 @@ use std::ffi::c_char;
 
 use nautilus_core::ffi::string::cstr_to_bytes;
 
-use crate::msgbus::is_matching_fast;
+use crate::msgbus::matching::is_matching_fast;
 
 pub mod clock;
 pub mod enums;
