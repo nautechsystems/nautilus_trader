@@ -93,7 +93,7 @@ impl LinearRegression {
 
         let n = period as f64;
         let x_sum = 0.5 * n * (n + 1.0);
-        let x_mul_sum = x_sum * (2.0 * n + 1.0) / 3.0;
+        let x_mul_sum = x_sum * 2.0f64.mul_add(n, 1.0) / 3.0;
         let divisor = n.mul_add(x_mul_sum, -(x_sum * x_sum));
 
         Self {
@@ -266,7 +266,7 @@ mod tests {
     fn test_inputs_len_never_exceeds_period() {
         let mut lr = LinearRegression::new(3);
         for i in 0..10 {
-            lr.update_raw(i as f64);
+            lr.update_raw(f64::from(i));
         }
         assert_eq!(lr.inputs.len(), lr.period);
     }
@@ -275,7 +275,7 @@ mod tests {
     fn test_oldest_element_evicted() {
         let mut lr = LinearRegression::new(4);
         for v in 1..=5 {
-            lr.update_raw(v as f64);
+            lr.update_raw(f64::from(v));
         }
         assert!(!lr.inputs.contains(&1.0));
         assert_eq!(lr.inputs.front(), Some(&2.0));
@@ -285,7 +285,7 @@ mod tests {
     fn test_recent_elements_preserved() {
         let mut lr = LinearRegression::new(5);
         for v in 0..5 {
-            lr.update_raw(v as f64);
+            lr.update_raw(f64::from(v));
         }
         lr.update_raw(99.0);
         let expected = vec![1.0, 2.0, 3.0, 4.0, 99.0];
@@ -420,7 +420,7 @@ mod tests {
 
         let n = period as f64;
         let expected_x_sum = 0.5 * n * (n + 1.0);
-        let expected_x_mul_sum = expected_x_sum * (2.0 * n + 1.0) / 3.0;
+        let expected_x_mul_sum = expected_x_sum * 2.0f64.mul_add(n, 1.0) / 3.0;
         let expected_divisor = n.mul_add(expected_x_mul_sum, -(expected_x_sum * expected_x_sum));
 
         assert!((lr.x_sum - expected_x_sum).abs() < 1e-12, "x_sum mismatch");
@@ -441,7 +441,7 @@ mod tests {
         let (x_sum, x_mul_sum, divisor) = (lr.x_sum, lr.x_mul_sum, lr.divisor);
 
         for v in 0..20 {
-            lr.update_raw(v as f64);
+            lr.update_raw(f64::from(v));
         }
 
         assert_eq!(lr.x_sum, x_sum, "x_sum must remain unchanged after updates");
@@ -462,7 +462,7 @@ mod tests {
         let (x_sum, x_mul_sum, divisor) = (lr.x_sum, lr.x_mul_sum, lr.divisor);
 
         for v in 0..8 {
-            lr.update_raw(v as f64);
+            lr.update_raw(f64::from(v));
         }
         lr.reset();
 

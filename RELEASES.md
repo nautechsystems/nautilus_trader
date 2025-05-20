@@ -46,6 +46,7 @@ None
 - Improved Cython-Rust indicator parity for `ExponentialMovingAverage` (EMA) (#2642), thanks @nicolad
 - Improved Cython-Rust indicator parity for `HullMovingAverage` (HMA) (#2648), thanks @nicolad
 - Improved Cython-Rust indicator parity for `LinearRegression` (#2651), thanks @nicolad
+- Improved Cython-Rust indicator parity for `WilderMovingAverage` (RMA) (#2653), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved error handling on API key authentication errors for Polymarket
 - Improved exception on deserializing order from cache database
@@ -71,6 +72,7 @@ None
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed authentication for Redis when password provided with no username
 - Fixed various numpy and pandas FutureWarning(s)
+- Fixed message bus subscription matching logic in Rust (#2646), thanks @twitu
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
