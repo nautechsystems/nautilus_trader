@@ -76,7 +76,7 @@ class TestSharpeRatioPortfolioStatistic:
 
     def test_calculate_given_mix_of_pnls2_returns_expected(self):
         # Arrange
-        index = pd.date_range("1/1/2000", periods=10, freq="12H")
+        index = pd.date_range("1/1/2000", periods=10, freq="12h")
         data = pd.Series(linspace(0.1, 1, 10), index=index, dtype=float64)
 
         stat = SharpeRatio()

@@ -105,7 +105,14 @@ cdef class LinearRegression(Indicator):
         self.value = residuals[-1] + y_arr[-1]
         self.degree = 180.0 / np.pi * np.arctan(self.slope)
         self.cfo = 100.0 * residuals[-1] / y_arr[-1]
-        self.R2 = 1.0 - sum(residuals * residuals) / sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
+
+        # Compute R2 with handling for zero variance in y_arr
+        cdef double ssr = sum(residuals * residuals)
+        cdef double sst = sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
+        if sst == 0.0:
+            self.R2 = -np.inf
+        else:
+            self.R2 = 1.0 - ssr / sst
 
     cpdef void _reset(self):
         self._inputs.clear()
