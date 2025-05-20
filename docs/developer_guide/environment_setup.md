@@ -81,7 +81,7 @@ rustup component add rust-analyzer # install nightly lsp
 rustup override set stable # reset to stable
 ```
 
-Apply the following patch to workspace `Cargo.toml` to activate the nightly feature using `git apply patch`. You can remove it using `git apply -R patch`.
+Activate the nightly feature and use "cranelift" backend for dev and testing profiles in workspace `Cargo.toml`. You can apply the below patch using `git apply <patch>`. You can remove it using `git apply -R <patch>` before pushing changes.
 
 ```
 diff --git a/Cargo.toml b/Cargo.toml
