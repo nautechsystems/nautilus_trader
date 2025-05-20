@@ -113,4 +113,8 @@ cdef class RolloverInterestCalculator:
         if base_data.empty and quote_data.empty:
             raise RuntimeError(f"cannot find rollover interest rate for {instrument_id} on {date}")  # pragma: no cover
 
-        return Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)
+        # Extract scalar values to avoid FutureWarning from casting single-element Series
+        cdef double base_val = <double>base_data['Value'].iloc[0]
+        cdef double quote_val = <double>quote_data['Value'].iloc[0]
+        cdef double rate = ((base_val - quote_val) / 365.0) / 100.0
+        return Decimal(rate)
