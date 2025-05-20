@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use nautilus_common::msgbus::{is_matching, is_matching_backtracking};
+use nautilus_common::msgbus::{
+    core::{Pattern, Topic},
+    matching::{is_matching, is_matching_backtracking},
+};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use regex::Regex;
 use ustr::Ustr;
@@ -50,7 +53,7 @@ fn bench_matching(c: &mut Criterion) {
             custom_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
                     for topic in &topics {
-                        black_box(is_matching(&pattern_ustr, topic));
+                        black_box(is_matching(topic, &pattern_ustr));
                     }
                 });
             });
@@ -82,6 +85,7 @@ fn bench_matching(c: &mut Criterion) {
     {
         let mut rng = StdRng::seed_from_u64(42);
         let mut iter_group = c.benchmark_group("Iterative backtracking matching");
+        let pattern = Pattern::from(pattern);
 
         for ele in [1, 10, 100, 1000] {
             let topics = create_topics(ele, &mut rng);
@@ -89,7 +93,8 @@ fn bench_matching(c: &mut Criterion) {
             iter_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
                     for topic in &topics {
-                        black_box(is_matching_backtracking(&pattern_ustr, topic));
+                        let topic = Topic::from(topic);
+                        black_box(is_matching_backtracking(topic, pattern));
                     }
                 });
             });
