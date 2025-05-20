@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -22,7 +24,7 @@ use ustr::Ustr;
 
 use crate::msgbus::{
     self, MessageBus,
-    core::{Pattern, Topic},
+    core::{Pattern, Subscription, Topic},
     get_message_bus,
     matching::{is_matching, is_matching_backtracking},
     stubs::{
@@ -172,7 +174,7 @@ fn test_unsubscribe() {
 #[rstest]
 fn test_matching_subscriptions() {
     let msgbus = get_message_bus();
-    let pattern = "my-topic";
+    let pattern = "my-pattern";
 
     let handler_id1 = Ustr::from("1");
     let handler1 = get_stub_shareable_handler(Some(handler_id1));
@@ -191,10 +193,13 @@ fn test_matching_subscriptions() {
     msgbus::subscribe(pattern, handler3, Some(1));
     msgbus::subscribe(pattern, handler4, Some(2));
 
-    assert_eq!(subscriptions_count(pattern), 0);
+    assert_eq!(
+        msgbus.borrow().patterns(),
+        vec![pattern, pattern, pattern, pattern]
+    );
+    assert_eq!(subscriptions_count(pattern), 4);
 
-    let topic = Ustr::from(pattern);
-
+    let topic = pattern;
     let subs = msgbus.borrow_mut().matching_subscriptions(&topic);
     assert_eq!(subs.len(), 4);
     assert_eq!(subs[0].handler_id, handler_id4);
@@ -341,6 +346,6 @@ fn test_subscription_pattern_matching() {
 
     let matches = msgbus.borrow_mut().matching_subscriptions(topic);
     assert_eq!(matches.len(), 2);
-    assert_eq!(matches[0].handler_id, Ustr::from("1"));
-    assert_eq!(matches[1].handler_id, Ustr::from("3"));
+    assert_eq!(matches[0].handler_id, Ustr::from("3"));
+    assert_eq!(matches[1].handler_id, Ustr::from("1"));
 }

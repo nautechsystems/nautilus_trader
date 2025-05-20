@@ -1,13 +1,13 @@
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     fmt::{self, Display},
     hash::{Hash, Hasher},
     ops::Deref,
     rc::Rc,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use matching::is_matching_backtracking;
@@ -134,7 +134,11 @@ impl PartialOrd for Subscription {
 
 impl Ord for Subscription {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other.priority.cmp(&self.priority)
+        other
+            .priority
+            .cmp(&self.priority)
+            .then_with(|| self.pattern.cmp(&other.pattern))
+            .then_with(|| self.handler_id.cmp(&other.handler_id))
     }
 }
 
@@ -182,7 +186,7 @@ pub struct MessageBus {
     /// The switchboard for built-in endpoints.
     pub switchboard: MessagingSwitchboard,
     /// Active subscriptions.
-    pub subscriptions: BTreeSet<Subscription>,
+    pub subscriptions: AHashSet<Subscription>,
     /// Maps a topic to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
     pub topics: IndexMap<Topic, Vec<Subscription>>,
@@ -213,7 +217,7 @@ impl MessageBus {
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
             switchboard: MessagingSwitchboard::default(),
-            subscriptions: BTreeSet::new(),
+            subscriptions: AHashSet::new(),
             topics: IndexMap::new(),
             endpoints: IndexMap::new(),
             correlation_index: AHashMap::new(),
