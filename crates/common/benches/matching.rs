@@ -15,7 +15,7 @@
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use nautilus_common::msgbus::{
-    Pattern, Topic,
+    core::{Pattern, Topic},
     matching::{is_matching, is_matching_backtracking},
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -53,7 +53,7 @@ fn bench_matching(c: &mut Criterion) {
             custom_group.bench_function(format!("{ele} topics"), |b| {
                 b.iter(|| {
                     for topic in &topics {
-                        black_box(is_matching(&pattern_ustr, topic));
+                        black_box(is_matching(topic, &pattern_ustr));
                     }
                 });
             });

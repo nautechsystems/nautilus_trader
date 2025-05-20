@@ -1,6 +1,6 @@
 use ustr::Ustr;
 
-use super::{Pattern, Topic};
+use super::core::{Pattern, Topic};
 
 /// Match a topic and a string pattern
 /// pattern can contains -

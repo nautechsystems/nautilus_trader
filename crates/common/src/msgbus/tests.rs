@@ -21,7 +21,9 @@ use rstest::rstest;
 use ustr::Ustr;
 
 use crate::msgbus::{
-    self, MessageBus, Pattern, Topic, get_message_bus,
+    self, MessageBus,
+    core::{Pattern, Topic},
+    get_message_bus,
     matching::{is_matching, is_matching_backtracking},
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
