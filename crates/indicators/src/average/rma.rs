@@ -259,7 +259,7 @@ mod tests {
         let mut rma = WilderMovingAverage::new(10, None);
 
         for price in 1_u32..=10 {
-            rma.update_raw(price as f64);
+            rma.update_raw(f64::from(price));
         }
 
         assert!(rma.initialized());
@@ -291,7 +291,7 @@ mod tests {
         let mut rma = WilderMovingAverage::new(1_000, None);
 
         for p in 1_u32..=999 {
-            rma.update_raw(p as f64);
+            rma.update_raw(f64::from(p));
         }
 
         assert_eq!(rma.count(), 999);

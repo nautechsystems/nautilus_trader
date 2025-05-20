@@ -81,7 +81,7 @@ impl BacktestEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error if the core NautilusKernel fails to initialize.
+    /// Returns an error if the core `NautilusKernel` fails to initialize.
     pub fn new(config: BacktestEngineConfig) -> anyhow::Result<Self> {
         let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone())?;
 
