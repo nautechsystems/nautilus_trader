@@ -61,6 +61,7 @@ None
 - Upgraded Cython to v3.1.0 (now stable)
 - Upgraded `databento` crate to v0.25.0
 - Upgraded `redis` crate to v0.31.0
+- Upgraded `sqlx` crate to v0.8.6
 - Upgraded `tokio` crate to v1.45.0
 
 ### Fixes
@@ -69,6 +70,7 @@ None
 - Fixed event handling for `ExecutionEngine` so it fully updates the `Portfolio` before to publishing execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed authentication for Redis when password provided with no username
+- Fixed various numpy and pandas FutureWarning(s)
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
 - Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
