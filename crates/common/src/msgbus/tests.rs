@@ -208,7 +208,6 @@ fn test_matching_subscriptions() {
 }
 
 #[rstest]
-#[case("*", "*", true)]
 #[case("a", "*", true)]
 #[case("a", "a", true)]
 #[case("a", "b", false)]
@@ -310,9 +309,9 @@ fn test_subscription_pattern_matching() {
     let handler2 = get_stub_shareable_handler(Some(Ustr::from("2")));
     let handler3 = get_stub_shareable_handler(Some(Ustr::from("3")));
 
-    msgbus::subscribe(Pattern::from("data.quotes.*"), handler1, None);
-    msgbus::subscribe(Pattern::from("data.trades.*"), handler2, None);
-    msgbus::subscribe(Pattern::from("data.*.BINANCE.*"), handler3, None);
+    msgbus::subscribe_str("data.quotes.*", handler1, None);
+    msgbus::subscribe_str("data.trades.*", handler2, None);
+    msgbus::subscribe_str("data.*.BINANCE.*", handler3, None);
     assert_eq!(msgbus.borrow().subscriptions().len(), 3);
 
     let topic = "data.quotes.BINANCE.ETHUSDT";

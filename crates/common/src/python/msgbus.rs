@@ -15,20 +15,20 @@
 
 use std::rc::Rc;
 
-use pyo3::{PyObject, pymethods};
-use ustr::Ustr;
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{PyObject, PyResult, pymethods};
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    BusMessage, Endpoint, MessageBus, Pattern, deregister, get_message_bus,
-    handler::ShareableMessageHandler, register, subscribe, unsubscribe,
+    BusMessage, Endpoint, MessageBus, Pattern, Topic, deregister, handler::ShareableMessageHandler,
+    publish, register, send, subscribe, unsubscribe,
 };
 
 #[pymethods]
 impl BusMessage {
     #[getter]
     #[pyo3(name = "topic")]
-    fn py_close(&mut self) -> String {
+    fn py_topic(&mut self) -> String {
         self.topic.to_string()
     }
 
@@ -49,37 +49,45 @@ impl BusMessage {
 
 #[pymethods]
 impl MessageBus {
-    /// Sends a message to an endpoint.
+    /// Sends the `message` to the `endpoint`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `endpoint` is invalid.
     #[pyo3(name = "send")]
-    pub fn py_send(&self, endpoint: &str, message: PyObject) {
-        let endpoint = Endpoint::from(endpoint);
-
-        if let Some(handler) = self.get_endpoint(&endpoint) {
-            handler.0.handle(&message);
-        }
+    pub fn py_send(&self, endpoint: &str, message: PyObject) -> PyResult<()> {
+        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
+        send(&endpoint, &message);
+        Ok(())
     }
 
-    /// Publish a message to a topic.
+    /// Publishes the `message` to the `topic`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `topic` is invalid.
     #[pyo3(name = "publish")]
     #[staticmethod]
-    pub fn py_publish(topic: &str, message: PyObject) {
-        let topic = Ustr::from(topic);
-        let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
-
-        for sub in matching_subs {
-            sub.handler.0.handle(&message);
-        }
+    pub fn py_publish(topic: &str, message: PyObject) -> PyResult<()> {
+        let topic = Topic::new(topic).map_err(to_pyvalue_err)?;
+        publish(&topic, &message);
+        Ok(())
     }
 
     /// Registers the given `handler` for the `endpoint` address.
+    ///
+    /// Updates endpoint handler if already exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `endpoint` is invalid.
     #[pyo3(name = "register")]
     #[staticmethod]
-    pub fn py_register(endpoint: &str, handler: PythonMessageHandler) {
-        let endpoint = Endpoint::from(endpoint);
-
-        // Updates value if key already exists
+    pub fn py_register(endpoint: &str, handler: PythonMessageHandler) -> PyResult<()> {
+        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
         let handler = ShareableMessageHandler(Rc::new(handler));
         register(endpoint, handler);
+        Ok(())
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -89,6 +97,8 @@ impl MessageBus {
     /// handlers will receive messages before lower priority handlers.
     ///
     /// Safety: Priority should be between 0 and 255
+    ///
+    /// Updates topic handler if already exists.
     ///
     /// # Warnings
     ///
@@ -102,7 +112,6 @@ impl MessageBus {
     #[pyo3(signature = (topic, handler, priority=None))]
     #[staticmethod]
     pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
-        // Updates value if key already exists
         let pattern = Pattern::from(topic);
         let handler = ShareableMessageHandler(Rc::new(handler));
         subscribe(pattern, handler, priority);
@@ -133,10 +142,15 @@ impl MessageBus {
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `endpoint` is invalid.
     #[pyo3(name = "deregister")]
     #[staticmethod]
-    pub fn py_deregister(endpoint: &str) {
-        let endpoint = Endpoint::from(endpoint);
+    pub fn py_deregister(endpoint: &str) -> PyResult<()> {
+        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
         deregister(&endpoint);
+        Ok(())
     }
 }
