@@ -51,6 +51,7 @@ None
 - Improved Cython-Rust indicator parity for `WilderMovingAverage` (RMA) (#2653), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved error handling on API key authentication errors for Polymarket
+- Improved execution client debug logging for Polymarket
 - Improved exception on deserializing order from cache database
 - Improved `None` condition checks for value types, which now raise a `TypeError` instead of an obscure `AttributeError`
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
