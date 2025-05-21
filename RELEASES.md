@@ -49,6 +49,8 @@ None
 - Improved Cython-Rust indicator parity for `HullMovingAverage` (HMA) (#2648), thanks @nicolad
 - Improved Cython-Rust indicator parity for `LinearRegression` (#2651), thanks @nicolad
 - Improved Cython-Rust indicator parity for `WilderMovingAverage` (RMA) (#2653), thanks @nicolad
+- Improved Cython-Rust indicator parity for `VariableIndexDynamicAverage` (VIDYA) (#2659), thanks @nicolad
+- Improved Cython-Rust indicator parity for `SimpleMovingAverage` (SMA) (#2655), thanks @nicolad
 - Improved zero size trade logging for Binance Futures (#2588), thanks @bartolootrit
 - Improved error handling on API key authentication errors for Polymarket
 - Improved execution client debug logging for Polymarket
