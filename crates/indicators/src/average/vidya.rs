@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use std::fmt::{Display, Formatter};
 
 use nautilus_model::{
@@ -49,7 +50,6 @@ impl Display for VariableIndexDynamicAverage {
     }
 }
 
-// ───────────────────────────────── Indicator trait ──────────────────────────
 impl Indicator for VariableIndexDynamicAverage {
     fn name(&self) -> String {
         stringify!(VariableIndexDynamicAverage).into()
