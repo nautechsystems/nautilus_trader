@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 from collections import defaultdict
 from collections.abc import Coroutine
 from typing import Any
@@ -157,6 +158,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
         self._log.info(f"{config.generate_order_history_from_trades=}", LogColor.BLUE)
+        self._log.info(f"{config.log_raw_ws_messages=}", LogColor.BLUE)
 
         account_id = AccountId(f"{name or POLYMARKET_VENUE.value}-001")
         self._set_account_id(account_id)
@@ -864,9 +866,13 @@ class PolymarketExecutionClient(LiveExecutionClient):
             await self._retry_manager_pool.release(retry_manager)
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        # Uncomment for development
-        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
+            if self._config.log_raw_ws_messages:
+                self._log.debug(
+                    str(json.dumps(msgspec.json.decode(raw), indent=4)),
+                    color=LogColor.MAGENTA,
+                )
+
             ws_message = self._decoder_user_msg.decode(raw)
             for msg in ws_message:
                 if isinstance(msg, PolymarketUserOrder):
@@ -928,6 +934,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._handle_ws_trade_msg(msg, wait_for_ack=False)
 
     def _handle_ws_order_msg(self, msg: PolymarketUserOrder, wait_for_ack: bool):
+        self._log.debug(f"Handling order message, {wait_for_ack=}")
+
         venue_order_id = msg.venue_order_id()
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
         instrument = self._cache.instrument(instrument_id)
@@ -939,6 +947,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         client_order_id = self._cache.client_order_id(venue_order_id)
+        self._log.debug(f"Processing order update for {client_order_id!r}")
 
         strategy_id = None
         if client_order_id:
@@ -956,6 +965,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         match msg.type:
             case PolymarketEventType.PLACEMENT:
+                self._log.debug(f"PLACEMENT: {client_order_id!r}", LogColor.MAGENTA)
+
                 self.generate_order_accepted(
                     strategy_id=strategy_id,
                     instrument_id=instrument_id,
@@ -964,6 +975,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
             case PolymarketEventType.CANCELLATION:
+                self._log.debug(f"CANCELLATION: {client_order_id!r}", LogColor.MAGENTA)
+
                 self.generate_order_canceled(
                     strategy_id=strategy_id,
                     instrument_id=instrument_id,
@@ -972,6 +985,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                 )
             case PolymarketEventType.UPDATE:  # Matched
+                self._log.debug(f"UPDATE: {client_order_id!r}", LogColor.MAGENTA)
+
                 assert msg.associate_trades is not None  # Type checking
                 order = self._cache.order(client_order_id)
 
@@ -999,6 +1014,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     return
 
                 if order.is_closed:
+                    self._log.warning(f"Order already closed - skipping fill: {order}")
                     return  # Already closed (only status update)
 
                 matched_qty = instrument.make_qty(float(msg.size_matched))
@@ -1023,6 +1039,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 )
 
                 self._loop.create_task(self._update_account_state())
+            case _:
+                raise RuntimeError(f"Unknown `PolymarketEventType`, was '{msg.type.value}'")
 
     def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
         self._log.debug(f"Handling trade message, {wait_for_ack=}")
@@ -1063,6 +1081,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         order = self._cache.order(client_order_id)
 
         if order.is_closed:
+            self._log.warning(f"Order already closed - skipping trade: {order}")
             return  # Already closed (only status update)
 
         last_qty = instrument.make_qty(msg.last_qty(self._wallet_address))
