@@ -26,12 +26,23 @@ use ahash::{AHashMap, AHashSet};
 use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use matching::is_matching_backtracking;
-use nautilus_core::UUID4;
+use nautilus_core::{
+    UUID4,
+    correctness::{FAILED, check_predicate_true, check_valid_string},
+};
 use nautilus_model::identifiers::TraderId;
 use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
 use super::{handler, matching, set_message_bus, switchboard};
+
+#[inline(always)]
+fn check_fully_qualified_string(value: &Ustr, key: &str) -> anyhow::Result<()> {
+    check_predicate_true(
+        !value.chars().any(|c| c == '*' || c == '?'),
+        &format!("{key} `value` contained invalid characters, was {value}"),
+    )
+}
 
 /// A string pattern for a subscription. The pattern is used to match topics.
 ///
@@ -80,20 +91,29 @@ impl From<&Topic> for Pattern {
 pub struct Topic(pub Ustr);
 
 impl Topic {
-    pub fn as_pattern(&self) -> Pattern {
-        Pattern(self.0)
+    /// Creates a new [`Topic`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `value` string is empty, all whitespace, or contains non-ASCII characters.
+    /// - `value` string contains wildcard characters '*' or '?'.
+    pub fn new<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let topic = Ustr::from(value.as_ref());
+        check_valid_string(value, stringify!(value))?;
+        check_fully_qualified_string(&topic, stringify!(Topic))?;
+
+        Ok(Self(topic))
     }
 
-    // TODO: Every initialization should validate
-    pub fn validate<T: AsRef<str>>(topic: T) -> bool {
-        let topic = Ustr::from(topic.as_ref());
-        !topic.chars().any(|c| c == '*' || c == '?')
+    pub fn as_pattern(&self) -> Pattern {
+        Pattern(self.0)
     }
 }
 
 impl<T: AsRef<str>> From<T> for Topic {
     fn from(value: T) -> Self {
-        Self(Ustr::from(value.as_ref()))
+        Self::new(value).expect(FAILED)
     }
 }
 
@@ -118,16 +138,25 @@ impl Display for Topic {
 pub struct Endpoint(pub Ustr);
 
 impl Endpoint {
-    // TODO: Every initialization should validate
-    pub fn validate<T: AsRef<str>>(endpoint: T) -> bool {
-        let endpoint = Ustr::from(endpoint.as_ref());
-        !endpoint.chars().any(|c| c == '*' || c == '?')
+    /// Creates a new [`Endpoint`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `value` string is empty, all whitespace, or contains non-ASCII characters.
+    /// - `value` string contains wildcard characters '*' or '?'.
+    pub fn new<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let endpoint = Ustr::from(value.as_ref());
+        check_valid_string(value, stringify!(value))?;
+        check_fully_qualified_string(&endpoint, stringify!(Endpoint))?;
+
+        Ok(Self(endpoint))
     }
 }
 
 impl<T: AsRef<str>> From<T> for Endpoint {
     fn from(value: T) -> Self {
-        Self(Ustr::from(value.as_ref()))
+        Self::new(value).expect(FAILED)
     }
 }
 
@@ -305,12 +334,12 @@ impl MessageBus {
             .collect()
     }
 
-    /// Returns whether there are subscribers for the given `topic`.
+    /// Returns whether there are subscribers for the `topic`.
     pub fn has_subscribers<T: AsRef<str>>(&self, topic: T) -> bool {
         self.subscriptions_count(topic) > 0
     }
 
-    /// Returns the count of subscribers for the given `topic`.
+    /// Returns the count of subscribers for the `topic`.
     #[must_use]
     pub fn subscriptions_count<T: AsRef<str>>(&self, topic: T) -> usize {
         let topic = Topic::from(topic);
@@ -335,14 +364,14 @@ impl MessageBus {
             .collect()
     }
 
-    /// Returns whether there is a registered endpoint for the given `pattern`.
+    /// Returns whether there is a registered endpoint for the `pattern`.
     #[must_use]
     pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
         self.endpoints
             .contains_key(&Endpoint::from(endpoint.as_ref()))
     }
 
-    /// Returns whether the given `handler` is subscribed to the given `pattern`.
+    /// Returns whether the `handler` is subscribed to the `pattern`.
     #[must_use]
     pub fn is_subscribed<T: AsRef<str>>(
         &self,
@@ -358,25 +387,25 @@ impl MessageBus {
     ///
     /// # Errors
     ///
-    /// This function never returns an error (TBD).
+    /// This function never returns an error (TBD once backing database added).
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
     }
 
-    /// Returns the handler for the given `endpoint`.
+    /// Returns the handler for the `endpoint`.
     #[must_use]
     pub fn get_endpoint(&self, endpoint: &Endpoint) -> Option<&ShareableMessageHandler> {
         self.endpoints.get(endpoint)
     }
 
-    /// Returns the handler for the given `correlation_id`.
+    /// Returns the handler for the `correlation_id`.
     #[must_use]
     pub fn get_response_handler(&self, correlation_id: &UUID4) -> Option<&ShareableMessageHandler> {
         self.correlation_index.get(correlation_id)
     }
 
-    /// Finds the subscriptions with pattern matching the given `topic`.
+    /// Finds the subscriptions with pattern matching the `topic`.
     pub(crate) fn find_topic_matches(&self, topic: &Topic) -> Vec<Subscription> {
         self.subscriptions
             .iter()
@@ -390,7 +419,7 @@ impl MessageBus {
             .collect()
     }
 
-    /// Finds the subscriptions which match the given `topic` and caches the
+    /// Finds the subscriptions which match the `topic` and caches the
     /// results in the `patterns` map.
     #[must_use]
     pub fn matching_subscriptions<T: AsRef<str>>(&mut self, topic: T) -> Vec<Subscription> {
@@ -411,7 +440,7 @@ impl MessageBus {
     ///
     /// # Errors
     ///
-    /// Returns an error if a handler is already registered for the given correlation ID.
+    /// Returns an error if `handler` is already registered for the `correlation_id`.
     pub fn register_response_handler(
         &mut self,
         correlation_id: &UUID4,

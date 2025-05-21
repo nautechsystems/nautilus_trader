@@ -87,6 +87,7 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
 
 /// Sends the `message` to the `endpoint`.
 pub fn send(endpoint: &Endpoint, message: &dyn Any) {
+    // TODO: This should return a Result (in case endpoint doesn't exist)
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
         handler.0.handle(message);
@@ -178,7 +179,7 @@ pub fn deregister(endpoint: &Endpoint) {
         .shift_remove(endpoint);
 }
 
-/// Subscribes the given `handler` to the `pattern` with an optional `priority`.
+/// Subscribes the `handler` to the `pattern` with an optional `priority`.
 ///
 /// # Warnings
 ///
