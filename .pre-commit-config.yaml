@@ -128,7 +128,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.5  # uv version
+    rev: 0.7.6  # uv version
     hooks:
       - id: uv-lock
 
@@ -138,7 +138,7 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2  # Pin to depend on default node version for GitHub actions runners
+    rev: v0.17.2  # Pin v0.17.2 to depend on default node version for GitHub actions runners
     hooks:
       - id: markdownlint-cli2
         name: markdownlint
