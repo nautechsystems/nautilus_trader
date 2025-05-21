@@ -29,17 +29,15 @@ from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
@@ -47,7 +45,6 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-
 
 
 BINANCE = Venue("BINANCE")
@@ -179,7 +176,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             tp_order_type=OrderType.TRAILING_STOP_MARKET,
             tp_activation_price=ETHUSDT_PERP_BINANCE.make_price(3200.00),
             tp_trigger_price=None,
-            tp_trigger_type=TriggerType.BID_ASK, 
+            tp_trigger_type=TriggerType.BID_ASK,
             tp_trailing_offset=ETHUSDT_PERP_BINANCE.make_price(30),
             tp_trailing_offset_type=TrailingOffsetType.PRICE,
             sl_order_type=OrderType.STOP_MARKET,
@@ -268,9 +265,9 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             entry_order_type=OrderType.MARKET,
             tp_price=ETHUSDT_PERP_BINANCE.make_price(3200.00),
             sl_order_type=OrderType.TRAILING_STOP_MARKET,
-            sl_activation_price=None, # activated at the current market price 
-            sl_trigger_type=TriggerType.BID_ASK, 
-            sl_trailing_offset=ETHUSDT_PERP_BINANCE.make_price(100.00), 
+            sl_activation_price=None,  # activated at the current market price
+            sl_trigger_type=TriggerType.BID_ASK,
+            sl_trailing_offset=ETHUSDT_PERP_BINANCE.make_price(100.00),
             sl_trailing_offset_type=TrailingOffsetType.PRICE,
         )
 
@@ -310,7 +307,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
 
         # Assert
         # sl_order's trigger price should reflect the changed market,
-        # and its status should not be changed. 
+        # and its status should not be changed.
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         assert sl_order.trigger_price == ETHUSDT_PERP_BINANCE.make_price(3050.00)
         assert (
