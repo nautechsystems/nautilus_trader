@@ -191,7 +191,7 @@ mod serial_tests {
             trader_id,
             strategy_id,
             instrument_id,
-            client_order_id.clone(),
+            client_order_id,
             reason,
             event_id,
             ts_event,
@@ -202,7 +202,7 @@ mod serial_tests {
         );
 
         // Insert into database
-        DatabaseQueries::add_order_event(pool, Box::new(event.clone()), None)
+        DatabaseQueries::add_order_event(pool, Box::new(event), None)
             .await
             .unwrap();
 
@@ -244,7 +244,7 @@ mod serial_tests {
             trader_id,
             strategy_id,
             instrument_id,
-            client_order_id.clone(),
+            client_order_id,
             reason,
             event_id,
             ts_event,
@@ -254,7 +254,7 @@ mod serial_tests {
             account_id,
         );
 
-        DatabaseQueries::add_order_event(pool, Box::new(event.clone()), None)
+        DatabaseQueries::add_order_event(pool, Box::new(event), None)
             .await
             .unwrap();
 
