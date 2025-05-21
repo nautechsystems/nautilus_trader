@@ -27,11 +27,13 @@ mod serial_tests {
     use std::time::Duration;
 
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
-    use nautilus_infrastructure::sql::cache::get_pg_cache_database;
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_infrastructure::sql::{cache::get_pg_cache_database, queries::DatabaseQueries};
     use nautilus_model::{
         accounts::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
-        identifiers::ClientOrderId,
+        events::{OrderCancelRejected, OrderEventAny, OrderModifyRejected},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
@@ -39,6 +41,7 @@ mod serial_tests {
         orders::{Order, builder::OrderTestBuilder},
         types::{Currency, Quantity},
     };
+    use ustr::Ustr;
 
     use crate::get_cache;
 
@@ -163,5 +166,109 @@ mod serial_tests {
 
         database.flush().unwrap();
         database.close().unwrap();
+    }
+
+    #[ignore = "continue testing and add foreign key contraints"]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_cancel_rejected_insert_and_load() {
+        let db = get_pg_cache_database().await.expect("connect db");
+        let pool = &db.pool;
+
+        let client_id_str = UUID4::new().to_string();
+        let client_order_id = ClientOrderId::from(client_id_str.as_str());
+
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-1");
+        let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
+        let reason = Ustr::from("TEST_REJECT");
+        let event_id = UUID4::new();
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(0);
+        let venue_order_id = Some(VenueOrderId::from("V1"));
+        let account_id = Some(AccountId::from("A-1"));
+
+        let event = OrderCancelRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id.clone(),
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            false,
+            venue_order_id,
+            account_id,
+        );
+
+        // Insert into database
+        DatabaseQueries::add_order_event(pool, Box::new(event.clone()), None)
+            .await
+            .unwrap();
+
+        // Load back events
+        let events = DatabaseQueries::load_order_events(pool, &client_order_id)
+            .await
+            .unwrap();
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::CancelRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.reason, reason);
+            }
+            other => panic!("Expected OrderCancelRejected, was {other:?}"),
+        }
+    }
+
+    #[ignore = "continue testing and add foreign key contraints"]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_order_modify_rejected_insert_and_load() {
+        let db = get_pg_cache_database().await.expect("connect db");
+        let pool = &db.pool;
+
+        let client_id_str = UUID4::new().to_string();
+        let client_order_id = ClientOrderId::from(client_id_str.as_str());
+
+        let trader_id = TraderId::from("TRADER-002");
+        let strategy_id = StrategyId::from("S-2");
+        let instrument_id = InstrumentId::from("INSTRUMENT.VENUE");
+        let reason = Ustr::from("TEST_MOD_REJECT");
+        let event_id = UUID4::new();
+        let ts_event = UnixNanos::from(0);
+        let ts_init = UnixNanos::from(0);
+        let venue_order_id = Some(VenueOrderId::from("V2"));
+        let account_id = Some(AccountId::from("A-2"));
+
+        let event = OrderModifyRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id.clone(),
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            true,
+            venue_order_id,
+            account_id,
+        );
+
+        DatabaseQueries::add_order_event(pool, Box::new(event.clone()), None)
+            .await
+            .unwrap();
+
+        let events = DatabaseQueries::load_order_events(pool, &client_order_id)
+            .await
+            .unwrap();
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            OrderEventAny::ModifyRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.reason, reason);
+            }
+            other => panic!("Expected OrderModifyRejected, was {other:?}"),
+        }
     }
 }
