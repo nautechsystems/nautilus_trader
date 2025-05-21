@@ -116,6 +116,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         If True, uses trades history to generate reports for orders which are no longer active.
         The Polymarket API only returns active orders and trades.
         This feature is experimental and is not currently recommended (leave set to False).
+    log_raw_ws_messages : bool, default False
+        If raw websocket messages should be logged with debug level.
+        Note: there will be a performance penalty parsing the JSON without an efficient msgspec decoder.
 
     """
 
@@ -132,3 +135,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     generate_order_history_from_trades: bool = False
+    log_raw_ws_messages: bool = False

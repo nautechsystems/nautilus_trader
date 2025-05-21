@@ -111,6 +111,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
+            log_raw_ws_messages=False,
         ),
     },
     timeout_connection=60.0,
