@@ -19,7 +19,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SEND},
-    msgbus::{self},
+    msgbus::{self, Endpoint},
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -31,7 +31,6 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Quantity,
 };
-use ustr::Ustr;
 
 use crate::messages::{
     SubmitOrder, TradingCommand,
@@ -537,7 +536,7 @@ impl OrderManager {
     pub fn send_emulator_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
 
-        msgbus::send(&Ustr::from("OrderEmulator.execute"), &command);
+        msgbus::send(&Endpoint::from("OrderEmulator.execute"), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
@@ -545,28 +544,28 @@ impl OrderManager {
 
         let endpoint = format!("{exec_algorithm_id}.execute");
         msgbus::send(
-            &Ustr::from(&endpoint),
+            &Endpoint::from(&endpoint),
             &TradingCommand::SubmitOrder(command),
         );
     }
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
-        msgbus::send(&Ustr::from("RiskEngine.execute"), &command);
+        msgbus::send(&Endpoint::from("RiskEngine.execute"), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
-        msgbus::send(&Ustr::from("ExecEngine.execute"), &command);
+        msgbus::send(&Endpoint::from("ExecEngine.execute"), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
         log::info!("{EVT}{SEND} {event}");
-        msgbus::send(&Ustr::from("RiskEngine.process"), &event);
+        msgbus::send(&Endpoint::from("RiskEngine.process"), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
         log::info!("{EVT}{SEND} {event}");
-        msgbus::send(&Ustr::from("ExecEngine.process"), &event);
+        msgbus::send(&Endpoint::from("ExecEngine.process"), &event);
     }
 }

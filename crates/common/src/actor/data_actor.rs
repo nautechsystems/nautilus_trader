@@ -70,7 +70,7 @@ use crate::{
         system::ShutdownSystem,
     },
     msgbus::{
-        self, get_message_bus,
+        self, Endpoint, Topic, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_bars_topic, get_book_deltas_topic,
@@ -715,7 +715,7 @@ pub struct DataActorCore {
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
-    topic_handlers: AHashMap<Ustr, ShareableMessageHandler>,
+    topic_handlers: AHashMap<Topic, ShareableMessageHandler>,
 }
 
 impl Debug for DataActorCore {
@@ -1003,15 +1003,15 @@ impl DataActorCore {
             self.clock.borrow().timestamp_ns(),
         );
 
-        let topic = Ustr::from("command.system.shutdown");
-        msgbus::send(&topic, command.as_any());
+        let endpoint = Endpoint::from("command.system.shutdown");
+        msgbus::send(&endpoint, command.as_any());
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
     fn get_or_create_handler_for_topic<F>(
         &mut self,
-        topic: Ustr,
+        topic: Topic,
         create_handler: F,
     ) -> ShareableMessageHandler
     where
@@ -1026,8 +1026,8 @@ impl DataActorCore {
         }
     }
 
-    fn get_handler_for_topic(&self, topic: Ustr) -> Option<ShareableMessageHandler> {
-        self.topic_handlers.get(&topic).cloned()
+    fn get_handler_for_topic(&self, topic: &Topic) -> Option<ShareableMessageHandler> {
+        self.topic_handlers.get(topic).cloned()
     }
 
     /// Subscribe to streaming `data_type` data.
@@ -1054,7 +1054,7 @@ impl DataActorCore {
             new_handler
         };
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         if client_id.is_none() {
             // If no client ID specified, just subscribe to the topic
@@ -1092,7 +1092,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
@@ -1124,7 +1124,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
@@ -1163,7 +1163,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
@@ -1217,7 +1217,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
             instrument_id,
@@ -1253,7 +1253,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
@@ -1286,7 +1286,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
             instrument_id,
@@ -1321,7 +1321,7 @@ impl DataActorCore {
             })))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Bars(SubscribeBars {
             bar_type,
@@ -1358,7 +1358,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
             instrument_id,
@@ -1394,7 +1394,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
             instrument_id,
@@ -1430,7 +1430,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
             instrument_id,
@@ -1466,7 +1466,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
             instrument_id,
@@ -1491,7 +1491,7 @@ impl DataActorCore {
 
         let topic = get_custom_topic(&data_type);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         if client_id.is_none() {
@@ -1521,7 +1521,7 @@ impl DataActorCore {
 
         let topic = get_instruments_topic(venue);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
@@ -1546,7 +1546,7 @@ impl DataActorCore {
 
         let topic = get_instrument_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
@@ -1572,7 +1572,7 @@ impl DataActorCore {
 
         let topic = get_book_deltas_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
@@ -1601,7 +1601,7 @@ impl DataActorCore {
 
         let topic = get_book_snapshots_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
@@ -1627,7 +1627,7 @@ impl DataActorCore {
 
         let topic = get_quotes_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
@@ -1653,7 +1653,7 @@ impl DataActorCore {
 
         let topic = get_trades_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
@@ -1679,7 +1679,7 @@ impl DataActorCore {
 
         let topic = get_bars_topic(bar_type);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
@@ -1705,7 +1705,7 @@ impl DataActorCore {
 
         let topic = get_mark_price_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
@@ -1731,7 +1731,7 @@ impl DataActorCore {
 
         let topic = get_index_price_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
@@ -1757,7 +1757,7 @@ impl DataActorCore {
 
         let topic = get_instrument_status_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
@@ -1783,7 +1783,7 @@ impl DataActorCore {
 
         let topic = get_instrument_close_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {

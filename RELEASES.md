@@ -18,6 +18,8 @@ Released on TBD (UTC).
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
+- Added SQL schema, model and query for `OrderCancelRejected`
+- Added SQL schema, model and query for `OrderModifyRejected`
 - Added HyperSync client to blockchain adapter (#2606), thanks @filipmacek
 - Added support for DEXs, pools, and tokens to blockchain adapter (#2638), thanks @filipmacek
 

@@ -22,6 +22,7 @@ use nautilus_common::{
         UnsubscribeCommand, UnsubscribeData,
     },
     msgbus::{
+        Endpoint,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         register, register_response_handler, send,
     },
@@ -66,7 +67,8 @@ impl BigBrainActor {
     pub fn register_message_handlers() {
         let handler = TypedMessageHandler::from(negative_handler);
         let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("negative_stream", handler);
+        let endpoint = Endpoint::from("negative_stream");
+        register(endpoint, handler);
     }
 }
 
@@ -116,7 +118,7 @@ pub fn negative_handler(msg: &i32) {
     };
     let cmd = DataCommand::Request(RequestCommand::Data(request));
 
-    send(&Ustr::from("data_engine"), &cmd);
+    send(&Endpoint::from("data_engine"), &cmd);
 }
 
 /// Positive integer stream handler
@@ -143,7 +145,7 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Subscribe(SubscribeCommand::Data(data));
-        send(&Ustr::from("data_engine"), &cmd);
+        send(&Endpoint::from("data_engine"), &cmd);
     }
 
     if big_brain_actor.pos_val > 8 {
@@ -156,6 +158,6 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Data(data));
-        send(&Ustr::from("data_engine"), &cmd);
+        send(&Endpoint::from("data_engine"), &cmd);
     }
 }

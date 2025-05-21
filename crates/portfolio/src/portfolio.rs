@@ -29,7 +29,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     msgbus::{
-        self,
+        self, Endpoint, Pattern, Topic,
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
@@ -45,7 +45,6 @@ use nautilus_model::{
     types::{Currency, Money, Price},
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
-use ustr::Ustr;
 
 use crate::{config::PortfolioConfig, manager::AccountsManager};
 
@@ -182,15 +181,38 @@ impl Portfolio {
             )))
         };
 
-        msgbus::register("Portfolio.update_account", update_account_handler.clone());
+        msgbus::register(
+            Endpoint::from("Portfolio.update_account"),
+            update_account_handler.clone(),
+        );
 
-        msgbus::subscribe("data.quotes.*", update_quote_handler, Some(10));
+        msgbus::subscribe(
+            Pattern::from("data.quotes.*"),
+            update_quote_handler,
+            Some(10),
+        );
         if bar_updates {
-            msgbus::subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
+            msgbus::subscribe(
+                Pattern::from("data.quotes.*EXTERNAL"),
+                update_bar_handler,
+                Some(10),
+            );
         }
-        msgbus::subscribe("events.order.*", update_order_handler, Some(10));
-        msgbus::subscribe("events.position.*", update_position_handler, Some(10));
-        msgbus::subscribe("events.account.*", update_account_handler, Some(10));
+        msgbus::subscribe(
+            Pattern::from("events.order.*"),
+            update_order_handler,
+            Some(10),
+        );
+        msgbus::subscribe(
+            Pattern::from("events.position.*"),
+            update_position_handler,
+            Some(10),
+        );
+        msgbus::subscribe(
+            Pattern::from("events.account.*"),
+            update_account_handler,
+            Some(10),
+        );
     }
 
     pub fn reset(&mut self) {
@@ -1251,7 +1273,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         msgbus::publish(
-            &Ustr::from(&format!("events.account.{}", account.id())),
+            &Topic::from(&format!("events.account.{}", account.id())),
             &account_state,
         );
     } else {

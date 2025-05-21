@@ -24,7 +24,7 @@ use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{self},
+    msgbus::{self, Endpoint},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -41,7 +41,6 @@ use nautilus_model::{
     },
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
-use ustr::Ustr;
 
 use crate::reports::{
     fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
@@ -413,32 +412,32 @@ impl BaseExecutionClient {
     }
 
     fn send_account_state(&self, account_state: AccountState) {
-        let endpoint = Ustr::from("Portfolio.update_account");
+        let endpoint = Endpoint::from("Portfolio.update_account");
         msgbus::send(&endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
-        let endpoint = Ustr::from("ExecEngine.process");
+        let endpoint = Endpoint::from("ExecEngine.process");
         msgbus::send(&endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_mass_status");
+        let endpoint = Endpoint::from("ExecEngine.reconcile_mass_status");
         msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        let endpoint = Endpoint::from("ExecEngine.reconcile_report");
         msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        let endpoint = Endpoint::from("ExecEngine.reconcile_report");
         msgbus::send(&endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
+        let endpoint = Endpoint::from("ExecEngine.reconcile_report");
         msgbus::send(&endpoint, &report as &dyn Any);
     }
 }

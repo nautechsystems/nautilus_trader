@@ -757,8 +757,8 @@ impl OrderEmulator {
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             if let Some(handler) = &self.on_event_handler {
-                msgbus::subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
-                msgbus::subscribe(
+                msgbus::subscribe_str(format!("events.order.{strategy_id}"), handler.clone(), None);
+                msgbus::subscribe_str(
                     format!("events.position.{strategy_id}"),
                     handler.clone(),
                     None,

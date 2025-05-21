@@ -26,9 +26,12 @@ use nautilus_model::{
     instruments::Instrument,
     position::Position,
 };
-use ustr::Ustr;
 
-use crate::{cache::Cache, clock::Clock, msgbus};
+use crate::{
+    cache::Cache,
+    clock::Clock,
+    msgbus::{self, Pattern, Topic},
+};
 
 /// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
@@ -253,7 +256,7 @@ impl GreeksCalculator {
                     "data.GreeksData.instrument_id={}",
                     instrument_id.symbol.as_str()
                 );
-                let topic = Ustr::from(topic_str.as_str());
+                let topic = Topic::from(topic_str); // TODO: Consider caching this somewhere
                 msgbus::publish(&topic, &greeks_data.clone().unwrap());
             }
         }
@@ -502,8 +505,8 @@ impl GreeksCalculator {
     where
         F: Fn(GreeksData) + 'static + Send + Sync,
     {
-        let topic_str = format!("data.GreeksData.instrument_id={}*", underlying);
-        let topic = Ustr::from(topic_str.as_str());
+        let pattern_str = format!("data.GreeksData.instrument_id={}*", underlying);
+        let pattern = Pattern::from(pattern_str.as_str());
 
         if let Some(custom_handler) = handler {
             let handler = msgbus::handler::TypedMessageHandler::with_any(
@@ -514,7 +517,7 @@ impl GreeksCalculator {
                 },
             );
             msgbus::subscribe(
-                topic.as_str(),
+                pattern,
                 msgbus::handler::ShareableMessageHandler(Rc::new(handler)),
                 None,
             );
@@ -529,7 +532,7 @@ impl GreeksCalculator {
                 },
             );
             msgbus::subscribe(
-                topic.as_str(),
+                pattern,
                 msgbus::handler::ShareableMessageHandler(Rc::new(default_handler)),
                 None,
             );

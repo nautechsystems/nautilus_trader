@@ -20,8 +20,8 @@ use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    BusMessage, MessageBus, deregister, get_message_bus, handler::ShareableMessageHandler,
-    register, subscribe, unsubscribe,
+    BusMessage, Endpoint, MessageBus, Pattern, deregister, get_message_bus,
+    handler::ShareableMessageHandler, register, subscribe, unsubscribe,
 };
 
 #[pymethods]
@@ -52,7 +52,9 @@ impl MessageBus {
     /// Sends a message to an endpoint.
     #[pyo3(name = "send")]
     pub fn py_send(&self, endpoint: &str, message: PyObject) {
-        if let Some(handler) = self.get_endpoint(endpoint) {
+        let endpoint = Endpoint::from(endpoint);
+
+        if let Some(handler) = self.get_endpoint(&endpoint) {
             handler.0.handle(&message);
         }
     }
@@ -73,6 +75,8 @@ impl MessageBus {
     #[pyo3(name = "register")]
     #[staticmethod]
     pub fn py_register(endpoint: &str, handler: PythonMessageHandler) {
+        let endpoint = Endpoint::from(endpoint);
+
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
         register(endpoint, handler);
@@ -99,8 +103,9 @@ impl MessageBus {
     #[staticmethod]
     pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
         // Updates value if key already exists
+        let pattern = Pattern::from(topic);
         let handler = ShareableMessageHandler(Rc::new(handler));
-        subscribe(topic, handler, priority);
+        subscribe(pattern, handler, priority);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -115,8 +120,9 @@ impl MessageBus {
     #[pyo3(name = "unsubscribe")]
     #[staticmethod]
     pub fn py_unsubscribe(topic: &str, handler: PythonMessageHandler) {
+        let pattern = Pattern::from(topic);
         let handler = ShareableMessageHandler(Rc::new(handler));
-        unsubscribe(topic, handler);
+        unsubscribe(pattern, handler);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -130,6 +136,7 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     #[staticmethod]
     pub fn py_deregister(endpoint: &str) {
-        deregister(endpoint);
+        let endpoint = Endpoint::from(endpoint);
+        deregister(&endpoint);
     }
 }

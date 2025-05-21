@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_common::{
     cache::Cache,
-    msgbus::{self, handler::MessageHandler},
+    msgbus::{self, Topic, handler::MessageHandler},
     timer::TimeEvent,
 };
 use nautilus_model::{
@@ -39,7 +39,7 @@ pub struct BookSnapshotInfo {
     pub venue: Venue,
     pub is_composite: bool,
     pub root: Ustr,
-    pub topic: Ustr,
+    pub topic: Topic,
     pub interval_ms: NonZeroUsize,
 }
 
@@ -132,7 +132,7 @@ impl BookSnapshotter {
         }
     }
 
-    fn publish_order_book(&self, instrument_id: &InstrumentId, topic: &Ustr, cache: &Ref<Cache>) {
+    fn publish_order_book(&self, instrument_id: &InstrumentId, topic: &Topic, cache: &Ref<Cache>) {
         let book = cache
             .order_book(instrument_id)
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
