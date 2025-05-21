@@ -22,10 +22,10 @@ use ustr::Ustr;
 
 use crate::msgbus::{
     self, MessageBus,
-    core::{Pattern, Topic},
+    core::{Endpoint, Pattern, Topic},
     get_message_bus,
     handler::ShareableMessageHandler,
-    matching::{is_matching, is_matching_backtracking},
+    matching::is_matching_backtracking,
     stubs::{
         check_handler_was_called, get_call_check_shareable_handler, get_stub_shareable_handler,
     },
@@ -109,23 +109,23 @@ fn test_is_registered_when_no_registrations() {
 #[rstest]
 fn test_regsiter_endpoint() {
     let msgbus = get_message_bus();
-    let endpoint = "MyEndpoint";
+    let endpoint = Endpoint::from("MyEndpoint");
     let handler = get_stub_shareable_handler(None);
 
     msgbus::register(endpoint, handler);
 
     assert_eq!(msgbus.borrow().endpoints(), vec![endpoint.to_string()]);
-    assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
+    assert!(msgbus.borrow().get_endpoint(&endpoint).is_some());
 }
 
 #[rstest]
 fn test_endpoint_send() {
     let msgbus = get_message_bus();
-    let endpoint = Ustr::from("MyEndpoint");
+    let endpoint = Endpoint::from("MyEndpoint");
     let handler = get_call_check_shareable_handler(None);
 
     msgbus::register(endpoint, handler.clone());
-    assert!(msgbus.borrow().get_endpoint(endpoint).is_some());
+    assert!(msgbus.borrow().get_endpoint(&endpoint).is_some());
     assert!(!check_handler_was_called(handler.clone()));
 
     // Send a message to the endpoint
@@ -136,11 +136,11 @@ fn test_endpoint_send() {
 #[rstest]
 fn test_deregsiter_endpoint() {
     let msgbus = get_message_bus();
-    let endpoint = Ustr::from("MyEndpoint");
+    let endpoint = Endpoint::from("MyEndpoint");
     let handler = get_stub_shareable_handler(None);
 
     msgbus::register(endpoint, handler);
-    msgbus::deregister(endpoint);
+    msgbus::deregister(&endpoint);
 
     assert!(msgbus.borrow().endpoints().is_empty());
 }
@@ -151,7 +151,7 @@ fn test_subscribe() {
     let topic = "my-topic";
     let handler = get_stub_shareable_handler(None);
 
-    msgbus::subscribe(topic, handler, Some(1));
+    msgbus::subscribe_str(topic, handler, Some(1));
 
     assert!(msgbus.borrow().has_subscribers(topic));
     assert_eq!(msgbus.borrow().patterns(), vec![topic]);
@@ -163,8 +163,8 @@ fn test_unsubscribe() {
     let topic = "my-topic";
     let handler = get_stub_shareable_handler(None);
 
-    msgbus::subscribe(topic, handler.clone(), None);
-    msgbus::unsubscribe(topic, handler);
+    msgbus::subscribe_str(topic, handler.clone(), None);
+    msgbus::unsubscribe_str(topic, handler);
 
     assert!(!msgbus.borrow().has_subscribers(topic));
     assert!(msgbus.borrow().patterns().is_empty());
@@ -187,10 +187,10 @@ fn test_matching_subscriptions() {
     let handler_id4 = Ustr::from("4");
     let handler4 = get_stub_shareable_handler(Some(handler_id4));
 
-    msgbus::subscribe(pattern, handler1, None);
-    msgbus::subscribe(pattern, handler2, None);
-    msgbus::subscribe(pattern, handler3, Some(1));
-    msgbus::subscribe(pattern, handler4, Some(2));
+    msgbus::subscribe_str(pattern, handler1, None);
+    msgbus::subscribe_str(pattern, handler2, None);
+    msgbus::subscribe_str(pattern, handler3, Some(1));
+    msgbus::subscribe_str(pattern, handler4, Some(2));
 
     assert_eq!(
         msgbus.borrow().patterns(),
@@ -227,11 +227,7 @@ fn test_matching_subscriptions() {
 #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ET[^ABC]USDT", false)]
 fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
     assert_eq!(
-        is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
-        expected
-    );
-    assert_eq!(
-        is_matching_backtracking(Topic::from(topic), Pattern::from(pattern)),
+        is_matching_backtracking(&Topic::from(topic), &Pattern::from(pattern)),
         expected
     );
 }
@@ -287,27 +283,6 @@ fn generate_pattern_from_topic(topic: &str, rng: &mut StdRng) -> String {
 }
 
 #[rstest]
-fn test_matching_with_regex() {
-    let topic = "data.quotes.BINANCE.ETHUSDT";
-    let mut rng = StdRng::seed_from_u64(42);
-
-    for i in 0..1000 {
-        let pattern = generate_pattern_from_topic(topic, &mut rng);
-        let regex_pattern = convert_pattern_to_regex(&pattern);
-        let regex = Regex::new(&regex_pattern).unwrap();
-        assert_eq!(
-            is_matching(&Ustr::from(topic), &Ustr::from(&pattern)),
-            regex.is_match(topic),
-            "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
-            i,
-            pattern,
-            topic,
-            regex_pattern
-        );
-    }
-}
-
-#[rstest]
 fn test_matching_backtracking() {
     let topic = "data.quotes.BINANCE.ETHUSDT";
     let mut rng = StdRng::seed_from_u64(42);
@@ -317,7 +292,7 @@ fn test_matching_backtracking() {
         let regex_pattern = convert_pattern_to_regex(&pattern);
         let regex = Regex::new(&regex_pattern).unwrap();
         assert_eq!(
-            is_matching_backtracking(Topic::from(topic), Pattern::from(&pattern)),
+            is_matching_backtracking(&Topic::from(topic), &Pattern::from(&pattern)),
             regex.is_match(topic),
             "Failed to match on iteration: {}, pattern: \"{}\", topic: {}, regex: \"{}\"",
             i,
@@ -335,13 +310,13 @@ fn test_subscription_pattern_matching() {
     let handler2 = get_stub_shareable_handler(Some(Ustr::from("2")));
     let handler3 = get_stub_shareable_handler(Some(Ustr::from("3")));
 
-    msgbus::subscribe("data.quotes.*", handler1, None);
-    msgbus::subscribe("data.trades.*", handler2, None);
-    msgbus::subscribe("data.*.BINANCE.*", handler3, None);
+    msgbus::subscribe(Pattern::from("data.quotes.*"), handler1, None);
+    msgbus::subscribe(Pattern::from("data.trades.*"), handler2, None);
+    msgbus::subscribe(Pattern::from("data.*.BINANCE.*"), handler3, None);
     assert_eq!(msgbus.borrow().subscriptions().len(), 3);
 
     let topic = "data.quotes.BINANCE.ETHUSDT";
-    assert_eq!(msgbus.borrow().find_topic_matches(topic.into()).len(), 2);
+    assert_eq!(msgbus.borrow().find_topic_matches(&topic.into()).len(), 2);
 
     let matches = msgbus.borrow_mut().matching_subscriptions(topic);
     assert_eq!(matches.len(), 2);
@@ -394,7 +369,7 @@ impl SimpleSubscriptionModel {
 
         self.subscriptions
             .iter()
-            .filter(|(pat, _)| is_matching_backtracking(topic, Pattern::from(pat.as_str())))
+            .filter(|(pat, _)| is_matching_backtracking(&topic, &Pattern::from(pat.as_str())))
             .map(|(pat, id)| (pat.clone(), id.clone()))
             .collect()
     }
@@ -443,6 +418,7 @@ fn subscription_model_fuzz_testing() {
                 model.subscribe(pattern, handler_id);
 
                 // Apply to message bus
+                let pattern = Pattern::from(pattern);
                 msgbus::subscribe(pattern, handler.clone(), None);
 
                 assert_eq!(
@@ -450,7 +426,7 @@ fn subscription_model_fuzz_testing() {
                     msgbus.borrow().subscriptions().len()
                 );
                 assert_eq!(
-                    model.is_subscribed(pattern, handler_id),
+                    model.is_subscribed(pattern.as_str(), handler_id),
                     true,
                     "Op {}: is_subscribed should return true after subscribe",
                     op_num
@@ -474,7 +450,8 @@ fn subscription_model_fuzz_testing() {
                         .unwrap();
 
                     // Apply to message bus
-                    msgbus::unsubscribe(&pattern, handler.clone());
+                    let pattern = Pattern::from(pattern);
+                    msgbus::unsubscribe(pattern, handler.clone());
 
                     assert_eq!(
                         model.subscription_count(),

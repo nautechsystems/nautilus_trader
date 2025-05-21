@@ -22,7 +22,7 @@ use nautilus_common::{
     clock::{Clock, LiveClock},
     messages::data::{DataCommand, DataResponse},
     msgbus::{
-        self,
+        self, Endpoint,
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
@@ -32,7 +32,6 @@ use nautilus_data::{
 };
 use nautilus_model::identifiers::Venue;
 use tokio_stream::StreamExt;
-use ustr::Ustr;
 
 pub mod big_brain_actor;
 pub mod data_client;
@@ -91,6 +90,8 @@ impl LiveRunner {
     }
 
     pub async fn run(&mut self) {
+        let endpoint = Endpoint::from("negative_stream");
+
         loop {
             // TODO: push decoding logic into data client
             tokio::select! {
@@ -103,7 +104,7 @@ impl LiveRunner {
                 }
                 message = self.message_stream.next() => {
                     if let Some(message) = message {
-                        msgbus::send(&Ustr::from("negative_stream"), &message);
+                        msgbus::send(&endpoint, &message);
                     }
                 }
             }

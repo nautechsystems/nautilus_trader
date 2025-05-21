@@ -57,7 +57,7 @@ use nautilus_common::{
         UnsubscribeCommand,
     },
     msgbus::{
-        self,
+        self, Topic,
         handler::ShareableMessageHandler,
         switchboard::{self},
     },
@@ -106,7 +106,7 @@ pub struct DataEngine {
     book_updaters: AHashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: AHashMap<InstrumentId, Rc<BookSnapshotter>>,
     bar_aggregators: AHashMap<BarType, Rc<RefCell<Box<dyn BarAggregator>>>>,
-    bar_aggregator_handlers: AHashMap<BarType, Vec<(Ustr, ShareableMessageHandler)>>,
+    bar_aggregator_handlers: AHashMap<BarType, Vec<(Topic, ShareableMessageHandler)>>,
     _synthetic_quote_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     _synthetic_trade_feeds: AHashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: AHashMap<InstrumentId, OrderBookDeltas>,
@@ -1000,24 +1000,24 @@ impl DataEngine {
         Ok(())
     }
 
-    fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, topics: &[Ustr]) {
+    fn maintain_book_updater(&mut self, instrument_id: &InstrumentId, topics: &[Topic]) {
         if let Some(updater) = self.book_updaters.get(instrument_id) {
             let handler = ShareableMessageHandler(updater.clone());
 
             // Unsubscribe handler if it is the last subscriber
             for topic in topics {
-                if msgbus::subscriptions_count(*topic) == 1
-                    && msgbus::is_subscribed(*topic, handler.clone())
+                if msgbus::subscriptions_count(topic.as_str()) == 1
+                    && msgbus::is_subscribed(topic.as_str(), handler.clone())
                 {
                     log::debug!("Unsubscribing BookUpdater from {topic}");
-                    msgbus::unsubscribe(*topic, handler.clone());
+                    msgbus::unsubscribe_topic(*topic, handler.clone());
                 }
             }
 
             // Check remaining subscriptions, if none then remove updater
             let still_subscribed = topics
                 .iter()
-                .any(|topic| msgbus::is_subscribed(*topic, handler.clone()));
+                .any(|topic| msgbus::is_subscribed(topic.as_str(), handler.clone()));
             if !still_subscribed {
                 self.book_updaters.remove(instrument_id);
                 log::debug!("Removed BookUpdater for instrument ID {instrument_id}");
@@ -1030,7 +1030,7 @@ impl DataEngine {
             let topic = switchboard::get_book_snapshots_topic(*instrument_id);
 
             // Check remaining snapshot subscriptions, if none then remove snapshotter
-            if msgbus::subscriptions_count(topic) == 0 {
+            if msgbus::subscriptions_count(topic.as_str()) == 0 {
                 let timer_name = snapshotter.timer_name;
                 self.book_snapshotters.remove(instrument_id);
                 let mut clock = self.clock.borrow_mut();
@@ -1103,13 +1103,17 @@ impl DataEngine {
         let handler = ShareableMessageHandler(updater);
 
         let topic = switchboard::get_book_deltas_topic(*instrument_id);
-        if !msgbus::is_subscribed(topic, handler.clone()) {
-            msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+        if !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus::subscribe(
+                topic.as_pattern(),
+                handler.clone(),
+                Some(self.msgbus_priority),
+            );
         }
 
         let topic = switchboard::get_book_depth10_topic(*instrument_id);
-        if !only_deltas && !msgbus::is_subscribed(topic, handler.clone()) {
-            msgbus::subscribe(topic, handler, Some(self.msgbus_priority));
+        if !only_deltas && !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus::subscribe(topic.as_pattern(), handler, Some(self.msgbus_priority));
         }
 
         Ok(())
@@ -1219,8 +1223,12 @@ impl DataEngine {
             let handler =
                 ShareableMessageHandler(Rc::new(BarBarHandler::new(aggregator.clone(), bar_key)));
 
-            if !msgbus::is_subscribed(topic, handler.clone()) {
-                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            if !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus::subscribe(
+                    topic.as_pattern(),
+                    handler.clone(),
+                    Some(self.msgbus_priority),
+                );
             }
 
             handlers.push((topic, handler));
@@ -1229,8 +1237,12 @@ impl DataEngine {
             let handler =
                 ShareableMessageHandler(Rc::new(BarTradeHandler::new(aggregator.clone(), bar_key)));
 
-            if !msgbus::is_subscribed(topic, handler.clone()) {
-                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            if !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus::subscribe(
+                    topic.as_pattern(),
+                    handler.clone(),
+                    Some(self.msgbus_priority),
+                );
             }
 
             handlers.push((topic, handler));
@@ -1239,8 +1251,12 @@ impl DataEngine {
             let handler =
                 ShareableMessageHandler(Rc::new(BarQuoteHandler::new(aggregator.clone(), bar_key)));
 
-            if !msgbus::is_subscribed(topic, handler.clone()) {
-                msgbus::subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            if !msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus::subscribe(
+                    topic.as_pattern(),
+                    handler.clone(),
+                    Some(self.msgbus_priority),
+                );
             }
 
             handlers.push((topic, handler));
@@ -1266,8 +1282,8 @@ impl DataEngine {
         let bar_key = bar_type.standard();
         if let Some(subs) = self.bar_aggregator_handlers.remove(&bar_key) {
             for (topic, handler) in subs {
-                if msgbus::is_subscribed(topic, handler.clone()) {
-                    msgbus::unsubscribe(topic, handler);
+                if msgbus::is_subscribed(topic.as_str(), handler.clone()) {
+                    msgbus::unsubscribe_topic(topic, handler);
                 }
             }
         }

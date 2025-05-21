@@ -32,6 +32,7 @@ pub mod switchboard;
 mod tests;
 
 pub use core::MessageBus;
+use core::Subscription;
 use std::{self, any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::OnceLock};
 
 use handler::ShareableMessageHandler;
@@ -42,6 +43,7 @@ use ustr::Ustr;
 
 use crate::messages::data::DataResponse;
 // Re-exports
+pub use crate::msgbus::core::{Endpoint, Pattern, Topic};
 pub use crate::msgbus::message::BusMessage;
 
 #[derive(Debug)]
@@ -84,7 +86,7 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
 }
 
 /// Sends the `message` to the `endpoint`.
-pub fn send(endpoint: &Ustr, message: &dyn Any) {
+pub fn send(endpoint: &Endpoint, message: &dyn Any) {
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
         handler.0.handle(message);
@@ -137,9 +139,11 @@ pub fn register_response_handler(correlation_id: &UUID4, handler: ShareableMessa
 }
 
 /// Publishes the `message` to the `topic`.
-pub fn publish(topic: &Ustr, message: &dyn Any) {
+pub fn publish(topic: &Topic, message: &dyn Any) {
     log::trace!("Publishing topic '{topic}' {message:?}");
-    let matching_subs = get_message_bus().borrow_mut().matching_subscriptions(topic);
+    let matching_subs = get_message_bus()
+        .borrow_mut()
+        .inner_matching_subscriptions(topic);
 
     log::trace!("Matched {} subscriptions", matching_subs.len());
 
@@ -150,9 +154,7 @@ pub fn publish(topic: &Ustr, message: &dyn Any) {
 }
 
 /// Registers the `handler` for the `endpoint` address.
-pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
-    let endpoint = Ustr::from(endpoint.as_ref());
-
+pub fn register(endpoint: Endpoint, handler: ShareableMessageHandler) {
     log::debug!(
         "Registering endpoint '{endpoint}' with handler ID {}",
         handler.0.id(),
@@ -166,16 +168,14 @@ pub fn register<T: AsRef<str>>(endpoint: T, handler: ShareableMessageHandler) {
 }
 
 /// Deregisters the handler for the `endpoint` address.
-pub fn deregister<T: AsRef<str>>(endpoint: T) {
-    let endpoint = Ustr::from(endpoint.as_ref());
-
+pub fn deregister(endpoint: &Endpoint) {
     log::debug!("Deregistering endpoint '{endpoint}'");
 
     // Removes entry if it exists for endpoint
     get_message_bus()
         .borrow_mut()
         .endpoints
-        .shift_remove(&endpoint);
+        .shift_remove(endpoint);
 }
 
 /// Subscribes the given `handler` to the `pattern` with an optional `priority`.
@@ -188,16 +188,7 @@ pub fn deregister<T: AsRef<str>>(endpoint: T) {
 /// priority is assigned then the handler may receive messages before core
 /// system components have been able to process necessary calculations and
 /// produce potential side effects for logically sound behavior.
-pub fn subscribe<T: AsRef<str>>(
-    pattern: T,
-    handler: ShareableMessageHandler,
-    priority: Option<u8>,
-) {
-    let pattern = core::Pattern::from(pattern);
-    inner_subscribe(pattern, handler, priority);
-}
-
-fn inner_subscribe(pattern: core::Pattern, handler: ShareableMessageHandler, priority: Option<u8>) {
+pub fn subscribe(pattern: Pattern, handler: ShareableMessageHandler, priority: Option<u8>) {
     let msgbus = get_message_bus();
     let mut msgbus_ref_mut = msgbus.borrow_mut();
     let sub = core::Subscription::new(pattern, handler, priority);
@@ -215,7 +206,7 @@ fn inner_subscribe(pattern: core::Pattern, handler: ShareableMessageHandler, pri
 
     // Find existing patterns which match this topic
     for (topic, subs) in msgbus_ref_mut.topics.iter_mut() {
-        if is_matching_backtracking(*topic, sub.pattern) {
+        if is_matching_backtracking(topic, &sub.pattern) {
             // TODO: Consider binary_search and then insert
             subs.push(sub.clone());
             subs.sort();
@@ -226,13 +217,21 @@ fn inner_subscribe(pattern: core::Pattern, handler: ShareableMessageHandler, pri
     msgbus_ref_mut.subscriptions.insert(sub);
 }
 
-/// Unsubscribes the `handler` from the `pattern`.
-pub fn unsubscribe<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) {
-    let pattern = core::Pattern::from(pattern);
-    inner_unsubscribe(pattern, handler);
+pub fn subscribe_topic(topic: Topic, handler: ShareableMessageHandler, priority: Option<u8>) {
+    subscribe(topic.as_pattern(), handler, priority);
 }
 
-fn inner_unsubscribe(pattern: core::Pattern, handler: ShareableMessageHandler) {
+pub fn subscribe_str<T: AsRef<str>>(
+    pattern: T,
+    handler: ShareableMessageHandler,
+    priority: Option<u8>,
+) {
+    let pattern = Pattern::from(pattern);
+    subscribe(pattern, handler, priority);
+}
+
+/// Unsubscribes the `handler` from the `pattern`.
+pub fn unsubscribe(pattern: Pattern, handler: ShareableMessageHandler) {
     log::debug!("Unsubscribing {handler:?} from pattern '{pattern}'");
 
     let sub = core::Subscription::new(pattern, handler, None);
@@ -256,9 +255,18 @@ fn inner_unsubscribe(pattern: core::Pattern, handler: ShareableMessageHandler) {
     }
 }
 
+pub fn unsubscribe_topic(topic: Topic, handler: ShareableMessageHandler) {
+    unsubscribe(topic.as_pattern(), handler);
+}
+
+pub fn unsubscribe_str<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) {
+    let pattern = Pattern::from(pattern);
+    unsubscribe(pattern, handler);
+}
+
 pub fn is_subscribed<T: AsRef<str>>(pattern: T, handler: ShareableMessageHandler) -> bool {
-    let pattern = core::Pattern::from(pattern);
-    let sub = core::Subscription::new(pattern, handler, None);
+    let pattern = Pattern::from(pattern.as_ref());
+    let sub = Subscription::new(pattern, handler, None);
     get_message_bus().borrow().subscriptions.contains(&sub)
 }
 

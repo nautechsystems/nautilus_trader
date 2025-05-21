@@ -21,7 +21,7 @@ use std::ffi::c_char;
 
 use nautilus_core::ffi::string::cstr_to_bytes;
 
-use crate::msgbus::matching::is_matching_fast;
+use crate::msgbus::matching::is_matching;
 
 pub mod clock;
 pub mod enums;
@@ -41,5 +41,5 @@ pub mod timer;
 pub unsafe extern "C" fn is_matching_ffi(topic: *const c_char, pattern: *const c_char) -> u8 {
     let topic = unsafe { cstr_to_bytes(topic) };
     let pattern = unsafe { cstr_to_bytes(pattern) };
-    is_matching_fast(topic, pattern) as u8
+    is_matching(topic, pattern) as u8
 }

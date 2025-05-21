@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     client_order_id TEXT NOT NULL,
     client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
+    reason TEXT,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),
     order_type TEXT,

@@ -780,7 +780,7 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         msgbus::{
-            self,
+            self, Endpoint,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
@@ -813,7 +813,6 @@ mod tests {
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
-    use ustr::Ustr;
 
     use crate::{
         exchange::{InflightCommand, SimulatedExchange},
@@ -1263,7 +1262,7 @@ mod tests {
         let account_type = AccountType::Margin;
         let mut cache = Cache::default();
         let handler = get_message_saving_handler::<AccountState>(None);
-        msgbus::register(Ustr::from("Portfolio.update_account"), handler.clone());
+        msgbus::register(Endpoint::from("Portfolio.update_account"), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),
