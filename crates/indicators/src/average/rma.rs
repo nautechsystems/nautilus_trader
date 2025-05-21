@@ -56,12 +56,14 @@ impl Indicator for WilderMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, q: &QuoteTick) {
-        self.update_raw(q.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(self.price_type).into());
     }
+
     fn handle_trade(&mut self, t: &TradeTick) {
         self.update_raw((&t.price).into());
     }
+
     fn handle_bar(&mut self, b: &Bar) {
         self.update_raw((&b.close).into());
     }
@@ -85,7 +87,10 @@ impl WilderMovingAverage {
         // The Wilder Moving Average is The Wilder's Moving Average is simply
         // an Exponential Moving Average (EMA) with a modified alpha.
         // alpha = 1 / period
-        assert!(period > 0, "WilderMovingAverage: period must be > 0");
+        assert!(
+            period > 0,
+            "WilderMovingAverage: period must be > 0 (received {period})"
+        );
         Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
