@@ -16,7 +16,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use nautilus_common::msgbus::{
     core::{Pattern, Topic},
-    matching::{is_matching, is_matching_backtracking},
+    matching::is_matching_backtracking,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use regex::Regex;
@@ -41,26 +41,6 @@ fn create_topics(n: usize, rng: &mut StdRng) -> Vec<Ustr> {
 
 fn bench_matching(c: &mut Criterion) {
     let pattern = "data.*.BINANCE.ETH???";
-    let pattern_ustr = Ustr::from(pattern);
-
-    {
-        let mut rng = StdRng::seed_from_u64(42);
-        let mut custom_group = c.benchmark_group("Custom matching");
-
-        for ele in [1, 10, 100, 1000] {
-            let topics = create_topics(ele, &mut rng);
-
-            custom_group.bench_function(format!("{ele} topics"), |b| {
-                b.iter(|| {
-                    for topic in &topics {
-                        black_box(is_matching(topic, &pattern_ustr));
-                    }
-                });
-            });
-        }
-
-        custom_group.finish();
-    }
 
     {
         let mut rng = StdRng::seed_from_u64(42);
@@ -94,7 +74,7 @@ fn bench_matching(c: &mut Criterion) {
                 b.iter(|| {
                     for topic in &topics {
                         let topic = Topic::from(topic);
-                        black_box(is_matching_backtracking(topic, pattern));
+                        black_box(is_matching_backtracking(&topic, &pattern));
                     }
                 });
             });

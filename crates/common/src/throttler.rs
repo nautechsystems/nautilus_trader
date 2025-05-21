@@ -32,7 +32,7 @@ use crate::{
     },
     clock::Clock,
     msgbus::{
-        self,
+        self, Endpoint,
         handler::{MessageHandler, ShareableMessageHandler},
     },
     timer::{TimeEvent, TimeEventCallback},
@@ -225,7 +225,7 @@ where
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
         msgbus::register(
-            process_handler.id().as_str(),
+            Endpoint::from(process_handler.id().as_str()),
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
         );
 
@@ -308,9 +308,9 @@ impl<T, F> ThrottlerProcess<T, F> {
     }
 
     pub fn get_timer_callback(&self) -> TimeEventCallback {
-        let endpoint_clone = self.endpoint;
+        let endpoint = Endpoint::from(self.endpoint); // TODO: Optimize this
         let process_callback = Rc::new(move |_event: TimeEvent| {
-            msgbus::send(&endpoint_clone, &());
+            msgbus::send(&endpoint, &());
         });
         TimeEventCallback::Rust(process_callback)
     }
@@ -336,10 +336,11 @@ where
             if !throttler.buffer.is_empty() && throttler.delta_next() > 0 {
                 throttler.is_limiting = true;
 
-                let endpoint_clone = self.endpoint;
+                let endpoint = Endpoint::from(self.endpoint); // TODO: Optimize this
+
                 // Send message to throttler process endpoint to resume
                 let process_callback = Rc::new(move |_event: TimeEvent| {
-                    msgbus::send(&endpoint_clone, &());
+                    msgbus::send(&endpoint, &());
                 });
                 throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
                 return;

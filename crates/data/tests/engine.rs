@@ -1108,7 +1108,7 @@ fn test_process_instrument(
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
     let topic = switchboard::get_instrument_topic(audusd_sim.id());
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe(topic.as_pattern(), handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
@@ -1152,7 +1152,7 @@ fn test_process_book_delta(
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
     let topic = switchboard::get_book_deltas_topic(delta.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Delta(delta));
@@ -1192,7 +1192,7 @@ fn test_process_book_deltas(
     let deltas = OrderBookDeltas_API::new(stub_deltas());
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
     let topic = switchboard::get_book_deltas_topic(deltas.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Deltas(deltas.clone()));
@@ -1232,7 +1232,7 @@ fn test_process_book_depth10(
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
     let topic = switchboard::get_book_depth10_topic(depth.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::from(depth));
@@ -1269,7 +1269,7 @@ fn test_process_quote_tick(
     let quote = QuoteTick::default();
     let handler = get_message_saving_handler::<QuoteTick>(None);
     let topic = switchboard::get_quotes_topic(quote.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Quote(quote));
@@ -1307,7 +1307,7 @@ fn test_process_trade_tick(
     let trade = TradeTick::default();
     let handler = get_message_saving_handler::<TradeTick>(None);
     let topic = switchboard::get_trades_topic(trade.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Trade(trade));
@@ -1350,7 +1350,7 @@ fn test_process_mark_price(
     );
     let handler = get_message_saving_handler::<MarkPriceUpdate>(None);
     let topic = switchboard::get_mark_price_topic(mark_price.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::MarkPriceUpdate(mark_price));
@@ -1404,7 +1404,7 @@ fn test_process_index_price(
     );
     let handler = get_message_saving_handler::<IndexPriceUpdate>(None);
     let topic = switchboard::get_index_price_topic(index_price.instrument_id);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::IndexPriceUpdate(index_price));
@@ -1447,7 +1447,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
 
     let handler = get_message_saving_handler::<Bar>(None);
     let topic = switchboard::get_bars_topic(bar.bar_type);
-    msgbus::subscribe(topic, handler.clone(), None);
+    msgbus::subscribe_topic(topic, handler.clone(), None);
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Bar(bar));

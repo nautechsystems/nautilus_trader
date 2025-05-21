@@ -193,7 +193,7 @@ mod tests {
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
-    use ustr::Ustr;
+    use ustr::Ustr; // Import required
 
     use crate::{
         testing::wait_until,

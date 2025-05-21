@@ -68,12 +68,23 @@ impl From<Topic> for Pattern {
     }
 }
 
+impl From<&Topic> for Pattern {
+    fn from(value: &Topic) -> Self {
+        Self(value.0)
+    }
+}
+
 /// A string topic for publishing data. It is a fully qualified pattern i.e.
 /// wildcard characters are not allowed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Topic(pub Ustr);
 
 impl Topic {
+    pub fn as_pattern(&self) -> Pattern {
+        Pattern(self.0)
+    }
+
+    // TODO: Every initialization should validate
     pub fn validate<T: AsRef<str>>(topic: T) -> bool {
         let topic = Ustr::from(topic.as_ref());
         !topic.chars().any(|c| c == '*' || c == '?')
@@ -95,6 +106,40 @@ impl Deref for Topic {
 }
 
 impl Display for Topic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A component endpoint adderess.
+///
+/// It is a fully qualified pattern i.e. wildcard characters are not allowed.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Endpoint(pub Ustr);
+
+impl Endpoint {
+    // TODO: Every initialization should validate
+    pub fn validate<T: AsRef<str>>(endpoint: T) -> bool {
+        let endpoint = Ustr::from(endpoint.as_ref());
+        !endpoint.chars().any(|c| c == '*' || c == '?')
+    }
+}
+
+impl<T: AsRef<str>> From<T> for Endpoint {
+    fn from(value: T) -> Self {
+        Self(Ustr::from(value.as_ref()))
+    }
+}
+
+impl Deref for Endpoint {
+    type Target = Ustr;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -205,7 +250,7 @@ pub struct MessageBus {
     /// this is updated whenever a new subscription is created.
     pub topics: IndexMap<Topic, Vec<Subscription>>,
     /// Index of endpoint addresses and their handlers.
-    pub endpoints: IndexMap<Ustr, ShareableMessageHandler>,
+    pub endpoints: IndexMap<Endpoint, ShareableMessageHandler>,
     /// Index of request correlation IDs and their response handlers.
     pub correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
 }
@@ -248,7 +293,7 @@ impl MessageBus {
     /// Returns the registered endpoint addresses.
     #[must_use]
     pub fn endpoints(&self) -> Vec<&str> {
-        self.endpoints.keys().map(Ustr::as_str).collect()
+        self.endpoints.iter().map(|e| e.0.as_str()).collect()
     }
 
     /// Returns actively subscribed patterns.
@@ -272,7 +317,7 @@ impl MessageBus {
         self.topics
             .get(&topic)
             .map(|subs| subs.len())
-            .unwrap_or_else(|| self.find_topic_matches(topic).len())
+            .unwrap_or_else(|| self.find_topic_matches(&topic).len())
     }
 
     /// Returns active subscriptions.
@@ -293,7 +338,8 @@ impl MessageBus {
     /// Returns whether there is a registered endpoint for the given `pattern`.
     #[must_use]
     pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
-        self.endpoints.contains_key(&Ustr::from(endpoint.as_ref()))
+        self.endpoints
+            .contains_key(&Endpoint::from(endpoint.as_ref()))
     }
 
     /// Returns whether the given `handler` is subscribed to the given `pattern`.
@@ -320,8 +366,8 @@ impl MessageBus {
 
     /// Returns the handler for the given `endpoint`.
     #[must_use]
-    pub fn get_endpoint<T: AsRef<str>>(&self, endpoint: T) -> Option<&ShareableMessageHandler> {
-        self.endpoints.get(&Ustr::from(endpoint.as_ref()))
+    pub fn get_endpoint(&self, endpoint: &Endpoint) -> Option<&ShareableMessageHandler> {
+        self.endpoints.get(endpoint)
     }
 
     /// Returns the handler for the given `correlation_id`.
@@ -331,11 +377,11 @@ impl MessageBus {
     }
 
     /// Finds the subscriptions with pattern matching the given `topic`.
-    pub(crate) fn find_topic_matches(&self, topic: Topic) -> Vec<Subscription> {
+    pub(crate) fn find_topic_matches(&self, topic: &Topic) -> Vec<Subscription> {
         self.subscriptions
             .iter()
             .filter_map(|sub| {
-                if is_matching_backtracking(topic, sub.pattern) {
+                if is_matching_backtracking(topic, &sub.pattern) {
                     Some(sub.clone())
                 } else {
                     None
@@ -344,19 +390,19 @@ impl MessageBus {
             .collect()
     }
 
-    #[must_use]
     /// Finds the subscriptions which match the given `topic` and caches the
     /// results in the `patterns` map.
+    #[must_use]
     pub fn matching_subscriptions<T: AsRef<str>>(&mut self, topic: T) -> Vec<Subscription> {
-        let topic = Topic::from(topic);
-        self.inner_matching_subscriptions(topic)
+        let topic = Topic::from(topic.as_ref());
+        self.inner_matching_subscriptions(&topic)
     }
 
-    pub(crate) fn inner_matching_subscriptions(&mut self, topic: Topic) -> Vec<Subscription> {
-        self.topics.get(&topic).cloned().unwrap_or_else(|| {
+    pub(crate) fn inner_matching_subscriptions(&mut self, topic: &Topic) -> Vec<Subscription> {
+        self.topics.get(topic).cloned().unwrap_or_else(|| {
             let mut matches = self.find_topic_matches(topic);
             matches.sort();
-            self.topics.insert(topic, matches.clone());
+            self.topics.insert(*topic, matches.clone());
             matches
         })
     }
