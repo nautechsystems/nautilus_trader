@@ -22,7 +22,7 @@ use nautilus_common::{
     clock::{Clock, LiveClock},
     messages::data::{DataCommand, DataResponse},
     msgbus::{
-        self, Endpoint,
+        self,
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
@@ -90,7 +90,7 @@ impl LiveRunner {
     }
 
     pub async fn run(&mut self) {
-        let endpoint = Endpoint::from("negative_stream");
+        let endpoint = "negative_stream".into();
 
         loop {
             // TODO: push decoding logic into data client
@@ -104,7 +104,7 @@ impl LiveRunner {
                 }
                 message = self.message_stream.next() => {
                     if let Some(message) = message {
-                        msgbus::send(&endpoint, &message);
+                        msgbus::send(endpoint, &message);
                     }
                 }
             }

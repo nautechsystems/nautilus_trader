@@ -780,7 +780,7 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         msgbus::{
-            self, Endpoint,
+            self,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
@@ -1262,7 +1262,7 @@ mod tests {
         let account_type = AccountType::Margin;
         let mut cache = Cache::default();
         let handler = get_message_saving_handler::<AccountState>(None);
-        msgbus::register(Endpoint::from("Portfolio.update_account"), handler.clone());
+        msgbus::register("Portfolio.update_account".into(), handler.clone());
         let margin_account = MarginAccount::new(
             AccountState::new(
                 AccountId::from("SIM-001"),

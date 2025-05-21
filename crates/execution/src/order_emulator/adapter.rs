@@ -21,7 +21,7 @@ use std::{
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    msgbus::{Endpoint, handler::ShareableMessageHandler, register},
+    msgbus::{handler::ShareableMessageHandler, register},
 };
 use nautilus_core::UUID4;
 use ustr::Ustr;
@@ -75,7 +75,7 @@ impl OrderEmulatorAdapter {
             emulator,
         }));
 
-        register(Endpoint::from("OrderEmulator.execute"), handler);
+        register("OrderEmulator.execute".into(), handler);
     }
 
     fn initialize_on_event_handler(emulator: Rc<RefCell<OrderEmulator>>) {
@@ -84,7 +84,7 @@ impl OrderEmulatorAdapter {
             emulator,
         }));
 
-        register(Endpoint::from("OrderEmulator.on_event"), handler);
+        register("OrderEmulator.on_event".into(), handler);
     }
 
     #[must_use]

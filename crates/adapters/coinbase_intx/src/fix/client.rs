@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! FIX Client for the Coinbase International Drop Copy Endpoint.
+//! FIX Client for the Coinbase International Drop Copy `MStr<Topic>`.
 //!
 //! This implementation focuses specifically on processing execution reports
 //! via the FIX protocol, leveraging the existing `SocketClient` for TCP/TLS connectivity.
