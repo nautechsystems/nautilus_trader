@@ -39,9 +39,9 @@ pub struct VariableIndexDynamicAverage {
     pub value: f64,
     pub count: usize,
     pub initialized: bool,
-    has_inputs: bool,
     pub cmo: ChandeMomentumOscillator,
     pub cmo_pct: f64,
+    has_inputs: bool,
 }
 
 impl Display for VariableIndexDynamicAverage {
@@ -52,7 +52,7 @@ impl Display for VariableIndexDynamicAverage {
 
 impl Indicator for VariableIndexDynamicAverage {
     fn name(&self) -> String {
-        stringify!(VariableIndexDynamicAverage).to_string()
+        stringify!(VariableIndexDynamicAverage).into()
     }
 
     fn has_inputs(&self) -> bool {
@@ -71,28 +71,37 @@ impl Indicator for VariableIndexDynamicAverage {
         self.update_raw((&trade.price).into());
     }
 
-    fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+    fn handle_bar(&mut self, b: &Bar) {
+        self.update_raw((&b.close).into());
     }
 
     fn reset(&mut self) {
         self.value = 0.0;
         self.count = 0;
         self.cmo_pct = 0.0;
-        self.alpha = 0.0;
+        self.alpha = 2.0 / (self.period as f64 + 1.0);
         self.has_inputs = false;
         self.initialized = false;
+        self.cmo.reset();
     }
 }
 
 impl VariableIndexDynamicAverage {
     /// Creates a new [`VariableIndexDynamicAverage`] instance.
+    ///
+    /// # Panics
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
     ) -> Self {
+        assert!(
+            period > 0,
+            "VariableIndexDynamicAverage: period must be > 0 (received {period})"
+        );
+
         Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -116,19 +125,19 @@ impl MovingAverage for VariableIndexDynamicAverage {
         self.count
     }
 
-    fn update_raw(&mut self, value: f64) {
-        self.cmo.update_raw(value);
+    fn update_raw(&mut self, price: f64) {
+        self.cmo.update_raw(price);
         self.cmo_pct = (self.cmo.value / 100.0).abs();
 
         if self.initialized {
             self.value = (self.alpha * self.cmo_pct)
-                .mul_add(value, self.alpha.mul_add(-self.cmo_pct, 1.0) * self.value);
+                .mul_add(price, self.alpha.mul_add(-self.cmo_pct, 1.0) * self.value);
         }
 
         if !self.initialized && self.cmo.initialized {
             self.initialized = true;
         }
-
+        self.has_inputs = true;
         self.count += 1;
     }
 }
@@ -142,7 +151,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        average::vidya::VariableIndexDynamicAverage,
+        average::{sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
     };
@@ -154,6 +163,12 @@ mod tests {
         assert_eq!(indicator_vidya_10.period, 10);
         assert!(!indicator_vidya_10.initialized());
         assert!(!indicator_vidya_10.has_inputs());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "period must be > 0")]
+    fn sma_new_with_zero_period_panics() {
+        let _ = VariableIndexDynamicAverage::new(0, None, None);
     }
 
     #[rstest]
@@ -234,5 +249,100 @@ mod tests {
         assert_eq!(indicator_vidya_10.count, 0);
         assert!(!indicator_vidya_10.has_inputs);
         assert!(!indicator_vidya_10.initialized);
+    }
+
+    fn reference_ma(prices: &[f64], period: usize) -> Vec<f64> {
+        let mut buf = Vec::with_capacity(period);
+        prices
+            .iter()
+            .map(|&p| {
+                buf.push(p);
+                if buf.len() > period {
+                    buf.remove(0);
+                }
+                buf.iter().copied().sum::<f64>() / buf.len() as f64
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[case(3, vec![1.0, 2.0, 3.0, 4.0, 5.0])]
+    #[case(4, vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0])]
+    #[case(2, vec![0.1, 0.2, 0.3, 0.4])]
+    fn test_sma_exact_rolling_mean(#[case] period: usize, #[case] prices: Vec<f64>) {
+        let mut sma = SimpleMovingAverage::new(period, None);
+        let expected = reference_ma(&prices, period);
+
+        for (ix, (&price, &exp)) in prices.iter().zip(expected.iter()).enumerate() {
+            sma.update_raw(price);
+            assert_eq!(sma.count(), std::cmp::min(ix + 1, period));
+
+            let got = sma.value();
+            assert!(
+                (got - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, got {got}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_sma_matches_reference_series() {
+        const PERIOD: usize = 5;
+
+        let prices: Vec<f64> = (1u32..=15)
+            .map(|n| f64::from(n * (n + 1) / 2) * 0.37)
+            .collect();
+
+        let reference = reference_ma(&prices, PERIOD);
+
+        let mut sma = SimpleMovingAverage::new(PERIOD, None);
+
+        for (ix, (&price, &exp)) in prices.iter().zip(reference.iter()).enumerate() {
+            sma.update_raw(price);
+
+            let got = sma.value();
+            assert!(
+                (got - exp).abs() < 1e-12,
+                "tick {ix}: expected {exp}, got {got}"
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_vidya_alpha_bounds() {
+        let vidya_min = VariableIndexDynamicAverage::new(1, None, None);
+        assert_eq!(vidya_min.alpha, 1.0);
+
+        let vidya_large = VariableIndexDynamicAverage::new(1_000, None, None);
+        assert!(vidya_large.alpha > 0.0 && vidya_large.alpha < 0.01);
+    }
+
+    #[rstest]
+    fn test_vidya_value_constant_when_cmo_zero() {
+        let mut vidya = VariableIndexDynamicAverage::new(3, None, None);
+
+        for _ in 0..10 {
+            vidya.update_raw(100.0);
+        }
+
+        let baseline = vidya.value;
+        for _ in 0..5 {
+            vidya.update_raw(100.0);
+            assert!((vidya.value - baseline).abs() < 1e-12);
+        }
+    }
+
+    #[rstest]
+    fn test_vidya_handles_negative_prices() {
+        let mut vidya = VariableIndexDynamicAverage::new(5, None, None);
+        let negative_prices = [-1.0, -1.2, -0.8, -1.5, -1.3, -1.1];
+
+        for p in negative_prices {
+            vidya.update_raw(p);
+            assert!(vidya.value.is_finite());
+            assert!((0.0..=1.0).contains(&vidya.cmo_pct));
+        }
+
+        assert!(vidya.value < 0.0);
     }
 }
