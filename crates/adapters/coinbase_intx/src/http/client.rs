@@ -30,14 +30,12 @@ use chrono::{DateTime, Utc};
 use nautilus_core::{
     UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
-use nautilus_execution::reports::{
-    fill::FillReport, order::OrderStatusReport, position::PositionStatusReport,
-};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};

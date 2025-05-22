@@ -17,3 +17,9 @@ pub mod fill;
 pub mod mass_status;
 pub mod order;
 pub mod position;
+
+// Re-exports
+pub use fill::FillReport;
+pub use mass_status::ExecutionMassStatus;
+pub use order::OrderStatusReport;
+pub use position::PositionStatusReport;

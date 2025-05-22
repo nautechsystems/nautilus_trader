@@ -35,12 +35,8 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
     },
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
-};
-
-use crate::reports::{
-    fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
-    position::PositionStatusReport,
 };
 
 pub struct BaseExecutionClient {

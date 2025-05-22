@@ -54,6 +54,7 @@ async-trait = { workspace = true }
 async-stream = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
+derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }

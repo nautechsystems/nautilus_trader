@@ -16,20 +16,21 @@
 use std::fmt::{Debug, Display};
 
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+use crate::{
     enums::PositionSide,
     identifiers::{AccountId, InstrumentId, PositionId},
     types::Quantity,
 };
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 
 /// Represents a position status at a point in time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct PositionStatusReport {
     /// The account ID associated with the position.

@@ -21,15 +21,16 @@
 
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
-use nautilus_common::{cache::Cache, clock::Clock};
-use nautilus_core::UnixNanos;
-use nautilus_execution::{
-    client::{ExecutionClient, base::BaseExecutionClient},
-    messages::{
+use nautilus_common::{
+    cache::Cache,
+    clock::Clock,
+    messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
         SubmitOrderList, TradingCommand,
     },
 };
+use nautilus_core::UnixNanos;
+use nautilus_execution::client::{ExecutionClient, base::BaseExecutionClient};
 use nautilus_model::{
     accounts::AccountAny,
     enums::OmsType,

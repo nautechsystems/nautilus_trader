@@ -15,11 +15,11 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use nautilus_common::msgbus::handler::MessageHandler;
+use nautilus_common::{messages::execution::TradingCommand, msgbus::handler::MessageHandler};
 use nautilus_model::events::OrderEventAny;
 use ustr::Ustr;
 
-use crate::{messages::TradingCommand, order_emulator::emulator::OrderEmulator};
+use super::emulator::OrderEmulator;
 
 #[derive(Debug)]
 pub struct OrderEmulatorExecuteHandler {

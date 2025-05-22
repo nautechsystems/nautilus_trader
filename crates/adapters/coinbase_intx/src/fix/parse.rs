@@ -15,10 +15,10 @@
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_execution::reports::{fill::FillReport, order::OrderStatusReport};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
+    reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;

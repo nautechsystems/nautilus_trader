@@ -14,9 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, nanos::UnixNanos};
-use nautilus_execution::reports::{
-    fill::FillReport, order::OrderStatusReport, position::PositionStatusReport,
-};
 use nautilus_model::{
     enums::{
         AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
@@ -24,6 +21,7 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, any::InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;

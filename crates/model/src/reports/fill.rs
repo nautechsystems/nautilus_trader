@@ -16,19 +16,20 @@
 use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{
+use serde::{Deserialize, Serialize};
+
+use crate::{
     enums::{LiquiditySide, OrderSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     types::{Money, Price, Quantity},
 };
-use serde::{Deserialize, Serialize};
 
 /// Represents a fill report of a single order execution.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct FillReport {
     /// The account ID associated with the position.
