@@ -90,6 +90,7 @@ None
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl
 - Fixed HTTP batch order operations for Bybit (#2627), thanks @sunlei
 - Fixed `reduce_only` attribute access in batch place order for Bybit
+- Fixed quote tick parsing for one-sided books on Polymarket
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
