@@ -128,6 +128,9 @@ fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) {
 
 #[pymethods]
 impl DatabentoLiveClient {
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if reading or parsing the publishers file fails.
     #[new]
     pub fn py_new(
         key: String,

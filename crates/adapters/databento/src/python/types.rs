@@ -142,6 +142,9 @@ impl DatabentoImbalance {
     }
 
     // TODO
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if generating the Python dictionary fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
@@ -277,6 +280,9 @@ impl DatabentoStatistics {
     }
 
     // TODO
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if generating the Python dictionary fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);

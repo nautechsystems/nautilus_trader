@@ -38,6 +38,9 @@ impl MetadataCache {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if metadata for the given `date` cannot be retrieved.
     pub fn symbol_map_for_date(&mut self, date: time::Date) -> dbn::Result<&PitSymbolMap> {
         if !self.date_metadata_map.contains_key(&date) {
             let map = self.metadata.symbol_map_for_date(date)?;
@@ -60,6 +63,13 @@ pub fn instrument_id_to_symbol_string(
     instrument_id.symbol.to_string()
 }
 
+/// # Errors
+///
+/// Returns an error if mapping record to `InstrumentId` fails.
+///
+/// # Panics
+///
+/// Panics if the raw symbol from metadata cannot be converted into a `Symbol`.
 pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
@@ -83,6 +93,13 @@ pub fn decode_nautilus_instrument_id(
     Ok(instrument_id)
 }
 
+/// # Errors
+///
+/// Returns an error if mapping record to `InstrumentId` fails or timestamp overflow occurs.
+///
+/// # Panics
+///
+/// Panics if the raw symbol from metadata cannot be converted into a `Symbol`.
 pub fn get_nautilus_instrument_id_for_record(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
@@ -147,6 +164,9 @@ pub fn infer_symbology_type(symbol: &str) -> SType {
     SType::RawSymbol
 }
 
+/// # Errors
+///
+/// Returns an error if `symbols` is empty or symbols have inconsistent symbology types.
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
     if symbols.is_empty() {
         anyhow::bail!("No symbols provided");
