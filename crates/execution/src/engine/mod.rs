@@ -493,7 +493,7 @@ impl ExecutionEngine {
 
         if get_message_bus().borrow().has_backing {
             let topic = switchboard::get_order_snapshots_topic(order.client_order_id());
-            msgbus::publish(&topic, order);
+            msgbus::publish(topic, order);
         }
     }
 
@@ -508,7 +508,7 @@ impl ExecutionEngine {
         // }
 
         let topic = switchboard::get_positions_snapshots_topic(position.id);
-        msgbus::publish(&topic, position);
+        msgbus::publish(topic, position);
     }
 
     // -- EVENT HANDLERS --------------------------------------------------------------------------
@@ -676,7 +676,7 @@ impl ExecutionEngine {
         }
 
         let topic = switchboard::get_event_orders_topic(event.strategy_id());
-        msgbus::publish(&topic, order);
+        msgbus::publish(topic, order);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(order);
@@ -773,7 +773,7 @@ impl ExecutionEngine {
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = PositionOpened::create(&position, &fill, UUID4::new(), ts_init);
         let topic = switchboard::get_event_positions_topic(event.strategy_id);
-        msgbus::publish(&topic, &event);
+        msgbus::publish(topic, &event);
 
         Ok(position)
     }
@@ -795,10 +795,10 @@ impl ExecutionEngine {
 
         if position.is_closed() {
             let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish(&topic, &event);
+            msgbus::publish(topic, &event);
         } else {
             let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
-            msgbus::publish(&topic, &event);
+            msgbus::publish(topic, &event);
         }
     }
 
@@ -1058,7 +1058,7 @@ impl ExecutionEngine {
         }
 
         let topic = switchboard::get_event_orders_topic(order.strategy_id());
-        msgbus::publish(&topic, &denied);
+        msgbus::publish(topic, &denied);
 
         if self.config.snapshot_orders {
             self.create_order_state_snapshot(&order);

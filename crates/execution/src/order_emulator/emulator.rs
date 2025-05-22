@@ -438,7 +438,7 @@ impl OrderEmulator {
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
         }
@@ -879,7 +879,7 @@ impl OrderEmulator {
             command.order = OrderAny::Limit(transformed.clone());
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
 
@@ -920,7 +920,7 @@ impl OrderEmulator {
 
             // Publish event
             msgbus::publish(
-                &format!("events.order.{}", transformed.strategy_id()).into(),
+                format!("events.order.{}", transformed.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
 
@@ -1003,7 +1003,7 @@ impl OrderEmulator {
             command.order = OrderAny::Market(transformed.clone());
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
 
@@ -1045,7 +1045,7 @@ impl OrderEmulator {
 
             // Publish event
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
 
