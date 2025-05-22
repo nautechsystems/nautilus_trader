@@ -17,6 +17,8 @@ import uuid
 
 import msgspec
 
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
@@ -115,19 +117,33 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
 
         return OrderBookDeltas(instrument_id=instrument.id, deltas=deltas)
 
-    def parse_to_quote_tick(
+    def parse_to_quote(
         self,
         instrument: BinaryOption,
         ts_init: int,
     ) -> QuoteTick:
-        top_bid = self.bids[-1]
-        top_ask = self.asks[-1]
+        if self.bids:
+            top_bid = self.bids[-1]
+            top_bid_price = float(top_bid.price)
+            top_bid_size = float(top_bid.size)
+        else:
+            top_bid_price = POLYMARKET_MIN_PRICE
+            top_bid_size = 0.0
+
+        if self.asks:
+            top_ask = self.asks[-1]
+            top_ask_price = float(top_ask.price)
+            top_ask_size = float(top_ask.size)
+        else:
+            top_ask_price = POLYMARKET_MAX_PRICE
+            top_ask_size = 0.0
+
         return QuoteTick(
             instrument_id=instrument.id,
-            bid_price=instrument.make_price(float(top_bid.price)),
-            ask_price=instrument.make_price(float(top_ask.price)),
-            bid_size=instrument.make_qty(float(top_bid.size)),
-            ask_size=instrument.make_qty(float(top_ask.size)),
+            bid_price=instrument.make_price(top_bid_price),
+            ask_price=instrument.make_price(top_ask_price),
+            bid_size=instrument.make_qty(top_bid_size),
+            ask_size=instrument.make_qty(top_ask_size),
             ts_event=ts_init,  # Polymarket does not provide a timestamp
             ts_init=ts_init,
         )
