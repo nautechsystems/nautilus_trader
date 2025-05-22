@@ -19,6 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use anyhow::Context;
 use arrow::array::RecordBatch;
 use chrono::{DateTime, Duration, NaiveDate};
 use futures_util::{StreamExt, future::join_all, pin_mut};
@@ -106,9 +107,11 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     tracing::info!("Starting replay");
     tracing::info!("Config filepath: {config_filepath:?}");
 
-    let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
-    let config: TardisReplayConfig =
-        serde_json::from_str(&config_data).expect("Failed to parse config JSON");
+    // Load and parse the replay configuration
+    let config_data = fs::read_to_string(config_filepath)
+        .with_context(|| format!("Failed to read config file: {:?}", config_filepath))?;
+    let config: TardisReplayConfig = serde_json::from_str(&config_data)
+        .context("Failed to parse config JSON into TardisReplayConfig")?;
 
     let path = config
         .output_path

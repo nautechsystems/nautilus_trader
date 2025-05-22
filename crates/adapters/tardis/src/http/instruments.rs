@@ -28,9 +28,10 @@ use crate::parse::parse_option_kind;
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
 pub(crate) fn get_currency(code: &str) -> Currency {
+    // SAFETY: Mutex should not be poisoned in normal operation
     CURRENCY_MAP
         .lock()
-        .unwrap()
+        .expect("Failed to acquire CURRENCY_MAP lock")
         .get(code)
         .copied()
         .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
