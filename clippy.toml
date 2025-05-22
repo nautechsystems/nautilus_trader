@@ -1,4 +1,15 @@
 cognitive-complexity-threshold = 10
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
-doc-valid-idents = ["DeFi", "HyperSync", "PnL", "PnLs", "PostgreSQL", ".."]
+doc-valid-idents = [
+  "BaseSwap",
+  "BaseX",
+  "DeFi",
+  "HyperSync",
+  "PancakeSwap",
+  "PnL",
+  "PnLs",
+  "PostgreSQL",
+  "SushiSwap",
+  "..",
+]

@@ -16,6 +16,7 @@
 use alloy::primitives::Address;
 
 /// Represents a liquidity pool creation event from a decentralized exchange.
+///
 // This struct models the data structure of a pool creation event emitted by DEX factory contracts.
 #[derive(Debug, Clone)]
 pub struct PoolCreated {

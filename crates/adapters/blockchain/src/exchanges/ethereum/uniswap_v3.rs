@@ -24,7 +24,7 @@ use nautilus_model::defi::{
 
 use crate::{events::pool_created::PoolCreated, exchanges::extended::DexExtended};
 
-/// Uniswap V3 DEX on Ethereum
+/// Uniswap V3 DEX on Ethereum.
 pub static UNISWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
     let mut dex = DexExtended::new(Dex::new(
         chains::ETHEREUM.clone(),

@@ -35,7 +35,7 @@ pub use sushiswap_v3::SUSHISWAP_V3;
 pub use uniswap_v3::UNISWAP_V3;
 pub use uniswap_v4::UNISWAP_V4;
 
-/// Returns a vector of references to all Arbitrum Dexes
+/// Returns a vector of references to all Arbitrum Dexes.
 #[must_use]
 pub fn all() -> Vec<&'static DexExtended> {
     vec![
@@ -50,7 +50,7 @@ pub fn all() -> Vec<&'static DexExtended> {
     ]
 }
 
-/// Returns a map of Arbitrum DEX name to Dex reference for easy lookup
+/// Returns a map of Arbitrum DEX name to Dex reference for easy lookup.
 #[must_use]
 pub fn dex_map() -> HashMap<&'static str, &'static DexExtended> {
     let mut map = HashMap::new();

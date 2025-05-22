@@ -22,7 +22,7 @@ use nautilus_model::defi::{
 
 use crate::exchanges::extended::DexExtended;
 
-/// Balancer V2 DEX on Ethereum
+/// Balancer V2 DEX on Ethereum.
 pub static BALANCER_V2: LazyLock<DexExtended> = LazyLock::new(|| {
     let dex = Dex::new(
         chains::ETHEREUM.clone(),
