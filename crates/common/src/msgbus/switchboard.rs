@@ -20,7 +20,7 @@ use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
 };
 
-use super::core::{MStr, Topic};
+use super::core::{Endpoint, MStr, Topic};
 use crate::msgbus::get_message_bus;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
@@ -210,22 +210,22 @@ impl Default for MessagingSwitchboard {
 
 impl MessagingSwitchboard {
     #[must_use]
-    pub fn data_engine_execute() -> MStr<Topic> {
+    pub fn data_engine_execute() -> MStr<Endpoint> {
         "DataEngine.execute".into()
     }
 
     #[must_use]
-    pub fn data_engine_process() -> MStr<Topic> {
+    pub fn data_engine_process() -> MStr<Endpoint> {
         "DataEngine.process".into()
     }
 
     #[must_use]
-    pub fn exec_engine_execute() -> MStr<Topic> {
+    pub fn exec_engine_execute() -> MStr<Endpoint> {
         "ExecEngine.execute".into()
     }
 
     #[must_use]
-    pub fn exec_engine_process() -> MStr<Topic> {
+    pub fn exec_engine_process() -> MStr<Endpoint> {
         "ExecEngine.process".into()
     }
 

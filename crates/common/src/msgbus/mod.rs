@@ -32,7 +32,7 @@ pub mod switchboard;
 mod tests;
 
 pub use core::MessageBus;
-use core::Subscription;
+use core::{Endpoint, Subscription};
 use std::{self, any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::OnceLock};
 
 use handler::ShareableMessageHandler;
@@ -86,7 +86,7 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
 }
 
 /// Sends the `message` to the `endpoint`.
-pub fn send(endpoint: MStr<Topic>, message: &dyn Any) {
+pub fn send(endpoint: MStr<Endpoint>, message: &dyn Any) {
     // TODO: This should return a Result (in case endpoint doesn't exist)
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
@@ -155,7 +155,7 @@ pub fn publish(topic: MStr<Topic>, message: &dyn Any) {
 }
 
 /// Registers the `handler` for the `endpoint` address.
-pub fn register(endpoint: MStr<Topic>, handler: ShareableMessageHandler) {
+pub fn register(endpoint: MStr<Endpoint>, handler: ShareableMessageHandler) {
     log::debug!(
         "Registering endpoint '{endpoint}' with handler ID {}",
         handler.0.id(),
@@ -169,7 +169,7 @@ pub fn register(endpoint: MStr<Topic>, handler: ShareableMessageHandler) {
 }
 
 /// Deregisters the handler for the `endpoint` address.
-pub fn deregister(endpoint: MStr<Topic>) {
+pub fn deregister(endpoint: MStr<Endpoint>) {
     log::debug!("Deregistering endpoint '{endpoint}'");
 
     // Removes entry if it exists for endpoint

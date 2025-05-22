@@ -49,9 +49,13 @@ fn check_fully_qualified_string(value: &Ustr, key: &str) -> anyhow::Result<()> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern;
 
-/// Topic is a fully qualified string for publishing or sending data.
+/// Topic is a fully qualified string for publishing data.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Topic;
+
+/// Endpoint is a fully qualified string for sending data.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Endpoint;
 
 /// A message bus string type. It can be a pattern or a topic.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -122,6 +126,30 @@ impl MStr<Topic> {
 impl<T: AsRef<str>> From<T> for MStr<Topic> {
     fn from(value: T) -> Self {
         Self::topic(value).expect(FAILED)
+    }
+}
+
+impl MStr<Endpoint> {
+    /// Create a new endpoint from a fully qualified string.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint has white space or invalid characters.
+    pub fn endpoint<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let endpoint = Ustr::from(value.as_ref());
+        check_valid_string(value, stringify!(value))?;
+        check_fully_qualified_string(&endpoint, stringify!(Endpoint))?;
+
+        Ok(Self {
+            value: endpoint,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<T: AsRef<str>> From<T> for MStr<Endpoint> {
+    fn from(value: T) -> Self {
+        Self::endpoint(value).expect(FAILED)
     }
 }
 
@@ -234,7 +262,7 @@ pub struct MessageBus {
     /// this is updated whenever a new subscription is created.
     pub topics: IndexMap<MStr<Topic>, Vec<Subscription>>,
     /// Index of endpoint addresses and their handlers.
-    pub endpoints: IndexMap<MStr<Topic>, ShareableMessageHandler>,
+    pub endpoints: IndexMap<MStr<Endpoint>, ShareableMessageHandler>,
     /// Index of request correlation IDs and their response handlers.
     pub correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
 }
@@ -330,8 +358,8 @@ impl MessageBus {
     /// Returns an error if the endpoint is not valid topic string.
     #[must_use]
     pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
-        self.endpoints
-            .contains_key(&MStr::<Topic>::topic(endpoint).expect(FAILED))
+        let endpoint: MStr<Endpoint> = endpoint.into();
+        self.endpoints.contains_key(&endpoint)
     }
 
     /// Returns whether the `handler` is subscribed to the `pattern`.
@@ -358,7 +386,7 @@ impl MessageBus {
 
     /// Returns the handler for the `endpoint`.
     #[must_use]
-    pub fn get_endpoint(&self, endpoint: MStr<Topic>) -> Option<&ShareableMessageHandler> {
+    pub fn get_endpoint(&self, endpoint: MStr<Endpoint>) -> Option<&ShareableMessageHandler> {
         self.endpoints.get(&endpoint)
     }
 
