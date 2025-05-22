@@ -53,6 +53,10 @@ pub struct TardisMachineClient {
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `base_url` is not provided and `TARDIS_MACHINE_WS_URL` env var is missing.
     pub fn new(base_url: Option<&str>, normalize_symbols: bool) -> anyhow::Result<Self> {
         let base_url = base_url
             .map(ToString::to_string)
@@ -91,6 +95,11 @@ impl TardisMachineClient {
         tracing::debug!("Closed");
     }
 
+    /// Connects to the Tardis Machine replay WebSocket and yields parsed `Data` items.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket connection cannot be established.
     pub async fn replay(
         &self,
         options: Vec<ReplayNormalizedRequestOptions>,
@@ -104,6 +113,11 @@ impl TardisMachineClient {
         handle_ws_stream(Box::pin(stream), None, Some(self.instruments.clone()))
     }
 
+    /// Connects to the Tardis Machine stream WebSocket for a single instrument and yields parsed `Data` items.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the WebSocket connection cannot be established.
     pub async fn stream(
         &self,
         instrument: InstrumentMiniInfo,

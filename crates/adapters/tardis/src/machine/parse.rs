@@ -117,6 +117,11 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
 }
 
 /// Parse a book change message into order book deltas, returning an error if timestamps invalid.
+/// Parse a book change message into order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_change_msg_as_deltas(
     msg: BookChangeMsg,
     price_precision: u8,
@@ -136,6 +141,11 @@ pub fn parse_book_change_msg_as_deltas(
 }
 
 /// Parse a book snapshot message into order book deltas, returning an error if timestamps invalid.
+/// Parse a book snapshot message into order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_snapshot_msg_as_deltas(
     msg: BookSnapshotMsg,
     price_precision: u8,
@@ -156,6 +166,11 @@ pub fn parse_book_snapshot_msg_as_deltas(
 
 /// Parse raw book levels into order book deltas, returning error for invalid timestamps.
 #[allow(clippy::too_many_arguments)]
+/// Parse raw book levels into order book deltas.
+///
+/// # Errors
+///
+/// Returns an error if timestamp fields cannot be converted to nanoseconds.
 pub fn parse_book_msg_as_deltas(
     bids: Vec<BookLevel>,
     asks: Vec<BookLevel>,
@@ -215,6 +230,11 @@ pub fn parse_book_msg_as_deltas(
 }
 
 #[must_use]
+/// Parse a single book level into an order book delta.
+///
+/// # Panics
+///
+/// Panics if a non-delete action has a zero size after normalization.
 #[allow(clippy::too_many_arguments)]
 pub fn parse_book_level(
     instrument_id: InstrumentId,
@@ -256,6 +276,11 @@ pub fn parse_book_level(
 }
 
 /// Parse a book snapshot message into a quote tick, returning an error on invalid data.
+/// Parse a book snapshot message into a quote tick.
+///
+/// # Errors
+///
+/// Returns an error if missing bid/ask levels or invalid sizes.
 pub fn parse_book_snapshot_msg_as_quote(
     msg: BookSnapshotMsg,
     price_precision: u8,
@@ -293,6 +318,11 @@ pub fn parse_book_snapshot_msg_as_quote(
 }
 
 /// Parse a trade message into a trade tick, returning an error on invalid data.
+/// Parse a trade message into a trade tick.
+///
+/// # Errors
+///
+/// Returns an error if invalid trade size is encountered.
 pub fn parse_trade_msg(
     msg: TradeMsg,
     price_precision: u8,
