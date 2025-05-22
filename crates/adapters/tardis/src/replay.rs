@@ -120,7 +120,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     // Load and parse the replay configuration
     let config_data = fs::read_to_string(config_filepath)
-        .with_context(|| format!("Failed to read config file: {:?}", config_filepath))?;
+        .with_context(|| format!("Failed to read config file: {config_filepath:?}"))?;
     let config: TardisReplayConfig = serde_json::from_str(&config_data)
         .context("Failed to parse config JSON into TardisReplayConfig")?;
 

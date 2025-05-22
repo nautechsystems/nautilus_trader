@@ -973,7 +973,7 @@ const fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNano
 
 /// # Errors
 ///
-/// Returns an error if decoding the InstrumentDefMsgV1 fails.
+/// Returns an error if decoding the `InstrumentDefMsgV1` fails.
 pub fn decode_instrument_def_msg_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -1016,7 +1016,7 @@ pub fn decode_instrument_def_msg_v1(
 
 /// # Errors
 ///
-/// Returns an error if decoding the InstrumentDefMsg fails.
+/// Returns an error if decoding the `InstrumentDefMsg` fails.
 pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
