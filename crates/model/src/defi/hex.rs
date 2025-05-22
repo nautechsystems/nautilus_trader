@@ -17,6 +17,7 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 
 /// Converts a hexadecimal string to a u64 integer.
+///
 /// # Errors
 ///
 /// Returns a `std::num::ParseIntError` if:
@@ -28,6 +29,7 @@ pub fn from_str_hex_to_u64(hex_string: &str) -> Result<u64, std::num::ParseIntEr
 }
 
 /// Custom deserializer function for hex numbers.
+///
 /// # Errors
 ///
 /// Returns an error if parsing the hex string to a number fails.
@@ -40,6 +42,7 @@ where
 }
 
 /// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
+///
 /// # Errors
 ///
 /// Returns an error if parsing the hex string to a timestamp fails.

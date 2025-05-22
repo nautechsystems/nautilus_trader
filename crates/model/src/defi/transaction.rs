@@ -37,7 +37,7 @@ pub struct Transaction {
     pub to: String,
     /// The amount of Ether transferred in the transaction, in wei.
     #[serde(deserialize_with = "deserialize_hex_number")]
-    value: u64,
+    pub value: u64,
     /// The index of the transaction within its containing block.
     #[serde(
         rename = "transactionIndex",
@@ -82,6 +82,7 @@ impl Transaction {
 }
 
 /// Custom deserializer function to convert a hex chain ID string to a Chain.
+///
 /// # Errors
 ///
 /// Returns an error if parsing the hex string fails or the chain ID is unknown.

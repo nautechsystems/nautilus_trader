@@ -13,9 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
