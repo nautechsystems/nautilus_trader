@@ -37,6 +37,11 @@ use crate::common::{
 };
 
 /// Parses a Coinbase spot instrument into an `InstrumentAny::CurrencyPair`.
+/// Parses a spot instrument message into an `InstrumentAny::CurrencyPair`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_spot_instrument(
     definition: &CoinbaseIntxWsInstrumentMsg,
     margin_init: Option<Decimal>,
@@ -90,6 +95,11 @@ pub fn parse_spot_instrument(
 }
 
 /// Parses a Coinbase perpetual instrument into an `InstrumentAny::CryptoPerpetual`.
+/// Parses a perpetual instrument message into an `InstrumentAny::CryptoPerpetual`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_perp_instrument(
     definition: &CoinbaseIntxWsInstrumentMsg,
     margin_init: Option<Decimal>,
@@ -180,6 +190,11 @@ pub fn parse_instrument_any(
     }
 }
 
+/// Parses a snapshot order book message into `OrderBookDeltas`.
+///
+/// # Errors
+///
+/// Returns an error if any price or size value cannot be parsed.
 pub fn parse_orderbook_snapshot_msg(
     msg: &CoinbaseIntxWsOrderBookSnapshotMsg,
     instrument_id: InstrumentId,
@@ -270,6 +285,11 @@ pub fn parse_orderbook_snapshot_msg(
     Ok(OrderBookDeltas::new(instrument_id, deltas))
 }
 
+/// Parses an order book update message into `OrderBookDeltas`.
+///
+/// # Errors
+///
+/// Returns an error if any price, size, or side cannot be parsed.
 pub fn parse_orderbook_update_msg(
     msg: &CoinbaseIntxWsOrderBookUpdateMsg,
     instrument_id: InstrumentId,
@@ -338,6 +358,11 @@ pub fn parse_orderbook_update_msg(
     Ok(OrderBookDeltas::new(instrument_id, deltas))
 }
 
+/// Parses a level 1 quote message into `QuoteTick`.
+///
+/// # Errors
+///
+/// Returns an error if any price or size value cannot be parsed.
 pub fn parse_quote_msg(
     msg: &CoinbaseIntxWsQuoteMsg,
     instrument_id: InstrumentId,
@@ -362,6 +387,11 @@ pub fn parse_quote_msg(
     ))
 }
 
+/// Parses a trade message into `TradeTick`.
+///
+/// # Errors
+///
+/// Returns an error if any price, size, or aggressor side cannot be parsed.
 pub fn parse_trade_msg(
     msg: &CoinbaseIntxWsTradeMsg,
     instrument_id: InstrumentId,
@@ -386,6 +416,11 @@ pub fn parse_trade_msg(
     ))
 }
 
+/// Parses a mark price message into `MarkPriceUpdate`.
+///
+/// # Errors
+///
+/// Returns an error if the price value cannot be parsed.
 pub fn parse_mark_price_msg(
     msg: &CoinbaseIntxWsRiskMsg,
     instrument_id: InstrumentId,
@@ -403,6 +438,11 @@ pub fn parse_mark_price_msg(
     ))
 }
 
+/// Parses an index price message into `IndexPriceUpdate`.
+///
+/// # Errors
+///
+/// Returns an error if the price value cannot be parsed.
 pub fn parse_index_price_msg(
     msg: &CoinbaseIntxWsRiskMsg,
     instrument_id: InstrumentId,
@@ -420,6 +460,11 @@ pub fn parse_index_price_msg(
     ))
 }
 
+/// Parses a candlestick snapshot message into `Bar`.
+///
+/// # Errors
+///
+/// Returns an error if the candle data is missing or any price/quantity cannot be parsed.
 pub fn parse_candle_msg(
     msg: &CoinbaseIntxWsCandleSnapshotMsg,
     instrument_id: InstrumentId,

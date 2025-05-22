@@ -57,10 +57,11 @@ pub enum CoinbaseIntxHttpError {
     /// Errors returned directly by Coinbase (non-zero code).
     #[error("{error_code}: {message}")]
     CoinbaseError { error_code: String, message: String },
-    /// Failure during JSON serialization/deserialization.
-    #[error("JSON error: {0}")]
+    /// Failure during URL parameter encoding or JSON serialization/deserialization.
+    /// Covers errors from `serde_urlencoded` and `serde_json`.
+    #[error("Serialization error: {0}")]
     JsonError(String),
-    /// Wrapping the underlying `HttpClientError` from the network crate.
+    /// Underlying network or HTTP client error.
     #[error("Network error: {0}")]
     HttpClientError(#[from] HttpClientError),
     /// Any unknown HTTP status or unexpected response from Coinbase.

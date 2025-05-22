@@ -76,6 +76,10 @@ pub struct CoinbaseIntxFixClient {
 
 impl CoinbaseIntxFixClient {
     /// Creates a new [`CoinbaseIntxFixClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables or parameters are missing.
     pub fn new(
         endpoint: Option<String>,
         api_key: Option<String>,
@@ -112,6 +116,10 @@ impl CoinbaseIntxFixClient {
 
     /// Creates a new authenticated [`CoinbaseIntxFixClient`] instance using
     /// environment variables and the default Coinbase International FIX drop copy endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are not set.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::new(None, None, None, None, None)
     }
@@ -159,6 +167,14 @@ impl CoinbaseIntxFixClient {
     }
 
     /// Connects to the Coinbase International FIX Drop Copy endpoint.
+    ///
+    /// # Panics
+    ///
+    /// Panics if time calculation or unwrap logic inside fails during logon retry setup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if network connection or FIX logon fails.
     pub async fn connect(&mut self, handler: PyObject) -> anyhow::Result<()> {
         let config = SocketConfig {
             url: self.endpoint.clone(),
@@ -353,6 +369,10 @@ impl CoinbaseIntxFixClient {
     }
 
     /// Closes the connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if logout or socket closure fails.
     pub async fn close(&mut self) -> anyhow::Result<()> {
         // Send logout message if connected
         if self.is_logged_on() {

@@ -30,6 +30,10 @@ use crate::common::{consts::COINBASE_INTX_VENUE, parse::parse_instrument_id};
 const DEFAULT_PRECISION: u8 = 8;
 
 /// Parse a FIX execution report message to create a Nautilus `OrderStatusReport`.
+///
+/// # Errors
+///
+/// Returns an error if a required FIX tag is missing or cannot be parsed.
 pub fn convert_to_order_status_report(
     message: &FixMessage,
     account_id: AccountId,
@@ -169,7 +173,11 @@ pub fn convert_to_order_status_report(
     Ok(report)
 }
 
-/// Parse a FIX execution report to a Nautilus `FillReport`
+/// Parse a FIX execution report to a Nautilus `FillReport`.
+///
+/// # Errors
+///
+/// Returns an error if a required FIX tag is missing or cannot be parsed.
 pub fn convert_to_fill_report(
     message: &FixMessage,
     account_id: AccountId,
