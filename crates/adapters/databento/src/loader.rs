@@ -81,6 +81,10 @@ pub struct DatabentoDataLoader {
 
 impl DatabentoDataLoader {
     /// Creates a new [`DatabentoDataLoader`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if locating or loading publishers data fails.
     pub fn new(publishers_filepath: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),
@@ -108,6 +112,10 @@ impl DatabentoDataLoader {
     }
 
     /// Load the publishers data from the file at the given `filepath`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed as JSON.
     pub fn load_publishers(&mut self, filepath: PathBuf) -> anyhow::Result<()> {
         let file_content = fs::read_to_string(filepath)?;
         let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
@@ -172,12 +180,19 @@ impl DatabentoDataLoader {
     }
 
     /// Returns the schema for the given `filepath`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be decoded or metadata retrieval fails.
     pub fn schema_from_file(&self, filepath: &Path) -> anyhow::Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata();
         Ok(metadata.schema.map(|schema| schema.to_string()))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if decoding the definition records fails.
     pub fn read_definition_records(
         &mut self,
         filepath: &Path,
@@ -254,6 +269,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading records fails.
     pub fn read_records<T>(
         &self,
         filepath: &Path,
@@ -309,6 +327,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading instruments fails.
     pub fn load_instruments(
         &mut self,
         filepath: &Path,
@@ -319,6 +340,9 @@ impl DatabentoDataLoader {
     }
 
     // Cannot include trades
+    /// # Errors
+    ///
+    /// Returns an error if loading order book deltas fails.
     pub fn load_order_book_deltas(
         &self,
         filepath: &Path,
@@ -340,6 +364,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading order book depth10 fails.
     pub fn load_order_book_depth10(
         &self,
         filepath: &Path,
@@ -361,6 +388,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading quotes fails.
     pub fn load_quotes(
         &self,
         filepath: &Path,
@@ -382,6 +412,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading BBO quotes fails.
     pub fn load_bbo_quotes(
         &self,
         filepath: &Path,
@@ -403,6 +436,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading TBBO trades fails.
     pub fn load_tbbo_trades(
         &self,
         filepath: &Path,
@@ -423,6 +459,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading trades fails.
     pub fn load_trades(
         &self,
         filepath: &Path,
@@ -444,6 +483,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading bars fails.
     pub fn load_bars(
         &self,
         filepath: &Path,
@@ -465,6 +507,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading status records fails.
     pub fn load_status_records<T>(
         &self,
         filepath: &Path,
@@ -514,6 +559,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading imbalance records fails.
     pub fn read_imbalance_records<T>(
         &self,
         filepath: &Path,
@@ -566,6 +614,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading statistics records fails.
     pub fn read_statistics_records<T>(
         &self,
         filepath: &Path,
