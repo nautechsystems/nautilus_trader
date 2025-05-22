@@ -70,7 +70,7 @@ use crate::{
         system::ShutdownSystem,
     },
     msgbus::{
-        self, Endpoint, Topic, get_message_bus,
+        self, MStr, Pattern, Topic, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_bars_topic, get_book_deltas_topic,
@@ -715,7 +715,7 @@ pub struct DataActorCore {
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
-    topic_handlers: AHashMap<Topic, ShareableMessageHandler>,
+    topic_handlers: AHashMap<MStr<Topic>, ShareableMessageHandler>,
 }
 
 impl Debug for DataActorCore {
@@ -837,7 +837,7 @@ impl DataActorCore {
         }
 
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send(&endpoint, command.as_any())
+        msgbus::send(endpoint, command.as_any())
     }
 
     fn send_data_req<A: DataActor>(&self, request: RequestCommand) {
@@ -857,7 +857,7 @@ impl DataActorCore {
             .register_response_handler(request.request_id(), handler);
 
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send(&endpoint, request.as_any())
+        msgbus::send(endpoint, request.as_any())
     }
 
     /// Starts the actor.
@@ -1003,15 +1003,15 @@ impl DataActorCore {
             self.clock.borrow().timestamp_ns(),
         );
 
-        let endpoint = Endpoint::from("command.system.shutdown");
-        msgbus::send(&endpoint, command.as_any());
+        let endpoint = "command.system.shutdown".into();
+        msgbus::send(endpoint, command.as_any());
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
     fn get_or_create_handler_for_topic<F>(
         &mut self,
-        topic: Topic,
+        topic: MStr<Topic>,
         create_handler: F,
     ) -> ShareableMessageHandler
     where
@@ -1026,8 +1026,8 @@ impl DataActorCore {
         }
     }
 
-    fn get_handler_for_topic(&self, topic: &Topic) -> Option<ShareableMessageHandler> {
-        self.topic_handlers.get(topic).cloned()
+    fn get_handler_for_topic(&self, topic: MStr<Topic>) -> Option<ShareableMessageHandler> {
+        self.topic_handlers.get(&topic).cloned()
     }
 
     /// Subscribe to streaming `data_type` data.

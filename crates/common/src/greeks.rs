@@ -27,11 +27,7 @@ use nautilus_model::{
     position::Position,
 };
 
-use crate::{
-    cache::Cache,
-    clock::Clock,
-    msgbus::{self, Pattern, Topic},
-};
+use crate::{cache::Cache, clock::Clock, msgbus};
 
 /// Calculates instrument and portfolio greeks (sensitivities of price moves with respect to market data moves).
 ///
@@ -252,12 +248,12 @@ impl GreeksCalculator {
 
             // Publishing greeks on the message bus if requested
             if publish_greeks {
-                let topic_str = format!(
+                let topic = format!(
                     "data.GreeksData.instrument_id={}",
                     instrument_id.symbol.as_str()
-                );
-                let topic = Topic::from(topic_str); // TODO: Consider caching this somewhere
-                msgbus::publish(&topic, &greeks_data.clone().unwrap());
+                )
+                .into();
+                msgbus::publish(topic, &greeks_data.clone().unwrap());
             }
         }
 
@@ -505,8 +501,7 @@ impl GreeksCalculator {
     where
         F: Fn(GreeksData) + 'static + Send + Sync,
     {
-        let pattern_str = format!("data.GreeksData.instrument_id={}*", underlying);
-        let pattern = Pattern::from(pattern_str.as_str());
+        let pattern = format!("data.GreeksData.instrument_id={}*", underlying).into();
 
         if let Some(custom_handler) = handler {
             let handler = msgbus::handler::TypedMessageHandler::with_any(
