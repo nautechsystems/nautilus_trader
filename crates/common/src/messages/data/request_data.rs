@@ -13,19 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::data::Data;
+use indexmap::IndexMap;
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_model::{data::DataType, identifiers::ClientId};
 
-pub mod data;
-pub mod execution;
-pub mod system;
-
-// Re-exports
-pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
-
-// TODO: Refine this to reduce disparity between enum sizes
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum DataEvent {
-    Response(DataResponse),
-    Data(Data),
+#[derive(Clone, Debug)]
+pub struct RequestData {
+    pub client_id: ClientId,
+    pub data_type: DataType,
+    pub request_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub params: Option<IndexMap<String, String>>,
 }

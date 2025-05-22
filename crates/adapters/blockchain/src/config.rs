@@ -27,6 +27,7 @@ pub struct BlockchainAdapterConfig {
 }
 
 impl BlockchainAdapterConfig {
+    /// Creates a new [`BlockchainAdapterConfig`] instance.
     #[must_use]
     pub const fn new(
         http_rpc_url: String,
