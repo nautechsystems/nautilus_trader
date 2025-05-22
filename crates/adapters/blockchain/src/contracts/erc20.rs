@@ -50,7 +50,6 @@ pub struct Erc20Contract {
 }
 
 /// Decodes a hexadecimal string response from a blockchain RPC call.
-/// Decodes a hexadecimal string response from a blockchain RPC call.
 ///
 /// # Errors
 ///
