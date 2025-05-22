@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4,
@@ -21,9 +20,12 @@ use nautilus_core::{
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::reports::{
-    fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
-    position::PositionStatusReport,
+use crate::{
+    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
+    reports::{
+        fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
+        position::PositionStatusReport,
+    },
 };
 
 #[pymethods]

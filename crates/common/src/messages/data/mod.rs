@@ -21,88 +21,32 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
 };
 
-pub mod request_bars;
-pub mod request_book_snapshot;
-pub mod request_data;
-pub mod request_instrument;
-pub mod request_instruments;
-pub mod request_quotes;
-pub mod request_trades;
-pub mod response_bars;
-pub mod response_book_snapshot;
-pub mod response_data;
-pub mod response_instrument;
-pub mod response_instruments;
-pub mod response_quotes;
-pub mod response_trades;
-pub mod subscribe_bars;
-pub mod subscribe_book_deltas;
-pub mod subscribe_book_depth10;
-pub mod subscribe_book_snapshots;
-pub mod subscribe_close;
-pub mod subscribe_data;
-pub mod subscribe_index_prices;
-pub mod subscribe_instrument;
-pub mod subscribe_instruments;
-pub mod subscribe_mark_prices;
-pub mod subscribe_quotes;
-pub mod subscribe_status;
-pub mod subscribe_trades;
-pub mod unsubscribe_bars;
-pub mod unsubscribe_book_deltas;
-pub mod unsubscribe_book_depth10;
-pub mod unsubscribe_book_snapshots;
-pub mod unsubscribe_close;
-pub mod unsubscribe_data;
-pub mod unsubscribe_index_prices;
-pub mod unsubscribe_instrument;
-pub mod unsubscribe_instruments;
-pub mod unsubscribe_mark_prices;
-pub mod unsubscribe_quotes;
-pub mod unsubscribe_status;
-pub mod unsubscribe_trades;
+pub mod request;
+pub mod response;
+pub mod subscribe;
+pub mod unsubscribe;
 
 // Re-exports
-pub use request_bars::RequestBars;
-pub use request_book_snapshot::RequestBookSnapshot;
-pub use request_data::RequestCustomData;
-pub use request_instrument::RequestInstrument;
-pub use request_instruments::RequestInstruments;
-pub use request_quotes::RequestQuotes;
-pub use request_trades::RequestTrades;
-pub use response_bars::BarsResponse;
-pub use response_book_snapshot::BookResponse;
-pub use response_data::CustomDataResponse;
-pub use response_instrument::InstrumentResponse;
-pub use response_instruments::InstrumentsResponse;
-pub use response_quotes::QuotesResponse;
-pub use response_trades::TradesResponse;
-pub use subscribe_bars::SubscribeBars;
-pub use subscribe_book_deltas::SubscribeBookDeltas;
-pub use subscribe_book_depth10::SubscribeBookDepth10;
-pub use subscribe_book_snapshots::SubscribeBookSnapshots;
-pub use subscribe_close::SubscribeInstrumentClose;
-pub use subscribe_data::SubscribeCustomData;
-pub use subscribe_index_prices::SubscribeIndexPrices;
-pub use subscribe_instrument::SubscribeInstrument;
-pub use subscribe_instruments::SubscribeInstruments;
-pub use subscribe_mark_prices::SubscribeMarkPrices;
-pub use subscribe_quotes::SubscribeQuotes;
-pub use subscribe_status::SubscribeInstrumentStatus;
-pub use subscribe_trades::SubscribeTrades;
-pub use unsubscribe_bars::UnsubscribeBars;
-pub use unsubscribe_book_deltas::UnsubscribeBookDeltas;
-pub use unsubscribe_book_depth10::UnsubscribeBookDepth10;
-pub use unsubscribe_book_snapshots::UnsubscribeBookSnapshots;
-pub use unsubscribe_close::UnsubscribeInstrumentClose;
-pub use unsubscribe_data::UnsubscribeCustomData;
-pub use unsubscribe_index_prices::UnsubscribeIndexPrices;
-pub use unsubscribe_instrument::UnsubscribeInstrument;
-pub use unsubscribe_instruments::UnsubscribeInstruments;
-pub use unsubscribe_mark_prices::UnsubscribeMarkPrices;
-pub use unsubscribe_quotes::UnsubscribeQuotes;
-pub use unsubscribe_status::UnsubscribeInstrumentStatus;
-pub use unsubscribe_trades::UnsubscribeTrades;
+pub use request::{
+    RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
+    RequestQuotes, RequestTrades,
+};
+pub use response::{
+    BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
+    QuotesResponse, TradesResponse,
+};
+pub use subscribe::{
+    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+    SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+    SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
+    SubscribeTrades,
+};
+pub use unsubscribe::{
+    UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+    UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
@@ -121,8 +65,8 @@ impl DataCommand {
 #[derive(Clone, Debug)]
 pub enum SubscribeCommand {
     Data(SubscribeCustomData),
-    Instruments(SubscribeInstruments),
     Instrument(SubscribeInstrument),
+    Instruments(SubscribeInstruments),
     BookDeltas(SubscribeBookDeltas),
     BookDepth10(SubscribeBookDepth10),
     BookSnapshots(SubscribeBookSnapshots),
@@ -150,8 +94,8 @@ impl SubscribeCommand {
     pub fn command_id(&self) -> UUID4 {
         match self {
             Self::Data(cmd) => cmd.command_id,
-            Self::Instruments(cmd) => cmd.command_id,
             Self::Instrument(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
             Self::BookDeltas(cmd) => cmd.command_id,
             Self::BookDepth10(cmd) => cmd.command_id,
             Self::BookSnapshots(cmd) => cmd.command_id,
@@ -168,8 +112,8 @@ impl SubscribeCommand {
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
-            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
+            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
             Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
@@ -186,8 +130,8 @@ impl SubscribeCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Data(cmd) => cmd.venue.as_ref(),
-            Self::Instruments(cmd) => Some(&cmd.venue),
             Self::Instrument(cmd) => cmd.venue.as_ref(),
+            Self::Instruments(cmd) => Some(&cmd.venue),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
             Self::BookDepth10(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
@@ -204,8 +148,8 @@ impl SubscribeCommand {
     pub fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Data(cmd) => cmd.ts_init,
-            Self::Instruments(cmd) => cmd.ts_init,
             Self::Instrument(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
             Self::BookDeltas(cmd) => cmd.ts_init,
             Self::BookDepth10(cmd) => cmd.ts_init,
             Self::BookSnapshots(cmd) => cmd.ts_init,
@@ -223,8 +167,8 @@ impl SubscribeCommand {
 #[derive(Clone, Debug)]
 pub enum UnsubscribeCommand {
     Data(UnsubscribeCustomData),
-    Instruments(UnsubscribeInstruments),
     Instrument(UnsubscribeInstrument),
+    Instruments(UnsubscribeInstruments),
     BookDeltas(UnsubscribeBookDeltas),
     BookDepth10(UnsubscribeBookDepth10),
     BookSnapshots(UnsubscribeBookSnapshots),
@@ -252,8 +196,8 @@ impl UnsubscribeCommand {
     pub fn command_id(&self) -> UUID4 {
         match self {
             Self::Data(cmd) => cmd.command_id,
-            Self::Instruments(cmd) => cmd.command_id,
             Self::Instrument(cmd) => cmd.command_id,
+            Self::Instruments(cmd) => cmd.command_id,
             Self::BookDeltas(cmd) => cmd.command_id,
             Self::BookDepth10(cmd) => cmd.command_id,
             Self::BookSnapshots(cmd) => cmd.command_id,
@@ -270,8 +214,8 @@ impl UnsubscribeCommand {
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => cmd.client_id.as_ref(),
-            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
+            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookDeltas(cmd) => cmd.client_id.as_ref(),
             Self::BookDepth10(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
@@ -288,8 +232,8 @@ impl UnsubscribeCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Data(cmd) => cmd.venue.as_ref(),
-            Self::Instruments(cmd) => Some(&cmd.venue),
             Self::Instrument(cmd) => cmd.venue.as_ref(),
+            Self::Instruments(cmd) => Some(&cmd.venue),
             Self::BookDeltas(cmd) => cmd.venue.as_ref(),
             Self::BookDepth10(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
@@ -306,8 +250,8 @@ impl UnsubscribeCommand {
     pub fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Data(cmd) => cmd.ts_init,
-            Self::Instruments(cmd) => cmd.ts_init,
             Self::Instrument(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
             Self::BookDeltas(cmd) => cmd.ts_init,
             Self::BookDepth10(cmd) => cmd.ts_init,
             Self::BookSnapshots(cmd) => cmd.ts_init,
@@ -355,8 +299,8 @@ impl RequestCommand {
     pub fn request_id(&self) -> &UUID4 {
         match self {
             Self::Data(cmd) => &cmd.request_id,
-            Self::Instruments(cmd) => &cmd.request_id,
             Self::Instrument(cmd) => &cmd.request_id,
+            Self::Instruments(cmd) => &cmd.request_id,
             Self::BookSnapshot(cmd) => &cmd.request_id,
             Self::Quotes(cmd) => &cmd.request_id,
             Self::Trades(cmd) => &cmd.request_id,
@@ -367,8 +311,8 @@ impl RequestCommand {
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Data(cmd) => Some(&cmd.client_id),
-            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::Instrument(cmd) => cmd.client_id.as_ref(),
+            Self::Instruments(cmd) => cmd.client_id.as_ref(),
             Self::BookSnapshot(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
@@ -379,8 +323,8 @@ impl RequestCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Data(_) => None,
-            Self::Instruments(cmd) => cmd.venue.as_ref(),
             Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
+            Self::Instruments(cmd) => cmd.venue.as_ref(),
             Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
             Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
             Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
@@ -395,8 +339,8 @@ impl RequestCommand {
     pub fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Data(cmd) => cmd.ts_init,
-            Self::Instruments(cmd) => cmd.ts_init,
             Self::Instrument(cmd) => cmd.ts_init,
+            Self::Instruments(cmd) => cmd.ts_init,
             Self::BookSnapshot(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
