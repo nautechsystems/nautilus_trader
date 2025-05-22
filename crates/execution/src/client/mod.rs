@@ -14,9 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_common::messages::execution::{
-    BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
+    BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+    GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryOrder, SubmitOrder,
     SubmitOrderList,
-    reports::{GenerateFillReports, GenerateOrderStatusReport, GeneratePositionReports},
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
