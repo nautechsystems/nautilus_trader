@@ -189,7 +189,7 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ```toml
 [dependencies]
-nautilus_core = { version = "*", features = ["high-precision"] }
+nautilus_model = { version = "*", features = ["high-precision"] }
 ```
 
 ## Installation
