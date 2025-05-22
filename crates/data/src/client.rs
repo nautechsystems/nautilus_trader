@@ -25,12 +25,12 @@ use std::{
 
 use ahash::AHashSet;
 use nautilus_common::messages::data::{
-    RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
+    RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeBookSnapshots, SubscribeCommand, SubscribeData, SubscribeIndexPrices,
+    SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeIndexPrices,
     SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
     SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-    UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData,
+    UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
     UnsubscribeTrades,
@@ -101,7 +101,7 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the subscribe operation fails.
-    fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -234,7 +234,7 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the unsubscribe operation fails.
-    fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -370,7 +370,7 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the data request fails.
-    fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
         log_not_implemented(&request);
         Ok(())
     }
@@ -582,7 +582,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    pub fn subscribe(&mut self, cmd: &SubscribeData) -> anyhow::Result<()> {
+    pub fn subscribe(&mut self, cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         if !self.subscriptions_custom.contains(&cmd.data_type) {
             self.subscriptions_custom.insert(cmd.data_type.clone());
             self.client.subscribe(cmd)?;
@@ -595,7 +595,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
-    pub fn unsubscribe(&mut self, cmd: &UnsubscribeData) -> anyhow::Result<()> {
+    pub fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         if self.subscriptions_custom.contains(&cmd.data_type) {
             self.subscriptions_custom.remove(&cmd.data_type);
             self.client.unsubscribe(cmd)?;
@@ -963,7 +963,7 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the client request fails.
-    pub fn request_data(&self, req: &RequestData) -> anyhow::Result<()> {
+    pub fn request_data(&self, req: &RequestCustomData) -> anyhow::Result<()> {
         self.client.request_data(req)
     }
 

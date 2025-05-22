@@ -30,6 +30,7 @@ pub struct RequestInstrument {
 }
 
 impl RequestInstrument {
+    /// Creates a new [`RequestInstrument`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

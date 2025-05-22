@@ -36,6 +36,7 @@ pub struct CustomDataResponse {
 }
 
 impl CustomDataResponse {
+    /// Creates a new [`CustomDataResponse`] instance.
     pub fn new<T: Any + Send + Sync>(
         correlation_id: UUID4,
         client_id: ClientId,

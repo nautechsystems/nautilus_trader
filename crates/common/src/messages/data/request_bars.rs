@@ -33,6 +33,7 @@ pub struct RequestBars {
 }
 
 impl RequestBars {
+    /// Creates a new [`RequestBars`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,

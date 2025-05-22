@@ -65,7 +65,7 @@ pub mod unsubscribe_trades;
 // Re-exports
 pub use request_bars::RequestBars;
 pub use request_book_snapshot::RequestBookSnapshot;
-pub use request_data::RequestData;
+pub use request_data::RequestCustomData;
 pub use request_instrument::RequestInstrument;
 pub use request_instruments::RequestInstruments;
 pub use request_quotes::RequestQuotes;
@@ -82,7 +82,7 @@ pub use subscribe_book_deltas::SubscribeBookDeltas;
 pub use subscribe_book_depth10::SubscribeBookDepth10;
 pub use subscribe_book_snapshots::SubscribeBookSnapshots;
 pub use subscribe_close::SubscribeInstrumentClose;
-pub use subscribe_data::SubscribeData;
+pub use subscribe_data::SubscribeCustomData;
 pub use subscribe_index_prices::SubscribeIndexPrices;
 pub use subscribe_instrument::SubscribeInstrument;
 pub use subscribe_instruments::SubscribeInstruments;
@@ -95,7 +95,7 @@ pub use unsubscribe_book_deltas::UnsubscribeBookDeltas;
 pub use unsubscribe_book_depth10::UnsubscribeBookDepth10;
 pub use unsubscribe_book_snapshots::UnsubscribeBookSnapshots;
 pub use unsubscribe_close::UnsubscribeInstrumentClose;
-pub use unsubscribe_data::UnsubscribeData;
+pub use unsubscribe_data::UnsubscribeCustomData;
 pub use unsubscribe_index_prices::UnsubscribeIndexPrices;
 pub use unsubscribe_instrument::UnsubscribeInstrument;
 pub use unsubscribe_instruments::UnsubscribeInstruments;
@@ -120,7 +120,7 @@ impl DataCommand {
 
 #[derive(Clone, Debug)]
 pub enum SubscribeCommand {
-    Data(SubscribeData),
+    Data(SubscribeCustomData),
     Instruments(SubscribeInstruments),
     Instrument(SubscribeInstrument),
     BookDeltas(SubscribeBookDeltas),
@@ -222,7 +222,7 @@ impl SubscribeCommand {
 
 #[derive(Clone, Debug)]
 pub enum UnsubscribeCommand {
-    Data(UnsubscribeData),
+    Data(UnsubscribeCustomData),
     Instruments(UnsubscribeInstruments),
     Instrument(UnsubscribeInstrument),
     BookDeltas(UnsubscribeBookDeltas),
@@ -331,7 +331,7 @@ fn check_client_id_or_venue(client_id: &Option<ClientId>, venue: &Option<Venue>)
 
 #[derive(Clone, Debug)]
 pub enum RequestCommand {
-    Data(RequestData),
+    Data(RequestCustomData),
     Instrument(RequestInstrument),
     Instruments(RequestInstruments),
     BookSnapshot(RequestBookSnapshot),

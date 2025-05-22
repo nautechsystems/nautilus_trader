@@ -38,6 +38,7 @@ impl BarsResponse {
         self
     }
 
+    /// Creates a new [`BarsResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,

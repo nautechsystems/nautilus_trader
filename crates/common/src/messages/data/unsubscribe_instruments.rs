@@ -28,6 +28,7 @@ pub struct UnsubscribeInstruments {
 }
 
 impl UnsubscribeInstruments {
+    /// Creates a new [`UnsubscribeInstruments`] instance.
     pub fn new(
         client_id: Option<ClientId>,
         venue: Venue,

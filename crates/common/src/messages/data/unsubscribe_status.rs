@@ -30,6 +30,7 @@ pub struct UnsubscribeInstrumentStatus {
 }
 
 impl UnsubscribeInstrumentStatus {
+    /// Creates a new [`UnsubscribeInstrumentStatus`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

@@ -38,6 +38,7 @@ impl QuotesResponse {
         self
     }
 
+    /// Creates a new [`QuotesResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,

@@ -38,6 +38,7 @@ impl BookResponse {
         self
     }
 
+    /// Creates a new [`BookResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,
