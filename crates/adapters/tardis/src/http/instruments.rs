@@ -174,6 +174,11 @@ pub fn create_crypto_future(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Create a crypto option instrument definition.
+///
+/// # Panics
+///
+/// Panics if the `option_type` field of `InstrumentInfo` is `None`.
 #[must_use]
 pub fn create_crypto_option(
     info: &InstrumentInfo,

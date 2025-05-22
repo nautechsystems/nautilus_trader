@@ -156,6 +156,14 @@ fn create_csv_reader<P: AsRef<Path>>(
 
 /// Loads [`OrderBookDelta`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
+/// Load order book delta records from a CSV or gzipped CSV file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// # Panics
+///
+/// Panics if a CSV record has a zero size for a non-delete action or if data conversion fails.
 pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -295,6 +303,14 @@ fn create_book_order(
 
 /// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
+/// Load order book depth-10 snapshots (5-level) from a CSV or gzipped CSV file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// # Panics
+///
+/// Panics if a record level cannot be parsed to depth-10.
 pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -447,6 +463,14 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
 
 /// Loads [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
+/// Load order book depth-10 snapshots (25-level) from a CSV or gzipped CSV file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// # Panics
+///
+/// Panics if a record level cannot be parsed to depth-10.
 pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -621,6 +645,14 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 
 /// Loads [`QuoteTick`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
+/// Load quote ticks from a CSV or gzipped CSV file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// # Panics
+///
+/// Panics if a record has invalid data or CSV parsing errors.
 pub fn load_quote_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,
@@ -716,6 +748,14 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 
 /// Loads [`TradeTick`]s from a Tardis format CSV at the given `filepath`,
 /// automatically applying `GZip` decompression for files ending in ".gz".
+/// Load trade ticks from a CSV or gzipped CSV file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+/// # Panics
+///
+/// Panics if a record has invalid trade size or CSV parsing errors.
 pub fn load_trade_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: Option<u8>,

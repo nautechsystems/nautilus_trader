@@ -26,13 +26,26 @@ use uuid::Uuid;
 
 use super::enums::{Exchange, InstrumentType, OptionType};
 
+/// Deserialize a string and convert to uppercase `Ustr`.
+///
+/// # Errors
+///
+/// Returns a deserialization error if the input is not a valid string.
 pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<Ustr, D::Error>
 where
     D: Deserializer<'de>,
 {
     String::deserialize(deserializer).map(|s| Ustr::from(&s.to_uppercase()))
 }
+// Errors
+//
+// Returns a deserialization error if the input is not a valid string.
 
+/// Deserialize a trade ID or generate a new UUID if empty.
+///
+/// # Errors
+///
+/// Returns a deserialization error if the input cannot be deserialized as a string.
 pub fn deserialize_trade_id<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -186,6 +199,10 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
 /// Parses a Nautilus bar specification from the given Tardis string `value`.
 ///
 /// The [`PriceType`] is always `LAST` for Tardis trade bars.
+///
+/// # Panics
+///
+/// Panics if the specification format is invalid or if the aggregation suffix is unsupported.
 #[must_use]
 pub fn parse_bar_spec(value: &str) -> BarSpecification {
     let parts: Vec<&str> = value.split('_').collect();
@@ -211,6 +228,10 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
 }
 
 /// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
+///
+/// # Panics
+///
+/// Panics if the bar aggregation kind is unsupported.
 #[must_use]
 pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
     let suffix = match bar_spec.aggregation {
