@@ -22,13 +22,16 @@ from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceStatusCode
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesDualSidePosition
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesLeverage
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesMarginTypeResponse  # fmt: skip
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
+from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
@@ -393,6 +396,64 @@ class BinanceFuturesLeverageHttp(BinanceHttpEndpoint):
         return self._resp_decoder.decode(raw)
 
 
+class BinanceFuturesMarginTypeHttp(BinanceHttpEndpoint):
+    """
+    Margin type.
+
+    `POST /fapi/v1/marginType`
+
+    References
+    ----------
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/trade/rest-api/Change-Margin-Type
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            HttpMethod.POST: BinanceSecurityType.TRADE,
+        }
+        url_path = base_endpoint + "marginType"
+        super().__init__(client, methods, url_path)
+        self._resp_decoder = msgspec.json.Decoder(BinanceFuturesMarginTypeResponse)
+
+    class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        Margin type POST endpoint parameters.
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+        marginType : str
+            ISOLATED or CROSSED
+        timestamp : str
+            The millisecond timestamp of the request.
+        recvWindow : str, optional
+            The response receive window in milliseconds for the request.
+
+        """
+
+        symbol: BinanceSymbol
+        marginType: str
+        timestamp: str
+        recvWindow: str | None = None
+
+    async def post(
+        self,
+        params: PostParameters,
+    ) -> BinanceFuturesMarginTypeResponse:
+        try:
+            raw = await self._method(HttpMethod.POST, params)
+        except BinanceClientError as e:
+            if e.message["msg"] == "No need to change margin type.":
+                return BinanceFuturesMarginTypeResponse(code=200, msg="success")
+            raise
+        return self._resp_decoder.decode(raw)
+
+
 class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
     """
     Provides access to the Binance Futures Account/Trade HTTP REST API.
@@ -444,6 +505,10 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             v2_endpoint_base,
         )
         self._endpoint_futures_leverage = BinanceFuturesLeverageHttp(client, self.base_endpoint)
+        self._endpoint_futures_margin_type = BinanceFuturesMarginTypeHttp(
+            client,
+            self.base_endpoint,
+        )
 
     async def query_futures_hedge_mode(
         self,
@@ -472,6 +537,30 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
             self._endpoint_futures_leverage.PostParameters(
                 symbol=symbol,
                 leverage=leverage,
+                timestamp=self._timestamp(),
+                recvWindow=recv_window,
+            ),
+        )
+
+    async def set_margin_type(
+        self,
+        symbol: BinanceSymbol,
+        margin_type: BinanceFuturesMarginType,
+        recv_window: str | None = None,
+    ) -> BinanceFuturesMarginTypeResponse:
+        """
+        Change symbol level margin type.
+
+        :param symbol : BinanceSymbol
+        :param margin_type : BinanceFuturesMarginType
+        :param recv_window : str, optional
+        :return: BinanceFuturesMarginTypeResponse
+
+        """
+        return await self._endpoint_futures_margin_type.post(
+            self._endpoint_futures_margin_type.PostParameters(
+                symbol=symbol,
+                marginType=margin_type.value,
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
             ),
