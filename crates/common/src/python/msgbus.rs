@@ -20,8 +20,8 @@ use pyo3::{PyObject, PyResult, pymethods};
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    BusMessage, Endpoint, MessageBus, Pattern, Topic, deregister, handler::ShareableMessageHandler,
-    publish, register, send, subscribe, unsubscribe,
+    BusMessage, MStr, MessageBus, Topic, core::Endpoint, deregister,
+    handler::ShareableMessageHandler, publish, register, send, subscribe, unsubscribe,
 };
 
 #[pymethods]
@@ -56,8 +56,8 @@ impl MessageBus {
     /// Returns an error if `endpoint` is invalid.
     #[pyo3(name = "send")]
     pub fn py_send(&self, endpoint: &str, message: PyObject) -> PyResult<()> {
-        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
-        send(&endpoint, &message);
+        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
+        send(endpoint, &message);
         Ok(())
     }
 
@@ -69,8 +69,8 @@ impl MessageBus {
     #[pyo3(name = "publish")]
     #[staticmethod]
     pub fn py_publish(topic: &str, message: PyObject) -> PyResult<()> {
-        let topic = Topic::new(topic).map_err(to_pyvalue_err)?;
-        publish(&topic, &message);
+        let topic = MStr::<Topic>::topic(topic).map_err(to_pyvalue_err)?;
+        publish(topic, &message);
         Ok(())
     }
 
@@ -84,7 +84,7 @@ impl MessageBus {
     #[pyo3(name = "register")]
     #[staticmethod]
     pub fn py_register(endpoint: &str, handler: PythonMessageHandler) -> PyResult<()> {
-        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
+        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
         let handler = ShareableMessageHandler(Rc::new(handler));
         register(endpoint, handler);
         Ok(())
@@ -112,7 +112,7 @@ impl MessageBus {
     #[pyo3(signature = (topic, handler, priority=None))]
     #[staticmethod]
     pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
-        let pattern = Pattern::from(topic);
+        let pattern = topic.into();
         let handler = ShareableMessageHandler(Rc::new(handler));
         subscribe(pattern, handler, priority);
     }
@@ -129,7 +129,7 @@ impl MessageBus {
     #[pyo3(name = "unsubscribe")]
     #[staticmethod]
     pub fn py_unsubscribe(topic: &str, handler: PythonMessageHandler) {
-        let pattern = Pattern::from(topic);
+        let pattern = topic.into();
         let handler = ShareableMessageHandler(Rc::new(handler));
         unsubscribe(pattern, handler);
     }
@@ -149,8 +149,8 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     #[staticmethod]
     pub fn py_deregister(endpoint: &str) -> PyResult<()> {
-        let endpoint = Endpoint::new(endpoint).map_err(to_pyvalue_err)?;
-        deregister(&endpoint);
+        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
+        deregister(endpoint);
         Ok(())
     }
 }

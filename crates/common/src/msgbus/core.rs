@@ -44,133 +44,112 @@ fn check_fully_qualified_string(value: &Ustr, key: &str) -> anyhow::Result<()> {
     )
 }
 
-/// A string pattern for a subscription. The pattern is used to match topics.
-///
-/// A pattern is made of characters:
-/// - `*` - match 0 or more characters
-/// - `?` - match any character once
-/// - `a-z` - match the specific character
+/// Pattern is a string pattern for a subscription with special characters
+/// for pattern matching.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Pattern(pub Ustr);
+pub struct Pattern;
 
-impl<T: AsRef<str>> From<T> for Pattern {
-    fn from(value: T) -> Self {
-        Self(Ustr::from(value.as_ref()))
+/// Topic is a fully qualified string for publishing data.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Topic;
+
+/// Endpoint is a fully qualified string for sending data.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Endpoint;
+
+/// A message bus string type. It can be a pattern or a topic.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MStr<T> {
+    value: Ustr,
+    _marker: std::marker::PhantomData<T>,
+}
+
+impl<T> Display for MStr<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
     }
 }
 
-impl Deref for Pattern {
+impl<T> Deref for MStr<T> {
     type Target = Ustr;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.value
     }
 }
 
-impl Display for Pattern {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl MStr<Pattern> {
+    /// Create a new pattern from a string.
+    pub fn pattern<T: AsRef<str>>(value: T) -> Self {
+        let value = Ustr::from(value.as_ref());
+
+        Self {
+            value,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
-impl From<Topic> for Pattern {
-    fn from(value: Topic) -> Self {
-        Self(value.0)
+impl<T: AsRef<str>> From<T> for MStr<Pattern> {
+    fn from(value: T) -> Self {
+        Self::pattern(value)
     }
 }
 
-impl From<&Topic> for Pattern {
-    fn from(value: &Topic) -> Self {
-        Self(value.0)
+impl From<MStr<Topic>> for MStr<Pattern> {
+    fn from(value: MStr<Topic>) -> Self {
+        Self {
+            value: value.value,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
-/// A string topic for publishing data. It is a fully qualified pattern i.e.
-/// wildcard characters are not allowed.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Topic(pub Ustr);
-
-impl Topic {
-    /// Creates a new [`Topic`] instance.
+impl MStr<Topic> {
+    /// Create a new topic from a fully qualified string.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - `value` string is empty, all whitespace, or contains non-ASCII characters.
-    /// - `value` string contains wildcard characters '*' or '?'.
-    pub fn new<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    /// Returns an error if the topic has white space or invalid characters.
+    pub fn topic<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let topic = Ustr::from(value.as_ref());
         check_valid_string(value, stringify!(value))?;
         check_fully_qualified_string(&topic, stringify!(Topic))?;
 
-        Ok(Self(topic))
-    }
-
-    pub fn as_pattern(&self) -> Pattern {
-        Pattern(self.0)
+        Ok(Self {
+            value: topic,
+            _marker: std::marker::PhantomData,
+        })
     }
 }
 
-impl<T: AsRef<str>> From<T> for Topic {
+impl<T: AsRef<str>> From<T> for MStr<Topic> {
     fn from(value: T) -> Self {
-        Self::new(value).expect(FAILED)
+        Self::topic(value).expect(FAILED)
     }
 }
 
-impl Deref for Topic {
-    type Target = Ustr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for Topic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// A component endpoint adderess.
-///
-/// It is a fully qualified pattern i.e. wildcard characters are not allowed.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Endpoint(pub Ustr);
-
-impl Endpoint {
-    /// Creates a new [`Endpoint`] instance.
+impl MStr<Endpoint> {
+    /// Create a new endpoint from a fully qualified string.
     ///
     /// # Errors
     ///
-    /// Returns an error if:
-    /// - `value` string is empty, all whitespace, or contains non-ASCII characters.
-    /// - `value` string contains wildcard characters '*' or '?'.
-    pub fn new<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    /// Returns an error if the endpoint has white space or invalid characters.
+    pub fn endpoint<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let endpoint = Ustr::from(value.as_ref());
         check_valid_string(value, stringify!(value))?;
         check_fully_qualified_string(&endpoint, stringify!(Endpoint))?;
 
-        Ok(Self(endpoint))
+        Ok(Self {
+            value: endpoint,
+            _marker: std::marker::PhantomData,
+        })
     }
 }
 
-impl<T: AsRef<str>> From<T> for Endpoint {
+impl<T: AsRef<str>> From<T> for MStr<Endpoint> {
     fn from(value: T) -> Self {
-        Self::new(value).expect(FAILED)
-    }
-}
-
-impl Deref for Endpoint {
-    type Target = Ustr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for Endpoint {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        Self::endpoint(value).expect(FAILED)
     }
 }
 
@@ -186,7 +165,7 @@ pub struct Subscription {
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
     /// The pattern for the subscription.
-    pub pattern: Pattern,
+    pub pattern: MStr<Pattern>,
     /// The priority for the subscription determines the ordering of handlers receiving
     /// messages being processed, higher priority handlers will receive messages before
     /// lower priority handlers.
@@ -196,7 +175,11 @@ pub struct Subscription {
 impl Subscription {
     /// Creates a new [`Subscription`] instance.
     #[must_use]
-    pub fn new(pattern: Pattern, handler: ShareableMessageHandler, priority: Option<u8>) -> Self {
+    pub fn new(
+        pattern: MStr<Pattern>,
+        handler: ShareableMessageHandler,
+        priority: Option<u8>,
+    ) -> Self {
         Self {
             handler_id: handler.0.id(),
             pattern,
@@ -277,9 +260,9 @@ pub struct MessageBus {
     pub subscriptions: AHashSet<Subscription>,
     /// Maps a topic to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
-    pub topics: IndexMap<Topic, Vec<Subscription>>,
+    pub topics: IndexMap<MStr<Topic>, Vec<Subscription>>,
     /// Index of endpoint addresses and their handlers.
-    pub endpoints: IndexMap<Endpoint, ShareableMessageHandler>,
+    pub endpoints: IndexMap<MStr<Endpoint>, ShareableMessageHandler>,
     /// Index of request correlation IDs and their response handlers.
     pub correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
 }
@@ -340,13 +323,17 @@ impl MessageBus {
     }
 
     /// Returns the count of subscribers for the `topic`.
+    ///
+    /// # Panics
+    ///
+    /// Returns an error if the topic is not valid.
     #[must_use]
     pub fn subscriptions_count<T: AsRef<str>>(&self, topic: T) -> usize {
-        let topic = Topic::from(topic);
+        let topic = MStr::<Topic>::topic(topic).expect(FAILED);
         self.topics
             .get(&topic)
             .map(|subs| subs.len())
-            .unwrap_or_else(|| self.find_topic_matches(&topic).len())
+            .unwrap_or_else(|| self.find_topic_matches(topic).len())
     }
 
     /// Returns active subscriptions.
@@ -364,11 +351,15 @@ impl MessageBus {
             .collect()
     }
 
-    /// Returns whether there is a registered endpoint for the `pattern`.
+    /// Returns whether the endpoint is registered.
+    ///
+    /// # Panics
+    ///
+    /// Returns an error if the endpoint is not valid topic string.
     #[must_use]
     pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
-        self.endpoints
-            .contains_key(&Endpoint::from(endpoint.as_ref()))
+        let endpoint: MStr<Endpoint> = endpoint.into();
+        self.endpoints.contains_key(&endpoint)
     }
 
     /// Returns whether the `handler` is subscribed to the `pattern`.
@@ -378,7 +369,7 @@ impl MessageBus {
         pattern: T,
         handler: ShareableMessageHandler,
     ) -> bool {
-        let pattern = Pattern::from(pattern);
+        let pattern = MStr::<Pattern>::pattern(pattern);
         let sub = Subscription::new(pattern, handler, None);
         self.subscriptions.contains(&sub)
     }
@@ -395,8 +386,8 @@ impl MessageBus {
 
     /// Returns the handler for the `endpoint`.
     #[must_use]
-    pub fn get_endpoint(&self, endpoint: &Endpoint) -> Option<&ShareableMessageHandler> {
-        self.endpoints.get(endpoint)
+    pub fn get_endpoint(&self, endpoint: MStr<Endpoint>) -> Option<&ShareableMessageHandler> {
+        self.endpoints.get(&endpoint)
     }
 
     /// Returns the handler for the `correlation_id`.
@@ -406,11 +397,11 @@ impl MessageBus {
     }
 
     /// Finds the subscriptions with pattern matching the `topic`.
-    pub(crate) fn find_topic_matches(&self, topic: &Topic) -> Vec<Subscription> {
+    pub(crate) fn find_topic_matches(&self, topic: MStr<Topic>) -> Vec<Subscription> {
         self.subscriptions
             .iter()
             .filter_map(|sub| {
-                if is_matching_backtracking(topic, &sub.pattern) {
+                if is_matching_backtracking(topic, sub.pattern) {
                     Some(sub.clone())
                 } else {
                     None
@@ -423,15 +414,15 @@ impl MessageBus {
     /// results in the `patterns` map.
     #[must_use]
     pub fn matching_subscriptions<T: AsRef<str>>(&mut self, topic: T) -> Vec<Subscription> {
-        let topic = Topic::from(topic.as_ref());
-        self.inner_matching_subscriptions(&topic)
+        let topic = MStr::<Topic>::from(topic);
+        self.inner_matching_subscriptions(topic)
     }
 
-    pub(crate) fn inner_matching_subscriptions(&mut self, topic: &Topic) -> Vec<Subscription> {
-        self.topics.get(topic).cloned().unwrap_or_else(|| {
+    pub(crate) fn inner_matching_subscriptions(&mut self, topic: MStr<Topic>) -> Vec<Subscription> {
+        self.topics.get(&topic).cloned().unwrap_or_else(|| {
             let mut matches = self.find_topic_matches(topic);
             matches.sort();
-            self.topics.insert(*topic, matches.clone());
+            self.topics.insert(topic, matches.clone());
             matches
         })
     }

@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use super::core::{Pattern, Topic};
+use super::core::{MStr, Pattern, Topic};
 
 /// Match a topic and a string pattern using iterative backtracking algorithm
 /// pattern can contains -
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-pub fn is_matching_backtracking(topic: &Topic, pattern: &Pattern) -> bool {
+pub fn is_matching_backtracking(topic: MStr<Topic>, pattern: MStr<Pattern>) -> bool {
     let topic_bytes = topic.as_bytes();
     let pattern_bytes = pattern.as_bytes();
 

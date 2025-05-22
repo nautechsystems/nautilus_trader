@@ -371,9 +371,9 @@ fn test_subscribe_and_receive_custom_data(
 
     let topic = get_custom_topic(&data_type);
     let data = String::from("CustomData-01");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
     let data = String::from("CustomData-02");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
 
     assert_eq!(actor.received_data.len(), 2);
 }
@@ -393,17 +393,17 @@ fn test_unsubscribe_custom_data(
 
     let topic = get_custom_topic(&data_type);
     let data = String::from("CustomData-01");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
     let data = String::from("CustomData-02");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
 
     actor.unsubscribe_data::<TestDataActor>(data_type, None, None);
 
     // Publish more data
     let data = String::from("CustomData-03");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
     let data = String::from("CustomData-04");
-    msgbus::publish(&topic, &data);
+    msgbus::publish(topic, &data);
 
     // Actor should not receive new data
     assert_eq!(actor.received_data.len(), 2);
@@ -448,7 +448,7 @@ fn test_subscribe_and_receive_book_deltas(
     );
     let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
 
-    msgbus::publish(&topic, &deltas);
+    msgbus::publish(topic, &deltas);
 
     assert_eq!(actor.received_deltas.len(), 1);
 }
@@ -492,7 +492,7 @@ fn test_unsubscribe_book_deltas(
     );
     let deltas = OrderBookDeltas::new(audusd_sim.id, vec![delta]);
 
-    msgbus::publish(&topic, &deltas);
+    msgbus::publish(topic, &deltas);
 
     // Unsubscribe
     actor.unsubscribe_book_deltas::<TestDataActor>(audusd_sim.id, None, None);
@@ -509,7 +509,7 @@ fn test_unsubscribe_book_deltas(
     let deltas2 = OrderBookDeltas::new(audusd_sim.id, vec![delta2]);
 
     // Publish again
-    msgbus::publish(&topic, &deltas2);
+    msgbus::publish(topic, &deltas2);
 
     // Should still only have one delta
     assert_eq!(actor.received_deltas.len(), 1);
@@ -541,7 +541,7 @@ fn test_subscribe_and_receive_book_at_interval(
     let topic = get_book_snapshots_topic(audusd_sim.id);
     let book = OrderBook::new(audusd_sim.id, book_type);
 
-    msgbus::publish(&topic, &book);
+    msgbus::publish(topic, &book);
 
     assert_eq!(actor.received_books.len(), 1);
 }
@@ -572,15 +572,15 @@ fn test_unsubscribe_book_at_interval(
     let topic = get_book_snapshots_topic(audusd_sim.id);
     let book = OrderBook::new(audusd_sim.id, book_type);
 
-    msgbus::publish(&topic, &book);
+    msgbus::publish(topic, &book);
 
     assert_eq!(actor.received_books.len(), 1);
 
     actor.unsubscribe_book_at_interval::<TestDataActor>(audusd_sim.id, interval_ms, None, None);
 
     // Publish more book refs
-    msgbus::publish(&topic, &book);
-    msgbus::publish(&topic, &book);
+    msgbus::publish(topic, &book);
+    msgbus::publish(topic, &book);
 
     // Should still only have one book
     assert_eq!(actor.received_books.len(), 1);
@@ -601,8 +601,8 @@ fn test_subscribe_and_receive_quotes(
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
-    msgbus::publish(&topic, &quote);
-    msgbus::publish(&topic, &quote);
+    msgbus::publish(topic, &quote);
+    msgbus::publish(topic, &quote);
 
     assert_eq!(actor.received_quotes.len(), 2);
 }
@@ -622,14 +622,14 @@ fn test_unsubscribe_quotes(
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
-    msgbus::publish(&topic, &quote);
-    msgbus::publish(&topic, &quote);
+    msgbus::publish(topic, &quote);
+    msgbus::publish(topic, &quote);
 
     actor.unsubscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
 
     // Publish more quotes
-    msgbus::publish(&topic, &quote);
-    msgbus::publish(&topic, &quote);
+    msgbus::publish(topic, &quote);
+    msgbus::publish(topic, &quote);
 
     // Actor should not receive new quotes
     assert_eq!(actor.received_quotes.len(), 2);
@@ -650,8 +650,8 @@ fn test_subscribe_and_receive_trades(
 
     let topic = get_trades_topic(audusd_sim.id);
     let trade = TradeTick::default();
-    msgbus::publish(&topic, &trade);
-    msgbus::publish(&topic, &trade);
+    msgbus::publish(topic, &trade);
+    msgbus::publish(topic, &trade);
 
     assert_eq!(actor.received_trades.len(), 2);
 }
@@ -671,14 +671,14 @@ fn test_unsubscribe_trades(
 
     let topic = get_trades_topic(audusd_sim.id);
     let trade = TradeTick::default();
-    msgbus::publish(&topic, &trade);
-    msgbus::publish(&topic, &trade);
+    msgbus::publish(topic, &trade);
+    msgbus::publish(topic, &trade);
 
     actor.unsubscribe_trades::<TestDataActor>(audusd_sim.id, None, None);
 
     // Publish more trades
-    msgbus::publish(&topic, &trade);
-    msgbus::publish(&topic, &trade);
+    msgbus::publish(topic, &trade);
+    msgbus::publish(topic, &trade);
 
     // Actor should not receive new trades
     assert_eq!(actor.received_trades.len(), 2);
@@ -700,7 +700,7 @@ fn test_subscribe_and_receive_bars(
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
-    msgbus::publish(&topic, &bar);
+    msgbus::publish(topic, &bar);
 
     assert_eq!(actor.received_bars.len(), 1);
 }
@@ -721,14 +721,14 @@ fn test_unsubscribe_bars(
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
-    msgbus::publish(&topic, &bar);
+    msgbus::publish(topic, &bar);
 
     // Unsubscribe
     actor.unsubscribe_bars::<TestDataActor>(bar_type, None, None);
 
     // Publish more bars
-    msgbus::publish(&topic, &bar);
-    msgbus::publish(&topic, &bar);
+    msgbus::publish(topic, &bar);
+    msgbus::publish(topic, &bar);
 
     // Should still only have one bar
     assert_eq!(actor.received_bars.len(), 1);
@@ -893,9 +893,9 @@ fn test_subscribe_and_receive_instruments(
 
     let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish(&topic, &inst1);
+    msgbus::publish(topic, &inst1);
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst2);
+    msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
     assert_eq!(actor.received_instruments[0], inst1);
@@ -919,8 +919,8 @@ fn test_subscribe_and_receive_instrument(
     let topic = get_instrument_topic(audusd_sim.id);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst1);
-    msgbus::publish(&topic, &inst2);
+    msgbus::publish(topic, &inst1);
+    msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
     assert_eq!(actor.received_instruments[0], inst1);
@@ -947,14 +947,14 @@ fn test_subscribe_and_receive_mark_prices(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    msgbus::publish(&topic, &mp1);
+    msgbus::publish(topic, &mp1);
     let mp2 = MarkPriceUpdate::new(
         audusd_sim.id,
         Price::from("1.00010"),
         UnixNanos::from(3),
         UnixNanos::from(4),
     );
-    msgbus::publish(&topic, &mp2);
+    msgbus::publish(topic, &mp2);
 
     assert_eq!(actor.received_mark_prices.len(), 2);
     assert_eq!(actor.received_mark_prices[0], mp1);
@@ -981,7 +981,7 @@ fn test_subscribe_and_receive_index_prices(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    msgbus::publish(&topic, &ip);
+    msgbus::publish(topic, &ip);
 
     assert_eq!(actor.received_index_prices.len(), 1);
     assert_eq!(actor.received_index_prices[0], ip);
@@ -1002,7 +1002,7 @@ fn test_subscribe_and_receive_instrument_status(
     actor.subscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
 
     let topic = get_instrument_status_topic(instrument_id);
-    msgbus::publish(&topic, &stub_instrument_status);
+    msgbus::publish(topic, &stub_instrument_status);
 
     assert_eq!(actor.received_status.len(), 1);
     assert_eq!(actor.received_status[0], stub_instrument_status);
@@ -1023,7 +1023,7 @@ fn test_subscribe_and_receive_instrument_close(
     actor.subscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
 
     let topic = get_instrument_close_topic(instrument_id);
-    msgbus::publish(&topic, &stub_instrument_close);
+    msgbus::publish(topic, &stub_instrument_close);
 
     assert_eq!(actor.received_closes.len(), 1);
     assert_eq!(actor.received_closes[0], stub_instrument_close);
@@ -1046,18 +1046,18 @@ fn test_unsubscribe_instruments(
 
     let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish(&topic, &inst1);
+    msgbus::publish(topic, &inst1);
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst2);
+    msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
     actor.unsubscribe_instruments::<TestDataActor>(venue, None, None);
 
     let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish(&topic, &inst3);
+    msgbus::publish(topic, &inst3);
     let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst4);
+    msgbus::publish(topic, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
 }
@@ -1078,18 +1078,18 @@ fn test_unsubscribe_instrument(
 
     let topic = get_instrument_topic(audusd_sim.id);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish(&topic, &inst1);
+    msgbus::publish(topic, &inst1);
     let inst2 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst2);
+    msgbus::publish(topic, &inst2);
 
     assert_eq!(actor.received_instruments.len(), 2);
 
     actor.unsubscribe_instrument::<TestDataActor>(audusd_sim.id, None, None);
 
     let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
-    msgbus::publish(&topic, &inst3);
+    msgbus::publish(topic, &inst3);
     let inst4 = InstrumentAny::CurrencyPair(gbpusd_sim.clone());
-    msgbus::publish(&topic, &inst4);
+    msgbus::publish(topic, &inst4);
 
     assert_eq!(actor.received_instruments.len(), 2);
 }
@@ -1114,14 +1114,14 @@ fn test_unsubscribe_mark_prices(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    msgbus::publish(&topic, &mp1);
+    msgbus::publish(topic, &mp1);
     let mp2 = MarkPriceUpdate::new(
         audusd_sim.id,
         Price::from("1.00010"),
         UnixNanos::from(3),
         UnixNanos::from(4),
     );
-    msgbus::publish(&topic, &mp2);
+    msgbus::publish(topic, &mp2);
 
     assert_eq!(actor.received_mark_prices.len(), 2);
 
@@ -1133,14 +1133,14 @@ fn test_unsubscribe_mark_prices(
         UnixNanos::from(5),
         UnixNanos::from(6),
     );
-    msgbus::publish(&topic, &mp3);
+    msgbus::publish(topic, &mp3);
     let mp4 = MarkPriceUpdate::new(
         audusd_sim.id,
         Price::from("1.00030"),
         UnixNanos::from(7),
         UnixNanos::from(8),
     );
-    msgbus::publish(&topic, &mp4);
+    msgbus::publish(topic, &mp4);
 
     assert_eq!(actor.received_mark_prices.len(), 2);
 }
@@ -1165,7 +1165,7 @@ fn test_unsubscribe_index_prices(
         UnixNanos::from(1),
         UnixNanos::from(2),
     );
-    msgbus::publish(&topic, &ip1);
+    msgbus::publish(topic, &ip1);
 
     assert_eq!(actor.received_index_prices.len(), 1);
 
@@ -1177,7 +1177,7 @@ fn test_unsubscribe_index_prices(
         UnixNanos::from(3),
         UnixNanos::from(4),
     );
-    msgbus::publish(&topic, &ip2);
+    msgbus::publish(topic, &ip2);
 
     assert_eq!(actor.received_index_prices.len(), 1);
 }
@@ -1197,14 +1197,14 @@ fn test_unsubscribe_instrument_status(
     actor.subscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
 
     let topic = get_instrument_status_topic(instrument_id);
-    msgbus::publish(&topic, &stub_instrument_status);
+    msgbus::publish(topic, &stub_instrument_status);
 
     assert_eq!(actor.received_status.len(), 1);
 
     actor.unsubscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
 
     let stub2 = stub_instrument_status.clone();
-    msgbus::publish(&topic, &stub2);
+    msgbus::publish(topic, &stub2);
 
     assert_eq!(actor.received_status.len(), 1);
 }
@@ -1224,14 +1224,14 @@ fn test_unsubscribe_instrument_close(
     actor.subscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
 
     let topic = get_instrument_close_topic(instrument_id);
-    msgbus::publish(&topic, &stub_instrument_close);
+    msgbus::publish(topic, &stub_instrument_close);
 
     assert_eq!(actor.received_closes.len(), 1);
 
     actor.unsubscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
 
     let stub2 = stub_instrument_close.clone();
-    msgbus::publish(&topic, &stub2);
+    msgbus::publish(topic, &stub2);
 
     assert_eq!(actor.received_closes.len(), 1);
 }

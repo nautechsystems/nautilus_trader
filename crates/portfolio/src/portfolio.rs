@@ -29,7 +29,7 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     msgbus::{
-        self, Endpoint, Pattern, Topic,
+        self,
         handler::{ShareableMessageHandler, TypedMessageHandler},
     },
 };
@@ -182,37 +182,21 @@ impl Portfolio {
         };
 
         msgbus::register(
-            Endpoint::from("Portfolio.update_account"),
+            "Portfolio.update_account".into(),
             update_account_handler.clone(),
         );
 
-        msgbus::subscribe(
-            Pattern::from("data.quotes.*"),
-            update_quote_handler,
-            Some(10),
-        );
+        msgbus::subscribe("data.quotes.*".into(), update_quote_handler, Some(10));
         if bar_updates {
-            msgbus::subscribe(
-                Pattern::from("data.quotes.*EXTERNAL"),
-                update_bar_handler,
-                Some(10),
-            );
+            msgbus::subscribe("data.quotes.*EXTERNAL".into(), update_bar_handler, Some(10));
         }
+        msgbus::subscribe("events.order.*".into(), update_order_handler, Some(10));
         msgbus::subscribe(
-            Pattern::from("events.order.*"),
-            update_order_handler,
-            Some(10),
-        );
-        msgbus::subscribe(
-            Pattern::from("events.position.*"),
+            "events.position.*".into(),
             update_position_handler,
             Some(10),
         );
-        msgbus::subscribe(
-            Pattern::from("events.account.*"),
-            update_account_handler,
-            Some(10),
-        );
+        msgbus::subscribe("events.account.*".into(), update_account_handler, Some(10));
     }
 
     pub fn reset(&mut self) {
@@ -1273,7 +1257,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         msgbus::publish(
-            &Topic::from(&format!("events.account.{}", account.id())),
+            format!("events.account.{}", account.id()).into(),
             &account_state,
         );
     } else {
