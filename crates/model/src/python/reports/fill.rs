@@ -13,41 +13,68 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::{
+    enums::{LiquiditySide, OrderSide},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    types::{Money, Price, Quantity},
+};
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
-use nautilus_model::{
-    enums::PositionSide,
-    identifiers::{AccountId, InstrumentId, PositionId},
-    types::Quantity,
-};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::reports::position::PositionStatusReport;
+use crate::reports::fill::FillReport;
 
 #[pymethods]
-impl PositionStatusReport {
+impl FillReport {
     #[new]
-    #[pyo3(signature = (account_id, instrument_id, position_side, quantity, ts_last, ts_init, venue_position_id=None, report_id=None))]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        account_id,
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        order_side,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        ts_event,
+        ts_init,
+        client_order_id=None,
+        venue_position_id=None,
+        report_id=None,
+    ))]
     fn py_new(
         account_id: AccountId,
         instrument_id: InstrumentId,
-        position_side: PositionSide,
-        quantity: Quantity,
-        ts_last: u64,
+        venue_order_id: VenueOrderId,
+        trade_id: TradeId,
+        order_side: OrderSide,
+        last_qty: Quantity,
+        last_px: Price,
+        commission: Money,
+        liquidity_side: LiquiditySide,
+        ts_event: u64,
         ts_init: u64,
+        client_order_id: Option<ClientOrderId>,
         venue_position_id: Option<PositionId>,
         report_id: Option<UUID4>,
     ) -> PyResult<Self> {
         Ok(Self::new(
             account_id,
             instrument_id,
-            position_side,
-            quantity,
+            venue_order_id,
+            trade_id,
+            order_side,
+            last_qty,
+            last_px,
+            commission,
+            liquidity_side,
+            client_order_id,
             venue_position_id,
-            ts_last.into(),
+            ts_event.into(),
             ts_init.into(),
             report_id,
         ))
@@ -82,27 +109,45 @@ impl PositionStatusReport {
     }
 
     #[getter]
-    #[pyo3(name = "strategy_id")]
-    const fn py_strategy_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "venue_order_id")]
+    const fn py_venue_order_id(&self) -> VenueOrderId {
+        self.venue_order_id
     }
 
     #[getter]
-    #[pyo3(name = "venue_position_id")]
-    const fn py_venue_position_id(&self) -> Option<PositionId> {
-        self.venue_position_id
+    #[pyo3(name = "trade_id")]
+    const fn py_trade_id(&self) -> TradeId {
+        self.trade_id
     }
 
     #[getter]
-    #[pyo3(name = "position_side")]
-    const fn py_position_side(&self) -> PositionSide {
-        self.position_side
+    #[pyo3(name = "order_side")]
+    const fn py_order_side(&self) -> OrderSide {
+        self.order_side
     }
 
     #[getter]
-    #[pyo3(name = "quantity")]
-    const fn py_quantity(&self) -> Quantity {
-        self.quantity
+    #[pyo3(name = "last_qty")]
+    const fn py_last_qty(&self) -> Quantity {
+        self.last_qty
+    }
+
+    #[getter]
+    #[pyo3(name = "last_px")]
+    const fn py_last_px(&self) -> Price {
+        self.last_px
+    }
+
+    #[getter]
+    #[pyo3(name = "commission")]
+    const fn py_commission(&self) -> Money {
+        self.commission
+    }
+
+    #[getter]
+    #[pyo3(name = "liquidity_side")]
+    const fn py_liquidity_side(&self) -> LiquiditySide {
+        self.liquidity_side
     }
 
     #[getter]
@@ -112,9 +157,9 @@ impl PositionStatusReport {
     }
 
     #[getter]
-    #[pyo3(name = "ts_last")]
-    const fn py_ts_last(&self) -> u64 {
-        self.ts_last.as_u64()
+    #[pyo3(name = "ts_event")]
+    const fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
     }
 
     #[getter]
@@ -124,24 +169,18 @@ impl PositionStatusReport {
     }
 
     #[getter]
-    #[pyo3(name = "is_flat")]
-    const fn py_is_flat(&self) -> bool {
-        self.is_flat()
+    #[pyo3(name = "client_order_id")]
+    const fn py_client_order_id(&self) -> Option<ClientOrderId> {
+        self.client_order_id
     }
 
     #[getter]
-    #[pyo3(name = "is_long")]
-    fn py_is_long(&self) -> bool {
-        self.is_long()
+    #[pyo3(name = "venue_position_id")]
+    const fn py_venue_position_id(&self) -> Option<PositionId> {
+        self.venue_position_id
     }
 
-    #[getter]
-    #[pyo3(name = "is_short")]
-    fn py_is_short(&self) -> bool {
-        self.is_short()
-    }
-
-    /// Creates a `PositionStatusReport` from a Python dictionary.
+    /// Creates a `FillReport` from a Python dictionary.
     ///
     /// # Errors
     ///
@@ -152,7 +191,7 @@ impl PositionStatusReport {
         from_dict_pyo3(py, values)
     }
 
-    /// Converts the `PositionStatusReport` to a Python dictionary.
+    /// Converts the `FillReport` to a Python dictionary.
     ///
     /// # Errors
     ///
@@ -160,21 +199,29 @@ impl PositionStatusReport {
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(PositionStatusReport))?;
+        dict.set_item("type", stringify!(FillReport))?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
-        match self.venue_position_id {
-            Some(venue_position_id) => {
-                dict.set_item("venue_position_id", venue_position_id.to_string())?;
-            }
+        dict.set_item("venue_order_id", self.venue_order_id.to_string())?;
+        dict.set_item("trade_id", self.trade_id.to_string())?;
+        dict.set_item("order_side", self.order_side.to_string())?;
+        dict.set_item("last_qty", self.last_qty.to_string())?;
+        dict.set_item("last_px", self.last_px.to_string())?;
+        dict.set_item("commission", self.commission.to_string())?;
+        dict.set_item("liquidity_side", self.liquidity_side.to_string())?;
+        dict.set_item("report_id", self.report_id.to_string())?;
+        dict.set_item("ts_event", self.ts_event.as_u64())?;
+        dict.set_item("ts_init", self.ts_init.as_u64())?;
+
+        match &self.client_order_id {
+            Some(id) => dict.set_item("client_order_id", id.to_string())?,
+            None => dict.set_item("client_order_id", py.None())?,
+        }
+        match &self.venue_position_id {
+            Some(id) => dict.set_item("venue_position_id", id.to_string())?,
             None => dict.set_item("venue_position_id", py.None())?,
         }
-        dict.set_item("position_side", self.position_side.to_string())?;
-        dict.set_item("quantity", self.quantity.to_string())?;
-        dict.set_item("signed_decimal_qty", self.signed_decimal_qty.to_string())?;
-        dict.set_item("report_id", self.report_id.to_string())?;
-        dict.set_item("ts_last", self.ts_last.as_u64())?;
-        dict.set_item("ts_init", self.ts_init.as_u64())?;
+
         Ok(dict.into())
     }
 }

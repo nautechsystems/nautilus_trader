@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SEND},
+    messages::execution::{SubmitOrder, TradingCommand},
     msgbus,
 };
 use nautilus_core::UUID4;
@@ -32,20 +37,13 @@ use nautilus_model::{
     types::Quantity,
 };
 
-use crate::messages::{
-    SubmitOrder, TradingCommand,
-    cancel::{CancelOrderHandler, CancelOrderHandlerAny},
-    modify::{ModifyOrderHandler, ModifyOrderHandlerAny},
-    submit::{SubmitOrderHandler, SubmitOrderHandlerAny},
-};
-
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     active_local: bool,
-    submit_order_handler: Option<SubmitOrderHandlerAny>,
-    cancel_order_handler: Option<CancelOrderHandlerAny>,
-    modify_order_handler: Option<ModifyOrderHandlerAny>,
+    // submit_order_handler: Option<SubmitOrderHandlerAny>,
+    // cancel_order_handler: Option<CancelOrderHandlerAny>,
+    // modify_order_handler: Option<ModifyOrderHandlerAny>,
     submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
 }
 
@@ -62,32 +60,32 @@ impl OrderManager {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
-        submit_order_handler: Option<SubmitOrderHandlerAny>,
-        cancel_order_handler: Option<CancelOrderHandlerAny>,
-        modify_order_handler: Option<ModifyOrderHandlerAny>,
+        // submit_order_handler: Option<SubmitOrderHandlerAny>,
+        // cancel_order_handler: Option<CancelOrderHandlerAny>,
+        // modify_order_handler: Option<ModifyOrderHandlerAny>,
     ) -> Self {
         Self {
             clock,
             cache,
             active_local,
-            submit_order_handler,
-            cancel_order_handler,
-            modify_order_handler,
+            // submit_order_handler,
+            // cancel_order_handler,
+            // modify_order_handler,
             submit_order_commands: HashMap::new(),
         }
     }
 
-    pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
-        self.submit_order_handler = Some(handler);
-    }
-
-    pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
-        self.cancel_order_handler = Some(handler);
-    }
-
-    pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
-        self.modify_order_handler = Some(handler);
-    }
+    // pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
+    //     self.submit_order_handler = Some(handler);
+    // }
+    //
+    // pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
+    //     self.cancel_order_handler = Some(handler);
+    // }
+    //
+    // pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
+    //     self.modify_order_handler = Some(handler);
+    // }
 
     #[must_use]
     pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
@@ -126,15 +124,15 @@ impl OrderManager {
 
         self.submit_order_commands.remove(&order.client_order_id());
 
-        if let Some(handler) = &self.cancel_order_handler {
-            handler.handle_cancel_order(order);
-        }
+        // if let Some(handler) = &self.cancel_order_handler {
+        //     handler.handle_cancel_order(order);
+        // }
     }
 
     pub fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
-        if let Some(handler) = &self.modify_order_handler {
-            handler.handle_modify_order(order, new_quantity);
-        }
+        // if let Some(handler) = &self.modify_order_handler {
+        //     handler.handle_modify_order(order, new_quantity);
+        // }
     }
 
     /// # Errors
@@ -174,9 +172,9 @@ impl OrderManager {
                 }
                 None => self.send_risk_command(TradingCommand::SubmitOrder(submit)),
             }
-        } else if let Some(handler) = &self.submit_order_handler {
-            handler.handle_submit_order(submit);
-        }
+        } // else if let Some(handler) = &self.submit_order_handler {
+        //     handler.handle_submit_order(submit);
+        // }
 
         Ok(())
     }
@@ -340,9 +338,9 @@ impl OrderManager {
                         self.modify_order_quantity(&mut child_order, parent_filled_qty);
                     }
 
-                    if self.submit_order_handler.is_none() {
-                        return;
-                    }
+                    // if self.submit_order_handler.is_none() {
+                    //     return;
+                    // }
 
                     if !self
                         .submit_order_commands

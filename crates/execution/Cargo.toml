@@ -48,7 +48,6 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
 chrono = { workspace = true }
-derive_builder = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }

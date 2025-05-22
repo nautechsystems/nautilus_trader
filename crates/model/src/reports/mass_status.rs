@@ -15,10 +15,12 @@
 
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use serde::{Deserialize, Serialize};
 
-use crate::reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport};
+use crate::{
+    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
+    reports::{fill::FillReport, order::OrderStatusReport, position::PositionStatusReport},
+};
 
 /// Represents an execution mass status report for an execution client - including
 /// status of all orders, trades for those orders and open positions.
@@ -26,7 +28,7 @@ use crate::reports::{fill::FillReport, order::OrderStatusReport, position::Posit
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct ExecutionMassStatus {
     /// The client ID for the report.

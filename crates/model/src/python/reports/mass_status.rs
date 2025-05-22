@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
-use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::reports::{
