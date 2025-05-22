@@ -38,6 +38,7 @@ pub struct SubscribeBookSnapshots {
 }
 
 impl SubscribeBookSnapshots {
+    /// Creates a new [`SubscribeBookSnapshots`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

@@ -32,6 +32,7 @@ pub struct RequestInstruments {
 }
 
 impl RequestInstruments {
+    /// Creates a new [`RequestInstruments`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         start: Option<DateTime<Utc>>,

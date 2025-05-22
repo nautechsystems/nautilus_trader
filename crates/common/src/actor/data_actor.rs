@@ -58,14 +58,15 @@ use crate::{
         data::{
             BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentResponse,
             InstrumentsResponse, QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand,
-            RequestData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+            RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
             SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
-            SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
+            UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::ShutdownSystem,
     },
@@ -1061,7 +1062,7 @@ impl DataActorCore {
             return;
         }
 
-        let command = SubscribeCommand::Data(SubscribeData {
+        let command = SubscribeCommand::Data(SubscribeCustomData {
             data_type,
             client_id,
             venue: None,
@@ -1498,7 +1499,7 @@ impl DataActorCore {
             return;
         }
 
-        let command = UnsubscribeCommand::Data(UnsubscribeData {
+        let command = UnsubscribeCommand::Data(UnsubscribeCustomData {
             data_type,
             client_id,
             venue: None,
@@ -1822,7 +1823,7 @@ impl DataActorCore {
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
-        let command = RequestCommand::Data(RequestData {
+        let command = RequestCommand::Data(RequestCustomData {
             client_id,
             data_type,
             request_id,

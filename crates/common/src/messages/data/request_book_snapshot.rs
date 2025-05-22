@@ -30,6 +30,7 @@ pub struct RequestBookSnapshot {
 }
 
 impl RequestBookSnapshot {
+    /// Creates a new [`RequestBookSnapshot`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

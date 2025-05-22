@@ -30,6 +30,7 @@ pub struct SubscribeInstrumentClose {
 }
 
 impl SubscribeInstrumentClose {
+    /// Creates a new [`SubscribeInstrumentClose`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,

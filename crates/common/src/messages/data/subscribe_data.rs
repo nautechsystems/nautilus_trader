@@ -23,7 +23,7 @@ use nautilus_model::{
 use super::check_client_id_or_venue;
 
 #[derive(Clone, Debug)]
-pub struct SubscribeData {
+pub struct SubscribeCustomData {
     pub client_id: Option<ClientId>,
     pub venue: Option<Venue>,
     pub data_type: DataType,
@@ -32,7 +32,8 @@ pub struct SubscribeData {
     pub params: Option<IndexMap<String, String>>,
 }
 
-impl SubscribeData {
+impl SubscribeCustomData {
+    /// Creates a new [`SubscribeCustomData`] instance.
     pub fn new(
         client_id: Option<ClientId>,
         venue: Option<Venue>,

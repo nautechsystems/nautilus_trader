@@ -34,6 +34,7 @@ pub struct SubscribeBars {
 }
 
 impl SubscribeBars {
+    /// Creates a new [`SubscribeBars`] instance.
     pub fn new(
         bar_type: BarType,
         client_id: Option<ClientId>,

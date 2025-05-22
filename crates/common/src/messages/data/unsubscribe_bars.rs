@@ -33,6 +33,7 @@ pub struct UnsubscribeBars {
 }
 
 impl UnsubscribeBars {
+    /// Creates a new [`UnsubscribeBars`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,

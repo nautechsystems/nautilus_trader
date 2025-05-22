@@ -38,6 +38,7 @@ impl InstrumentResponse {
         self
     }
 
+    /// Creates a new [`InstrumentResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,

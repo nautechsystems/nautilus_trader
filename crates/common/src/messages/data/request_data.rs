@@ -18,10 +18,29 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{data::DataType, identifiers::ClientId};
 
 #[derive(Clone, Debug)]
-pub struct RequestData {
+pub struct RequestCustomData {
     pub client_id: ClientId,
     pub data_type: DataType,
     pub request_id: UUID4,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
+}
+
+impl RequestCustomData {
+    /// Creates a new [`RequestCustomData`] instance.
+    pub fn new(
+        client_id: ClientId,
+        data_type: DataType,
+        request_id: UUID4,
+        ts_init: UnixNanos,
+        params: Option<IndexMap<String, String>>,
+    ) -> Self {
+        Self {
+            client_id,
+            data_type,
+            request_id,
+            ts_init,
+            params,
+        }
+    }
 }

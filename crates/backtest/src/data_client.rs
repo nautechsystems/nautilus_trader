@@ -24,15 +24,15 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{
-        RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
+        RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 use nautilus_data::client::DataClient;
@@ -98,7 +98,7 @@ impl DataClient for BacktestDataClient {
 
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
-    fn subscribe(&mut self, _cmd: &SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -156,7 +156,7 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, _cmd: &UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -219,7 +219,7 @@ impl DataClient for BacktestDataClient {
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
-    fn request_data(&self, request: &RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
         todo!()
     }
 
