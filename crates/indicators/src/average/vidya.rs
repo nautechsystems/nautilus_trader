@@ -71,8 +71,8 @@ impl Indicator for VariableIndexDynamicAverage {
         self.update_raw((&trade.price).into());
     }
 
-    fn handle_bar(&mut self, b: &Bar) {
-        self.update_raw((&b.close).into());
+    fn handle_bar(&mut self, bar: &Bar) {
+        self.update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
@@ -90,6 +90,7 @@ impl VariableIndexDynamicAverage {
     /// Creates a new [`VariableIndexDynamicAverage`] instance.
     ///
     /// # Panics
+    ///
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(
