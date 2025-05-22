@@ -18,8 +18,8 @@ Released on TBD (UTC).
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
-- Added SQL schema, model and query for `OrderCancelRejected`
-- Added SQL schema, model and query for `OrderModifyRejected`
+- Added SQL schema, model, and query for `OrderCancelRejected`
+- Added SQL schema, model, and query for `OrderModifyRejected`
 - Added HyperSync client to blockchain adapter (#2606), thanks @filipmacek
 - Added support for DEXs, pools, and tokens to blockchain adapter (#2638), thanks @filipmacek
 
@@ -35,6 +35,8 @@ None
 - Improved error handling for Tardis adapter by changing many unwraps to instead log or raise Python exceptions (where applicable)
 - Improved fill behavior for limit orders in `L1_MBP` books, will now fill entire size when marketable as `TAKER` or market moves through limit as `MAKER`
 - Improved account state event generation for margin accounts, avoiding the generation of redundant intermediate account states for the same execution event
+- Improved ergonomics of messaging topics, patterns, and endpoints in Rust (#2658), thanks @twitu
+- Improved development debug builds with cranelift backend for Rust (#2640), thanks @twitu
 - Improved validations for `LimitOrder` in Rust (#2613), thanks @nicolad
 - Improved validations for `LimitIfTouchedOrder` in Rust (#2533), thanks @nicolad
 - Improved validations for `MarketIfTouchedOrder` in Rust (#2577), thanks @nicolad
