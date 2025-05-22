@@ -22,6 +22,9 @@ use time::OffsetDateTime;
 pub const DATABENTO: &str = "DATABENTO";
 pub const ALL_SYMBOLS: &str = "ALL_SYMBOLS";
 
+/// # Errors
+///
+/// Returns an error if converting `start` or `end` to `OffsetDateTime` fails.
 pub fn get_date_time_range(start: UnixNanos, end: UnixNanos) -> anyhow::Result<DateTimeRange> {
     Ok(DateTimeRange::from((
         OffsetDateTime::from_unix_timestamp_nanos(i128::from(start.as_u64()))?,

@@ -90,8 +90,8 @@ None
 ### Documentation Updates
 - Improved the clarity of various concept guides
 - Fixed several errors in concept guides
-- Added errors and panics docs for most crate
-- Added errors and panics docs for most crate
+- Added errors and panics docs for most crates
+- Added errors and panics docs for most crates
 
 ### Deprecations
 None

@@ -86,6 +86,10 @@ pub struct DatabentoImbalance {
 
 impl DatabentoImbalance {
     /// Creates a new [`DatabentoImbalance`] instance.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error (TBD).
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         instrument_id: InstrumentId,
@@ -156,6 +160,10 @@ pub struct DatabentoStatistics {
 
 impl DatabentoStatistics {
     /// Creates a new [`DatabentoStatistics`] instance.
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error (TBD).
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         instrument_id: InstrumentId,

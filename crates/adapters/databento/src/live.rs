@@ -103,6 +103,14 @@ impl DatabentoFeedHandler {
     }
 
     /// Run the feed handler to begin listening for commands and processing messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client operation or message handling fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an MBO message does not decode into a delta variant (via `expect`).
     #[allow(clippy::blocks_in_conditions)]
     pub async fn run(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Running feed handler");
