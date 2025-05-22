@@ -19,6 +19,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use nautilus_common::{
     cache::Cache,
     clock::TestClock,
+    messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     msgbus::{
         self,
         handler::ShareableMessageHandler,
@@ -57,7 +58,6 @@ use ustr::Ustr;
 
 use crate::{
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    messages::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder},
     models::{fee::FeeModelAny, fill::FillModel},
 };
 

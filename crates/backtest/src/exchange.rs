@@ -26,7 +26,7 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::{cache::Cache, clock::Clock};
+use nautilus_common::{cache::Cache, clock::Clock, messages::execution::TradingCommand};
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_equal},
@@ -34,7 +34,6 @@ use nautilus_core::{
 use nautilus_execution::{
     client::ExecutionClient,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    messages::TradingCommand,
     models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
 };
 use nautilus_model::{
@@ -779,19 +778,17 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         clock::TestClock,
+        messages::execution::{SubmitOrder, TradingCommand},
         msgbus::{
             self,
             stubs::{get_message_saving_handler, get_saved_messages},
         },
     };
     use nautilus_core::{AtomicTime, UUID4, UnixNanos};
-    use nautilus_execution::{
-        messages::{SubmitOrder, TradingCommand},
-        models::{
-            fee::{FeeModelAny, MakerTakerFeeModel},
-            fill::FillModel,
-            latency::LatencyModel,
-        },
+    use nautilus_execution::models::{
+        fee::{FeeModelAny, MakerTakerFeeModel},
+        fill::FillModel,
+        latency::LatencyModel,
     };
     use nautilus_model::{
         accounts::{AccountAny, MarginAccount},

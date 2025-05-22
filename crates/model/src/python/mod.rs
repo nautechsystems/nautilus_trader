@@ -28,6 +28,7 @@ pub mod macros;
 pub mod orderbook;
 pub mod orders;
 pub mod position;
+pub mod reports;
 pub mod types;
 
 /// Loaded as nautilus_pyo3.model
@@ -135,6 +136,11 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::orders::StopMarketOrder>()?;
     m.add_class::<crate::orders::TrailingStopLimitOrder>()?;
     m.add_class::<crate::orders::TrailingStopMarketOrder>()?;
+    // Reports
+    m.add_class::<crate::reports::fill::FillReport>()?;
+    m.add_class::<crate::reports::order::OrderStatusReport>()?;
+    m.add_class::<crate::reports::position::PositionStatusReport>()?;
+    m.add_class::<crate::reports::mass_status::ExecutionMassStatus>()?;
     // Position
     m.add_class::<crate::position::Position>()?;
     // Instruments

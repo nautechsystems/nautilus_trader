@@ -16,7 +16,10 @@
 use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_model::{
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+use crate::{
     enums::{
         ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
@@ -24,15 +27,13 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 
 /// Represents an order status at a point in time.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.execution")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct OrderStatusReport {
     /// The account ID associated with the position.

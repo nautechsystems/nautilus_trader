@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -24,8 +24,6 @@ use nautilus_model::{
     orders::OrderAny,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::order_emulator::emulator::OrderEmulator;
 
 // Fix: equality and default and builder
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -90,25 +88,6 @@ impl Display for SubmitOrder {
             self.position_id
                 .map_or("None".to_string(), |position_id| format!("{position_id}")),
         )
-    }
-}
-
-pub trait SubmitOrderHandler {
-    fn handle_submit_order(&self, command: SubmitOrder);
-}
-
-#[derive(Debug)]
-pub enum SubmitOrderHandlerAny {
-    OrderEmulator(Rc<RefCell<OrderEmulator>>),
-}
-
-impl SubmitOrderHandler for SubmitOrderHandlerAny {
-    fn handle_submit_order(&self, command: SubmitOrder) {
-        match self {
-            Self::OrderEmulator(emulator) => {
-                emulator.borrow_mut().handle_submit_order(command);
-            }
-        }
     }
 }
 

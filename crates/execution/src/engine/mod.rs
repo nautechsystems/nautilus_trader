@@ -36,6 +36,10 @@ use nautilus_common::{
     clock::Clock,
     generators::position_id::PositionIdGenerator,
     logging::{CMD, EVT, RECV},
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
+        SubmitOrderList, TradingCommand,
+    },
     msgbus::{
         self, get_message_bus,
         switchboard::{self},
@@ -56,13 +60,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use crate::{
-    client::ExecutionClient,
-    messages::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryOrder, SubmitOrder,
-        SubmitOrderList, TradingCommand,
-    },
-};
+use crate::client::ExecutionClient;
 
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
