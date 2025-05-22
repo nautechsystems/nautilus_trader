@@ -41,6 +41,10 @@ use crate::{
 };
 
 /// Custom deserializer for strings to u64.
+///
+/// # Errors
+///
+/// Returns a deserialization error if the JSON string is invalid or cannot be parsed to u64.
 pub fn deserialize_optional_string_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -54,6 +58,11 @@ where
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns the currency either from the internal currency map or creates a default crypto.
+///
+/// # Panics
+///
+/// Panics if the internal currency map lock is poisoned.
 pub fn get_currency(code: &str) -> Currency {
     CURRENCY_MAP
         .lock()
@@ -69,11 +78,21 @@ pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *COINBASE_INTX_VENUE)
 }
 
+/// Parses a timestamp in milliseconds since epoch into `UnixNanos`.
+///
+/// # Errors
+///
+/// Returns an error if the input string is not a valid unsigned integer.
 pub fn parse_millisecond_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let millis: u64 = timestamp.parse()?;
     Ok(UnixNanos::from(millis * NANOSECONDS_IN_MILLISECOND))
 }
 
+/// Parses an RFC3339 timestamp string into `UnixNanos`.
+///
+/// # Errors
+///
+/// Returns an error if the input string is not a valid RFC3339 timestamp or is out of range.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
     let nanos = dt
@@ -82,14 +101,29 @@ pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     Ok(UnixNanos::from(nanos as u64))
 }
 
+/// Parses a string into a `Price`.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_price(value: &str) -> anyhow::Result<Price> {
     Price::from_str(value).map_err(|e| anyhow::anyhow!(e))
 }
 
+/// Parses a string into a `Quantity` with the given precision.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Quantity::new_checked(value.parse::<f64>()?, precision)
 }
 
+/// Parses a notional string into `Money`, returning `None` if the value is zero.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_notional(value: &str, currency: Currency) -> anyhow::Result<Option<Money>> {
     let parsed = value.trim().parse::<f64>()?;
     Ok(if parsed == 0.0 {
@@ -135,6 +169,11 @@ pub const fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSid
     }
 }
 
+/// Converts a `BarSpecification` into the corresponding Coinbase WebSocket channel.
+///
+/// # Errors
+///
+/// Returns an error if the specification is not one of the supported candle intervals.
 pub fn bar_spec_as_coinbase_channel(
     bar_spec: BarSpecification,
 ) -> anyhow::Result<CoinbaseIntxWsChannel> {
@@ -149,6 +188,11 @@ pub fn bar_spec_as_coinbase_channel(
     Ok(channel)
 }
 
+/// Converts a Coinbase WebSocket channel into the corresponding `BarSpecification`.
+///
+/// # Errors
+///
+/// Returns an error if the channel is not one of the supported candle channels.
 pub fn coinbase_channel_as_bar_spec(
     channel: &CoinbaseIntxWsChannel,
 ) -> anyhow::Result<BarSpecification> {

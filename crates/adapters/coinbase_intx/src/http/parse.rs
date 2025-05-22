@@ -38,6 +38,11 @@ use crate::common::{
 };
 
 /// Parses a Coinbase International Spot instrument into an `InstrumentAny::CurrencyPair`.
+/// Parses a spot instrument definition into an `InstrumentAny::CurrencyPair`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_spot_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -91,6 +96,11 @@ pub fn parse_spot_instrument(
 }
 
 /// Parses a Coinbase International perpetual instrument into an `InstrumentAny::CryptoPerpetual`.
+/// Parses a perpetual instrument definition into an `InstrumentAny::CryptoPerpetual`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_perp_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -178,6 +188,11 @@ pub fn parse_instrument_any(
     }
 }
 
+/// Parses account balances into an `AccountState`.
+///
+/// # Errors
+///
+/// Returns an error if any balance or hold value cannot be parsed into a float.
 pub fn parse_account_state(
     coinbase_balances: Vec<CoinbaseIntxBalance>,
     account_id: AccountId,
@@ -279,6 +294,11 @@ fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Ok(Quantity::new(v, precision))
 }
 
+/// Parses an order status report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_order_status_report(
     coinbase_order: CoinbaseIntxOrder,
     account_id: AccountId,
@@ -348,6 +368,11 @@ pub fn parse_order_status_report(
     Ok(report)
 }
 
+/// Parses a fill report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_fill_report(
     coinbase_fill: CoinbaseIntxFill,
     account_id: AccountId,
@@ -387,6 +412,11 @@ pub fn parse_fill_report(
     ))
 }
 
+/// Parses a position status report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_position_status_report(
     coinbase_position: CoinbaseIntxPosition,
     account_id: AccountId,
