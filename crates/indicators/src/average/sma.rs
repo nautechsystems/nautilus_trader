@@ -159,7 +159,7 @@ mod tests {
     fn sma_update_raw_exact_period(indicator_sma_10: SimpleMovingAverage) {
         let mut sma = indicator_sma_10;
         for i in 1..=10 {
-            sma.update_raw(i as f64);
+            sma.update_raw(f64::from(i));
         }
         assert!(sma.has_inputs());
         assert!(sma.initialized());
@@ -330,7 +330,7 @@ mod tests {
         let mut window = std::collections::VecDeque::<f64>::with_capacity(PERIOD);
 
         for step in 0..20 {
-            let price = (step as f64) * 10.0;
+            let price = f64::from(step) * 10.0;
             sma.update_raw(price);
 
             if window.len() == PERIOD {
@@ -367,7 +367,7 @@ mod tests {
         const PERIOD: usize = 8;
         let mut sma = SimpleMovingAverage::new(PERIOD, None);
         for i in 0..50 {
-            sma.update_raw(i as f64);
+            sma.update_raw(f64::from(i));
             assert_eq!(sma.inputs.len(), sma.count(), "len/count diverged at {i}");
         }
     }
@@ -377,7 +377,7 @@ mod tests {
         let mut sma = SimpleMovingAverage::new(4, None);
         for cycle in 0..5 {
             for x in 0..4 {
-                sma.update_raw(x as f64);
+                sma.update_raw(f64::from(x));
             }
             assert!(sma.initialized(), "cycle {cycle}: not initialized");
             sma.reset();
