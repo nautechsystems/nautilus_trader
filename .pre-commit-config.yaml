@@ -37,6 +37,18 @@ repos:
         args: ["-L", "ACN,crate,ot,socio-economic,zar"]
 
   ##############################################################################
+  #  Custom hooks
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: check-toml-codegen
+        name: Check TOML files for codegen-backend nightly feature
+        description: Ensures TOML files don't contain the 'codegen-backend' keyword
+        entry: .pre-commit-hooks/check_toml_codegen.sh
+        language: script
+        files: \.toml$
+
+  ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
   - repo: local
@@ -47,6 +59,8 @@ repos:
         entry: cargo fmt
         language: system
         args: ["--all", "--", "--check"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
@@ -54,6 +68,8 @@ repos:
         entry: cargo clippy
         language: system
         args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
       - id: cargo-doc
         name: cargo doc
@@ -61,6 +77,8 @@ repos:
         entry: cargo doc
         language: system
         args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
 
   ##############################################################################
