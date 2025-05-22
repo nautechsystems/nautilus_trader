@@ -42,7 +42,7 @@ repos:
   - repo: local
     hooks:
       - id: check-toml-codegen
-        name: Check TOML files for codegen-backend nightly feature
+        name: check toml-codegen
         description: Ensures TOML files don't contain the 'codegen-backend' keyword
         entry: .pre-commit-hooks/check_toml_codegen.sh
         language: script
