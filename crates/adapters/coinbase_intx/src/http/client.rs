@@ -386,7 +386,8 @@ impl CoinbaseIntxHttpInnerClient {
         portfolio_id: &str,
         params: GetPortfolioFillsParams,
     ) -> Result<CoinbaseIntxFillList, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/portfolios/{portfolio_id}/fills?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -430,7 +431,8 @@ impl CoinbaseIntxHttpInnerClient {
         params: CreateOrderParams,
     ) -> Result<CoinbaseIntxOrder, CoinbaseIntxHttpError> {
         let path = "/api/v1/orders";
-        let body = serde_json::to_vec(&params).expect("Failed to serialize params");
+        let body = serde_json::to_vec(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         self.send_request(Method::POST, path, Some(body), true)
             .await
     }
@@ -446,7 +448,8 @@ impl CoinbaseIntxHttpInnerClient {
         let params = GetOrderParams {
             portfolio: portfolio_id.to_string(),
         };
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders/{venue_order_id}?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -459,7 +462,8 @@ impl CoinbaseIntxHttpInnerClient {
         &self,
         params: GetOrdersParams,
     ) -> Result<CoinbaseIntxOrderList, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -473,7 +477,8 @@ impl CoinbaseIntxHttpInnerClient {
         let params = CancelOrderParams {
             portfolio: portfolio_id.to_string(),
         };
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders/{client_order_id}?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
@@ -483,7 +488,8 @@ impl CoinbaseIntxHttpInnerClient {
         &self,
         params: CancelOrdersParams,
     ) -> Result<Vec<CoinbaseIntxOrder>, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
@@ -497,7 +503,8 @@ impl CoinbaseIntxHttpInnerClient {
         params: ModifyOrderParams,
     ) -> Result<CoinbaseIntxOrder, CoinbaseIntxHttpError> {
         let path = format!("/api/v1/orders/{order_id}");
-        let body = serde_json::to_vec(&params).expect("Failed to serialize params");
+        let body = serde_json::to_vec(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         self.send_request(Method::PUT, &path, Some(body), true)
             .await
     }
@@ -725,7 +732,7 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
@@ -753,14 +760,14 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<OrderStatusReport> = Vec::new();
         for order in resp.results {
             let instrument = self.get_instrument_from_cache(order.symbol)?;
-
-            reports.push(parse_order_status_report(
+            let report = parse_order_status_report(
                 order,
                 account_id,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            ));
+            )?;
+            reports.push(report);
         }
 
         Ok(reports)
@@ -795,14 +802,13 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<FillReport> = Vec::new();
         for fill in resp.results {
             let instrument = self.get_instrument_from_cache(fill.symbol)?;
-
             let report = parse_fill_report(
                 fill,
                 account_id,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 
@@ -827,8 +833,7 @@ impl CoinbaseIntxHttpClient {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         let report =
-            parse_position_status_report(resp, account_id, instrument.size_precision(), ts_init);
-
+            parse_position_status_report(resp, account_id, instrument.size_precision(), ts_init)?;
         Ok(report)
     }
 
@@ -850,14 +855,12 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<PositionStatusReport> = Vec::new();
         for position in resp {
             let instrument = self.get_instrument_from_cache(position.symbol)?;
-
             let report = parse_position_status_report(
                 position,
                 account_id,
                 instrument.size_precision(),
                 ts_init,
-            );
-
+            )?;
             reports.push(report);
         }
 
@@ -921,7 +924,7 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
@@ -948,7 +951,7 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
@@ -982,7 +985,7 @@ impl CoinbaseIntxHttpClient {
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 
@@ -1028,8 +1031,7 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
-
+        )?;
         Ok(report)
     }
 }

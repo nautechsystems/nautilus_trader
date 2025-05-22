@@ -13,16 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{num::NonZero, str::FromStr};
+use std::str::FromStr;
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    data::BarSpecification,
-    enums::{
-        AggressorSide, BarAggregation, CurrencyType, LiquiditySide, OrderSide, PositionSide,
-        PriceType,
+    data::{
+        BarSpecification,
+        bar::{
+            BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_MINUTE_LAST, BAR_SPEC_2_HOUR_LAST,
+            BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_30_MINUTE_LAST,
+        },
     },
+    enums::{AggressorSide, CurrencyType, LiquiditySide, OrderSide, PositionSide},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Money, Price, Quantity},
 };
@@ -35,32 +38,6 @@ use crate::{
         enums::{CoinbaseIntxExecType, CoinbaseIntxSide},
     },
     websocket::enums::CoinbaseIntxWsChannel,
-};
-
-pub const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_5_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(5).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_30_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(30).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_2_HOUR: BarSpecification = BarSpecification {
-    step: NonZero::new(2).unwrap(),
-    aggregation: BarAggregation::Hour,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_1_DAY: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
-    aggregation: BarAggregation::Day,
-    price_type: PriceType::Last,
 };
 
 /// Custom deserializer for strings to u64.
@@ -99,7 +76,10 @@ pub fn parse_millisecond_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos>
 
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
-    Ok(UnixNanos::from(dt.timestamp_nanos_opt().unwrap() as u64))
+    let nanos = dt
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("RFC3339 timestamp out of range: {timestamp}"))?;
+    Ok(UnixNanos::from(nanos as u64))
 }
 
 pub fn parse_price(value: &str) -> anyhow::Result<Price> {
@@ -159,11 +139,11 @@ pub fn bar_spec_as_coinbase_channel(
     bar_spec: BarSpecification,
 ) -> anyhow::Result<CoinbaseIntxWsChannel> {
     let channel = match bar_spec {
-        BAR_SPEC_1_MINUTE => CoinbaseIntxWsChannel::CandlesOneMinute,
-        BAR_SPEC_5_MINUTE => CoinbaseIntxWsChannel::CandlesFiveMinute,
-        BAR_SPEC_30_MINUTE => CoinbaseIntxWsChannel::CandlesThirtyMinute,
-        BAR_SPEC_2_HOUR => CoinbaseIntxWsChannel::CandlesTwoHour,
-        BAR_SPEC_1_DAY => CoinbaseIntxWsChannel::CandlesOneDay,
+        BAR_SPEC_1_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesOneMinute,
+        BAR_SPEC_5_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesFiveMinute,
+        BAR_SPEC_30_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesThirtyMinute,
+        BAR_SPEC_2_HOUR_LAST => CoinbaseIntxWsChannel::CandlesTwoHour,
+        BAR_SPEC_1_DAY_LAST => CoinbaseIntxWsChannel::CandlesOneDay,
         _ => anyhow::bail!("Invalid `BarSpecification` for channel, was {bar_spec}"),
     };
     Ok(channel)
@@ -173,12 +153,11 @@ pub fn coinbase_channel_as_bar_spec(
     channel: &CoinbaseIntxWsChannel,
 ) -> anyhow::Result<BarSpecification> {
     let bar_spec = match channel {
-        CoinbaseIntxWsChannel::CandlesOneMinute => BAR_SPEC_1_MINUTE,
-        CoinbaseIntxWsChannel::CandlesFiveMinute => BAR_SPEC_5_MINUTE,
-        CoinbaseIntxWsChannel::CandlesThirtyMinute => BAR_SPEC_30_MINUTE,
-        CoinbaseIntxWsChannel::CandlesTwoHour => BAR_SPEC_2_HOUR,
-        CoinbaseIntxWsChannel::CandlesOneDay => BAR_SPEC_1_DAY,
-        // TODO: Complete remainder
+        CoinbaseIntxWsChannel::CandlesOneMinute => BAR_SPEC_1_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesFiveMinute => BAR_SPEC_5_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesThirtyMinute => BAR_SPEC_30_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesTwoHour => BAR_SPEC_2_HOUR_LAST,
+        CoinbaseIntxWsChannel::CandlesOneDay => BAR_SPEC_1_DAY_LAST,
         _ => anyhow::bail!("Invalid channel for `BarSpecification`, was {channel}"),
     };
     Ok(bar_spec)

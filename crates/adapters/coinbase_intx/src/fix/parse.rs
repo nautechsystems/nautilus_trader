@@ -19,7 +19,7 @@ use nautilus_execution::reports::{fill::FillReport, order::OrderStatusReport};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -91,8 +91,9 @@ pub fn convert_to_order_status_report(
     let filled_qty = Quantity::new(cum_qty.parse::<f64>()?, DEFAULT_PRECISION);
 
     // Use TransactTime as the event time if provided
+    // Use TransactTime as the event time if provided, error on invalid format
     let ts_last = if let Some(transact_time) = message.get_field(fix_tag::TRANSACT_TIME) {
-        parse_fix_timestamp(transact_time).unwrap_or(ts_init)
+        parse_fix_timestamp(transact_time)?
     } else {
         ts_init
     };
@@ -195,7 +196,11 @@ pub fn convert_to_fill_report(
                     message.get_field(fix_tag::MISC_FEE_CURR),
                 ) {
                     if let Ok(amt) = fee_amt.parse::<f64>() {
-                        commission = Money::new(amt, fee_curr.parse().unwrap_or(currency));
+                        // Parse fee currency, error on invalid code
+                        let fee_currency = fee_curr.parse::<Currency>().map_err(|e| {
+                            anyhow::anyhow!("Invalid fee currency '{fee_curr}': {e}")
+                        })?;
+                        commission = Money::new(amt, fee_currency);
                     }
                 }
             }
