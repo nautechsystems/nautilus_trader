@@ -207,7 +207,8 @@ impl WebSocketClientInner {
             reconnect_backoff_factor.unwrap_or(1.5),
             reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
-        );
+        )
+        .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
 
         Ok(Self {
             config,

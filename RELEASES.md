@@ -81,6 +81,7 @@ None
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed authentication for Redis when password provided with no username
 - Fixed various numpy and pandas FutureWarning(s)
+- Fixed sockets exponential backoff immediate reconnect value on reset (this prevented immediate reconnects on the next reconnect sequence)
 - Fixed message bus subscription matching logic in Rust (#2646), thanks @twitu
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see

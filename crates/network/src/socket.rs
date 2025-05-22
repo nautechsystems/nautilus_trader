@@ -200,7 +200,7 @@ impl SocketClientInner {
             reconnect_backoff_factor.unwrap_or(1.5),
             reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
-        );
+        )?;
 
         Ok(Self {
             config,
