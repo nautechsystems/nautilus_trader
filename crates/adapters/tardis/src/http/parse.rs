@@ -78,10 +78,11 @@ fn parse_spot_instrument(
     let mut size_increment = parse_spot_size_increment(info.amount_increment, base_currency);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
-    let mut ts_event = match info.changes {
-        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.available_since),
-    };
+    let mut ts_event = info
+        .changes
+        .as_ref()
+        .and_then(|changes| changes.last().map(|c| UnixNanos::from(c.until)))
+        .unwrap_or_else(|| UnixNanos::from(info.available_since));
 
     // Current instrument definition
     let mut instruments = vec![create_currency_pair(
@@ -214,10 +215,11 @@ fn parse_perp_instrument(
     let mut multiplier = parse_multiplier(info.contract_multiplier);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
-    let mut ts_event = match info.changes {
-        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.available_since),
-    };
+    let mut ts_event = info
+        .changes
+        .as_ref()
+        .and_then(|changes| changes.last().map(|c| UnixNanos::from(c.until)))
+        .unwrap_or_else(|| UnixNanos::from(info.available_since));
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_perpetual(
@@ -363,10 +365,11 @@ fn parse_future_instrument(
     let mut multiplier = parse_multiplier(info.contract_multiplier);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
-    let mut ts_event = match info.changes {
-        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.available_since),
-    };
+    let mut ts_event = info
+        .changes
+        .as_ref()
+        .and_then(|changes| changes.last().map(|c| UnixNanos::from(c.until)))
+        .unwrap_or_else(|| UnixNanos::from(info.available_since));
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_future(
@@ -518,10 +521,11 @@ fn parse_option_instrument(
     let mut multiplier = parse_multiplier(info.contract_multiplier);
     let mut maker_fee = parse_fee_rate(info.maker_fee);
     let mut taker_fee = parse_fee_rate(info.taker_fee);
-    let mut ts_event = match info.changes {
-        Some(ref changes) if !changes.is_empty() => UnixNanos::from(changes.last().unwrap().until),
-        Some(_) | None => UnixNanos::from(info.available_since),
-    };
+    let mut ts_event = info
+        .changes
+        .as_ref()
+        .and_then(|changes| changes.last().map(|c| UnixNanos::from(c.until)))
+        .unwrap_or_else(|| UnixNanos::from(info.available_since));
 
     // Current instrument definition
     let mut instruments = vec![create_crypto_option(
