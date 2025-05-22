@@ -29,6 +29,10 @@ pub struct Credential {
 
 impl Credential {
     /// Creates a new [`Credential`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided `api_secret` is not valid base64.
     #[must_use]
     pub fn new(api_key: String, api_secret: String, api_passphrase: String) -> Self {
         let decoded_secret = BASE64_STANDARD
