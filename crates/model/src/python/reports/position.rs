@@ -13,18 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::{
-    enums::PositionSide,
-    identifiers::{AccountId, InstrumentId, PositionId},
-    types::Quantity,
-};
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::reports::position::PositionStatusReport;
+use crate::{
+    enums::PositionSide,
+    identifiers::{AccountId, InstrumentId, PositionId},
+    reports::position::PositionStatusReport,
+    types::Quantity,
+};
 
 #[pymethods]
 impl PositionStatusReport {

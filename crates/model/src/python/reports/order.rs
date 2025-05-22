@@ -13,14 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::{
-    enums::{
-        ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
-    },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
-    types::{Price, Quantity},
-};
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
@@ -28,7 +20,15 @@ use nautilus_core::{
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::Decimal;
 
-use crate::reports::order::OrderStatusReport;
+use crate::{
+    enums::{
+        ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, VenueOrderId},
+    reports::order::OrderStatusReport,
+    types::{Price, Quantity},
+};
 
 #[pymethods]
 impl OrderStatusReport {

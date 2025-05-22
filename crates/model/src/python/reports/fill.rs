@@ -13,18 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::{
-    enums::{LiquiditySide, OrderSide},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
-    types::{Money, Price, Quantity},
-};
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
 };
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::reports::fill::FillReport;
+use crate::{
+    enums::{LiquiditySide, OrderSide},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
+    reports::fill::FillReport,
+    types::{Money, Price, Quantity},
+};
 
 #[pymethods]
 impl FillReport {
