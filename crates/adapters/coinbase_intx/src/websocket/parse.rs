@@ -429,7 +429,10 @@ pub fn parse_candle_msg(
 ) -> anyhow::Result<Bar> {
     let bar_spec = coinbase_channel_as_bar_spec(&msg.channel)?;
     let bar_type = BarType::new(instrument_id, bar_spec, AggregationSource::External);
-    let candle = msg.candles.last().unwrap();
+    let candle = msg
+        .candles
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("Empty candles in snapshot for channel {}", msg.channel))?;
     let ts_event = UnixNanos::from(candle.start); // TODO: Convert to close
 
     let open_price = Price::new(candle.open.parse::<f64>()?, price_precision);
