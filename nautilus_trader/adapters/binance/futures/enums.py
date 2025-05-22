@@ -82,8 +82,8 @@ class BinanceFuturesMarginType(Enum):
     Represents a Binance Futures margin type.
     """
 
-    ISOLATED = "isolated"
-    CROSS = "cross"
+    ISOLATED = "ISOLATED"
+    CROSS = "CROSSED"
 
 
 @unique

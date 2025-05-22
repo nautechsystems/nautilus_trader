@@ -17,6 +17,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesMarginType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
@@ -127,6 +128,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum delay (milliseconds) between retries.
     futures_leverages : dict[BinanceSymbol, PositiveInt], optional
         The initial leverage to be used for each symbol. It's applicable to futures only.
+    futures_margin_types : dict[BinanceSymbol, BinanceFuturesMarginType], optional
+        Margin type (isolated or cross) to be used for each symbol. It's applicable to futures only.
 
     Warnings
     --------
@@ -153,3 +156,4 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
     futures_leverages: dict[BinanceSymbol, PositiveInt] | None = None
+    futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None = None
