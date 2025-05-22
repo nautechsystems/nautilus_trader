@@ -68,6 +68,12 @@ pub enum Error {
     Deserialization(#[from] serde_json::Error),
 }
 
+/// Connects to the Tardis Machine WS replay endpoint and returns a stream of WebSocket messages.
+///
+/// # Errors
+///
+/// Returns `Error::EmptyOptions` if no options provided,
+/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
 pub async fn replay_normalized(
     base_url: &str,
     options: Vec<ReplayNormalizedRequestOptions>,
@@ -87,6 +93,12 @@ pub async fn replay_normalized(
     stream_from_websocket(base_url, url, signal).await
 }
 
+/// Connects to the Tardis Machine WS streaming endpoint and returns a stream of WebSocket messages.
+///
+/// # Errors
+///
+/// Returns `Error::EmptyOptions` if no options provided,
+/// or `Error::ConnectFailed`/`Error::ConnectRejected` if connection fails.
 pub async fn stream_normalized(
     base_url: &str,
     options: Vec<StreamNormalizedRequestOptions>,

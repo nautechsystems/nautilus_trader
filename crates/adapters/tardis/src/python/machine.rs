@@ -208,6 +208,11 @@ impl TardisMachineClient {
     }
 }
 
+/// Run the Tardis Machine replay as an async Python future.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if reading the config file or replay execution fails.
 #[pyfunction]
 #[pyo3(name = "run_tardis_machine_replay")]
 #[pyo3(signature = (config_filepath))]
