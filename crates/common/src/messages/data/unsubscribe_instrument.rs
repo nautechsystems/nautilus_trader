@@ -30,6 +30,7 @@ pub struct UnsubscribeInstrument {
 }
 
 impl UnsubscribeInstrument {
+    /// Creates a new [`UnsubscribeInstrument`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,

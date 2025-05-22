@@ -22,13 +22,14 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::data::{
-        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestData,
+        DataCommand, RequestBars, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
         SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
-        SubscribeData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
+        SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices,
         SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
-        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+        UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes,
+        UnsubscribeTrades,
     },
     msgbus::{
         self, MessageBus,
@@ -319,7 +320,7 @@ fn test_execute_subscribe_custom_data(
     );
 
     let data_type = DataType::new(stringify!(String), None);
-    let sub = SubscribeData::new(
+    let sub = SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -335,7 +336,7 @@ fn test_execute_subscribe_custom_data(
         assert_eq!(recorder.borrow().as_slice(), &[sub_cmd.clone()]);
     }
 
-    let unsub = UnsubscribeData::new(
+    let unsub = UnsubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -848,7 +849,7 @@ fn test_execute_request_data(
         &mut data_engine,
     );
 
-    let req = RequestData {
+    let req = RequestCustomData {
         client_id,
         data_type: DataType::new("X", None),
         request_id: UUID4::new(),

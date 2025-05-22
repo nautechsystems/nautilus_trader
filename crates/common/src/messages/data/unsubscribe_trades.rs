@@ -30,6 +30,7 @@ pub struct UnsubscribeTrades {
 }
 
 impl UnsubscribeTrades {
+    /// Creates a new [`UnsubscribeTrades`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

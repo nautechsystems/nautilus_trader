@@ -33,6 +33,7 @@ pub struct RequestTrades {
 }
 
 impl RequestTrades {
+    /// Creates a new [`RequestTrades`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

@@ -30,6 +30,7 @@ pub struct SubscribeTrades {
 }
 
 impl SubscribeTrades {
+    /// Creates a new [`SubscribeTrades`] instance.
     pub fn new(
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,

@@ -18,8 +18,8 @@ use std::{any::Any, rc::Rc};
 use nautilus_common::{
     actor::{Actor, registry::get_actor_unchecked},
     messages::data::{
-        DataCommand, RequestCommand, RequestData, SubscribeCommand, SubscribeData,
-        UnsubscribeCommand, UnsubscribeData,
+        DataCommand, RequestCommand, RequestCustomData, SubscribeCommand, SubscribeCustomData,
+        UnsubscribeCommand, UnsubscribeCustomData,
     },
     msgbus::{
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
@@ -108,7 +108,7 @@ pub fn negative_handler(msg: &i32) {
         DataType::new("get", None)
     };
 
-    let request = RequestData {
+    let request = RequestCustomData {
         client_id: ClientId::new("mock_data_client"),
         data_type,
         request_id: correlation_id,
@@ -135,7 +135,7 @@ pub fn positive_handler(msg: &i32) {
     let data_type = DataType::new("blah", None);
 
     if big_brain_actor.pos_val == 3 {
-        let data = SubscribeData::new(
+        let data = SubscribeCustomData::new(
             Some(ClientId::new("mock_data_client")),
             None,
             data_type.clone(),
@@ -148,7 +148,7 @@ pub fn positive_handler(msg: &i32) {
     }
 
     if big_brain_actor.pos_val > 8 {
-        let data = UnsubscribeData::new(
+        let data = UnsubscribeCustomData::new(
             Some(ClientId::new("mock_data_client")),
             None,
             data_type,

@@ -38,6 +38,7 @@ impl TradesResponse {
         self
     }
 
+    /// Creates a new [`TradesResponse`] instance.
     pub fn new(
         correlation_id: UUID4,
         client_id: ClientId,

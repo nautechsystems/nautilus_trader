@@ -27,6 +27,7 @@ pub struct SubscribeInstruments {
 }
 
 impl SubscribeInstruments {
+    /// Creates a new [`SubscribeInstruments`] instance.
     pub fn new(
         client_id: Option<ClientId>,
         venue: Venue,

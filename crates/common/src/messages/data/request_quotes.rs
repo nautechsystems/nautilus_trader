@@ -33,6 +33,7 @@ pub struct RequestQuotes {
 }
 
 impl RequestQuotes {
+    /// Creates a new [`RequestQuotes`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

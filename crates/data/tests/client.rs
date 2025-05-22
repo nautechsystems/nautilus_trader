@@ -29,7 +29,7 @@ use nautilus_common::{
             RequestBars,
             RequestBookSnapshot,
             RequestCommand,
-            RequestData,
+            RequestCustomData,
             RequestInstrument,
             RequestInstruments,
             RequestQuotes,
@@ -39,7 +39,7 @@ use nautilus_common::{
             SubscribeBookDeltas,
             SubscribeBookDepth10,
             SubscribeBookSnapshots,
-            SubscribeData,
+            SubscribeCustomData,
             SubscribeIndexPrices,
             SubscribeInstrument,
             SubscribeInstrumentClose,
@@ -52,7 +52,7 @@ use nautilus_common::{
             UnsubscribeBookDeltas,
             UnsubscribeBookDepth10,
             UnsubscribeBookSnapshots,
-            UnsubscribeData,
+            UnsubscribeCustomData,
             UnsubscribeIndexPrices,
             UnsubscribeInstrument,
             UnsubscribeInstrumentClose,
@@ -117,7 +117,7 @@ fn test_custom_data_subscription(
     // Define a custom data type
     let data_type = DataType::new("MyType", None);
 
-    let sub = SubscribeCommand::Data(SubscribeData::new(
+    let sub = SubscribeCommand::Data(SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -132,7 +132,7 @@ fn test_custom_data_subscription(
     adapter.execute_subscribe(&sub);
     assert_eq!(adapter.subscriptions_custom.len(), 1);
 
-    let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
+    let unsub = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -645,7 +645,7 @@ fn test_custom_data_unsubscribe_noop(
 
     // Unsubscribe without prior subscribe should be no-op
     let data_type = DataType::new("NoOpType", None);
-    let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
+    let unsub = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -671,7 +671,7 @@ fn test_custom_data_unsubscribe_idempotent(
 
     // Subscribe then unsubscribe twice
     let data_type = DataType::new("IdemType", None);
-    let sub = SubscribeCommand::Data(SubscribeData::new(
+    let sub = SubscribeCommand::Data(SubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -680,7 +680,7 @@ fn test_custom_data_unsubscribe_idempotent(
         None,
     ));
     adapter.execute_subscribe(&sub);
-    let unsub = UnsubscribeCommand::Data(UnsubscribeData::new(
+    let unsub = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
         Some(client_id),
         Some(venue),
         data_type.clone(),
@@ -1387,7 +1387,7 @@ fn test_request_data(
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
     let data_type = DataType::new("ReqType", None);
-    let req = RequestData {
+    let req = RequestCustomData {
         client_id,
         data_type,
         request_id: UUID4::new(),
