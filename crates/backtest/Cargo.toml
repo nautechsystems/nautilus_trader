@@ -55,6 +55,7 @@ nautilus-model = { workspace = true , features = ["stubs"] }
 nautilus-system = { workspace = true }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }

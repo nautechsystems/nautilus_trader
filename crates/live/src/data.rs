@@ -37,6 +37,7 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 
+#[async_trait::async_trait]
 pub trait LiveDataClient: DataClient {
     fn get_message_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataEvent>;
 
@@ -189,5 +190,5 @@ pub trait LiveDataClient: DataClient {
 
 #[inline(always)]
 fn log_send_error<E: Display>(client_id: &ClientId, e: &E) {
-    log::error!("DataClient-{client_id}: Failed sending message: {e}");
+    log::error!("DataClient-{client_id} failed to send message: {e}");
 }
