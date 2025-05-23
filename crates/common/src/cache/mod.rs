@@ -43,7 +43,7 @@ use nautilus_core::{
     datetime::secs_to_nanos,
 };
 use nautilus_model::{
-    accounts::AccountAny,
+    accounts::{Account, AccountAny},
     data::{
         Bar, BarType, GreeksData, QuoteTick, TradeTick, YieldCurveData,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
@@ -1032,7 +1032,7 @@ impl Cache {
     ///
     /// Only events which are outside the lookback window will be purged.
     /// A value of 0 means purge all account state events.
-    pub fn purge_account_events(&mut self, _ts_now: UnixNanos, lookback_secs: u64) {
+    pub fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
         log::debug!(
             "Purging account events{}",
             if lookback_secs > 0 {
@@ -1042,19 +1042,18 @@ impl Cache {
             }
         );
 
-        // TODO: Implement purging of account state events
-        // for account in self.accounts.values_mut() {
-        //     let event_count = account.event_count();
-        //     account.purge_account_events(ts_now, lookback_secs);
-        //     let count_diff = event_count - account.event_count();
-        //     if count_diff > 0 {
-        //         log::info!(
-        //             "Purged {} event(s) from account {}",
-        //             count_diff,
-        //             account.id()
-        //         );
-        //     }
-        // }
+        for account in self.accounts.values_mut() {
+            let event_count = account.event_count();
+            account.purge_account_events(ts_now, lookback_secs);
+            let count_diff = event_count - account.event_count();
+            if count_diff > 0 {
+                log::info!(
+                    "Purged {} event(s) from account {}",
+                    count_diff,
+                    account.id()
+                );
+            }
+        }
     }
 
     /// Clears the caches index.

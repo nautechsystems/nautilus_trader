@@ -606,6 +606,10 @@ mod tests {
         fn balance(&self, _: Option<Currency>) -> Option<&AccountBalance> {
             todo!()
         }
+
+        fn purge_account_events(&mut self, _: UnixNanos, _: u64) {
+            // MockAccount doesn't need purging
+        }
     }
 
     #[rstest]
