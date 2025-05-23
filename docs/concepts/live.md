@@ -1,4 +1,4 @@
-# Live trading
+# Live Trading
 
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time
 trading environment with no code changes. This seamless transition from backtesting to live trading
@@ -12,6 +12,123 @@ This guide provides an overview of the key aspects of live trading.
 When operating a live trading system, configuring your execution engine and strategies properly is
 essential for ensuring reliability, accuracy, and performance. The following is an overview of the
 key concepts and settings involved for live configuration.
+
+### TradingNodeConfig
+
+The main configuration class for live trading systems is `TradingNodeConfig`,
+which inherits from `NautilusKernelConfig` and provides live-specific config options:
+
+```python
+from nautilus_trader.config import TradingNodeConfig
+
+config = TradingNodeConfig(
+    trader_id="MyTrader-001",
+
+    # Component configurations
+    cache: CacheConfig(),
+    message_bus: MessageBusConfig(),
+    data_engine=LiveDataEngineConfig(),
+    risk_engine=LiveRiskEngineConfig(),
+    exec_engine=LiveExecEngineConfig(),
+    portfolio=PortfolioConfig(),
+
+    # Client configurations
+    data_clients={
+        "BINANCE": BinanceDataClientConfig(),
+    },
+    exec_clients={
+        "BINANCE": BinanceExecClientConfig(),
+    },
+)
+```
+
+#### Core TradingNodeConfig Parameters
+
+| Setting                  | Default            | Description                                        |
+|--------------------------|--------------------|----------------------------------------------------|
+| `trader_id`              | "TRADER-001"       | Unique trader identifier (name-tag format).        |
+| `instance_id`            | `None`             | Optional unique instance identifier.               |
+| `timeout_connection`     | 30.0               | Connection timeout in seconds.                     |
+| `timeout_reconciliation` | 10.0               | Reconciliation timeout in seconds.                 |
+| `timeout_portfolio`      | 10.0               | Portfolio initialization timeout.                  |
+| `timeout_disconnection`  | 10.0               | Disconnection timeout.                             |
+| `timeout_post_stop`      | 5.0                | Post-stop cleanup timeout.                         |
+
+#### Cache Database Configuration
+
+Configure data persistence with a backing database:
+
+```python
+from nautilus_trader.config import CacheConfig
+from nautilus_trader.config import DatabaseConfig
+
+cache_config = CacheConfig(
+    database=DatabaseConfig(
+        host="localhost",
+        port=6379,
+        username="nautilus",
+        password="pass",
+        timeout=2.0,
+    ),
+    encoding="msgpack",  # or "json"
+    timestamps_as_iso8601=True,
+    buffer_interval_ms=100,
+    flush_on_start=False,
+)
+```
+
+#### Message Bus Configuration
+
+Configure message routing and external streaming:
+
+```python
+from nautilus_trader.config import MessageBusConfig
+from nautilus_trader.config import DatabaseConfig
+
+message_bus_config = MessageBusConfig(
+    database=DatabaseConfig(timeout=2),
+    timestamps_as_iso8601=True,
+    use_instance_id=False,
+    types_filter=[QuoteTick, TradeTick],  # Filter specific message types
+    stream_per_topic=False,
+    autotrim_mins=30,  # Automatic message trimming
+    heartbeat_interval_secs=1,
+)
+```
+
+### Multi-venue Configuration
+
+Live trading systems often connect to multiple venues or market types. Here's an example of configuring both spot and futures markets for Binance:
+
+```python
+config = TradingNodeConfig(
+    trader_id="MultiVenue-001",
+
+    # Multiple data clients for different market types
+    data_clients={
+        "BINANCE_SPOT": BinanceDataClientConfig(
+            account_type=BinanceAccountType.SPOT,
+            testnet=False,
+        ),
+        "BINANCE_FUTURES": BinanceDataClientConfig(
+            account_type=BinanceAccountType.USDT_FUTURE,
+            testnet=False,
+        ),
+    },
+
+    # Corresponding execution clients
+    exec_clients={
+        "BINANCE_SPOT": BinanceExecClientConfig(
+            account_type=BinanceAccountType.SPOT,
+            testnet=False,
+        ),
+        "BINANCE_FUTURES": BinanceExecClientConfig(
+            account_type=BinanceAccountType.USDT_FUTURE,
+            testnet=False,
+        ),
+    },
+)
+```
 
 ### Execution Engine configuration
 
@@ -56,6 +173,18 @@ See also [Execution reconciliation](../concepts/execution#execution-reconciliati
 | `inflight_check_interval_ms`  | 2,000 ms  | Determines how frequently the system checks in-flight order status.                                                                 |
 | `inflight_check_threshold_ms` | 5,000 ms  | Sets the time threshold after which an in-flight order triggers a venue status check. Adjust if colocated to avoid race conditions. |
 | `inflight_check_retries`      | 5 retries | Specifies the number of retry attempts the engine will make to verify the status of an in-flight order with the venue, should the initial attempt fail. |
+
+#### Additional execution engine options
+
+The following additional options provide further control over execution behavior:
+
+| Setting                            | Default | Description                                                                                                |
+|------------------------------------|---------|------------------------------------------------------------------------------------------------------------|
+| `generate_missing_orders`          | True    | If `MARKET` order events will be generated during reconciliation to align position discrepancies.          |
+| `snapshot_orders`                  | False   | If order snapshots should be taken on order events.                                                        |
+| `snapshot_positions`               | False   | If position snapshots should be taken on position events.                                                  |
+| `snapshot_positions_interval_secs` | None    | The interval (seconds) between position snapshots when enabled.                                            |
+| `debug`                            | False   | Enable debug mode for additional execution logging.                                                        |
 
 If an in-flight order’s status cannot be reconciled after exhausting all retries, the system resolves it by generating one of these events based on its status:
 
@@ -120,10 +249,11 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
 
 **Purpose**: Provides unique identifiers for each strategy to prevent conflicts and ensure proper tracking of orders.
 
-| Setting         | Default | Description                                                                                          |
-|-----------------|---------|------------------------------------------------------------------------------------------------------|
-| `strategy_id`   | None    | A unique ID for the strategy, ensuring it can be distinctly identified.                              |
-| `order_id_tag`  | None    | A unique tag for the strategy's orders, differentiating them from multiple strategies.               |
+| Setting                     | Default | Description                                                                                            |
+|-----------------------------|---------|--------------------------------------------------------------------------------------------------------|
+| `strategy_id`               | None    | A unique ID for the strategy, ensuring it can be distinctly identified.                                |
+| `order_id_tag`              | None    | A unique tag for the strategy's orders, differentiating them from multiple strategies.                 |
+| `use_uuid_client_order_ids` | False   | If UUID4's should be used for client order ID values (required for some venues such as Coinbase Intx). |
 
 #### Order Management System (OMS) type
 
