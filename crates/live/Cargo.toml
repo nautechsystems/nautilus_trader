@@ -58,8 +58,10 @@ nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
+nautilus-system = { workspace = true }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }

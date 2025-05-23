@@ -19,6 +19,7 @@
 //! and utilities for constructing data responses.
 
 use std::{
+    any::Any,
     fmt::{Debug, Display},
     ops::{Deref, DerefMut},
 };
@@ -41,7 +42,8 @@ use nautilus_model::{
 };
 
 /// Defines the interface for a data client, managing connections, subscriptions, and requests.
-pub trait DataClient {
+#[async_trait::async_trait]
+pub trait DataClient: Any + Sync + Send {
     /// Returns the unique identifier for this data client.
     fn client_id(&self) -> ClientId;
 
@@ -81,14 +83,14 @@ pub trait DataClient {
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn connect(&self) -> anyhow::Result<()>;
+    async fn connect(&self) -> anyhow::Result<()>;
 
     /// Disconnects external API's if needed.
     ///
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn disconnect(&self) -> anyhow::Result<()>;
+    async fn disconnect(&self) -> anyhow::Result<()>;
 
     /// Returns `true` if the client is currently connected.
     fn is_connected(&self) -> bool;
@@ -498,7 +500,7 @@ impl Debug for DataClientAdapter {
 }
 
 impl DataClientAdapter {
-    /// Creates a new [`DataClientAdapter`] with the given client and clock, initializing empty subscriptions.
+    /// Creates a new [`DataClientAdapter`] with the given client and clock.
     #[must_use]
     pub fn new(
         client_id: ClientId,
@@ -529,9 +531,14 @@ impl DataClientAdapter {
         }
     }
 
+    #[allow(clippy::borrowed_box)]
+    pub fn get_client(&self) -> &Box<dyn DataClient> {
+        &self.client
+    }
+
     #[inline]
     pub fn execute_subscribe(&mut self, cmd: &SubscribeCommand) {
-        let result = match cmd {
+        if let Err(e) = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
@@ -545,16 +552,14 @@ impl DataClientAdapter {
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
             SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
-        };
-
-        if let Err(e) = result {
+        } {
             log_command_error(&cmd, &e);
         }
     }
 
     #[inline]
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) {
-        let result = match cmd {
+        if let Err(e) = match cmd {
             UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
             UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
@@ -568,9 +573,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
-        };
-
-        if let Err(e) = result {
+        } {
             log_command_error(&cmd, &e);
         }
     }

@@ -54,6 +54,7 @@ nautilus-persistence = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }

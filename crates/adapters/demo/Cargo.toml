@@ -50,6 +50,10 @@ nautilus-model = { workspace = true }
 nautilus-data = { workspace = true }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
@@ -59,9 +63,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-futures.workspace = true
-axum.workspace = true
-log.workspace = true
 tokio-stream = "0.1.17"
 
 [dev-dependencies]

@@ -31,17 +31,22 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
-nautilus-risk = { workspace = true }
 nautilus-execution = { workspace = true }
-nautilus-portfolio = { workspace = true }
+nautilus-infrastructure = { workspace = true }
+nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
+nautilus-portfolio = { workspace = true }
+nautilus-risk = { workspace = true }
+hostname = "0.4.1"
+
 anyhow = { workspace = true }
+futures = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+tokio = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
