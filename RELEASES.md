@@ -79,6 +79,7 @@ None
 - Fixed portfolio handling of `OrderExpired` events not updating state (margin requirements may change)
 - Fixed event handling for `ExecutionEngine` so it fully updates the `Portfolio` before to publishing execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed position snapshot cache access for `ExecutionEngine`
+- Fixed position snapshot `SystemError` calling `copy.deepcopy()` by simply using a `pickle` round trip to copy the position instance
 - Fixed event purging edge cases for account and position where at least one event must be guaranteed
 - Fixed authentication for Redis when password provided with no username
 - Fixed various numpy and pandas FutureWarning(s)
