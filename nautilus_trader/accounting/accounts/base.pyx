@@ -449,6 +449,8 @@ cdef class Account:
         """
         Purge all account state events which are outside the lookback window.
 
+        Guaranteed to retain at least the latest event.
+
         Parameters
         ----------
         ts_now : uint64_t
@@ -468,6 +470,10 @@ cdef class Account:
         for event in self._events:
             if event.ts_event + lookback_ns > ts_now:
                 retained_events.append(event)
+
+        # Guarantee ≥ 1 event
+        if not retained_events and self._events:
+            retained_events.append(self._events[-1])
 
         self._events = retained_events
 
