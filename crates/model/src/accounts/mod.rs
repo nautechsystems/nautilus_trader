@@ -26,6 +26,7 @@ pub mod stubs;
 use std::collections::HashMap;
 
 use enum_dispatch::enum_dispatch;
+use nautilus_core::UnixNanos;
 
 // Re-exports
 pub use crate::accounts::{
@@ -62,6 +63,10 @@ pub trait Account: 'static + Send {
     fn starting_balances(&self) -> HashMap<Currency, Money>;
     fn balances(&self) -> HashMap<Currency, AccountBalance>;
     fn apply(&mut self, event: AccountState);
+    fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64);
+
+    /// Calculates locked balance for the order parameters.
+    ///
     /// # Errors
     ///
     /// Returns an error if calculating locked balance fails.
@@ -73,15 +78,21 @@ pub trait Account: 'static + Send {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money>;
+
+    /// Calculates PnLs for the fill and position.
+    ///
     /// # Errors
     ///
-    /// Returns an error if calculating P&Ls fails.
+    /// Returns an error if calculating PnLs fails.
     fn calculate_pnls(
         &self,
         instrument: InstrumentAny,
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>>;
+
+    /// Calculates commission for the order fill parameters.
+    ///
     /// # Errors
     ///
     /// Returns an error if calculating commission fails.
