@@ -381,6 +381,10 @@ impl Account for MarginAccount {
         self.base_apply(event);
     }
 
+    fn purge_account_events(&mut self, ts_now: nautilus_core::UnixNanos, lookback_secs: u64) {
+        self.base.base_purge_account_events(ts_now, lookback_secs);
+    }
+
     fn calculate_balance_locked(
         &mut self,
         instrument: InstrumentAny,

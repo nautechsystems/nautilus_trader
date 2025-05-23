@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
@@ -183,6 +184,33 @@ impl BaseAccount {
         self.events.push(event);
     }
 
+    /// Purges all account state events which are outside the lookback window.
+    ///
+    /// Guaranteed to retain at least the latest event.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the purging implementation is changed and all events are purged.
+    pub fn base_purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
+        let lookback_ns = UnixNanos::from(secs_to_nanos(lookback_secs as f64));
+
+        let mut retained_events = Vec::new();
+
+        for event in &self.events {
+            if event.ts_event + lookback_ns > ts_now {
+                retained_events.push(event.clone());
+            }
+        }
+
+        // Guarantee ≥ 1 event
+        if retained_events.is_empty() && !self.events.is_empty() {
+            // SAFETY: events was already checked not empty
+            retained_events.push(self.events.last().unwrap().clone());
+        }
+
+        self.events = retained_events;
+    }
+
     /// Calculates the amount of balance to lock for a new order based on the given side, quantity, and price.
     ///
     /// # Errors
@@ -311,5 +339,70 @@ impl BaseAccount {
         } else {
             Ok(Money::new(commission, instrument.quote_currency()))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "stubs")]
+    #[test]
+    fn test_base_purge_account_events_retains_latest_when_all_purged() {
+        use crate::{
+            enums::AccountType,
+            events::account::stubs::cash_account_state,
+            identifiers::stubs::{account_id, uuid4},
+            types::{Currency, stubs::stub_account_balance},
+        };
+
+        let mut account = BaseAccount::new(cash_account_state(), true);
+
+        // Create events with different timestamps manually
+        let event1 = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![stub_account_balance()],
+            vec![],
+            true,
+            uuid4(),
+            UnixNanos::from(100_000_000),
+            UnixNanos::from(100_000_000),
+            Some(Currency::USD()),
+        );
+        let event2 = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![stub_account_balance()],
+            vec![],
+            true,
+            uuid4(),
+            UnixNanos::from(200_000_000),
+            UnixNanos::from(200_000_000),
+            Some(Currency::USD()),
+        );
+        let event3 = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![stub_account_balance()],
+            vec![],
+            true,
+            uuid4(),
+            UnixNanos::from(300_000_000),
+            UnixNanos::from(300_000_000),
+            Some(Currency::USD()),
+        );
+
+        account.base_apply(event1);
+        account.base_apply(event2.clone());
+        account.base_apply(event3.clone());
+
+        assert_eq!(account.events.len(), 4);
+
+        account.base_purge_account_events(UnixNanos::from(1_000_000_000), 0);
+
+        assert_eq!(account.events.len(), 1);
+        assert_eq!(account.events[0].ts_event, event3.ts_event);
+        assert_eq!(account.base_last_event().unwrap().ts_event, event3.ts_event);
     }
 }
