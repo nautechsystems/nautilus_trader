@@ -1573,3 +1573,36 @@ class TestPosition:
         assert fill2 in position.events
         assert fill1.trade_id not in position.trade_ids
         assert fill2.trade_id in position.trade_ids
+
+    def test_purge_all_events_returns_none_for_last_event_and_trade_id(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.000000"),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("10500.00"),
+        )
+
+        position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
+
+        # Verify position starts with event
+        assert position.event_count == 1
+        assert position.last_event is not None
+        assert position.last_trade_id is not None
+
+        # Act - Purge all events by purging the only order
+        position.purge_events_for_order(fill.client_order_id)
+
+        # Assert
+        assert position.event_count == 0
+        assert position.events == []
+        assert position.trade_ids == []
+        assert position.last_event is None
+        assert position.last_trade_id is None
