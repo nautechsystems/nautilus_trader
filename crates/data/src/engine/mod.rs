@@ -281,40 +281,6 @@ impl DataEngine {
         self.clock.borrow_mut().cancel_timers();
     }
 
-    /// Connects all registered data clients.
-    pub fn connect(&self) {
-        let clients = self.get_clients();
-
-        if clients.is_empty() {
-            log::warn!("No clients to connect");
-        } else {
-            log::info!("Connecting all clients...");
-        }
-
-        for client in clients {
-            if let Err(e) = client.connect() {
-                log::error!("{e}");
-            }
-        }
-    }
-
-    /// Disconnects all registered data clients.
-    pub fn disconnect(&self) {
-        let clients = self.get_clients();
-
-        if clients.is_empty() {
-            log::warn!("No clients to disconnect");
-        } else {
-            log::info!("Disconnecting all clients...");
-        }
-
-        for client in clients {
-            if let Err(e) = client.disconnect() {
-                log::error!("{e}");
-            }
-        }
-    }
-
     /// Returns `true` if all registered data clients are currently connected.
     #[must_use]
     pub fn check_connected(&self) -> bool {
@@ -354,6 +320,30 @@ impl DataEngine {
             .collect()
     }
 
+    #[must_use]
+    pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
+        let (default_opt, clients_map) = (&self.default_client, &self.clients);
+        let mut clients: Vec<&DataClientAdapter> = clients_map.values().collect();
+
+        if let Some(default) = default_opt {
+            clients.push(default);
+        }
+
+        clients
+    }
+
+    #[must_use]
+    pub fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
+        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
+        let mut clients: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
+
+        if let Some(default) = default_opt {
+            clients.push(default);
+        }
+
+        clients
+    }
+
     pub fn get_client(
         &mut self,
         client_id: Option<&ClientId>,
@@ -389,32 +379,6 @@ impl DataEngine {
 
     const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
         self.default_client.as_mut()
-    }
-
-    #[must_use]
-    pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
-        let (default_opt, clients_map) = (&self.default_client, &self.clients);
-
-        let mut out: Vec<&DataClientAdapter> = clients_map.values().collect();
-
-        if let Some(default) = default_opt {
-            out.push(default);
-        }
-
-        out
-    }
-
-    #[allow(dead_code)] // Under development
-    fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
-        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
-
-        let mut out: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
-
-        if let Some(default) = default_opt {
-            out.push(default);
-        }
-
-        out
     }
 
     /// Returns all custom data types currently subscribed across all clients.

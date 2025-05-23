@@ -3521,6 +3521,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hostname"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a56f203cd1c76362b69e3863fd987520ac36cf70a8c92627449b2f64a8cf7d65"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link",
+]
+
+[[package]]
 name = "http"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4417,6 +4428,7 @@ name = "nautilus-backtest"
 version = "0.48.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "cbindgen",
  "chrono",
  "log",
@@ -4610,6 +4622,7 @@ version = "0.48.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "async-trait",
  "chrono",
  "criterion",
  "indexmap 2.9.0",
@@ -4656,6 +4669,7 @@ name = "nautilus-demo"
 version = "0.48.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "criterion",
  "futures",
@@ -4755,6 +4769,7 @@ name = "nautilus-live"
 version = "0.48.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "criterion",
  "futures",
@@ -4767,6 +4782,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-system",
  "pyo3",
  "rstest",
  "serde",
@@ -4956,16 +4972,20 @@ name = "nautilus-system"
 version = "0.48.0"
 dependencies = [
  "anyhow",
+ "futures",
+ "hostname",
  "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-data",
  "nautilus-execution",
+ "nautilus-infrastructure",
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
+ "tokio",
  "ustr",
 ]
 

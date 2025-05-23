@@ -55,6 +55,7 @@ impl BacktestDataClient {
     }
 }
 
+#[async_trait::async_trait]
 impl DataClient for BacktestDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -80,11 +81,11 @@ impl DataClient for BacktestDataClient {
         Ok(())
     }
 
-    fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -247,3 +248,9 @@ impl DataClient for BacktestDataClient {
         todo!()
     }
 }
+
+// SAFETY: Cannot be sent across thread boundaries
+#[allow(unsafe_code)]
+unsafe impl Send for BacktestDataClient {}
+#[allow(unsafe_code)]
+unsafe impl Sync for BacktestDataClient {}

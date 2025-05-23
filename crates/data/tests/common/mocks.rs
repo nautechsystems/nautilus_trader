@@ -87,7 +87,7 @@ impl MockDataClient {
     }
 }
 
-// Implement DataClient for generic MockDataClient<T>
+#[async_trait::async_trait]
 impl DataClient for MockDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
@@ -113,11 +113,11 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -462,3 +462,9 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 }
+
+// SAFETY: Cannot be sent across thread boundaries
+#[allow(unsafe_code)]
+unsafe impl Send for MockDataClient {}
+#[allow(unsafe_code)]
+unsafe impl Sync for MockDataClient {}

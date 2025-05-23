@@ -180,6 +180,7 @@ impl MockDataClient {
     }
 }
 
+#[async_trait::async_trait]
 impl DataClient for MockDataClient {
     fn client_id(&self) -> nautilus_model::identifiers::ClientId {
         ClientId::new("mock_data_client")
@@ -239,11 +240,11 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
-    fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
