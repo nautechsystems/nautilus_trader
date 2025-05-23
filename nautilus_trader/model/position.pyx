@@ -200,10 +200,10 @@ cdef class Position:
         return self._events.copy()
 
     cdef OrderFilled last_event_c(self):
-        return self._events[-1]
+        return self._events[-1] if self._events else None
 
     cdef TradeId last_trade_id_c(self):
-        return self._events[-1].trade_id
+        return self._events[-1].trade_id if self._events else None
 
     cdef bint has_trade_id_c(self, TradeId trade_id):
         Condition.not_none(trade_id, "trade_id")
@@ -307,11 +307,11 @@ cdef class Position:
     @property
     def last_event(self):
         """
-        Return the last order fill event.
+        Return the last order fill event (if any after purging).
 
         Returns
         -------
-        OrderFilled
+        OrderFilled or ``None``
 
         """
         return self.last_event_c()
@@ -319,11 +319,11 @@ cdef class Position:
     @property
     def last_trade_id(self):
         """
-        Return the last trade match ID for the position.
+        Return the last trade match ID for the position (if any after purging).
 
         Returns
         -------
-        TradeId
+        TradeId or ``None``
 
         """
         return self.last_trade_id_c()

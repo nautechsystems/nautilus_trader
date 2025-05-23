@@ -79,6 +79,7 @@ None
 - Fixed portfolio handling of `OrderExpired` events not updating state (margin requirements may change)
 - Fixed event handling for `ExecutionEngine` so it fully updates the `Portfolio` before to publishing execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed position snapshot cache access for `ExecutionEngine`
+- Fixed event purging edge cases for account and position where at least one event must be guaranteed
 - Fixed authentication for Redis when password provided with no username
 - Fixed various numpy and pandas FutureWarning(s)
 - Fixed sockets exponential backoff immediate reconnect value on reset (this prevented immediate reconnects on the next reconnect sequence)

@@ -750,3 +750,85 @@ def test_cash_account_update_with_fill_to_zero():
     assert usdt_balance.total.as_decimal() == Decimal("109990.00000000")
     assert usdt_balance.locked.as_decimal() == Decimal("0.00000000")
     assert usdt_balance.free.as_decimal() == Decimal("109990.00000000")
+
+
+class TestCashAccountPurge:
+    def test_purge_account_events_retains_latest_when_all_events_purged(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+
+        # Add multiple account state events with different timestamps
+        event1 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=100_000_000,  # Old event
+            ts_init=100_000_000,
+        )
+
+        event2 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(1_500_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_500_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=200_000_000,  # Newer event
+            ts_init=200_000_000,
+        )
+
+        event3 = AccountState(
+            account_id=account.id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    Money(2_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(2_000_000.00, USD),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=300_000_000,  # Latest event
+            ts_init=300_000_000,
+        )
+
+        account.apply(event1)
+        account.apply(event2)
+        account.apply(event3)
+
+        # Verify we have 4 events (initial + 3 added)
+        assert account.event_count == 4
+
+        # Act - Purge all events (lookback_secs=0, ts_now way in future)
+        account.purge_account_events(ts_now=1_000_000_000, lookback_secs=0)
+
+        # Assert - Should retain exactly 1 event (the latest)
+        assert account.event_count == 1
+        assert account.last_event == event3  # Latest event retained
+        assert account.events == [event3]
+
+        # Verify account state reflects the latest event
+        assert account.balance_total() == Money(2_000_000.00, USD)
