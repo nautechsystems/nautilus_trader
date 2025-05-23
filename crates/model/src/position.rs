@@ -492,17 +492,10 @@ impl Position {
         }
     }
 
-    /// Returns the last `OrderFilled` event for the position.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there are no events in the position.
+    /// Returns the last `OrderFilled` event for the position (if any after purging).
     #[must_use]
-    pub fn last_event(&self) -> OrderFilled {
-        *self
-            .events
-            .last()
-            .expect("Position invariant guarantees at least one event")
+    pub fn last_event(&self) -> Option<OrderFilled> {
+        self.events.last().copied()
     }
 
     #[must_use]
@@ -2043,5 +2036,45 @@ mod tests {
         assert_eq!(position.trade_ids.len(), 1);
         assert_eq!(position.events[0].client_order_id, order2.client_order_id());
         assert_eq!(position.trade_ids[0], TradeId::new("2"));
+    }
+
+    #[rstest]
+    fn test_purge_all_events_returns_none_for_last_event_and_trade_id() {
+        let audusd_sim = audusd_sim();
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-1"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let position_id = PositionId::new("P-123456");
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            Some(position_id),
+            Some(Price::from("1.00050")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill.into());
+
+        assert_eq!(position.events.len(), 1);
+        assert!(position.last_event().is_some());
+        assert!(position.last_trade_id().is_some());
+
+        position.purge_events_for_order(order.client_order_id());
+
+        assert_eq!(position.events.len(), 0);
+        assert_eq!(position.trade_ids.len(), 0);
+        assert!(position.last_event().is_none());
+        assert!(position.last_trade_id().is_none());
     }
 }

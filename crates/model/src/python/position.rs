@@ -252,7 +252,7 @@ impl Position {
 
     #[getter]
     #[pyo3(name = "last_event")]
-    fn py_last_event(&self) -> OrderFilled {
+    fn py_last_event(&self) -> Option<OrderFilled> {
         self.last_event()
     }
 
