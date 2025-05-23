@@ -113,7 +113,7 @@ dev = [
     "types-toml>=0.10.2,<1.0.0",
 ]
 test = [
-    "coverage>=7.8.1,<8.0.0",
+    "coverage>=7.8.2,<8.0.0",
     "pytest>=7.4.4,<8.0.0",
     "pytest-aiohttp>=1.1.0,<2.0.0",
     "pytest-asyncio==0.21.1",
