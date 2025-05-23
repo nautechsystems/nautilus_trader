@@ -94,10 +94,11 @@ None
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
+- Added content to Architecture concept guide
+- Added errors and panics docs for most crates
+- Added errors and panics docs for most crates
 - Improved the clarity of various concept guides
 - Fixed several errors in concept guides
-- Added errors and panics docs for most crates
-- Added errors and panics docs for most crates
 
 ### Deprecations
 None
