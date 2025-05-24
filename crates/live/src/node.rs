@@ -93,16 +93,11 @@ impl TradingNode {
         self.start().await?;
 
         // Set up signal handling
-        let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-        let mut sigterm =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        let sigint = tokio::signal::ctrl_c();
 
         tokio::select! {
-            _ = sigint.recv() => {
+            _ = sigint => {
                 log::info!("Received SIGINT, shutting down...");
-            }
-            _ = sigterm.recv() => {
-                log::info!("Received SIGTERM, shutting down...");
             }
         }
 
