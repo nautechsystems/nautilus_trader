@@ -7,7 +7,7 @@ Name | Type | Description | Notes
 **currency_type** | Option<**String**> | Confirms if the currency type. If trading exclusively in your base currency, “base” will be returned. | [optional]
 **rc** | Option<**i32**> | Returns the data identifier (Internal Use Only). | [optional]
 **nav** | Option<[**models::PerformanceResponseNav**](performanceResponse_nav.md)> |  | [optional]
-**nd** | Option<**i32**> | Returns the total data points. | [optional]
+**and** | Option<**i32**> | Returns the total data points. | [optional]
 **cps** | Option<[**models::PerformanceResponseCps**](performanceResponse_cps.md)> |  | [optional]
 **tpps** | Option<[**models::PerformanceResponseTpps**](performanceResponse_tpps.md)> |  | [optional]
 **id** | Option<**String**> | Returns the request identifier, getPerformanceData. | [optional]

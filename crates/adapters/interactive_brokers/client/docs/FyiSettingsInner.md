@@ -4,7 +4,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**a** | Option<**i32**> | Returns ony if the subscription can be disabled/enabled manually. See /fyi/settings/{typecode} for how to enable/disable.  | [optional]
+**a** | Option<**i32**> | Returns only if the subscription can be disabled/enabled manually. See /fyi/settings/{typecode} for how to enable/disable.  | [optional]
 **fc** | Option<**String**> | Fyi code for enabling or disabling the notification. | [optional]
 **h** | Option<**i32**> | Disclaimer if the notification was read. | [optional]
 **fd** | Option<**String**> | Returns a detailed description of the topic. | [optional]

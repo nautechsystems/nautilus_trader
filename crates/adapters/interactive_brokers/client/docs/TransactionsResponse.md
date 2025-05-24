@@ -5,7 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **rc** | Option<**i32**> | Client portal use only | [optional]
-**nd** | Option<**i32**> | Client portal use only | [optional]
+**and** | Option<**i32**> | Client portal use only | [optional]
 **rpnl** | Option<[**models::TransactionsResponseRpnl**](transactionsResponse_rpnl.md)> |  | [optional]
 **currency** | Option<**String**> | Returns the currency the account is traded in. | [optional]
 **from** | Option<**i32**> | Returns the epoch time for the start of requests. | [optional]

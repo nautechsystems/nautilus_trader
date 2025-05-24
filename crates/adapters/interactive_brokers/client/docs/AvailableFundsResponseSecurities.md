@@ -4,7 +4,7 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**current_available** | Option<**String**> | Describes currently avialable funds in your account for trading. | [optional]
+**current_available** | Option<**String**> | Describes currently available funds in your account for trading. | [optional]
 **current_excess** | Option<**String**> | Describes total value of the account. | [optional]
 **prdctd_pst_xpry_excss** | Option<**String**> | Displays predicted post-expiration account value. | [optional]
 **sma** | Option<**String**> |  | [optional]

@@ -17,7 +17,7 @@ Name | Type | Description | Notes
 **fees_template_name** | Option<**String**> |  | [optional]
 **client_commission_schedule** | Option<[**models::CommissionScheduleType**](CommissionScheduleType.md)> |  | [optional]
 **client_interest_markup_schedules** | Option<[**Vec<models::InterestMarkupType>**](InterestMarkupType.md)> |  | [optional]
-**decendent** | Option<[**models::IraDecedent**](IRADecedent.md)> |  | [optional]
+**descendant** | Option<[**models::IraDecedent**](IRADecedent.md)> |  | [optional]
 **ira_beneficiaries** | Option<[**models::IraBeneficiariesType**](IRABeneficiariesType.md)> |  | [optional]
 **ext_positions_transfers** | Option<[**Vec<models::ExtPositionsTransferType>**](ExtPositionsTransferType.md)> |  | [optional]
 **deposit_notification** | Option<[**models::DepositNotification**](DepositNotification.md)> |  | [optional]

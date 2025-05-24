@@ -49,7 +49,7 @@ No authorization required
 > models::AvailableFundsResponse iserver_account_account_id_summary_available_funds_get(account_id)
 Summary Of Available Funds
 
-Provides a summary specific for avilable funds giving more depth than the standard /summary endpoint.
+Provides a summary specific for available funds giving more depth than the standard /summary endpoint.
 
 ### Parameters
 

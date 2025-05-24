@@ -5,7 +5,7 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **account_type** | Option<**String**> | Describes the unique account type. For standard individual accounts, an empty string is returned. | [optional]
-**status** | Option<**String**> | If the account is currently non-tradeable, a status message will be dispalyed. | [optional]
+**status** | Option<**String**> | If the account is currently non-tradeable, a status message will be displayed. | [optional]
 **balance** | Option<**i32**> | Returns the total account balance. | [optional]
 **sma** | Option<**i32**> | Simple Moving Average of the account. | [optional]
 **buying_power** | Option<**i32**> | Total buying power available for the account. | [optional]

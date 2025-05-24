@@ -16,7 +16,7 @@ Name | Type | Description | Notes
 **mutual_funds** | Option<**String**> | Total cash value of mutual funds held. | [optional]
 **money_market** | Option<**String**> | Total cash value of money market securities held. | [optional]
 **bonds** | Option<**String**> | Total cash value of bonds held. | [optional]
-**govt_bonds** | Option<**String**> | Total cash value of goverment bonds held. | [optional]
+**govt_bonds** | Option<**String**> | Total cash value of government bonds held. | [optional]
 **t_bills** | Option<**String**> | Total cash value of t-bill bonds held. | [optional]
 **warrants** | Option<**String**> | Total cash value of warrants held. | [optional]
 **issuer_option** | Option<**String**> | Total cash value of issuer options held. | [optional]

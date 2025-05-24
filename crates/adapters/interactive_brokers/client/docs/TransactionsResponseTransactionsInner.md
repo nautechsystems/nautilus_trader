@@ -4,8 +4,8 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**date** | Option<**String**> | Reutrns the human-readable datetime of the transaction. | [optional]
-**cur** | Option<**String**> | Returns the currency of the traded insturment. | [optional]
+**date** | Option<**String**> | Returns the human-readable datetime of the transaction. | [optional]
+**cur** | Option<**String**> | Returns the currency of the traded instrument. | [optional]
 **fx_rate** | Option<**i32**> | Returns the forex conversion rate. | [optional]
 **pr** | Option<**i32**> | Returns the price per share of the transaction. | [optional]
 **qty** | Option<**i32**> | Returns the total quantity traded. Will display a negative value for sell orders, and a positive value for buy orders.  | [optional]
