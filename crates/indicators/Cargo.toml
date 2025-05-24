@@ -41,6 +41,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
+arraydeque = "0.5.1"
 
 [dev-dependencies]
 rstest = { workspace = true }
