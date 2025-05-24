@@ -48,9 +48,72 @@ Use truthiness to check for empty collections (e.g., `if not my_list:`) rather t
 
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
 
+## Python Style Guide
+
+### Type Hints
+
+All function and method signatures *must* include comprehensive type annotations:
+
+```python
+def __init__(self, config: EMACrossConfig) -> None:
+def on_bar(self, bar: Bar) -> None:
+def on_save(self) -> dict[str, bytes]:
+def on_load(self, state: dict[str, bytes]) -> None:
+```
+
+**Generic Types**: Use `TypeVar` for reusable components
+
+```python
+T = TypeVar("T")
+class ThrottledEnqueuer(Generic[T]):
+```
+
 ### Docstrings
 
-The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase. This needs to be adhered to consistently to ensure the docs build correctly.
+The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase.
+This needs to be adhered to consistently to ensure the docs build correctly.
+
+**Comprehensive docstring structure**:
+
+```python
+def calculate_balance(
+    self,
+    instrument: Instrument,
+    side: OrderSide,
+    quantity: Quantity,
+) -> Money:
+    """
+    Calculate the balance for the given parameters.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the calculation.
+    side : OrderSide
+        The order side.
+    quantity : Quantity
+        The order quantity.
+
+    Returns
+    -------
+    Money
+        The calculated balance.
+
+    Raises
+    ------
+    ValueError
+        If the quantity is invalid.
+
+    """
+```
+
+**Test method naming**: Descriptive names explaining the scenario:
+
+```python
+def test_currency_with_negative_precision_raises_overflow_error(self):
+def test_sma_with_no_inputs_returns_zero_count(self):
+def test_sma_with_single_input_returns_expected_value(self):
+```
 
 ### Ruff
 
