@@ -18,7 +18,6 @@ use nautilus_coinbase_intx::{
     http::client::CoinbaseIntxHttpClient, websocket::client::CoinbaseIntxWebSocketClient,
 };
 use nautilus_model::identifiers::InstrumentId;
-use tokio::{pin, signal};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -47,8 +46,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // client.subscribe_bars(bar_type).await?;
 
     // Create a future that completes on CTRL+C
-    let sigint = signal::ctrl_c();
-    pin!(sigint);
+    let sigint = tokio::signal::ctrl_c();
+    tokio::pin!(sigint);
 
     let stream = client.stream();
     tokio::pin!(stream); // Pin the stream to allow polling in the loop
