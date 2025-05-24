@@ -1046,8 +1046,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if trade_id in order.trade_ids or trade_id in self._processed_trades:
-            # Reduce this to debug level once trade processing is stable
-            self._log.warning(f"{trade_str} already processed - skipping")
+            self._log.debug(f"{trade_str} already processed - skipping")
             return
 
         if order.is_closed:
