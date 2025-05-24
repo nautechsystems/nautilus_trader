@@ -392,12 +392,6 @@ cdef class OrderEmulator(Actor):
         # Update trailing stop
         if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
             self._trail_stop_order(matching_core, order)
-            if order.trigger_price is None:
-                self._log.error(
-                    "Cannot handle trailing stop order with no `trigger_price` and no market updates",
-                )
-                self._manager.cancel_order(order)
-                return
 
         # Cache command
         self._manager.cache_submit_order_command(command)

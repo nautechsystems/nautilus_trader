@@ -287,8 +287,8 @@ cdef class TrailingStopMarketOrder(Order):
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
-            f"{'@ ' + str(self.activation_price.to_formatted_str()) + '-ACTIVATION ' if self.activation_price else ''}"
-            f"{'@ ' + str(self.trigger_price.to_formatted_str()) + '-STOP ' if self.trigger_price else ''}"
+            f"{'@ ' + self.activation_price.to_formatted_str() + '-ACTIVATION ' if self.activation_price else ''}"
+            f"{'@ ' + self.trigger_price.to_formatted_str() + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
             f"{emulation_str}"
