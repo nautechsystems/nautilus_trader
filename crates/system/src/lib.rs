@@ -35,5 +35,7 @@
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+pub mod builder;
 pub mod config;
+pub mod factories;
 pub mod kernel;
