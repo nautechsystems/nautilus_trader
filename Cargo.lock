@@ -4787,6 +4787,7 @@ dependencies = [
  "serde",
  "strum",
  "tokio",
+ "ustr",
 ]
 
 [[package]]
@@ -4984,6 +4985,7 @@ dependencies = [
  "nautilus-portfolio",
  "nautilus-risk",
  "pyo3",
+ "rstest",
  "tokio",
  "ustr",
 ]
