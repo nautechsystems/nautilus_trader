@@ -31,6 +31,7 @@ None
 ### Internal Improvements
 - Added `activation_price` str and repr tests for trailing stop orders (#2620), thanks @hope2see
 - Added condition check for order `contingency_type` and `linked_order_ids` where a contingency should have associated linked order IDs
+- Added validations for position timestamping for `ts_opened` and `ts_closed`
 - Improved robustness of socket client reconnects and disconnects to avoid state race conditions
 - Improved error handling for socket clients, will now raise Python exceptions on send errors rather than logging with `tracing` only
 - Improved error handling for Databento adapter by changing many unwraps to instead log or raise Python exceptions (where applicable)
