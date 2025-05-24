@@ -1015,7 +1015,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         if client_order_id is None:
             self._log.error(
-                f"Cannot reconcile FillReport: client order ID for {report.venue_order_id!r} not found",
+                f"Cannot reconcile FillReport: ClientOrderId not found for {report.venue_order_id!r}",
             )
             return False  # Failed
 

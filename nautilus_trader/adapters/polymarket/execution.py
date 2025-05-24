@@ -38,7 +38,7 @@ from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKE
 from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
-from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketTradeStatus
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
@@ -194,7 +194,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._active_markets: set[str] = set()
-        self._allowances: dict[InstrumentId, str] = {}
+        self._processed_trades: set[TradeId] = set()
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -649,8 +649,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
         await self._maintain_active_market(command.instrument_id)
 
         order: Order | None = self._cache.order(command.client_order_id)
+
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
+            self._log.error(f"Cannot cancel order: {command.client_order_id!r} not found in cache")
             return
 
         if order.is_closed:
@@ -658,6 +659,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
                 "(will not send to exchange)",
             )
+            return
+
+        if order.venue_order_id is None:
+            self._log.warning("Cannot cancel on Polymarket: no VenueOrderId")
             return
 
         retry_manager = await self._retry_manager_pool.acquire()
@@ -963,10 +968,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._send_order_status_report(report)
             return
 
+        self._log.debug(f"Order {msg.type.value}: {client_order_id!r}", LogColor.MAGENTA)
+
         match msg.type:
             case PolymarketEventType.PLACEMENT:
-                self._log.debug(f"PLACEMENT: {client_order_id!r}", LogColor.MAGENTA)
-
                 self.generate_order_accepted(
                     strategy_id=strategy_id,
                     instrument_id=instrument_id,
@@ -975,8 +980,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
             case PolymarketEventType.CANCELLATION:
-                self._log.debug(f"CANCELLATION: {client_order_id!r}", LogColor.MAGENTA)
-
                 self.generate_order_canceled(
                     strategy_id=strategy_id,
                     instrument_id=instrument_id,
@@ -984,70 +987,28 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                 )
-            case PolymarketEventType.UPDATE:  # Matched
-                self._log.debug(f"UPDATE: {client_order_id!r}", LogColor.MAGENTA)
-
-                assert msg.associate_trades is not None  # Type checking
-                order = self._cache.order(client_order_id)
-
-                # Temporary
-                liquidity_side = (
-                    LiquiditySide.MAKER
-                    if order.order_type == OrderType.LIMIT
-                    else LiquiditySide.TAKER
-                )
-
-                # Commissions TBD (currently zero fees for Polymarket) cannot determine
-                # from order status message?
-                commissions = Money(0.0, USDC_POS)
-
-                if strategy_id is None:
-                    report = msg.parse_to_fill_report(
-                        account_id=self.account_id,
-                        instrument=instrument,
-                        client_order_id=client_order_id,
-                        commission=commissions,
-                        liquidity_side=liquidity_side,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    self._send_fill_report(report)
-                    return
-
-                if order.is_closed:
-                    self._log.warning(f"Order already closed - skipping fill: {order}")
-                    return  # Already closed (only status update)
-
-                matched_qty = instrument.make_qty(float(msg.size_matched))
-                last_qty = instrument.make_qty(float(matched_qty - order.filled_qty))
-
-                self.generate_order_filled(
-                    strategy_id=strategy_id,
-                    instrument_id=instrument_id,
-                    client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,
-                    venue_position_id=None,  # Not applicable on Polymarket
-                    trade_id=TradeId(msg.associate_trades[-1]),
-                    order_side=parse_order_side(msg.side),
-                    order_type=order.order_type,
-                    last_qty=last_qty,
-                    last_px=instrument.make_price(msg.price),
-                    quote_currency=USDC_POS,
-                    commission=commissions,
-                    liquidity_side=liquidity_side,
-                    ts_event=millis_to_nanos(int(msg.timestamp)),
-                    info=msgspec.structs.asdict(msg),
-                )
-
-                self._loop.create_task(self._update_account_state())
-            case _:
+            case PolymarketEventType.UPDATE | PolymarketEventType.TRADE:
+                # We skip these events as they are handled by trade messages
+                self._log.debug(f"Skipping order update: {msg}")
+            case _:  # Branch never hit unless code changes (leave in place)
                 raise RuntimeError(f"Unknown `PolymarketEventType`, was '{msg.type.value}'")
 
     def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
         self._log.debug(f"Handling trade message, {wait_for_ack=}")
 
-        if msg.trader_side == PolymarketLiquiditySide.MAKER:
-            self._log.debug("Liquidity side is MAKER, handled by order update")
-            return
+        trade_id = TradeId(msg.id)
+        trade_str = f"Trade {trade_id}"
+        log_msg = f"{trade_str} {msg.status.value}: {msg}"
+
+        match msg.status:
+            case PolymarketTradeStatus.RETRYING:
+                self._log.warning(log_msg)
+                return
+            case PolymarketTradeStatus.FAILED:
+                self._log.error(log_msg)
+                return
+            case _:
+                self._log.info(log_msg, LogColor.BLUE)
 
         venue_order_id = msg.venue_order_id(self._wallet_address)
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
@@ -1067,6 +1028,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             strategy_id = self._cache.strategy_id_for_order(client_order_id)
 
         if strategy_id is None:
+            self._log.warning("Strategy ID not found - parsing fill report")
             report = msg.parse_to_fill_report(
                 account_id=self.account_id,
                 instrument=instrument,
@@ -1077,11 +1039,19 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._send_fill_report(report)
             return
 
-        self._loop.create_task(self._update_account_state())
         order = self._cache.order(client_order_id)
 
+        if order is None:
+            self._log.error(f"Cannot process trade: {client_order_id!r} not found in cache")
+            return
+
+        if trade_id in order.trade_ids or trade_id in self._processed_trades:
+            # Reduce this to debug level once trade processing is stable
+            self._log.warning(f"{trade_str} already processed - skipping")
+            return
+
         if order.is_closed:
-            self._log.warning(f"Order already closed - skipping trade: {order}")
+            self._log.warning(f"Order already closed - skipping trade processing: {order}")
             return  # Already closed (only status update)
 
         last_qty = instrument.make_qty(msg.last_qty(self._wallet_address))
@@ -1094,7 +1064,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             venue_position_id=None,  # Not applicable on Polymarket
-            trade_id=TradeId(msg.id),
+            trade_id=trade_id,
             order_side=parse_order_side(msg.side),
             order_type=order.order_type,
             last_qty=last_qty,
@@ -1105,3 +1075,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=millis_to_nanos(int(msg.match_time)),
             info=msg.to_dict(),
         )
+
+        self._processed_trades.add(trade_id)
+
+        self._loop.create_task(self._update_account_state())
