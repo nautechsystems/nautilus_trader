@@ -1,0 +1,23 @@
+#openapi-generator generate \
+#--skip-validate-spec \
+#-i ~/Downloads/api-docs.json \
+#-g rust \
+#-o ~/Downloads/client \
+#--config <(echo '{"packageName": "ib-client", "clientModName": "client", "crateName": "ib-client", "httpLibrary": "reqwest"}')
+
+[package]
+name = "ib-client"
+version = "2.15.0"
+authors = ["api@interactivebrokers.com"]
+description = "The IB REST API reference documentation"
+# Override this license by providing a License Object in the OpenAPI.
+license = "Unlicense"
+edition = "2021"
+
+[dependencies]
+serde = { version = "^1.0", features = ["derive"] }
+serde_with = { version = "^3.8", default-features = false, features = ["base64", "std", "macros"] }
+serde_json = "^1.0"
+serde_repr = "^0.1"
+url = "^2.5"
+reqwest = { version = "^0.12", default-features = false, features = ["json", "multipart"] }

@@ -1,0 +1,21 @@
+# QueryWithdrawableAmountsInstructionResult
+
+## Properties
+
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**client_instruction_id** | **f64** |  |
+**instruction_type** | **String** |  |
+**instruction_status** | **String** |  |
+**instruction_id** | **f64** |  |
+**ib_reference_id** | Option<**f64**> |  | [optional]
+**description** | Option<**String**> |  | [optional]
+**error** | Option<[**models::PollingInstructionResultError**](PollingInstructionResult_error.md)> |  | [optional]
+**account_id** | **String** |  |
+**currency** | **String** |  |
+**withdrawable_amount** | **f64** |  |
+**withdrawable_amount_no_borrow** | **f64** |  |
+**allowed_transfer_amount_to_master** | **f64** |  |
+**withdrawable_amount_without_origination_hold_no_borrow** | **f64** |  |
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
