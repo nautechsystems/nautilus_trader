@@ -12,15 +12,40 @@ The performance tests exist to aid development of performance-critical component
 
 Tests can be run using [pytest](https://docs.pytest.org), which is our primary test runner. We recommend using parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
 
-If you’re using PyCharm, right-click on the tests folder or test file and select “Run pytest.”
+## Running Tests
 
-Alternatively, run:
+### Python Tests
+
+From the repository root:
 
 ```bash
+make pytest
+# or
+uv run --active --no-sync pytest --new-first --failed-first
+# or simply
 pytest
 ```
 
-from the repository root to discover and execute all tests.
+For performance tests:
+
+```bash
+make test-performance
+# or
+uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+```
+
+### Rust Tests
+
+```bash
+make cargo-test
+# or
+cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+```
+
+### IDE Integration
+
+- **PyCharm**: Right-click on tests folder or file → "Run pytest"
+- **VS Code**: Use the Python Test Explorer extension
 
 ## Mocks
 

@@ -104,6 +104,7 @@ None
 ### Documentation Updates
 - Added content to Architecture concept guide
 - Added content to Live Trading concept guide
+- Added content to Developer Guide
 - Added errors and panics docs for most crates
 - Added errors and panics docs for most crates
 - Improved the clarity of various concept guides

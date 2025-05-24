@@ -38,16 +38,20 @@ make install-debug
 pre-commit install
 ```
 
-3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_trader/.cargo/config.toml` with the path to the Python interpreter in the virtual managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
+3. **Optional**: For frequent Rust development, configure the `PYO3_PYTHON` variable in `.cargo/config.toml` with the path to the Python interpreter. This helps reduce recompilation times for IDE/rust-analyzer based `cargo check`:
 
 ```bash
 PYTHON_PATH=$(which python)
 echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
 ```
 
-Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree .cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree .cargo/config.toml`.
+Since `.cargo/config.toml` is tracked, configure git to skip any local modifications:
 
-The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
+```bash
+git update-index --skip-worktree .cargo/config.toml
+```
+
+To restore tracking: `git update-index --no-skip-worktree .cargo/config.toml`
 
 ## Builds
 
