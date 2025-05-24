@@ -15,7 +15,9 @@ Released on TBD (UTC).
 - Added bars caching from `request_aggregated_bars` (#2649), thanks @faysou
 - Added `BacktestDataIterator` to backtest engine to provide on-the-fly data loading (#2545), thanks @faysou
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
+- Added Binance Futures margin type (#2660), thanks @bartolootrit
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
+- Added trailing stops for OrderFactory bracket orders (#2654), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process
 - Added `UnixNanos::is_zero()` convenience method to check for a zero/epoch value
 - Added SQL schema, model, and query for `OrderCancelRejected`
@@ -61,6 +63,7 @@ None
 - Improved execution client debug logging for Polymarket
 - Improved exception on deserializing order from cache database
 - Improved `None` condition checks for value types, which now raise a `TypeError` instead of an obscure `AttributeError`
+- Changed `VecDeque` for fixed-capacity `ArrayDeque` in SMA indicator (#2666), thanks @nicolad
 - Implemented remaining Display for orders in Rust (#2614), thanks @nicolad
 - Implemented `_subscribe_instrument` for dYdX and Bybit (#2636), thanks @davidsblom
 - Untangled `ratelimiter` quota from `python` flag (#2595), thanks @twitu
@@ -73,7 +76,7 @@ None
 - Upgraded `databento` crate to v0.25.0
 - Upgraded `redis` crate to v0.31.0
 - Upgraded `sqlx` crate to v0.8.6
-- Upgraded `tokio` crate to v1.45.0
+- Upgraded `tokio` crate to v1.45.1
 
 ### Fixes
 - Fixed portfolio account updates leading to incorrect balances (#2632, #2637), thanks for reporting @bartolootrit and @DeirhX
