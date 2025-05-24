@@ -71,6 +71,8 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        # inflight_check_interval_ms=0,  # Uncomment to turn off in-flight order checks
+        # open_check_interval_secs=0,  # Uncomment to turn off open order checks
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
@@ -282,22 +284,21 @@ class TOBQuoter(Strategy):
         if self.config.dry_run:
             return
 
-        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.buy_order)
-            pass
+        # Maintain BUY orders
+        if self.config.enable_buys:
+            if not self.buy_order or self.buy_order.is_closed:
+                self.create_buy_order(best_bid)
+            elif self.buy_order.price != best_bid:
+                self.cancel_order(self.buy_order)
+                self.create_buy_order(best_bid)
 
-        if not self.buy_order or self.buy_order.is_closed:
-            self.create_buy_order(best_bid)
-
-        # Maintain sell orders
-        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.sell_order)
-            pass
-
-        if not self.sell_order or self.sell_order.is_closed:
-            self.create_sell_order(best_ask)
+        # Maintain SELL orders
+        if self.config.enable_sells:
+            if not self.sell_order or self.sell_order.is_closed:
+                self.create_sell_order(best_ask)
+            elif self.sell_order.price != best_ask:
+                self.cancel_order(self.sell_order)
+                self.create_sell_order(best_ask)
 
     def create_buy_order(self, price: Price) -> None:
         if not self.instrument:
@@ -370,7 +371,7 @@ strat_config1 = TOBQuoterConfig(
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
     enable_buys=True,
-    enable_sells=True,
+    enable_sells=False,  # <-- Change this to True if holding a position
     dry_run=False,
 )
 # strat_config2 = TOBQuoterConfig(

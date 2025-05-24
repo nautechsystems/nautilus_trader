@@ -94,6 +94,8 @@ None
 - Fixed HTTP batch order operations for Bybit (#2627), thanks @sunlei
 - Fixed `reduce_only` attribute access in batch place order for Bybit
 - Fixed quote tick parsing for one-sided books on Polymarket
+- Fixed order fill handling for limit orders with `MAKER` liquidity side on Polymarket
+- Fixed currency parsing for `BinaryOption` on Polymarket to consistently use USDC.e (PoS USDC on Polygon)
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
