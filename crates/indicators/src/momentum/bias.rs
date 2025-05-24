@@ -111,7 +111,6 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::testing::approx_equal;
 
     #[fixture]
     fn bias() -> Bias {
@@ -158,10 +157,21 @@ mod tests {
             109.93, 110.0, 109.77, 109.96, 110.29, 110.53, 110.27, 110.21, 110.06, 110.19, 109.83,
             109.9, 110.0, 110.03, 110.13, 109.95, 109.75, 110.15, 109.9, 110.04,
         ];
-        for input in &inputs {
-            bias.update_raw(*input);
+        const EPS: f64 = 1e-12;
+        const EXPECTED: f64 = 0.000_654_735_923_177_662_8;
+        fn abs_diff_lt(lhs: f64, rhs: f64) -> bool {
+            (lhs - rhs).abs() < EPS
         }
-        assert!(approx_equal(bias.value, 0.000_654_735_923_177_662_8));
+
+        for &price in &inputs {
+            bias.update_raw(price);
+        }
+
+        assert!(
+            abs_diff_lt(bias.value, EXPECTED),
+            "bias.value = {:.16} did not match expected value",
+            bias.value
+        );
     }
 
     #[rstest]

@@ -13,14 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, fmt::Display};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
 
 use crate::indicator::{Indicator, MovingAverage};
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -32,8 +35,9 @@ pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
     pub value: f64,
+    sum: f64,
     pub count: usize,
-    pub inputs: VecDeque<f64>,
+    buf: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     pub initialized: bool,
 }
 
@@ -45,11 +49,11 @@ impl Display for SimpleMovingAverage {
 
 impl Indicator for SimpleMovingAverage {
     fn name(&self) -> String {
-        stringify!(SimpleMovingAverage).to_string()
+        stringify!(SimpleMovingAverage).into()
     }
 
     fn has_inputs(&self) -> bool {
-        !self.inputs.is_empty()
+        self.count > 0
     }
 
     fn initialized(&self) -> bool {
@@ -70,8 +74,9 @@ impl Indicator for SimpleMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
-        self.inputs.clear();
+        self.sum = 0.0;
         self.count = 0;
+        self.buf.clear();
         self.initialized = false;
     }
 }
@@ -97,31 +102,36 @@ impl SimpleMovingAverage {
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        assert!(period > 0, "SimpleMovingAverage: period must be > 0");
         assert!(
-            period > 0,
-            "SimpleMovingAverage: period must be > 0 (received {period})"
+            period <= MAX_PERIOD,
+            "SimpleMovingAverage: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
         );
+
         Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
+            sum: 0.0,
             count: 0,
-            inputs: VecDeque::with_capacity(period),
+            buf: ArrayDeque::new(),
             initialized: false,
         }
     }
 
     fn process_raw(&mut self, price: f64) {
-        if self.inputs.len() == self.period {
-            self.inputs.pop_front();
+        if self.count == self.period {
+            if let Some(oldest) = self.buf.pop_front() {
+                self.sum -= oldest;
+            }
+        } else {
+            self.count += 1;
         }
-        self.inputs.push_back(price);
 
-        self.count = self.inputs.len();
+        let _ = self.buf.push_back(price);
+        self.sum += price;
 
-        let sum: f64 = self.inputs.iter().sum();
-        self.value = sum / self.count as f64;
-
+        self.value = self.sum / self.count as f64;
         self.initialized = self.count >= self.period;
     }
 }
@@ -137,6 +147,7 @@ mod tests {
     };
     use rstest::rstest;
 
+    use super::MAX_PERIOD;
     use crate::{
         average::sma::SimpleMovingAverage,
         indicator::{Indicator, MovingAverage},
@@ -368,7 +379,12 @@ mod tests {
         let mut sma = SimpleMovingAverage::new(PERIOD, None);
         for i in 0..50 {
             sma.update_raw(f64::from(i));
-            assert_eq!(sma.inputs.len(), sma.count(), "len/count diverged at {i}");
+            assert!(
+                sma.buf.len() == sma.count,
+                "buf.len() != count at step {i}: {} != {}",
+                sma.buf.len(),
+                sma.count
+            );
         }
     }
 
@@ -384,6 +400,68 @@ mod tests {
             assert_eq!(sma.count(), 0);
             assert_eq!(sma.value(), 0.0);
             assert!(!sma.initialized());
+        }
+    }
+
+    #[rstest]
+    fn sma_buffer_never_exceeds_capacity() {
+        const PERIOD: usize = MAX_PERIOD;
+        let mut sma = super::SimpleMovingAverage::new(PERIOD, None);
+
+        for i in 0..(PERIOD * 2) {
+            sma.update_raw(i as f64);
+
+            assert!(
+                sma.buf.len() <= PERIOD,
+                "step {i}: buf.len()={}, exceeds PERIOD={PERIOD}",
+                sma.buf.len()
+            );
+        }
+        assert!(
+            sma.buf.is_full(),
+            "buffer not reported as full after saturation"
+        );
+        assert_eq!(
+            sma.count(),
+            PERIOD,
+            "count diverged from logical window length"
+        );
+    }
+
+    #[rstest]
+    fn sma_deque_eviction_order() {
+        let mut sma = super::SimpleMovingAverage::new(3, None);
+
+        sma.update_raw(1.0);
+        sma.update_raw(2.0);
+        sma.update_raw(3.0);
+        sma.update_raw(4.0);
+
+        assert_eq!(sma.buf.front().copied(), Some(2.0), "oldest element wrong");
+        assert_eq!(sma.buf.back().copied(), Some(4.0), "newest element wrong");
+
+        assert!(
+            (sma.value() - 3.0).abs() < 1e-12,
+            "unexpected mean after eviction: {}",
+            sma.value()
+        );
+    }
+
+    #[rstest]
+    fn sma_sum_consistent_with_buffer() {
+        const PERIOD: usize = 7;
+        let mut sma = super::SimpleMovingAverage::new(PERIOD, None);
+
+        for i in 0..40 {
+            sma.update_raw(i as f64);
+
+            let deque_sum: f64 = sma.buf.iter().copied().sum();
+            assert!(
+                (sma.sum - deque_sum).abs() < 1e-12,
+                "step {i}: internal sum={} differs from buf sum={}",
+                sma.sum,
+                deque_sum
+            );
         }
     }
 }
