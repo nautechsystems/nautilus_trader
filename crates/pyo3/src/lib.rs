@@ -42,7 +42,7 @@ use pyo3::prelude::*;
 /// import supermodule.submodule
 ///
 /// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`
-/// refer: https://github.com/PyO3/pyo3/issues/2644
+/// refer: <https://github.com/PyO3/pyo3/issues/2644>
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;

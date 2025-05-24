@@ -85,7 +85,7 @@ impl Quota {
     }
 }
 
-/// Loaded as nautilus_pyo3.network
+/// Loaded as `nautilus_pyo3.network`
 ///
 /// # Errors
 ///

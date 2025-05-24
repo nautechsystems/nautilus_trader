@@ -21,7 +21,7 @@ pub mod websocket;
 
 use pyo3::prelude::*;
 
-/// Loaded as nautilus_pyo3.coinbase
+/// Loaded as `nautilus_pyo3.coinbase`
 #[pymodule]
 /// # Errors
 ///

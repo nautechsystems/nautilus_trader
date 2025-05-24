@@ -7,6 +7,7 @@ doc-valid-idents = [
   "DeFi",
   "HyperSync",
   "PancakeSwap",
+  "PascalCase",
   "PnL",
   "PnLs",
   "PostgreSQL",

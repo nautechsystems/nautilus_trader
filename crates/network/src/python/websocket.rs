@@ -169,7 +169,7 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// - Raises PyRuntimeError if not able to send data.
+    /// - Raises `PyRuntimeError` if not able to send data.
     #[pyo3(name = "send")]
     #[pyo3(signature = (data, keys=None))]
     fn py_send<'py>(
@@ -250,7 +250,7 @@ impl WebSocketClient {
     ///
     /// # Errors
     ///
-    /// - Raises PyRuntimeError if not able to send data.
+    /// - Raises `PyRuntimeError` if not able to send data.
     #[pyo3(name = "send_pong")]
     fn py_send_pong<'py>(
         slf: PyRef<'_, Self>,

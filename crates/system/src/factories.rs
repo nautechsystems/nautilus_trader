@@ -124,7 +124,7 @@ impl DataClientFactoryRegistry {
     /// The factory if found, None otherwise.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn DataClientFactory> {
-        self.factories.get(name).map(|f| f.as_ref())
+        self.factories.get(name).map(std::convert::AsRef::as_ref)
     }
 
     /// Gets a list of all registered factory names.
@@ -182,7 +182,7 @@ impl ExecutionClientFactoryRegistry {
     /// Gets a registered factory by name (if found).
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn ExecutionClientFactory> {
-        self.factories.get(name).map(|f| f.as_ref())
+        self.factories.get(name).map(std::convert::AsRef::as_ref)
     }
 
     /// Gets a list of all registered factory names.
@@ -240,11 +240,11 @@ mod tests {
             Err(anyhow::anyhow!("Mock factory - not implemented"))
         }
 
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "mock"
         }
 
-        fn config_type(&self) -> &str {
+        fn config_type(&self) -> &'static str {
             "MockConfig"
         }
     }

@@ -21,7 +21,7 @@ pub mod wranglers;
 
 use pyo3::prelude::*;
 
-/// Loaded as nautilus_pyo3.persistence
+/// Loaded as `nautilus_pyo3.persistence`
 ///
 /// # Errors
 ///

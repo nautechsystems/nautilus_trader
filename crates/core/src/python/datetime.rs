@@ -141,9 +141,9 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 ///
 /// Parameters
 /// ----------
-/// timestamp_ns : int
+/// `timestamp_ns` : int
 ///     The UNIX timestamp (nanoseconds).
-/// nanos_precision : bool, default True
+/// `nanos_precision` : bool, default True
 ///     If True, use nanosecond precision. If False, use millisecond precision.
 ///
 /// Returns
@@ -152,7 +152,7 @@ pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
 ///
 /// Raises
 /// ------
-/// ValueError
+/// `ValueError`
 ///     If `timestamp_ns` is invalid.
 #[must_use]
 #[pyfunction(name = "unix_nanos_to_iso8601", signature = (timestamp_ns, nanos_precision=true))]
@@ -182,7 +182,7 @@ pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64, nanos_precision: Option<bool>
 ///
 /// Raises
 /// ------
-/// ValueError
+/// `ValueError`
 ///     If given an invalid date.
 ///
 /// # Errors
@@ -199,7 +199,7 @@ pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
 ///
 /// Parameters
 /// ----------
-/// timestamp_ns : int
+/// `timestamp_ns` : int
 ///     The UNIX nanoseconds timestamp datum.
 ///
 /// Returns
@@ -208,7 +208,7 @@ pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
 ///
 /// Raises
 /// ------
-/// ValueError
+/// `ValueError`
 ///     If `timestamp` is invalid.
 ///
 /// # Errors

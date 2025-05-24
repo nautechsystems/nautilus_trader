@@ -41,7 +41,7 @@ pub struct AdaptiveMovingAverage {
     pub period_efficiency_ratio: usize,
     /// The period for the fast smoothing constant (> 0).
     pub period_fast: usize,
-    /// The period for the slow smoothing constant (> period_fast).
+    /// The period for the slow smoothing constant (> `period_fast`).
     pub period_slow: usize,
     /// The price type used for calculations.
     pub price_type: PriceType,
