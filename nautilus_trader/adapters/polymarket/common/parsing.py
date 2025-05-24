@@ -25,7 +25,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderType
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
-from nautilus_trader.model.currencies import USDC
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -114,7 +114,7 @@ def parse_instrument(
         outcome=outcome,
         description=description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC,
+        currency=USDC_POS,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=size_increment,
@@ -144,7 +144,7 @@ def update_instrument(
         outcome=instrument.outcome,
         description=instrument.description,
         asset_class=AssetClass.ALTERNATIVE,
-        currency=USDC,
+        currency=USDC_POS,
         price_increment=price_increment,
         price_precision=price_increment.precision,
         size_increment=instrument.size_increment,

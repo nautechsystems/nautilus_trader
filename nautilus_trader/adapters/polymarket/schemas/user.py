@@ -53,7 +53,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
 
     References
     ----------
-    https://docs.polymarket.com/#user-channel
+    https://docs.polymarket.com/developers/CLOB/websocket/user-channel#order-message
 
     """
 
@@ -143,7 +143,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
 
     References
     ----------
-    https://docs.polymarket.com/#user-channel
+    https://docs.polymarket.com/developers/CLOB/websocket/user-channel
 
     """
 
@@ -255,7 +255,7 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
 
     References
     ----------
-    https://docs.polymarket.com/#get-order
+    https://docs.polymarket.com/developers/CLOB/websocket/user-channel#order-message
 
     """
 
