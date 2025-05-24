@@ -847,6 +847,8 @@ cdef class PositionClosed(PositionEvent):
         uint64_t ts_init,
     ):
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
+        assert ts_closed >= ts_opened
+
         super().__init__(
             trader_id,
             strategy_id,
