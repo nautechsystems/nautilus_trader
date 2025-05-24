@@ -41,7 +41,7 @@ pub struct ExponentialBackoff {
     jitter_ms: u64,
     /// If true, the first call to `next()` returns zero delay (immediate reconnect).
     immediate_reconnect: bool,
-    /// The original value of immediate_reconnect for reset purposes.
+    /// The original value of `immediate_reconnect` for reset purposes.
     immediate_reconnect_original: bool,
 }
 
@@ -111,7 +111,7 @@ impl ExponentialBackoff {
     }
 
     /// Reset the backoff to its initial state.
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.delay_current = self.delay_initial;
         self.immediate_reconnect = self.immediate_reconnect_original;
     }

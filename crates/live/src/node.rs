@@ -119,19 +119,19 @@ impl TradingNode {
 
     /// Gets the node's trader ID.
     #[must_use]
-    pub fn trader_id(&self) -> TraderId {
+    pub const fn trader_id(&self) -> TraderId {
         self.kernel.trader_id()
     }
 
     /// Gets the node's instance ID.
     #[must_use]
-    pub fn instance_id(&self) -> UUID4 {
+    pub const fn instance_id(&self) -> UUID4 {
         self.kernel.instance_id()
     }
 
     /// Gets the node's environment.
     #[must_use]
-    pub fn environment(&self) -> Environment {
+    pub const fn environment(&self) -> Environment {
         self.kernel.environment()
     }
 }

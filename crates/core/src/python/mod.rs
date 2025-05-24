@@ -96,7 +96,7 @@ fn is_pycapsule(obj: PyObject) -> bool {
     }
 }
 
-/// Loaded as nautilus_pyo3.core
+/// Loaded as `nautilus_pyo3.core`
 ///
 /// # Errors
 ///

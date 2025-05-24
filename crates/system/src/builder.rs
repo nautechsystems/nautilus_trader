@@ -53,7 +53,7 @@ pub struct NautilusKernelBuilder {
 impl NautilusKernelBuilder {
     /// Creates a new [`NautilusKernelBuilder`] with required parameters.
     #[must_use]
-    pub fn new(name: Ustr, trader_id: TraderId, environment: Environment) -> Self {
+    pub const fn new(name: Ustr, trader_id: TraderId, environment: Environment) -> Self {
         Self {
             name,
             trader_id,
@@ -78,21 +78,21 @@ impl NautilusKernelBuilder {
 
     /// Set the instance ID for the kernel.
     #[must_use]
-    pub fn with_instance_id(mut self, instance_id: UUID4) -> Self {
+    pub const fn with_instance_id(mut self, instance_id: UUID4) -> Self {
         self.instance_id = Some(instance_id);
         self
     }
 
     /// Configure whether to load state on startup.
     #[must_use]
-    pub fn with_load_state(mut self, load_state: bool) -> Self {
+    pub const fn with_load_state(mut self, load_state: bool) -> Self {
         self.load_state = load_state;
         self
     }
 
     /// Configure whether to save state on shutdown.
     #[must_use]
-    pub fn with_save_state(mut self, save_state: bool) -> Self {
+    pub const fn with_save_state(mut self, save_state: bool) -> Self {
         self.save_state = save_state;
         self
     }
@@ -106,42 +106,42 @@ impl NautilusKernelBuilder {
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub fn with_timeout_connection(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
         self.timeout_connection = timeout;
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
         self.timeout_reconciliation = timeout;
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
         self.timeout_portfolio = timeout;
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
         self.timeout_disconnection = timeout;
         self
     }
 
     /// Set the post-stop timeout in seconds.
     #[must_use]
-    pub fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
         self.timeout_post_stop = timeout;
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
         self.timeout_shutdown = timeout;
         self
     }
@@ -169,14 +169,14 @@ impl NautilusKernelBuilder {
 
     /// Set the execution engine configuration.
     #[must_use]
-    pub fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
+    pub const fn with_exec_engine_config(mut self, config: ExecutionEngineConfig) -> Self {
         self.exec_engine = Some(config);
         self
     }
 
     /// Set the portfolio configuration.
     #[must_use]
-    pub fn with_portfolio_config(mut self, config: PortfolioConfig) -> Self {
+    pub const fn with_portfolio_config(mut self, config: PortfolioConfig) -> Self {
         self.portfolio = Some(config);
         self
     }
@@ -281,8 +281,8 @@ mod tests {
         let data_engine_config = DataEngineConfig::default();
 
         let builder = NautilusKernelBuilder::default()
-            .with_cache_config(cache_config.clone())
-            .with_data_engine_config(data_engine_config.clone());
+            .with_cache_config(cache_config)
+            .with_data_engine_config(data_engine_config);
 
         assert!(builder.cache.is_some());
         assert!(builder.data_engine.is_some());

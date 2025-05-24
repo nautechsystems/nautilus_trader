@@ -48,21 +48,21 @@ use crate::symbology::MetadataCache;
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported schemas:
-///  - MBO -> `OrderBookDelta`
-///  - MBP_1 -> `(QuoteTick, Option<TradeTick>)`
-///  - MBP_10 -> `OrderBookDepth10`
-///  - BBO_1S -> `QuoteTick`
-///  - BBO_1M -> `QuoteTick`
-///  - TBBO -> `(QuoteTick, TradeTick)`
-///  - TRADES -> `TradeTick`
-///  - OHLCV_1S -> `Bar`
-///  - OHLCV_1M -> `Bar`
-///  - OHLCV_1H -> `Bar`
-///  - OHLCV_1D -> `Bar`
-///  - DEFINITION -> `Instrument`
-///  - IMBALANCE -> `DatabentoImbalance`
-///  - STATISTICS -> `DatabentoStatistics`
-///  - STATUS -> `InstrumentStatus`
+///  - `MBO` -> `OrderBookDelta`
+///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
+///  - `MBP_10` -> `OrderBookDepth10`
+///  - `BBO_1S` -> `QuoteTick`
+///  - `BBO_1M` -> `QuoteTick`
+///  - `TBBO` -> `(QuoteTick, TradeTick)`
+///  - `TRADES` -> `TradeTick`
+///  - `OHLCV_1S` -> `Bar`
+///  - `OHLCV_1M` -> `Bar`
+///  - `OHLCV_1H` -> `Bar`
+///  - `OHLCV_1D` -> `Bar`
+///  - `DEFINITION` -> `Instrument`
+///  - `IMBALANCE` -> `DatabentoImbalance`
+///  - `STATISTICS` -> `DatabentoStatistics`
+///  - `STATUS` -> `InstrumentStatus`
 ///
 /// # References
 ///

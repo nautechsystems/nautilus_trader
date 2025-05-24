@@ -159,8 +159,8 @@ mod tests {
     #[rstest]
     fn test_value_with_ten_inputs(mut indicator_vwap: VolumeWeightedAveragePrice) {
         for i in 0..10 {
-            let price = 1.00000 + 0.00010 * i as f64;
-            let volume = 1.0 + (i % 3) as f64;
+            let price = 0.00010f64.mul_add(f64::from(i), 1.00000);
+            let volume = 1.0 + f64::from(i % 3);
             indicator_vwap.update_raw(price, volume, DAY0);
         }
         indicator_vwap.update_raw(1.00000, 2.00000, DAY0);

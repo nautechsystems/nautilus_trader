@@ -151,7 +151,6 @@ impl MovingAverage for MovingAverageConvergenceDivergence {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::testing::approx_equal;
     use nautilus_model::data::{Bar, QuoteTick, TradeTick};
     use rstest::rstest;
 
@@ -159,6 +158,7 @@ mod tests {
         indicator::{Indicator, MovingAverage},
         momentum::macd::MovingAverageConvergenceDivergence,
         stubs::*,
+        testing::approx_equal,
     };
 
     #[rstest]

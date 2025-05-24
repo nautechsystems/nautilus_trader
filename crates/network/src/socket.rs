@@ -105,7 +105,7 @@ pub enum WriterCommand {
     Send(Bytes),
 }
 
-/// Creates a TcpStream with the server.
+/// Creates a `TcpStream` with the server.
 ///
 /// The stream can be encrypted with TLS or Plain. The stream is split into
 /// read and write ends:

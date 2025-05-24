@@ -74,7 +74,7 @@ pub struct NautilusKernel {
 impl NautilusKernel {
     /// Create a new [`NautilusKernelBuilder`] for fluent configuration.
     #[must_use]
-    pub fn builder(
+    pub const fn builder(
         name: Ustr,
         trader_id: TraderId,
         environment: nautilus_common::enums::Environment,
@@ -176,6 +176,7 @@ impl NautilusKernel {
         self.clock.borrow_mut().cancel_timers();
     }
 
+    #[must_use]
     pub fn generate_timestamp_ns(&self) -> UnixNanos {
         self.clock.borrow().timestamp_ns()
     }

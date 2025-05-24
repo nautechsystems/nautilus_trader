@@ -532,6 +532,7 @@ impl DataClientAdapter {
     }
 
     #[allow(clippy::borrowed_box)]
+    #[must_use]
     pub fn get_client(&self) -> &Box<dyn DataClient> {
         &self.client
     }

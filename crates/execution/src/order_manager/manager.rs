@@ -129,7 +129,7 @@ impl OrderManager {
         // }
     }
 
-    pub fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+    pub const fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
         // if let Some(handler) = &self.modify_order_handler {
         //     handler.handle_modify_order(order, new_quantity);
         // }

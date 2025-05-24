@@ -32,7 +32,7 @@ pub struct ParquetDataCatalogV2 {
 
 #[pymethods]
 impl ParquetDataCatalogV2 {
-    /// Create a new ParquetCatalog with the given base path and optional batch size.
+    /// Create a new `ParquetCatalog` with the given base path and optional batch size.
     #[new]
     #[pyo3(signature = (base_path, batch_size=None))]
     #[must_use]
