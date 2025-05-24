@@ -50,3 +50,4 @@ tokio = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
+rstest = { workspace = true }

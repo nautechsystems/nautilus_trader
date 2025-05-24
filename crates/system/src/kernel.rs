@@ -38,7 +38,7 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
 use ustr::Ustr;
 
-use crate::config::NautilusKernelConfig;
+use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
 
 /// Core Nautilus system kernel.
 ///
@@ -72,6 +72,16 @@ pub struct NautilusKernel {
 }
 
 impl NautilusKernel {
+    /// Create a new [`NautilusKernelBuilder`] for fluent configuration.
+    #[must_use]
+    pub fn builder(
+        name: Ustr,
+        trader_id: TraderId,
+        environment: nautilus_common::enums::Environment,
+    ) -> NautilusKernelBuilder {
+        NautilusKernelBuilder::new(name, trader_id, environment)
+    }
+
     /// Create a new [`NautilusKernel`] instance.
     ///
     /// # Errors
