@@ -21,13 +21,17 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -240,3 +244,491 @@ class TestMarginAccount:
 
         # Assert
         assert result == Money(0.00035000, BTC)
+
+    def test_calculate_pnls_with_no_position_returns_empty_list(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill,
+            position=None,  # No position
+        )
+
+        # Assert
+        assert result == []
+
+    def test_calculate_pnls_with_flat_position_returns_empty_list(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("51000.00"),
+        )
+
+        position.apply(fill2)  # Close the position
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        # Assert
+        assert result == []
+        assert position.is_closed
+
+    def test_calculate_pnls_with_same_side_fill_returns_empty_list(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # Add another BUY order (same side as position entry)
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.5"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("51000.00"),
+        )
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        # Assert
+        assert result == []
+
+    def test_calculate_pnls_with_reducing_fill_calculates_pnl(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Open a LONG position
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # Partially close the position (SELL 1.0 of 2.0)
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("52000.00"),  # $2000 profit per BTC
+        )
+
+        # Act
+        account_pnl = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        expected_position_pnl = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=fill2.last_qty,
+        )
+
+        # Assert
+        assert len(account_pnl) == 1
+        expected_currency = BTCUSDT_BINANCE.get_cost_currency()
+        assert account_pnl[0] == Money(2000.00, expected_currency)
+        assert account_pnl[0] == expected_position_pnl
+
+    def test_calculate_pnls_with_fill_larger_than_position_limits_correctly(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Open a LONG position of 1.0 BTC
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # Try to sell MORE than the position size (2.0 vs 1.0)
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("2.0"),  # Larger than position!
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("52000.00"),
+        )
+
+        # Act
+        account_pnl = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        position_pnl = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=Quantity.from_str("1.0"),
+        )
+
+        # Assert
+        assert len(account_pnl) == 1
+        expected_currency = BTCUSDT_BINANCE.get_cost_currency()
+        assert account_pnl[0] == Money(2000.00, expected_currency)
+        assert account_pnl[0] == position_pnl
+
+    def test_calculate_pnls_with_short_position_reducing_fill(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Open a SHORT position
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # Cover part of the short position (BUY to reduce SHORT)
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.5"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("48000.00"),  # $2000 profit per BTC (short position)
+        )
+
+        # Act
+        account_pnl = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        expected_position_pnl = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=fill2.last_qty,
+        )
+
+        # Assert
+        assert len(account_pnl) == 1
+        expected_currency = BTCUSDT_BINANCE.get_cost_currency()
+        assert account_pnl[0] == Money(1000.00, expected_currency)
+        assert account_pnl[0] == expected_position_pnl
+
+    def test_calculate_pnls_multiple_partial_reductions(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Open a LONG position of 3.0 BTC
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("3.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # First partial close: sell 1.0 BTC
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("52000.00"),
+        )
+
+        position.apply(fill2)  # Update position after first fill
+
+        account_pnl1 = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        expected_position_pnl1 = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=fill2.last_qty,
+        )
+
+        # Second partial close: sell 1.5 BTC
+        order3 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.5"),
+        )
+
+        fill3 = TestEventStubs.order_filled(
+            order3,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("53000.00"),
+        )
+
+        account_pnl2 = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill3,
+            position=position,
+        )
+
+        # Act
+        expected_position_pnl2 = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill3.last_px.as_double(),
+            quantity=fill3.last_qty,
+        )
+
+        # Assert
+        assert len(account_pnl1) == 1
+        expected_currency = BTCUSDT_BINANCE.get_cost_currency()
+        assert account_pnl1[0] == Money(2000.00, expected_currency)
+
+        assert len(account_pnl2) == 1
+        assert account_pnl2[0] == Money(4500.00, expected_currency)
+
+        assert account_pnl1[0] == expected_position_pnl1
+        assert account_pnl2[0] == expected_position_pnl2
+
+    def test_calculate_pnls_consistency_with_position_calculate_pnl(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        # Open a LONG position
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("2.0"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        # Reduce position
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("1.0"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("52000.00"),
+        )
+
+        # Act - Calculate using both methods
+        account_pnl = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        position_pnl = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=Quantity.from_str("1.0"),
+        )
+
+        # Assert
+        assert len(account_pnl) == 1
+        assert account_pnl[0] == position_pnl
+
+    def test_calculate_pnls_github_issue_2657_reproduction(self):
+        """
+        Reproduce the exact scenario from GitHub issue #2657.
+
+        https://github.com/nautechsystems/nautilus_trader/discussions/2657
+
+        """
+        # Arrange
+        account = TestExecStubs.margin_account()
+
+        order1 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.001"),
+        )
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-GITHUB-2657"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50000.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill1)
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("0.002"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-GITHUB-2657"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("50075.00"),
+        )
+
+        # Act
+        account_pnl = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            fill=fill2,
+            position=position,
+        )
+
+        expected_position_pnl = position.calculate_pnl(
+            avg_px_open=position.avg_px_open,
+            avg_px_close=fill2.last_px.as_double(),
+            quantity=Quantity.from_str("0.001"),
+        )
+
+        # Assert
+        assert len(account_pnl) == 1
+        expected_currency = BTCUSDT_BINANCE.get_cost_currency()
+        expected_amount = 75.0 * 0.001
+        assert account_pnl[0] == Money(expected_amount, expected_currency)
+        assert account_pnl[0] == expected_position_pnl
+        assert account_pnl[0].as_double() == expected_amount
