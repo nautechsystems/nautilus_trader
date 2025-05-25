@@ -368,7 +368,7 @@ mod tests {
     #[rstest]
     fn test_window_never_exceeds_period(mut indicator_wma_10: WeightedMovingAverage) {
         for i in 0..100 {
-            indicator_wma_10.update_raw(i as f64);
+            indicator_wma_10.update_raw(f64::from(i));
             assert!(indicator_wma_10.count() <= indicator_wma_10.period);
         }
     }
@@ -382,7 +382,7 @@ mod tests {
         wma.update_raw(2.0);
         wma.update_raw(3.0);
 
-        let expected = (-1.0 * 1.0 + 2.0 * 2.0 + 2.0 * 3.0) / 3.0;
+        let expected = 2.0f64.mul_add(3.0, 2.0f64.mul_add(2.0, -1.0)) / 3.0;
         let tol = f64::EPSILON.sqrt();
         assert!((wma.value() - expected).abs() < tol);
     }
@@ -442,7 +442,7 @@ mod tests {
     fn single_period_returns_latest_input() {
         let mut wma = WeightedMovingAverage::new(1, vec![1.0], None);
         for i in 0..5 {
-            let v = i as f64;
+            let v = f64::from(i);
             wma.update_raw(v);
             assert_eq!(wma.value(), v);
         }
@@ -469,7 +469,7 @@ mod tests {
         let mut wma = WeightedMovingAverage::new(4, vec![1.0, 2.0, 3.0, 4.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
-        let expected = (20.0 * 4.0 + 10.0 * 3.0) / (4.0 + 3.0);
+        let expected = 20.0f64.mul_add(4.0, 10.0 * 3.0) / (4.0 + 3.0);
         assert_eq!(wma.value(), expected);
     }
 
@@ -479,7 +479,7 @@ mod tests {
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         wma.update_raw(3.0);
-        let expected = (3.0 * 4.0 + 2.0 * 3.0 + 1.0 * 2.0) / (4.0 + 3.0 + 2.0);
+        let expected = 1.0f64.mul_add(2.0, 3.0f64.mul_add(4.0, 2.0 * 3.0)) / (4.0 + 3.0 + 2.0);
         assert_eq!(wma.value(), expected);
     }
 
@@ -491,7 +491,7 @@ mod tests {
         for v in vals {
             wma.update_raw(v);
         }
-        let expected: Vec<f64> = vals[vals.len() - period..].iter().copied().collect();
+        let expected: Vec<f64> = vals[vals.len() - period..].to_vec();
         assert_eq!(wma.inputs.iter().copied().collect::<Vec<_>>(), expected);
     }
 
@@ -553,7 +553,7 @@ mod tests {
         let mut wma = WeightedMovingAverage::new(4, vec![0.0, 0.0, 1.0, 1.0], None);
         wma.update_raw(10.0);
         wma.update_raw(20.0);
-        let expected = (20.0 * 1.0 + 10.0 * 1.0) / 2.0;
+        let expected = 20.0f64.mul_add(1.0, 10.0 * 1.0) / 2.0;
         assert_eq!(wma.value(), expected);
     }
 
