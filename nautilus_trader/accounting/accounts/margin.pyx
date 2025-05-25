@@ -680,13 +680,21 @@ cdef class MarginAccount(Account):
 
         cdef dict pnls = {}  # type: dict[Currency, Money]
 
-        cdef Money pnl
+        cdef:
+            Money pnl
+            Quantity pnl_quantity
+
         if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
-            # Calculate and add PnL
+            # Calculate and add PnL using the minimum of fill quantity and position quantity
+            # to avoid double-limiting that occurs in position._calculate_pnl()
+            pnl_quantity = Quantity(
+                min(fill.last_qty.as_f64_c(), position.quantity.as_f64_c()),
+                fill.last_qty.precision,
+            )
             pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
                 avg_px_close=fill.last_px.as_f64_c(),
-                quantity=fill.last_qty,
+                quantity=pnl_quantity,
             )
             pnls[pnl.currency] = pnl
 
