@@ -398,11 +398,26 @@ impl Account for MarginAccount {
 
     fn calculate_pnls(
         &self,
-        instrument: InstrumentAny,
+        _instrument: InstrumentAny, // TBD if this should be removed
         fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
-        self.base_calculate_pnls(instrument, fill, position)
+        let mut pnls: Vec<Money> = Vec::new();
+
+        if let Some(ref pos) = position {
+            if pos.quantity.is_positive() && pos.entry != fill.order_side {
+                // Calculate and add PnL using the minimum of fill quantity and position quantity
+                // to avoid double-limiting that occurs in position.calculate_pnl()
+                let pnl_quantity = Quantity::from_raw(
+                    fill.last_qty.raw.min(pos.quantity.raw),
+                    fill.last_qty.precision,
+                );
+                let pnl = pos.calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity);
+                pnls.push(pnl);
+            }
+        }
+
+        Ok(pnls)
     }
 
     fn calculate_commission(
@@ -459,13 +474,20 @@ impl Hash for MarginAccount {
 mod tests {
     use std::collections::HashMap;
 
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use crate::{
         accounts::{Account, MarginAccount, stubs::*},
-        events::{AccountState, account::stubs::*},
-        identifiers::{InstrumentId, stubs::*},
-        instruments::{CryptoPerpetual, CurrencyPair, stubs::*},
+        enums::{LiquiditySide, OrderSide, OrderType},
+        events::{AccountState, OrderFilled, account::stubs::*},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+            VenueOrderId,
+            stubs::{uuid4, *},
+        },
+        instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny, stubs::*},
+        position::Position,
         types::{Currency, Money, Price, Quantity},
     };
 
@@ -699,5 +721,158 @@ mod tests {
             None,
         );
         assert_eq!(result, Money::from("0.00035000 BTC"));
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_github_issue_2657() {
+        // Create a margin account
+        let account_state = margin_account_state();
+        let account = MarginAccount::new(account_state, false);
+
+        // Create BTCUSDT instrument
+        let btcusdt = currency_pair_btcusdt();
+        let btcusdt_any = InstrumentAny::CurrencyPair(btcusdt);
+
+        // Create initial position with BUY 0.001 BTC at 50000.00
+        let fill1 = OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            btcusdt.id,
+            ClientOrderId::from("O-1"),
+            VenueOrderId::from("V-1"),
+            AccountId::from("SIM-001"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("0.001"),
+            Price::from("50000.00"),
+            btcusdt.quote_currency,
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::from("P-GITHUB-2657")),
+            None,
+        );
+
+        let position = Position::new(&btcusdt_any, fill1);
+
+        // Create second fill that sells MORE than position size (0.002 > 0.001)
+        let fill2 = OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            btcusdt.id,
+            ClientOrderId::from("O-2"),
+            VenueOrderId::from("V-2"),
+            AccountId::from("SIM-001"),
+            TradeId::from("T-2"),
+            OrderSide::Sell,
+            OrderType::Market,
+            Quantity::from("0.002"), // This is larger than position quantity!
+            Price::from("50075.00"),
+            btcusdt.quote_currency,
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::from("P-GITHUB-2657")),
+            None,
+        );
+
+        // Test the fix - should only calculate PnL for position quantity (0.001), not fill quantity (0.002)
+        let pnls = account
+            .calculate_pnls(btcusdt_any, fill2, Some(position))
+            .unwrap();
+
+        // Should have exactly one PnL entry
+        assert_eq!(pnls.len(), 1);
+
+        // Expected PnL should be for 0.001 BTC, not 0.002 BTC
+        // PnL = (50075.00 - 50000.00) * 0.001 = 75.0 * 0.001 = 0.075 USDT
+        let expected_pnl = Money::from("0.075 USDT");
+        assert_eq!(pnls[0], expected_pnl);
+    }
+
+    #[rstest]
+    fn test_calculate_pnls_with_same_side_fill_returns_empty() {
+        use nautilus_core::UnixNanos;
+
+        use crate::{
+            enums::{LiquiditySide, OrderSide, OrderType},
+            events::OrderFilled,
+            identifiers::{
+                AccountId, ClientOrderId, PositionId, StrategyId, TradeId, TraderId, VenueOrderId,
+                stubs::uuid4,
+            },
+            instruments::InstrumentAny,
+            position::Position,
+            types::{Price, Quantity},
+        };
+
+        // Create a margin account
+        let account_state = margin_account_state();
+        let account = MarginAccount::new(account_state, false);
+
+        // Create BTCUSDT instrument
+        let btcusdt = currency_pair_btcusdt();
+        let btcusdt_any = InstrumentAny::CurrencyPair(btcusdt);
+
+        // Create initial position with BUY 1.0 BTC at 50000.00
+        let fill1 = OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            btcusdt.id,
+            ClientOrderId::from("O-1"),
+            VenueOrderId::from("V-1"),
+            AccountId::from("SIM-001"),
+            TradeId::from("T-1"),
+            OrderSide::Buy,
+            OrderType::Market,
+            Quantity::from("1.0"),
+            Price::from("50000.00"),
+            btcusdt.quote_currency,
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::from("P-123456")),
+            None,
+        );
+
+        let position = Position::new(&btcusdt_any, fill1);
+
+        // Create second fill that also BUYS (same side as position entry)
+        let fill2 = OrderFilled::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("S-001"),
+            btcusdt.id,
+            ClientOrderId::from("O-2"),
+            VenueOrderId::from("V-2"),
+            AccountId::from("SIM-001"),
+            TradeId::from("T-2"),
+            OrderSide::Buy, // Same side as position entry
+            OrderType::Market,
+            Quantity::from("0.5"),
+            Price::from("51000.00"),
+            btcusdt.quote_currency,
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::from(2_000_000_000),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::from("P-123456")),
+            None,
+        );
+
+        // Test that no PnL is calculated for same-side fills
+        let pnls = account
+            .calculate_pnls(btcusdt_any, fill2, Some(position))
+            .unwrap();
+
+        // Should return empty PnL list
+        assert_eq!(pnls.len(), 0);
     }
 }
