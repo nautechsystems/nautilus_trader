@@ -55,4 +55,7 @@ pub mod data;
 pub mod exchanges;
 
 #[cfg(feature = "hypersync")]
+pub mod factories;
+
+#[cfg(feature = "hypersync")]
 pub mod hypersync;
