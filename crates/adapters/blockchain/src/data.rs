@@ -15,12 +15,27 @@
 
 use std::sync::Arc;
 
+use nautilus_common::messages::data::{
+    RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
+    RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+    SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
+    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+    SubscribeQuotes, SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas,
+    UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCustomData,
+    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
+    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
+    UnsubscribeTrades,
+};
+use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
-use nautilus_model::defi::{
-    amm::Pool,
-    chain::{Blockchain, SharedChain},
-    dex::Dex,
-    token::Token,
+use nautilus_model::{
+    defi::{
+        amm::Pool,
+        chain::{Blockchain, SharedChain},
+        dex::Dex,
+        token::Token,
+    },
+    identifiers::{ClientId, Venue},
 };
 
 use crate::{
@@ -280,5 +295,234 @@ impl BlockchainDataClient {
         } else {
             self.hypersync_client.unsubscribe_blocks();
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl DataClient for BlockchainDataClient {
+    fn client_id(&self) -> ClientId {
+        ClientId::from(format!("BLOCKCHAIN-{}", self.chain.name).as_str())
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        // Blockchain data clients don't map to a single venue since they can provide
+        // data for multiple DEXs across the blockchain
+        None
+    }
+
+    fn start(&self) -> anyhow::Result<()> {
+        log::info!("Starting blockchain data client for {}", self.chain.name);
+        Ok(())
+    }
+
+    fn stop(&self) -> anyhow::Result<()> {
+        log::info!("Stopping blockchain data client for {}", self.chain.name);
+        Ok(())
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        log::info!("Resetting blockchain data client for {}", self.chain.name);
+        Ok(())
+    }
+
+    fn dispose(&self) -> anyhow::Result<()> {
+        log::info!("Disposing blockchain data client for {}", self.chain.name);
+        Ok(())
+    }
+
+    async fn connect(&self) -> anyhow::Result<()> {
+        // Note: The current implementation has connect() taking &mut self,
+        // but the trait requires &self. For now, we'll log the intent.
+        log::info!("Connecting blockchain data client for {}", self.chain.name);
+        // TODO: This should call self.connect() but requires refactoring the mutable reference
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        // Note: Same issue as connect() - the implementation needs &mut self
+        log::info!(
+            "Disconnecting blockchain data client for {}",
+            self.chain.name
+        );
+        // TODO: This should call self.disconnect() but requires refactoring the mutable reference
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        // For now, we'll assume connected if we have either RPC or HyperSync configured
+        self.rpc_client.is_some() || true // HyperSync is always available
+    }
+
+    fn is_disconnected(&self) -> bool {
+        !self.is_connected()
+    }
+
+    // Subscription methods - blockchain clients don't support traditional market data subscriptions
+    // but we implement them as no-ops for trait compliance
+
+    fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support custom data subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_instrument_status(
+        &mut self,
+        _cmd: &SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument status subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_instrument_close(
+        &mut self,
+        _cmd: &SubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument close subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support quote subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_trades(&mut self, _cmd: &SubscribeTrades) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support trade subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support bar subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support book snapshot subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_book_deltas(&mut self, _cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support book delta subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_book_depth10(&mut self, _cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support book depth subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_index_prices(&mut self, _cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support index price subscriptions");
+        Ok(())
+    }
+
+    fn subscribe_mark_prices(&mut self, _cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support mark price subscriptions");
+        Ok(())
+    }
+
+    // Unsubscription methods - all no-ops for blockchain client
+
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        _cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_close(
+        &mut self,
+        _cmd: &UnsubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_trades(&mut self, _cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_book_snapshots(
+        &mut self,
+        _cmd: &UnsubscribeBookSnapshots,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(&mut self, _cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    // Request methods - also no-ops for blockchain client since it doesn't provide traditional market data
+
+    fn request_instruments(&self, _request: &RequestInstruments) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument requests");
+        Ok(())
+    }
+
+    fn request_instrument(&self, _request: &RequestInstrument) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support instrument requests");
+        Ok(())
+    }
+
+    fn request_quotes(&self, _request: &RequestQuotes) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support quote requests");
+        Ok(())
+    }
+
+    fn request_trades(&self, _request: &RequestTrades) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support trade requests");
+        Ok(())
+    }
+
+    fn request_bars(&self, _request: &RequestBars) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support bar requests");
+        Ok(())
+    }
+
+    fn request_book_snapshot(&self, _request: &RequestBookSnapshot) -> anyhow::Result<()> {
+        log::debug!("Blockchain client doesn't support book snapshot requests");
+        Ok(())
     }
 }
