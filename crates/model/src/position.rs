@@ -21,7 +21,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{
+    UnixNanos,
+    correctness::{FAILED, check_equal, check_predicate_true},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -87,11 +90,17 @@ impl Position {
     /// # Panics
     ///
     /// This function panics if:
-    /// - The instrument ID does not match the fill’s `instrument_id`.
-    /// - The fill’s `order_side` is `NoOrderSide`.
-    /// - The fill’s `position_id` is `None`.
+    /// - The `instrument.id()` does not match the `fill.instrument_id`.
+    /// - The `fill.order_side` is `NoOrderSide`.
+    /// - The `fill.position_id` is `None`.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
-        assert_eq!(instrument.id(), fill.instrument_id);
+        check_equal(
+            &instrument.id(),
+            &fill.instrument_id,
+            "instrument.id()",
+            "fill.instrument_id",
+        )
+        .expect(FAILED);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
 
         let position_id = fill.position_id.expect("No position ID to open `Position`");
@@ -158,10 +167,13 @@ impl Position {
     ///
     /// Panics if the `fill.trade_id` is already present in the position’s `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
-        assert!(
+        check_predicate_true(
             !self.trade_ids.contains(&fill.trade_id),
-            "`fill.trade_id` already contained in `trade_ids"
-        );
+            "`fill.trade_id` already contained in `trade_ids",
+        )
+        .expect(FAILED);
+        check_predicate_true(fill.ts_event >= self.ts_opened, "fill.ts_event < ts_opened")
+            .expect(FAILED);
 
         if self.side == PositionSide::Flat {
             // Reset position

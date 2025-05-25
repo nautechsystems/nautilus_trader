@@ -1341,6 +1341,7 @@ enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
+enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionSide);
