@@ -170,6 +170,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._connect_websockets_delay: float = 0.0  # Delay for bulk subscriptions to come in
         self._connect_websockets_task: asyncio.Task | None = None
 
+        self._subscribe_allow_no_instrument_id = [
+            BinanceFuturesMarkPriceUpdate,
+        ]
+
         # HTTP API
         self._http_client = client
         self._http_market = market
@@ -296,7 +300,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _subscribe(self, command: SubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
-        if instrument_id is None:
+        if (
+            instrument_id is None
+            and command.data_type.type not in self._subscribe_allow_no_instrument_id
+        ):
             self._log.error(
                 f"Cannot subscribe to `{command.data_type.type}` no instrument ID in `data_type` metadata",
             )
@@ -307,11 +314,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         elif command.data_type.type == BinanceFuturesMarkPriceUpdate:
             if not self._binance_account_type.is_futures:
                 self._log.error(
-                    f"Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
+                    "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
                     f"for {self._binance_account_type.value} account types",
                 )
                 return
-            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
+            mark_price_symbol = instrument_id.symbol.value if instrument_id else None
+            await self._ws_client.subscribe_mark_price(mark_price_symbol, speed=1000)
         else:
             self._log.error(
                 f"Cannot subscribe to {command.data_type.type} (not implemented)",
@@ -319,9 +327,12 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         instrument_id: InstrumentId | None = command.data_type.metadata.get("instrument_id")
-        if instrument_id is None:
+        if (
+            instrument_id is None
+            and command.data_type.type not in self._subscribe_allow_no_instrument_id
+        ):
             self._log.error(
-                "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata",
+                "Cannot unsubscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata",
             )
             return
 

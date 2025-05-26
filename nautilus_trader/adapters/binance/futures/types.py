@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
 from typing import Any
 
@@ -47,7 +49,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
 
     References
     ----------
-    https://binance-docs.github.io/apidocs/futures/en/#mark-price-stream
+    https://developers.binance.com/docs/derivatives/usds-margined-futures/websocket-market-streams/Mark-Price-Stream
 
     """
 
@@ -109,7 +111,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         return self._ts_init
 
     @staticmethod
-    def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
+    def from_dict(values: dict[str, Any]) -> BinanceFuturesMarkPriceUpdate:
         """
         Return a Binance Futures mark price update parsed from the given values.
 
@@ -135,7 +137,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceFuturesMarkPriceUpdate") -> dict[str, Any]:
+    def to_dict(obj: BinanceFuturesMarkPriceUpdate) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
