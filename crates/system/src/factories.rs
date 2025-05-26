@@ -107,10 +107,7 @@ impl DataClientFactoryRegistry {
         factory: Box<dyn DataClientFactory>,
     ) -> anyhow::Result<()> {
         if self.factories.contains_key(&name) {
-            return Err(anyhow::anyhow!(
-                "Data client factory '{}' is already registered",
-                name
-            ));
+            anyhow::bail!("Data client factory '{name}' is already registered");
         }
 
         self.factories.insert(name, factory);
@@ -169,10 +166,7 @@ impl ExecutionClientFactoryRegistry {
         factory: Box<dyn ExecutionClientFactory>,
     ) -> anyhow::Result<()> {
         if self.factories.contains_key(&name) {
-            return Err(anyhow::anyhow!(
-                "Execution client factory '{}' is already registered",
-                name
-            ));
+            anyhow::bail!("Execution client factory '{name}' is already registered");
         }
 
         self.factories.insert(name, factory);

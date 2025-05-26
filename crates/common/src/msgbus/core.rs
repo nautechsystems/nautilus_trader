@@ -438,9 +438,7 @@ impl MessageBus {
         handler: ShareableMessageHandler,
     ) -> anyhow::Result<()> {
         if self.correlation_index.contains_key(correlation_id) {
-            return Err(anyhow::anyhow!(
-                "Correlation ID <{correlation_id}> already has a registered handler",
-            ));
+            anyhow::bail!("Correlation ID <{correlation_id}> already has a registered handler");
         }
 
         self.correlation_index.insert(*correlation_id, handler);

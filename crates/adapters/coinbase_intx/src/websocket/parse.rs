@@ -329,7 +329,7 @@ pub fn parse_orderbook_update_msg(
         let side = match side_str.as_str() {
             "BUY" => OrderSide::Buy,
             "SELL" => OrderSide::Sell,
-            _ => return Err(anyhow::anyhow!("Unknown order side: {side_str}")),
+            _ => anyhow::bail!("Unknown order side: {side_str}"),
         };
 
         // Determine book action based on size

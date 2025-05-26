@@ -176,7 +176,7 @@ impl BlockchainDataClient {
         let dex = if let Some(dex) = self.cache.get_dex(dex_id) {
             dex.clone()
         } else {
-            return Err(anyhow::anyhow!("Dex {} is not registered", dex_id));
+            anyhow::bail!("Dex {dex_id} is not registered");
         };
 
         let pools = self

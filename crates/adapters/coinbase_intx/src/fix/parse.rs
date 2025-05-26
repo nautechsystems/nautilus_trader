@@ -51,7 +51,7 @@ pub fn convert_to_order_status_report(
     let order_side = match side {
         "1" => OrderSide::Buy,
         "2" => OrderSide::Sell,
-        _ => return Err(anyhow::anyhow!("Unknown order side: {side}")),
+        _ => anyhow::bail!("Unknown order side: {side}"),
     };
 
     let ord_type = message.get_field_checked(fix_tag::ORD_TYPE)?;
@@ -60,7 +60,7 @@ pub fn convert_to_order_status_report(
         "2" => OrderType::Limit,
         "3" => OrderType::StopLimit,
         "4" => OrderType::StopMarket,
-        _ => return Err(anyhow::anyhow!("Unknown order type: {ord_type}")),
+        _ => anyhow::bail!("Unknown order type: {ord_type}"),
     };
 
     let tif = message.get_field_checked(fix_tag::TIME_IN_FORCE)?;
@@ -69,7 +69,7 @@ pub fn convert_to_order_status_report(
         "3" => TimeInForce::Ioc, // Immediate or Cancel
         "4" => TimeInForce::Fok, // Fill or Kill
         "6" => TimeInForce::Gtd, // Good Till Date
-        _ => return Err(anyhow::anyhow!("Unknown time in force: {tif}")),
+        _ => anyhow::bail!("Unknown time in force: {tif}"),
     };
 
     let status = message.get_field_checked(fix_tag::ORD_STATUS)?;
@@ -84,7 +84,7 @@ pub fn convert_to_order_status_report(
         "A" => OrderStatus::Submitted,     // Pending New
         "E" => OrderStatus::PendingUpdate, // Pending Replace
         "C" => OrderStatus::Expired,
-        _ => return Err(anyhow::anyhow!("Unknown order status: {status}")),
+        _ => anyhow::bail!("Unknown order status: {status}"),
     };
 
     let order_qty = message.get_field_checked(fix_tag::ORDER_QTY)?;
