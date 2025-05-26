@@ -256,10 +256,7 @@ impl Trader {
 
         // Check for duplicate registration
         if self.strategies.contains_key(&strategy_id) {
-            return Err(anyhow::anyhow!(
-                "Strategy '{}' is already registered",
-                strategy_id
-            ));
+            anyhow::bail!("Strategy '{strategy_id}' is already registered");
         }
 
         let component_clock = self.create_component_clock();
@@ -294,10 +291,7 @@ impl Trader {
 
         // Check for duplicate registration
         if self.exec_algorithms.contains_key(&exec_algorithm_id) {
-            return Err(anyhow::anyhow!(
-                "Execution algorithm '{}' is already registered",
-                exec_algorithm_id
-            ));
+            anyhow::bail!("Execution algorithm '{exec_algorithm_id}' is already registered");
         }
 
         let component_clock = self.create_component_clock();
@@ -519,10 +513,7 @@ impl Component for Trader {
             }
             ComponentState::Ready | ComponentState::Stopped => {}
             _ => {
-                return Err(anyhow::anyhow!(
-                    "Cannot start trader in current state: {}",
-                    self.state
-                ));
+                anyhow::bail!("Cannot start trader in current state: {}", self.state);
             }
         }
 

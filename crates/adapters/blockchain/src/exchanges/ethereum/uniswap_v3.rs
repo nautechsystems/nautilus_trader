@@ -45,19 +45,19 @@ fn parse_pool_created_event(log: Log) -> anyhow::Result<PoolCreated> {
         // Address is stored in the last 20 bytes of the 32-byte topic
         Address::from_slice(&topic.as_ref()[12..32])
     } else {
-        return Err(anyhow::anyhow!("Missing token0 address in topic1"));
+        anyhow::bail!("Missing token0 address in topic1");
     };
 
     let token1 = if let Some(topic) = log.topics.get(2).and_then(|t| t.as_ref()) {
         Address::from_slice(&topic.as_ref()[12..32])
     } else {
-        return Err(anyhow::anyhow!("Missing token1 address in topic2"));
+        anyhow::bail!("Missing token1 address in topic2");
     };
 
     let fee = if let Some(topic) = log.topics.get(3).and_then(|t| t.as_ref()) {
         U256::from_be_slice(topic.as_ref()).as_limbs()[0] as u32
     } else {
-        return Err(anyhow::anyhow!("Missing fee in topic3"));
+        anyhow::bail!("Missing fee in topic3");
     };
 
     if let Some(data) = log.data {
