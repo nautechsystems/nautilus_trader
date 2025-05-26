@@ -21,6 +21,7 @@ from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import AccountId
@@ -732,3 +733,37 @@ class TestMarginAccount:
         assert account_pnl[0] == Money(expected_amount, expected_currency)
         assert account_pnl[0] == expected_position_pnl
         assert account_pnl[0].as_double() == expected_amount
+
+    def test_balance_impact_buy_order(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        account.set_default_leverage(Decimal(10))  # 10x leverage
+
+        instrument = BTCUSDT_BINANCE
+        quantity = Quantity.from_str("1.0")
+        price = Price.from_str("50000.00")
+
+        # Act
+        impact = account.balance_impact(instrument, quantity, price, OrderSide.BUY)
+
+        # Assert
+        # With 10x leverage, should be -5000.00 USDT for 1.0 BTC at $50,000
+        expected = Money(-5000.00, USDT)
+        assert impact == expected
+
+    def test_balance_impact_sell_order(self):
+        # Arrange
+        account = TestExecStubs.margin_account()
+        account.set_default_leverage(Decimal(5))  # 5x leverage
+
+        instrument = BTCUSDT_BINANCE
+        quantity = Quantity.from_str("0.5")
+        price = Price.from_str("60000.00")
+
+        # Act
+        impact = account.balance_impact(instrument, quantity, price, OrderSide.SELL)
+
+        # Assert
+        # With 5x leverage, should be +6000.00 USDT for 0.5 BTC at $60,000
+        expected = Money(6000.00, USDT)
+        assert impact == expected
