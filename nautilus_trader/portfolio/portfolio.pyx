@@ -311,7 +311,7 @@ cdef class Portfolio(PortfolioFacade):
             Instrument instrument
             list positions_open
             Account account
-            AccountState result
+            bint result
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
