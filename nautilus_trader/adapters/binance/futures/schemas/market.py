@@ -248,3 +248,12 @@ class BinanceFuturesMarkPriceMsg(msgspec.Struct, frozen=True):
 
     stream: str
     data: BinanceFuturesMarkPriceData
+
+
+class BinanceFuturesMarkPriceAllMsg(msgspec.Struct, frozen=True):
+    """
+    WebSocket message from Binance Futures All Mark Price Update events.
+    """
+
+    stream: str
+    data: list[BinanceFuturesMarkPriceData]
