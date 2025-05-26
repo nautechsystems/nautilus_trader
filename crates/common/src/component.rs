@@ -13,7 +13,66 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::{ComponentState, ComponentTrigger};
+use std::fmt::Debug;
+
+use nautilus_model::identifiers::ComponentId;
+
+use crate::{
+    enums::{ComponentState, ComponentTrigger},
+    timer::TimeEvent,
+};
+
+/// Common trait for components.
+pub trait Component: Debug {
+    /// Returns the unique identifier for this component.
+    fn id(&self) -> ComponentId;
+
+    /// Returns the current state of the component.
+    fn state(&self) -> ComponentState;
+
+    /// Returns the component trigger.
+    fn trigger(&self) -> ComponentTrigger;
+
+    /// Returns whether the component is currently running.
+    fn is_running(&self) -> bool;
+
+    /// Returns whether the component is stopped.
+    fn is_stopped(&self) -> bool;
+
+    /// Returns whether the component has been disposed.
+    fn is_disposed(&self) -> bool;
+
+    /// Starts the component.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component fails to start.
+    fn start(&mut self) -> anyhow::Result<()>;
+
+    /// Stops the component.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component fails to stop.
+    fn stop(&mut self) -> anyhow::Result<()>;
+
+    /// Resets the component to its initial state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component fails to reset.
+    fn reset(&mut self) -> anyhow::Result<()>;
+
+    /// Disposes of the component, releasing any resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the component fails to dispose.
+    fn dispose(&mut self) -> anyhow::Result<()>;
+
+    /// Handles a timer event (TBD).
+    fn handle_event(&mut self, event: TimeEvent);
+}
 
 #[rustfmt::skip]
 impl ComponentState {

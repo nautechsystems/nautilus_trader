@@ -36,6 +36,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod sessions;
+pub mod trader;
 
 #[cfg(feature = "python")]
 pub mod python;

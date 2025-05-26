@@ -1,0 +1,317 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+//! Configuration types for live trading components.
+
+use std::collections::HashMap;
+
+use nautilus_common::enums::Environment;
+use nautilus_data::engine::config::DataEngineConfig;
+use nautilus_execution::engine::config::ExecutionEngineConfig;
+use nautilus_model::identifiers::TraderId;
+use nautilus_risk::engine::config::RiskEngineConfig;
+use nautilus_system::config::NautilusKernelConfig;
+use serde::{Deserialize, Serialize};
+
+/// Configuration for live data engines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveDataEngineConfig {
+    /// The queue size for the engine's internal queue buffers.
+    pub qsize: u32,
+}
+
+impl Default for LiveDataEngineConfig {
+    fn default() -> Self {
+        Self { qsize: 100_000 }
+    }
+}
+
+impl From<LiveDataEngineConfig> for DataEngineConfig {
+    fn from(_config: LiveDataEngineConfig) -> Self {
+        DataEngineConfig::default()
+    }
+}
+
+/// Configuration for live risk engines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveRiskEngineConfig {
+    /// The queue size for the engine's internal queue buffers.
+    pub qsize: u32,
+}
+
+impl Default for LiveRiskEngineConfig {
+    fn default() -> Self {
+        Self { qsize: 100_000 }
+    }
+}
+
+impl From<LiveRiskEngineConfig> for RiskEngineConfig {
+    fn from(_config: LiveRiskEngineConfig) -> Self {
+        RiskEngineConfig::default()
+    }
+}
+
+/// Configuration for live execution engines.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LiveExecEngineConfig {
+    /// If reconciliation is active at start-up.
+    pub reconciliation: bool,
+    /// The maximum lookback minutes to reconcile state for.
+    pub reconciliation_lookback_mins: Option<u32>,
+    /// If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
+    pub filter_unclaimed_external_orders: bool,
+    /// If position status reports are filtered from reconciliation.
+    pub filter_position_reports: bool,
+    /// If MARKET order events will be generated during reconciliation to align discrepancies.
+    pub generate_missing_orders: bool,
+    /// The interval (milliseconds) between checking whether in-flight orders have exceeded their threshold.
+    pub inflight_check_interval_ms: u32,
+    /// The threshold (milliseconds) beyond which an in-flight order's status is checked with the venue.
+    pub inflight_check_threshold_ms: u32,
+    /// The number of retry attempts for verifying in-flight order status.
+    pub inflight_check_retries: u32,
+    /// The interval (seconds) between auditing own books against public order books.
+    pub own_books_audit_interval_secs: Option<f64>,
+    /// The interval (seconds) between checks for open orders at the venue.
+    pub open_check_interval_secs: Option<f64>,
+    /// If the check_open_orders requests only currently open orders from the venue.
+    pub open_check_open_only: bool,
+    /// The interval (minutes) between purging closed orders from the in-memory cache.
+    pub purge_closed_orders_interval_mins: Option<u32>,
+    /// The time buffer (minutes) before closed orders can be purged.
+    pub purge_closed_orders_buffer_mins: Option<u32>,
+    /// The interval (minutes) between purging closed positions from the in-memory cache.
+    pub purge_closed_positions_interval_mins: Option<u32>,
+    /// The time buffer (minutes) before closed positions can be purged.
+    pub purge_closed_positions_buffer_mins: Option<u32>,
+    /// The interval (minutes) between purging account events from the in-memory cache.
+    pub purge_account_events_interval_mins: Option<u32>,
+    /// The time buffer (minutes) before account events can be purged.
+    pub purge_account_events_lookback_mins: Option<u32>,
+    /// The queue size for the engine's internal queue buffers.
+    pub qsize: u32,
+}
+
+impl Default for LiveExecEngineConfig {
+    fn default() -> Self {
+        Self {
+            reconciliation: true,
+            reconciliation_lookback_mins: None,
+            filter_unclaimed_external_orders: false,
+            filter_position_reports: false,
+            generate_missing_orders: true,
+            inflight_check_interval_ms: 2_000,
+            inflight_check_threshold_ms: 5_000,
+            inflight_check_retries: 5,
+            own_books_audit_interval_secs: None,
+            open_check_interval_secs: None,
+            open_check_open_only: true,
+            purge_closed_orders_interval_mins: None,
+            purge_closed_orders_buffer_mins: None,
+            purge_closed_positions_interval_mins: None,
+            purge_closed_positions_buffer_mins: None,
+            purge_account_events_interval_mins: None,
+            purge_account_events_lookback_mins: None,
+            qsize: 100_000,
+        }
+    }
+}
+
+impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
+    fn from(_config: LiveExecEngineConfig) -> Self {
+        ExecutionEngineConfig::default()
+    }
+}
+
+/// Configuration for live client message routing.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct RoutingConfig {
+    /// If the client should be registered as the default routing client.
+    pub default: bool,
+    /// The venues to register for routing.
+    pub venues: Option<Vec<String>>,
+}
+
+/// Configuration for instrument providers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstrumentProviderConfig {
+    /// Whether to load all instruments on startup.
+    pub load_all: bool,
+    /// Whether to load instrument IDs only.
+    pub load_ids: bool,
+    /// Filters for loading specific instruments.
+    pub filters: HashMap<String, String>,
+}
+
+impl Default for InstrumentProviderConfig {
+    fn default() -> Self {
+        Self {
+            load_all: false,
+            load_ids: true,
+            filters: HashMap::new(),
+        }
+    }
+}
+
+/// Configuration for live data clients.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct LiveDataClientConfig {
+    /// If DataClient will emit bar updates when a new bar opens.
+    pub handle_revised_bars: bool,
+    /// The client's instrument provider configuration.
+    pub instrument_provider: InstrumentProviderConfig,
+    /// The client's message routing configuration.
+    pub routing: RoutingConfig,
+}
+
+/// Configuration for live execution clients.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct LiveExecClientConfig {
+    /// The client's instrument provider configuration.
+    pub instrument_provider: InstrumentProviderConfig,
+    /// The client's message routing configuration.
+    pub routing: RoutingConfig,
+}
+
+/// Configuration for trading nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TradingNodeConfig {
+    /// The trading environment.
+    pub environment: Environment,
+    /// The trader ID for the node.
+    pub trader_id: TraderId,
+    /// The live data engine configuration.
+    pub data_engine: LiveDataEngineConfig,
+    /// The live risk engine configuration.
+    pub risk_engine: LiveRiskEngineConfig,
+    /// The live execution engine configuration.
+    pub exec_engine: LiveExecEngineConfig,
+    /// The data client configurations.
+    pub data_clients: HashMap<String, LiveDataClientConfig>,
+    /// The execution client configurations.
+    pub exec_clients: HashMap<String, LiveExecClientConfig>,
+}
+
+impl Default for TradingNodeConfig {
+    fn default() -> Self {
+        Self {
+            environment: Environment::Live,
+            trader_id: TraderId::from("TRADER-001"),
+            data_engine: LiveDataEngineConfig::default(),
+            risk_engine: LiveRiskEngineConfig::default(),
+            exec_engine: LiveExecEngineConfig::default(),
+            data_clients: HashMap::new(),
+            exec_clients: HashMap::new(),
+        }
+    }
+}
+
+impl From<TradingNodeConfig> for NautilusKernelConfig {
+    fn from(config: TradingNodeConfig) -> Self {
+        NautilusKernelConfig::new(
+            config.environment,
+            config.trader_id,
+            None, // load_state
+            None, // save_state
+            None, // timeout_connection
+            None, // timeout_reconciliation
+            None, // timeout_portfolio
+            None, // timeout_disconnection
+            None, // timeout_post_stop
+            None, // timeout_shutdown
+            None, // logging
+            None, // instance_id
+            None, // cache
+            None, // msgbus
+            Some(config.data_engine.into()),
+            Some(config.risk_engine.into()),
+            Some(config.exec_engine.into()),
+            None, // portfolio
+            None, // streaming
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_trading_node_config_default() {
+        let config = TradingNodeConfig::default();
+
+        assert_eq!(config.environment, Environment::Live);
+        assert_eq!(config.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(config.data_engine.qsize, 100_000);
+        assert_eq!(config.risk_engine.qsize, 100_000);
+        assert_eq!(config.exec_engine.qsize, 100_000);
+        assert!(config.exec_engine.reconciliation);
+        assert!(!config.exec_engine.filter_unclaimed_external_orders);
+        assert!(config.data_clients.is_empty());
+        assert!(config.exec_clients.is_empty());
+    }
+
+    #[rstest]
+    fn test_trading_node_config_to_kernel_config() {
+        let config = TradingNodeConfig::default();
+        let kernel_config: NautilusKernelConfig = config.into();
+
+        assert_eq!(kernel_config.environment, Environment::Live);
+        assert_eq!(kernel_config.trader_id, TraderId::from("TRADER-001"));
+        assert!(kernel_config.data_engine.is_some());
+        assert!(kernel_config.risk_engine.is_some());
+        assert!(kernel_config.exec_engine.is_some());
+    }
+
+    #[rstest]
+    fn test_live_exec_engine_config_defaults() {
+        let config = LiveExecEngineConfig::default();
+
+        assert!(config.reconciliation);
+        assert_eq!(config.reconciliation_lookback_mins, None);
+        assert!(!config.filter_unclaimed_external_orders);
+        assert!(!config.filter_position_reports);
+        assert!(config.generate_missing_orders);
+        assert_eq!(config.inflight_check_interval_ms, 2_000);
+        assert_eq!(config.inflight_check_threshold_ms, 5_000);
+        assert_eq!(config.inflight_check_retries, 5);
+        assert!(config.open_check_open_only);
+        assert_eq!(config.qsize, 100_000);
+    }
+
+    #[rstest]
+    fn test_routing_config_default() {
+        let config = RoutingConfig::default();
+
+        assert!(!config.default);
+        assert_eq!(config.venues, None);
+    }
+
+    #[rstest]
+    fn test_live_data_client_config_default() {
+        let config = LiveDataClientConfig::default();
+
+        assert!(!config.handle_revised_bars);
+        assert!(!config.instrument_provider.load_all);
+        assert!(config.instrument_provider.load_ids);
+        assert!(!config.routing.default);
+    }
+}

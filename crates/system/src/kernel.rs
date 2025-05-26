@@ -23,20 +23,23 @@ use futures::future::join_all;
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
     clock::{Clock, LiveClock, TestClock},
+    component::Component,
     enums::Environment,
     logging::{
         init_logging, init_tracing,
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
-    msgbus::{MessageBus, set_message_bus},
+    msgbus::{MessageBus, get_message_bus, set_message_bus},
     runtime::get_runtime,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
-use ustr::Ustr;
+use nautilus_portfolio::portfolio::Portfolio;
+use nautilus_risk::engine::RiskEngine;
+use nautilus_trading::trader::Trader;
 
 use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
 
@@ -46,7 +49,7 @@ use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
 #[derive(Debug)]
 pub struct NautilusKernel {
     /// The kernel name (for logging and identification).
-    pub name: Ustr,
+    pub name: String,
     /// The unique instance identifier for this kernel.
     pub instance_id: UUID4,
     /// The machine identifier (hostname or similar).
@@ -57,12 +60,18 @@ pub struct NautilusKernel {
     pub cache: Rc<RefCell<Cache>>,
     /// The clock driving the kernel.
     pub clock: Rc<RefCell<dyn Clock>>,
+    /// The portfolio manager.
+    pub portfolio: Portfolio,
     /// Guard for the logging subsystem (keeps logger thread alive).
     pub log_guard: LogGuard,
     /// The data engine instance.
     pub data_engine: DataEngine,
+    /// The risk engine instance.
+    pub risk_engine: RiskEngine,
     /// The execution engine instance.
     pub exec_engine: ExecutionEngine,
+    /// The trader component.
+    pub trader: Trader,
     /// The UNIX timestamp (nanoseconds) when the kernel was created.
     pub ts_created: UnixNanos,
     /// The UNIX timestamp (nanoseconds) when the kernel was last started.
@@ -75,7 +84,7 @@ impl NautilusKernel {
     /// Create a new [`NautilusKernelBuilder`] for fluent configuration.
     #[must_use]
     pub const fn builder(
-        name: Ustr,
+        name: String,
         trader_id: TraderId,
         environment: nautilus_common::enums::Environment,
     ) -> NautilusKernelBuilder {
@@ -87,7 +96,7 @@ impl NautilusKernel {
     /// # Errors
     ///
     /// Returns an error if the kernel fails to initialize.
-    pub fn new(name: Ustr, config: NautilusKernelConfig) -> anyhow::Result<Self> {
+    pub fn new(name: String, config: NautilusKernelConfig) -> anyhow::Result<Self> {
         let instance_id = config.instance_id.unwrap_or_default();
         let machine_id = Self::determine_machine_id()?;
 
@@ -96,19 +105,37 @@ impl NautilusKernel {
 
         log::info!("Building Nautilus system kernel");
 
-        let msgbus = MessageBus::new(
-            config.trader_id,
-            instance_id,
-            Some(name.as_str().to_string()),
-            None,
-        );
-        set_message_bus(Rc::new(RefCell::new(msgbus)));
-
         let clock = Self::initialize_clock(&config.environment);
         let cache = Self::initialize_cache(config.cache.clone());
+
+        let msgbus = Rc::new(RefCell::new(MessageBus::new(
+            config.trader_id,
+            instance_id,
+            Some(name.to_string()),
+            None,
+        )));
+        set_message_bus(msgbus.clone());
+
+        let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio.clone());
+
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine.clone());
+
+        let risk_engine = RiskEngine::new(
+            config.risk_engine.clone().unwrap_or_default(),
+            Portfolio::new(cache.clone(), clock.clone(), config.portfolio.clone()),
+            clock.clone(),
+            cache.clone(),
+        );
+
         let exec_engine =
             ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine.clone());
+
+        let trader = Trader::new(
+            config.trader_id,
+            instance_id,
+            config.environment,
+            clock.clone(),
+        );
 
         let ts_created = clock.borrow().timestamp_ns();
 
@@ -119,9 +146,12 @@ impl NautilusKernel {
             config,
             cache,
             clock,
+            portfolio,
             log_guard,
             data_engine,
+            risk_engine,
             exec_engine,
+            trader,
             ts_created,
             ts_started: None,
             ts_shutdown: None,
@@ -189,8 +219,8 @@ impl NautilusKernel {
 
     /// Returns the kernel's name.
     #[must_use]
-    pub const fn name(&self) -> Ustr {
-        self.name
+    pub const fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     /// Returns the kernel's trader ID.
@@ -253,10 +283,28 @@ impl NautilusKernel {
         self.cache.clone()
     }
 
+    /// Returns the kernel's message bus.  // TODO: TBD if this is necessary
+    #[must_use]
+    pub fn msgbus(&self) -> Rc<RefCell<MessageBus>> {
+        get_message_bus()
+    }
+
+    /// Returns the kernel's portfolio.
+    #[must_use]
+    pub const fn portfolio(&self) -> &Portfolio {
+        &self.portfolio
+    }
+
     /// Returns the kernel's data engine.
     #[must_use]
     pub const fn data_engine(&self) -> &DataEngine {
         &self.data_engine
+    }
+
+    /// Returns the kernel's risk engine.
+    #[must_use]
+    pub const fn risk_engine(&self) -> &RiskEngine {
+        &self.risk_engine
     }
 
     /// Returns the kernel's execution engine.
@@ -265,9 +313,20 @@ impl NautilusKernel {
         &self.exec_engine
     }
 
+    /// Returns the kernel's trader.
+    #[must_use]
+    pub const fn trader(&self) -> &Trader {
+        &self.trader
+    }
+
     /// Starts the Nautilus system kernel.
     pub fn start(&mut self) {
         self.start_engines();
+
+        // Start the trader (it will start all registered components)
+        if let Err(e) = self.trader.start() {
+            log::error!("Error starting trader: {e:?}");
+        }
 
         // Connect all adapter clients
         tokio::task::block_in_place(|| {
@@ -277,11 +336,19 @@ impl NautilusKernel {
                 }
             });
         });
+
+        self.ts_started = Some(self.clock.borrow().timestamp_ns());
+        log::info!("Nautilus system kernel started");
     }
 
     /// Stops the Nautilus system kernel.
     pub fn stop(&mut self) {
-        self.stop_clients();
+        log::info!("Stopping Nautilus system kernel");
+
+        // Stop the trader (it will stop all registered components)
+        if let Err(e) = self.trader.stop() {
+            log::error!("Error stopping trader: {e:?}");
+        }
 
         // Disconnect all adapter clients
         tokio::task::block_in_place(|| {
@@ -294,15 +361,39 @@ impl NautilusKernel {
 
         self.stop_engines();
         self.cancel_timers();
-        self.flush_writer();
+
+        self.ts_shutdown = Some(self.clock.borrow().timestamp_ns());
+        log::info!("Nautilus system kernel stopped");
+    }
+
+    /// Resets the Nautilus system kernel to its initial state.
+    pub fn reset(&mut self) {
+        if let Err(e) = self.trader.reset() {
+            log::error!("Error resetting trader: {e:?}");
+        }
+
+        // Reset engines
+        self.data_engine.reset();
+        // TODO: Reset other engines when reset methods are available
+
+        self.ts_started = None;
+        self.ts_shutdown = None;
+
+        log::info!("Nautilus system kernel reset");
     }
 
     /// Disposes of the Nautilus system kernel, releasing resources.
-    pub fn dispose(&self) {
+    pub fn dispose(&mut self) {
+        if let Err(e) = self.trader.dispose() {
+            log::error!("Error disposing trader: {e:?}");
+        }
+
         self.stop_engines();
 
         self.data_engine.dispose();
-        // self.exec_engine.dispose();  TODO: Implement command methods
+        // TODO: Implement dispose methods for other engines
+
+        log::info!("Nautilus system kernel disposed");
     }
 
     /// Cancels all tasks currently running under the kernel.
@@ -315,11 +406,13 @@ impl NautilusKernel {
     /// Starts all engine components.
     fn start_engines(&self) {
         self.data_engine.start();
+        // TODO: Start other engines when methods are available
     }
 
     /// Stops all engine components.
     fn stop_engines(&self) {
         self.data_engine.stop();
+        // TODO: Stop other engines when methods are available
     }
 
     /// Connects all engine clients.

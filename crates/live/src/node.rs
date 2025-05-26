@@ -19,10 +19,10 @@ use nautilus_common::enums::Environment;
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
+    config::NautilusKernelConfig,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     kernel::NautilusKernel,
 };
-use ustr::Ustr;
 
 /// High-level abstraction for a live trading node.
 ///
@@ -38,11 +38,46 @@ impl TradingNode {
     /// Creates a new [`TradingNodeBuilder`] for fluent configuration.
     #[must_use]
     pub fn builder(
-        name: Ustr,
+        name: String,
         trader_id: TraderId,
         environment: Environment,
     ) -> TradingNodeBuilder {
         TradingNodeBuilder::new(name, trader_id, environment)
+    }
+
+    /// Creates a new [`TradingNode`] directly from a kernel name and optional configuration.
+    ///
+    /// This is a convenience method for creating a trading node with a pre-configured
+    /// kernel configuration, bypassing the builder pattern. If no config is provided,
+    /// a default configuration will be used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if kernel construction fails.
+    pub fn build(
+        name: String,
+        kernel_config: Option<NautilusKernelConfig>,
+    ) -> anyhow::Result<Self> {
+        let config = kernel_config.unwrap_or_default();
+
+        // Validate environment for live trading
+        match config.environment {
+            Environment::Sandbox | Environment::Live => {}
+            Environment::Backtest => {
+                return Err(anyhow::anyhow!(
+                    "TradingNode cannot be used with Backtest environment"
+                ));
+            }
+        }
+
+        let kernel = NautilusKernel::new(name, config)?;
+
+        log::info!("Trading node built successfully with kernel config");
+
+        Ok(TradingNode {
+            kernel,
+            is_running: false,
+        })
     }
 
     /// Starts the trading node.
@@ -156,7 +191,7 @@ impl TradingNodeBuilder {
     ///
     /// Panics if `environment` is invalid (BACKTEST).
     #[must_use]
-    pub fn new(name: Ustr, trader_id: TraderId, environment: Environment) -> Self {
+    pub fn new(name: String, trader_id: TraderId, environment: Environment) -> Self {
         match environment {
             Environment::Sandbox | Environment::Live => {}
             Environment::Backtest => {
@@ -362,7 +397,7 @@ mod tests {
     #[rstest]
     fn test_trading_node_builder_creation() {
         let _builder = TradingNode::builder(
-            Ustr::from("TestNode"),
+            "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Sandbox,
         );
@@ -374,7 +409,7 @@ mod tests {
     #[should_panic(expected = "TradingNode cannot be used with Backtest environment")]
     fn test_trading_node_builder_rejects_backtest() {
         _ = TradingNode::builder(
-            Ustr::from("TestNode"),
+            "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Backtest,
         );
@@ -385,7 +420,7 @@ mod tests {
     #[rstest]
     fn test_trading_node_builder_fluent_api() {
         let _builder = TradingNode::builder(
-            Ustr::from("TestNode"),
+            "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Live,
         )
@@ -398,7 +433,7 @@ mod tests {
     #[rstest]
     fn test_trading_node_build() {
         let result = TradingNode::builder(
-            Ustr::from("TestNode"),
+            "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Sandbox,
         )

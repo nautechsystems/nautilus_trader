@@ -40,6 +40,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
+nautilus-trading = { workspace = true }
 hostname = "0.4.1"
 
 anyhow = { workspace = true }
