@@ -114,7 +114,7 @@ impl NautilusKernel {
             Some(name.to_string()),
             None,
         )));
-        set_message_bus(msgbus.clone());
+        set_message_bus(msgbus);
 
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio.clone());
 

@@ -99,6 +99,7 @@ impl SimpleMovingAverage {
     /// Creates a new [`SimpleMovingAverage`] instance.
     ///
     /// # Panics
+    ///
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {

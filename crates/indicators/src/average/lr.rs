@@ -85,8 +85,9 @@ impl LinearRegression {
     ///
     /// # Panics
     ///
-    /// * Panics if `period` is zero.
-    /// * Panics if `period` exceeds [`MAX_PERIOD`].
+    /// This function panics if:
+    /// `period` is zero.
+    /// `period` exceeds [`MAX_PERIOD`].
     #[must_use]
     pub fn new(period: usize) -> Self {
         assert!(
@@ -123,6 +124,7 @@ impl LinearRegression {
     /// Updates the linear regression with a new data point.
     ///
     /// # Panics
+    ///
     /// Panics if called with an empty window – this is protected against by the logic
     /// that returns early until enough samples have been collected.
     pub fn update_raw(&mut self, close: f64) {
@@ -557,7 +559,7 @@ mod tests {
         let mut lr = LinearRegression::new(period);
 
         for x in 1..=period {
-            lr.update_raw(A * x as f64 + B);
+            lr.update_raw(A.mul_add(x as f64, B));
         }
 
         assert!(lr.initialized());
@@ -588,7 +590,7 @@ mod tests {
         let mut lr = LinearRegression::new(P);
         for x in 1..=P {
             let noise = if x % 2 == 0 { 0.5 } else { -0.5 };
-            lr.update_raw(3.0 * x as f64 + noise);
+            lr.update_raw(3.0f64.mul_add(x as f64, noise));
         }
         assert!(lr.r2 > 0.0 && lr.r2 < 1.0);
     }

@@ -77,7 +77,7 @@ impl TradingNode {
 
         log::info!("Trading node built successfully with kernel config");
 
-        Ok(TradingNode {
+        Ok(Self {
             kernel,
             is_running: false,
         })
