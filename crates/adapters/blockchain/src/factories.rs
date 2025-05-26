@@ -98,7 +98,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
     }
 
     fn name(&self) -> &'static str {
-        "BlockchainDataClientFactory"
+        "BLOCKCHAIN"
     }
 
     fn config_type(&self) -> &'static str {

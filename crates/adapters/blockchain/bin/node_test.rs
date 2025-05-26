@@ -19,18 +19,14 @@ use nautilus_blockchain::{
     config::BlockchainAdapterConfig,
     factories::{BlockchainClientConfig, BlockchainDataClientFactory},
 };
-use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_core::{UUID4, env::get_env_var};
+use nautilus_common::enums::Environment;
+use nautilus_core::env::get_env_var;
 use nautilus_live::node::TradingNode;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
 };
-use nautilus_system::{
-    config::NautilusKernelConfig,
-    factories::{DataClientFactory, DataClientFactoryRegistry},
-};
-use tokio::time::{Duration, sleep};
+use tokio::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,30 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::default();
-
-    let kernel_config = NautilusKernelConfig::new(
-        environment,
-        trader_id,
-        Some(false),                   // load_state
-        Some(false),                   // save_state
-        None,                          // timeout_connection
-        None,                          // timeout_reconciliation
-        None,                          // timeout_portfolio
-        None,                          // timeout_disconnection
-        None,                          // timeout_post_stop
-        None,                          // timeout_shutdown
-        Some(LoggerConfig::default()), // logging
-        Some(UUID4::new()),            // instance_id
-        None,                          // cache
-        None,                          // msgbus
-        None,                          // data_engine
-        None,                          // risk_engine
-        None,                          // exec_engine
-        None,                          // portfolio
-        None,                          // streaming
-    );
-
-    let mut node = TradingNode::build("TESTER-001".to_string(), Some(kernel_config))?;
+    let node_name = "TESTER-001".to_string();
 
     let chain: Chain = match std::env::var("CHAIN")
         .ok()
@@ -94,49 +67,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         false, // Don't cache locally for this test
     );
 
-    // Create blockchain client using the factory pattern
-    let blockchain_client_config = BlockchainClientConfig::new(blockchain_config, chain.clone());
-    let blockchain_factory = BlockchainDataClientFactory::new();
+    let client_factory = Box::new(BlockchainDataClientFactory::new());
+    let client_config = BlockchainClientConfig::new(blockchain_config, chain.clone());
 
-    println!("✅ Blockchain factory created");
-    println!("   - Factory name: {}", blockchain_factory.name());
-    println!("   - Config type: {}", blockchain_factory.config_type());
+    let mut node = TradingNode::builder(node_name, trader_id, environment)?
+        .with_load_state(false)
+        .with_save_state(false)
+        .add_data_client(
+            None, // Use factory name
+            client_factory,
+            Box::new(client_config),
+        )?
+        .build()?;
 
-    // Test factory registry
-    let mut factory_registry = DataClientFactoryRegistry::new();
-    factory_registry.register("blockchain".to_string(), Box::new(blockchain_factory))?;
-
-    println!("✅ Factory registered with registry");
-    println!("   - Registered factories: {:?}", factory_registry.names());
-
-    // TODO: Move this to node builder
-    // Create client through factory
-    let factory = factory_registry.get("blockchain").unwrap();
-    let _blockchain_client = factory.create(
-        "blockchain-ethereum",
-        &blockchain_client_config,
-        node.kernel().cache(),
-        node.kernel().clock(),
-    )?;
-
-    // TODO: Improve this API
-    // Note: We're not connecting to avoid requiring actual RPC endpoints for basic testing
-    // blockchain_client.connect().await?;
-    // trading_node.kernel().data_engine().register_client(Box::new(blockchain_client)).await?;
-
-    // Test trading node lifecycle (start/stop)
-    println!("\n🎮 Testing trading node lifecycle...");
-
-    println!("   - Starting trading node...");
     node.start().await?;
-    println!("   - Trading node started, running: {}", node.is_running());
 
-    // Let it run briefly
-    sleep(Duration::from_millis(100)).await;
+    // Let it run briefly to ensure all components are properly initialized
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
-    println!("   - Stopping trading node...");
     node.stop().await?;
-    println!("   - Trading node stopped, running: {}", node.is_running());
 
     Ok(())
 }
