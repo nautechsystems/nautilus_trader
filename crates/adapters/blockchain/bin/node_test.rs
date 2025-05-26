@@ -21,6 +21,7 @@ use nautilus_blockchain::{
 };
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_core::{UUID4, env::get_env_var};
+use nautilus_live::node::TradingNode;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
@@ -28,20 +29,15 @@ use nautilus_model::{
 use nautilus_system::{
     config::NautilusKernelConfig,
     factories::{DataClientFactory, DataClientFactoryRegistry},
-    kernel::NautilusKernel,
 };
 use tokio::time::{Duration, sleep};
-use ustr::Ustr;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let trader_id = TraderId::default();
-    let kernel_name = Ustr::from("TESTER-001");
     let environment = Environment::Live;
-
-    // TODO: Incorporate TradingNode
+    let trader_id = TraderId::default();
 
     let kernel_config = NautilusKernelConfig::new(
         environment,
@@ -65,9 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,                          // streaming
     );
 
-    let mut kernel = NautilusKernel::new(kernel_name, kernel_config)?;
+    let mut node = TradingNode::build("TESTER-001".to_string(), Some(kernel_config))?;
 
-    // TODO: Get blockchain configuration from environment or use defaults
     let chain: Chain = match std::env::var("CHAIN")
         .ok()
         .and_then(|s| s.parse::<Blockchain>().ok())
@@ -90,7 +85,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("⚠️  RPC_HTTP_URL not found, using placeholder");
         "https://eth-mainnet.example.com".to_string()
     });
-
     let wss_rpc_url = get_env_var("RPC_WSS_URL").ok();
 
     let blockchain_config = BlockchainAdapterConfig::new(
@@ -115,45 +109,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Factory registered with registry");
     println!("   - Registered factories: {:?}", factory_registry.names());
 
+    // TODO: Move this to node builder
     // Create client through factory
     let factory = factory_registry.get("blockchain").unwrap();
-    let blockchain_client = factory.create(
+    let _blockchain_client = factory.create(
         "blockchain-ethereum",
         &blockchain_client_config,
-        kernel.cache(),
-        kernel.clock(),
+        node.kernel().cache(),
+        node.kernel().clock(),
     )?;
 
-    println!("✅ Blockchain data client created via factory");
-    println!("   - Client ID: {}", blockchain_client.client_id());
-    println!("   - Connected: {}", blockchain_client.is_connected());
-
+    // TODO: Improve this API
     // Note: We're not connecting to avoid requiring actual RPC endpoints for basic testing
-    // In a real scenario, you would:
     // blockchain_client.connect().await?;
-    // kernel.data_engine().register_client(Box::new(blockchain_client)).await?;
+    // trading_node.kernel().data_engine().register_client(Box::new(blockchain_client)).await?;
 
-    // Test kernel lifecycle (start/stop)
-    println!("\n🎮 Testing kernel lifecycle...");
+    // Test trading node lifecycle (start/stop)
+    println!("\n🎮 Testing trading node lifecycle...");
 
-    println!("   - Starting kernel...");
-    kernel.start();
-    println!("   - Kernel started at: {:?}", kernel.ts_started());
+    println!("   - Starting trading node...");
+    node.start().await?;
+    println!("   - Trading node started, running: {}", node.is_running());
 
     // Let it run briefly
     sleep(Duration::from_millis(100)).await;
 
-    println!("   - Stopping kernel...");
-    kernel.stop();
-    println!("   - Kernel stopped at: {:?}", kernel.ts_shutdown());
-
-    println!("✅ Kernel lifecycle test completed");
-
-    // Test client lifecycle
-    println!("   - Testing client lifecycle...");
-    blockchain_client.start()?;
-    blockchain_client.stop()?;
-    blockchain_client.reset()?;
+    println!("   - Stopping trading node...");
+    node.stop().await?;
+    println!("   - Trading node stopped, running: {}", node.is_running());
 
     Ok(())
 }

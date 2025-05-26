@@ -4469,6 +4469,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-data",
  "nautilus-infrastructure",
+ "nautilus-live",
  "nautilus-model",
  "nautilus-network",
  "nautilus-system",
@@ -4993,6 +4994,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-trading",
  "pyo3",
  "rstest",
  "tokio",
@@ -5065,6 +5067,7 @@ version = "0.48.0"
 name = "nautilus-trading"
 version = "0.48.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "chrono-tz",
  "criterion",
@@ -5075,6 +5078,7 @@ dependencies = [
  "nautilus-execution",
  "nautilus-model",
  "nautilus-portfolio",
+ "nautilus-risk",
  "pyo3",
  "rstest",
  "strum",

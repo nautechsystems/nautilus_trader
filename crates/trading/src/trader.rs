@@ -26,73 +26,13 @@
 use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
-    cache::Cache,
     clock::{Clock, TestClock},
+    component::Component,
     enums::{ComponentState, ComponentTrigger, Environment},
-    msgbus::MessageBus,
     timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_data::engine::DataEngine;
-use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::{ComponentId, ExecAlgorithmId, StrategyId, TraderId};
-use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_risk::engine::RiskEngine;
-
-/// Trait for trading components that can be managed by the Trader.
-///
-/// This trait defines the interface for components (actors, strategies, execution algorithms)
-/// that can be registered with and managed by the Trader.
-pub trait Component: Debug {
-    /// Returns the unique identifier for this component.
-    fn id(&self) -> ComponentId;
-
-    /// Returns the current state of the component.
-    fn state(&self) -> ComponentState;
-
-    /// Returns the component trigger.
-    fn trigger(&self) -> ComponentTrigger;
-
-    /// Returns whether the component is currently running.
-    fn is_running(&self) -> bool;
-
-    /// Returns whether the component is stopped.
-    fn is_stopped(&self) -> bool;
-
-    /// Returns whether the component has been disposed.
-    fn is_disposed(&self) -> bool;
-
-    /// Starts the component.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the component fails to start.
-    fn start(&mut self) -> anyhow::Result<()>;
-
-    /// Stops the component.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the component fails to stop.
-    fn stop(&mut self) -> anyhow::Result<()>;
-
-    /// Resets the component to its initial state.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the component fails to reset.
-    fn reset(&mut self) -> anyhow::Result<()>;
-
-    /// Disposes of the component, releasing any resources.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the component fails to dispose.
-    fn dispose(&mut self) -> anyhow::Result<()>;
-
-    /// Handles a timer event.
-    fn handle_event(&mut self, event: TimeEvent);
-}
 
 /// Central orchestrator for managing trading components.
 ///
@@ -109,28 +49,16 @@ pub struct Trader {
     pub environment: Environment,
     /// Component state for lifecycle management.
     state: ComponentState,
-    /// Message bus for system communication.
-    msgbus: Rc<RefCell<MessageBus>>,
-    /// System cache for persistence.
-    cache: Rc<RefCell<Cache>>,
-    /// Portfolio manager.
-    portfolio: Rc<RefCell<Portfolio>>,
-    /// Data engine reference.
-    data_engine: Rc<RefCell<DataEngine>>,
-    /// Risk engine reference.
-    risk_engine: Rc<RefCell<RiskEngine>>,
-    /// Execution engine reference.
-    exec_engine: Rc<RefCell<ExecutionEngine>>,
-    /// System clock.
+    /// System clock for timestamping.
     clock: Rc<RefCell<dyn Clock>>,
     /// Registered actors by component ID.
-    actors: HashMap<ComponentId, Box<dyn Component>>,
+    actors: HashMap<ComponentId, Box<dyn Component>>, // TODO: TBD
     /// Registered strategies by strategy ID.
     strategies: HashMap<StrategyId, Box<dyn Component>>,
     /// Registered execution algorithms by algorithm ID.
-    exec_algorithms: HashMap<ExecAlgorithmId, Box<dyn Component>>,
+    exec_algorithms: HashMap<ExecAlgorithmId, Box<dyn Component>>, // TODO: TBD
     /// Component clocks for individual components.
-    component_clocks: HashMap<ComponentId, Rc<RefCell<dyn Clock>>>,
+    component_clocks: HashMap<ComponentId, Rc<RefCell<dyn Clock>>>, // TODO: TBD
     /// Timestamp when the trader was created.
     ts_created: UnixNanos,
     /// Timestamp when the trader was last started.
@@ -142,17 +70,10 @@ pub struct Trader {
 impl Trader {
     /// Creates a new [`Trader`] instance.
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
         environment: Environment,
-        msgbus: Rc<RefCell<MessageBus>>,
-        cache: Rc<RefCell<Cache>>,
-        portfolio: Rc<RefCell<Portfolio>>,
-        data_engine: Rc<RefCell<DataEngine>>,
-        risk_engine: Rc<RefCell<RiskEngine>>,
-        exec_engine: Rc<RefCell<ExecutionEngine>>,
         clock: Rc<RefCell<dyn Clock>>,
     ) -> Self {
         let ts_created = clock.borrow().timestamp_ns();
@@ -162,12 +83,6 @@ impl Trader {
             instance_id,
             environment,
             state: ComponentState::PreInitialized,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
             clock,
             actors: HashMap::new(),
             strategies: HashMap::new(),
@@ -841,18 +756,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         assert_eq!(trader.trader_id(), trader_id);
         assert_eq!(trader.instance_id(), instance_id);
@@ -877,18 +781,7 @@ mod tests {
         let trader_id = TraderId::from("TRADER-001");
         let instance_id = UUID4::new();
 
-        let trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         assert_eq!(trader.id(), ComponentId::from("Trader-TRADER-001"));
     }
@@ -900,18 +793,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         let actor = Box::new(MockComponent::new("TestActor"));
         let actor_id = actor.id();
@@ -930,18 +812,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         let actor1 = Box::new(MockComponent::new("TestActor"));
         let actor2 = Box::new(MockComponent::new("TestActor"));
@@ -969,18 +840,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         let strategy = Box::new(MockComponent::new("Test-Strategy"));
         let strategy_id = StrategyId::from(strategy.id().to_string().as_str());
@@ -999,18 +859,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         let exec_algorithm = Box::new(MockComponent::new("TestExecAlgorithm"));
         let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.id().to_string().as_str());
@@ -1029,18 +878,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         // Add components
         let actor = Box::new(MockComponent::new("TestActor"));
@@ -1073,18 +911,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         // Initially pre-initialized
         assert_eq!(trader.state(), ComponentState::PreInitialized);
@@ -1129,18 +956,7 @@ mod tests {
         let trader_id = TraderId::default();
         let instance_id = UUID4::new();
 
-        let mut trader = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock,
-        );
+        let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock);
 
         // Simulate running state
         trader.state = ComponentState::Running;
@@ -1164,18 +980,8 @@ mod tests {
         let instance_id = UUID4::new();
 
         // Test backtest environment - should create individual test clocks
-        let trader_backtest = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Backtest,
-            msgbus.clone(),
-            cache.clone(),
-            portfolio.clone(),
-            data_engine.clone(),
-            risk_engine.clone(),
-            exec_engine.clone(),
-            clock.clone(),
-        );
+        let trader_backtest =
+            Trader::new(trader_id, instance_id, Environment::Backtest, clock.clone());
 
         let backtest_clock = trader_backtest.create_component_clock();
         // In backtest, component clock should be different from system clock
@@ -1185,18 +991,7 @@ mod tests {
         );
 
         // Test live environment - should share system clock
-        let trader_live = Trader::new(
-            trader_id,
-            instance_id,
-            Environment::Live,
-            msgbus,
-            cache,
-            portfolio,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            clock.clone(),
-        );
+        let trader_live = Trader::new(trader_id, instance_id, Environment::Live, clock.clone());
 
         let live_clock = trader_live.create_component_clock();
         // In live, component clock should be same as system clock

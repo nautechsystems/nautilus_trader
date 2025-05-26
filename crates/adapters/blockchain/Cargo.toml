@@ -31,6 +31,7 @@ nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
+nautilus-live = { workspace = true }
 nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
 nautilus-system = { workspace = true }

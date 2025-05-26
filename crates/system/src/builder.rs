@@ -20,7 +20,6 @@ use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
-use ustr::Ustr;
 
 use crate::{config::NautilusKernelConfig, kernel::NautilusKernel};
 
@@ -30,7 +29,7 @@ use crate::{config::NautilusKernelConfig, kernel::NautilusKernel};
 /// optional components and settings.
 #[derive(Debug)]
 pub struct NautilusKernelBuilder {
-    name: Ustr,
+    name: String,
     trader_id: TraderId,
     environment: Environment,
     instance_id: Option<UUID4>,
@@ -53,7 +52,7 @@ pub struct NautilusKernelBuilder {
 impl NautilusKernelBuilder {
     /// Creates a new [`NautilusKernelBuilder`] with required parameters.
     #[must_use]
-    pub const fn new(name: Ustr, trader_id: TraderId, environment: Environment) -> Self {
+    pub const fn new(name: String, trader_id: TraderId, environment: Environment) -> Self {
         Self {
             name,
             trader_id,
@@ -217,7 +216,7 @@ impl Default for NautilusKernelBuilder {
     /// Create a default builder with minimal configuration for testing/development.
     fn default() -> Self {
         Self::new(
-            Ustr::from("NautilusKernel"),
+            "NautilusKernel".to_string(),
             TraderId::default(),
             Environment::Backtest,
         )
@@ -238,7 +237,7 @@ mod tests {
     #[rstest]
     fn test_builder_default() {
         let builder = NautilusKernelBuilder::default();
-        assert_eq!(builder.name, Ustr::from("NautilusKernel"));
+        assert_eq!(builder.name, "NautilusKernel");
         assert_eq!(builder.environment, Environment::Backtest);
         assert!(builder.load_state);
         assert!(builder.save_state);
@@ -250,13 +249,13 @@ mod tests {
         let instance_id = UUID4::new();
 
         let builder =
-            NautilusKernelBuilder::new(Ustr::from("TestKernel"), trader_id, Environment::Live)
+            NautilusKernelBuilder::new("TestKernel".to_string(), trader_id, Environment::Live)
                 .with_instance_id(instance_id)
                 .with_load_state(false)
                 .with_save_state(false)
                 .with_timeout_connection(30);
 
-        assert_eq!(builder.name, Ustr::from("TestKernel"));
+        assert_eq!(builder.name, "TestKernel");
         assert_eq!(builder.trader_id, trader_id);
         assert_eq!(builder.environment, Environment::Live);
         assert_eq!(builder.instance_id, Some(instance_id));
@@ -271,7 +270,7 @@ mod tests {
         assert!(result.is_ok());
 
         let kernel = result.unwrap();
-        assert_eq!(kernel.name(), Ustr::from("NautilusKernel"));
+        assert_eq!(kernel.name(), "NautilusKernel".to_string());
         assert_eq!(kernel.environment(), Environment::Backtest);
     }
 

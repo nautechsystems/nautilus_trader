@@ -39,7 +39,6 @@ use nautilus_model::{
 };
 use nautilus_system::kernel::NautilusKernel;
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use crate::{
     accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
@@ -83,7 +82,7 @@ impl BacktestEngine {
     ///
     /// Returns an error if the core `NautilusKernel` fails to initialize.
     pub fn new(config: BacktestEngineConfig) -> anyhow::Result<Self> {
-        let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone())?;
+        let kernel = NautilusKernel::new("BacktestEngine".to_string(), config.kernel.clone())?;
 
         Ok(Self {
             instance_id: kernel.instance_id,
