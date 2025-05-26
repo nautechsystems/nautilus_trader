@@ -26,7 +26,7 @@ Released on TBD (UTC).
 - Added support for DEXs, pools, and tokens to blockchain adapter (#2638), thanks @filipmacek
 
 ### Breaking Changes
-None
+- Changed trailing stops to use `activation_price` rather than `trigger_price` for Binance to more closely match the Binance API conventions
 
 ### Internal Improvements
 - Added `activation_price` str and repr tests for trailing stop orders (#2620), thanks @hope2see

@@ -766,7 +766,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}. {order}",
+                f"{trigger_type_to_str(order.trigger_type)}. {order}",
             )
             return
 
@@ -843,7 +843,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_side=position_side,
         )
 
-    async def _submit_trailing_stop_market_order(
+    async def _submit_trailing_stop_market_order(  # noqa: C901 (too complex)
         self,
         order: TrailingStopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
@@ -879,8 +879,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Check for activation price vs trigger price usage
+        if order.trigger_price is not None:
+            self._log.error(
+                f"Cannot submit trailing stop order {order.client_order_id}: "
+                "use `activation_price` instead of `trigger_price` for Binance trailing stop orders",
+            )
+            return
+
         # Ensure activation price
-        activation_price: Price | None = order.trigger_price
+        activation_price: Price | None = order.activation_price
         if not activation_price:
             quote = self._cache.quote_tick(order.instrument_id)
             trade = self._cache.trade_tick(order.instrument_id)
@@ -893,7 +901,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 activation_price = trade.price
             else:
                 self._log.error(
-                    "Cannot submit order: no trigger price specified for Binance activation price "
+                    "Cannot submit order: no activation price specified for Binance trailing stop order "
                     f"and could not find quotes or trades for {order.instrument_id}",
                 )
 

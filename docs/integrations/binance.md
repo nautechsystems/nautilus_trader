@@ -99,19 +99,23 @@ E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would 
 ### Trailing stops
 
 Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
-This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price can optionally be set using the `trigger_price` value.
+This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price should be set using the `activation_price` parameter.
 
 Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
-The activated price is simply the price at which the order will begin trailing based on the callback rate.
+The activation price is simply the price at which the order will begin trailing based on the callback rate.
+
+:::warning
+For Binance trailing stop orders, you must use `activation_price` instead of `trigger_price`. Using `trigger_price` will result in an order rejection.
+:::
 
 When submitting trailing stop orders from your strategy, you have two options:
 
-1. Use the `trigger_price` to manually set the activation price.
-2. Leave the `trigger_price` as `None`, activating the trailing mechanism immediately.
+1. Use the `activation_price` to manually set the activation price.
+2. Leave the `activation_price` as `None`, activating the trailing mechanism immediately.
 
 You must also have at least *one* of the following:
 
-- The `trigger_price` for the order is set (this will act as the Binance *activation_price*).
+- The `activation_price` for the order is set.
 - (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
 - (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
