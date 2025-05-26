@@ -109,10 +109,10 @@ impl AdaptiveMovingAverage {
     /// # Panics
     ///
     /// This function panics if:
-    /// - `period_efficiency_ratio` == 0
-    /// - `period_fast` == 0
-    /// - `period_slow` == 0
-    /// - `period_slow` ≤ `period_fast`
+    /// - `period_efficiency_ratio` == 0.
+    /// - `period_fast` == 0.
+    /// - `period_slow` == 0.
+    /// - `period_slow` ≤ `period_fast`.
     #[must_use]
     pub fn new(
         period_efficiency_ratio: usize,

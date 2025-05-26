@@ -97,9 +97,10 @@ impl ArcherMovingAveragesTrends {
     ///
     /// # Panics
     ///
-    /// * if *fast_period*, *slow_period* or *signal_period* is 0
-    /// * if *slow_period* ≤ *fast_period*
-    /// * if *signal_period* > `MAX_SIGNAL`
+    /// This function panics if:
+    /// `fast_period`*, *`slow_period`* or *`signal_period`* is 0.
+    /// `slow_period`* ≤ *`fast_period`*.
+    /// `signal_period`* > `MAX_SIGNAL`.
     #[must_use]
     pub fn new(
         fast_period: usize,
@@ -300,7 +301,7 @@ mod tests {
         let mut ind = ArcherMovingAveragesTrends::new(3, 4, 5, None);
         feed_sequence(&mut ind, 0, 50, 1);
         assert!(ind.long_run || ind.short_run);
-        assert!(ind.fast_ma_price.len() > 0);
+        assert!(!ind.fast_ma_price.is_empty());
 
         ind.reset();
 

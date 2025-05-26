@@ -56,10 +56,10 @@ impl WeightedMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// * `period` is zero or
-    /// * `weights.len()` does not equal `period` or
-    /// * `weights` sum is effectively zero.
+    /// This function panics if:
+    /// - `period` is zero.
+    /// - `weights.len()` does not equal `period`.
+    /// - `weights` sum is effectively zero.
     #[must_use]
     pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
         Self::new_checked(period, weights, price_type).expect(FAILED)
@@ -69,10 +69,10 @@ impl WeightedMovingAverage {
     ///
     /// # Errors
     ///
-    /// Returns an [`anyhow::Error`] if **any** of the validation rules fails:
-    /// * `period` must be **positive**.
-    /// * `weights` must be **exactly** `period` elements long.
-    /// * `weights` must contain at least one non-zero value (∑wᵢ > ε).
+    /// Returns an erro if **any** of the validation rules fails:
+    /// - `period` must be **positive**.
+    /// - `weights` must be **exactly** `period` elements long.
+    /// - `weights` must contain at least one non-zero value (∑wᵢ > ε).
     pub fn new_checked(
         period: usize,
         weights: Vec<f64>,

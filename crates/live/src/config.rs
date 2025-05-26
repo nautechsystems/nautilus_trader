@@ -40,7 +40,7 @@ impl Default for LiveDataEngineConfig {
 
 impl From<LiveDataEngineConfig> for DataEngineConfig {
     fn from(_config: LiveDataEngineConfig) -> Self {
-        DataEngineConfig::default()
+        Self::default()
     }
 }
 
@@ -59,7 +59,7 @@ impl Default for LiveRiskEngineConfig {
 
 impl From<LiveRiskEngineConfig> for RiskEngineConfig {
     fn from(_config: LiveRiskEngineConfig) -> Self {
-        RiskEngineConfig::default()
+        Self::default()
     }
 }
 
@@ -86,7 +86,7 @@ pub struct LiveExecEngineConfig {
     pub own_books_audit_interval_secs: Option<f64>,
     /// The interval (seconds) between checks for open orders at the venue.
     pub open_check_interval_secs: Option<f64>,
-    /// If the check_open_orders requests only currently open orders from the venue.
+    /// If the `check_open_orders` requests only currently open orders from the venue.
     pub open_check_open_only: bool,
     /// The interval (minutes) between purging closed orders from the in-memory cache.
     pub purge_closed_orders_interval_mins: Option<u32>,
@@ -131,7 +131,7 @@ impl Default for LiveExecEngineConfig {
 
 impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     fn from(_config: LiveExecEngineConfig) -> Self {
-        ExecutionEngineConfig::default()
+        Self::default()
     }
 }
 
@@ -168,7 +168,7 @@ impl Default for InstrumentProviderConfig {
 /// Configuration for live data clients.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LiveDataClientConfig {
-    /// If DataClient will emit bar updates when a new bar opens.
+    /// If `DataClient` will emit bar updates when a new bar opens.
     pub handle_revised_bars: bool,
     /// The client's instrument provider configuration.
     pub instrument_provider: InstrumentProviderConfig,
@@ -220,7 +220,7 @@ impl Default for TradingNodeConfig {
 
 impl From<TradingNodeConfig> for NautilusKernelConfig {
     fn from(config: TradingNodeConfig) -> Self {
-        NautilusKernelConfig::new(
+        Self::new(
             config.environment,
             config.trader_id,
             None, // load_state
