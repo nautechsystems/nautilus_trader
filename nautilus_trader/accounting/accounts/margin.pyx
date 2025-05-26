@@ -82,17 +82,21 @@ cdef class MarginAccount(Account):
         Condition.not_none(values, "values")
         calculate_account_state = values["calculate_account_state"]
         events = values["events"]
-        events = values["events"]
+
         if len(events) == 0:
             return None
+
         init_event = events[0]
-        other_events = events[1:]
         account = MarginAccount(
             event=AccountState.from_dict_c(init_event),
             calculate_account_state=calculate_account_state
         )
+
+        other_events = events[1:]
+
         for event in other_events:
             account.apply(AccountState.from_dict_c(event))
+
         return account
 
     @staticmethod
@@ -713,11 +717,11 @@ cdef class MarginAccount(Account):
             self._leverages[instrument.id] = leverage
 
         margin_impact = Decimal(1) / leverage
-        notional = instrument.notional_value(quantity, price).as_decimal()
+        cdef Money notional = instrument.notional_value(quantity, price)
 
         if order_side == OrderSide.BUY:
-            return Money(-notional * margin_impact, notional.currency)
+            return Money(-notional.as_decimal() * margin_impact, notional.currency)
         elif order_side == OrderSide.SELL:
-            return Money(notional * margin_impact, notional.currency)
+            return Money(notional.as_decimal() * margin_impact, notional.currency)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)
