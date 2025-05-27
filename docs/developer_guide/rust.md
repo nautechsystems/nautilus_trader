@@ -8,6 +8,31 @@ Python bindings are provided via Cython and [PyO3](https://pyo3.rs), allowing us
 
 ## Code Style and Conventions
 
+### File Header Requirements
+
+All Rust files must include the standardized copyright header:
+
+```rust
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+```
+
+### Code Formatting
+
+Import formatting is automatically handled by rustfmt when running `make format`. The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
+
 ### Error Handling
 
 Use structured error handling patterns consistently:
@@ -66,6 +91,79 @@ Document all public functions with:
 /// Panics if `currency` is `None` and `self.base_currency` is `None`.
 pub fn base_balance(&self, currency: Option<Currency>) -> Option<&AccountBalance> {
     // Implementation
+}
+```
+
+#### Errors and Panics Documentation Format
+
+For single line errors and panics documentation, use sentence case with the following convention:
+
+```rust
+/// Returns a reference to the `AccountBalance` for the specified currency, or `None` if absent.
+///
+/// # Errors
+///
+/// Returns an error if the currency conversion fails.
+///
+/// # Panics
+///
+/// Panics if `currency` is `None` and `self.base_currency` is `None`.
+pub fn base_balance(&self, currency: Option<Currency>) -> anyhow::Result<Option<&AccountBalance>> {
+    // Implementation
+}
+```
+
+For multi-line errors and panics documentation, use sentence case with bullets and terminating periods:
+
+```rust
+/// Calculates the unrealized profit and loss for the position.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The market price for the instrument cannot be found.
+/// - The conversion rate calculation fails.
+/// - Invalid position state is encountered.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - The instrument ID is invalid or uninitialized.
+/// - Required market data is missing from the cache.
+/// - Internal state consistency checks fail.
+pub fn calculate_unrealized_pnl(&self, market_price: Price) -> anyhow::Result<Money> {
+    // Implementation
+}
+```
+
+#### Safety Documentation Format
+
+For Safety documentation, use the `SAFETY:` prefix followed by a short description explaining why the unsafe operation is valid:
+
+```rust
+/// Creates a new instance from raw components without validation.
+///
+/// # Safety
+///
+/// The caller must ensure that all input parameters are valid and properly initialized.
+pub unsafe fn from_raw_parts(ptr: *const u8, len: usize) -> Self {
+    // SAFETY: Caller guarantees ptr is valid and len is correct
+    Self {
+        data: std::slice::from_raw_parts(ptr, len),
+    }
+}
+```
+
+For inline unsafe blocks, use the `SAFETY:` comment directly above the unsafe code:
+
+```rust
+impl Send for MessageBus {
+    fn send(&self) {
+        // SAFETY: Message bus is not meant to be passed between threads
+        unsafe {
+            // unsafe operation here
+        }
+    }
 }
 ```
 

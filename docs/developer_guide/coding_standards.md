@@ -73,40 +73,6 @@ class ThrottledEnqueuer(Generic[T]):
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase.
 This needs to be adhered to consistently to ensure the docs build correctly.
 
-**Comprehensive docstring structure**:
-
-```python
-def calculate_balance(
-    self,
-    instrument: Instrument,
-    side: OrderSide,
-    quantity: Quantity,
-) -> Money:
-    """
-    Calculate the balance for the given parameters.
-
-    Parameters
-    ----------
-    instrument : Instrument
-        The instrument for the calculation.
-    side : OrderSide
-        The order side.
-    quantity : Quantity
-        The order quantity.
-
-    Returns
-    -------
-    Money
-        The calculated balance.
-
-    Raises
-    ------
-    ValueError
-        If the quantity is invalid.
-
-    """
-```
-
 **Test method naming**: Descriptive names explaining the scenario:
 
 ```python
