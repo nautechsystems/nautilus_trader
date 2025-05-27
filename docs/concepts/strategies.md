@@ -383,7 +383,7 @@ of all available methods.
 :::
 
 :::info
-See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
+See the [Portfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
 :::
 
 ### Trading commands

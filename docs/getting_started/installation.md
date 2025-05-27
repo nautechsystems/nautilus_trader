@@ -28,7 +28,7 @@ Conda and other Python distributions *may* work but aren’t officially supporte
 
 ## From PyPI
 
-To install the latest [nautilus_trader]([nautilus_trader](https://pypi.org/project/nautilus_trader/)) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
+To install the latest [nautilus_trader](https://pypi.org/project/nautilus_trader/) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
 ```bash
 pip install -U nautilus_trader
@@ -176,7 +176,7 @@ sudo apt-get install clang
   from a terminal session run:
 
 ```bash
-clang --version`
+clang --version
 ```
 
 3. Install uv (see the [uv installation guide](https://docs.astral.sh/uv/getting-started/installation) for more details):
