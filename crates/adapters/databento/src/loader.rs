@@ -278,6 +278,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: bool,
+        bars_timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
@@ -313,6 +314,7 @@ impl DatabentoDataLoader {
                         price_precision,
                         None,
                         include_trades,
+                        bars_timestamp_on_close.unwrap_or(true),
                     )?;
                     Ok(Some((item1, item2)))
                 } else {
@@ -349,7 +351,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        self.read_records::<dbn::MboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::MboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Delta(delta) = item1 {
@@ -373,7 +375,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDepth10>> {
-        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Depth10(depth) = item1 {
@@ -397,7 +399,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -421,7 +423,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::BboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::BboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -445,7 +447,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -468,7 +470,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Trade(trade) = item1 {
@@ -491,20 +493,27 @@ impl DatabentoDataLoader {
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
+        timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<Vec<Bar>> {
-        self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, price_precision, false)?
-            .filter_map(|result| match result {
-                Ok((Some(item1), _)) => {
-                    if let Data::Bar(bar) = item1 {
-                        Some(Ok(bar))
-                    } else {
-                        None
-                    }
+        self.read_records::<dbn::OhlcvMsg>(
+            filepath,
+            instrument_id,
+            price_precision,
+            false,
+            timestamp_on_close,
+        )?
+        .filter_map(|result| match result {
+            Ok((Some(item1), _)) => {
+                if let Data::Bar(bar) = item1 {
+                    Some(Ok(bar))
+                } else {
+                    None
                 }
-                Ok((None, _)) => None,
-                Err(e) => Some(Err(e)),
-            })
-            .collect()
+            }
+            Ok((None, _)) => None,
+            Err(e) => Some(Err(e)),
+        })
+        .collect()
     }
 
     /// # Errors
@@ -792,8 +801,97 @@ mod tests {
     #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
     fn test_load_bars(loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bars = loader.load_bars(&path, Some(instrument_id), None).unwrap();
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, None)
+            .unwrap();
 
         assert_eq!(bars.len(), 2);
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
+    fn test_load_bars_timestamp_on_close_true(loader: DatabentoDataLoader, #[case] path: PathBuf) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, Some(true))
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+
+        // When bars_timestamp_on_close is true, both ts_event and ts_init should be equal (close time)
+        for bar in &bars {
+            assert_eq!(
+                bar.ts_event, bar.ts_init,
+                "ts_event and ts_init should be equal when bars_timestamp_on_close=true"
+            );
+            // For 1-second bars, ts_event should be 1 second after the open time
+            // This confirms the bar is timestamped at close
+        }
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
+    fn test_load_bars_timestamp_on_close_false(loader: DatabentoDataLoader, #[case] path: PathBuf) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, Some(false))
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+
+        // When bars_timestamp_on_close is false, both ts_event and ts_init should be equal (open time)
+        for bar in &bars {
+            assert_eq!(
+                bar.ts_event, bar.ts_init,
+                "ts_event and ts_init should be equal when bars_timestamp_on_close=false"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"), 0)]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"), 1)]
+    fn test_load_bars_timestamp_comparison(
+        loader: DatabentoDataLoader,
+        #[case] path: PathBuf,
+        #[case] bar_index: usize,
+    ) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let bars_close = loader
+            .load_bars(&path, Some(instrument_id), None, Some(true))
+            .unwrap();
+
+        let bars_open = loader
+            .load_bars(&path, Some(instrument_id), None, Some(false))
+            .unwrap();
+
+        assert_eq!(bars_close.len(), bars_open.len());
+        assert_eq!(bars_close.len(), 2);
+
+        let bar_close = &bars_close[bar_index];
+        let bar_open = &bars_open[bar_index];
+
+        // Bars should have the same OHLCV data
+        assert_eq!(bar_close.open, bar_open.open);
+        assert_eq!(bar_close.high, bar_open.high);
+        assert_eq!(bar_close.low, bar_open.low);
+        assert_eq!(bar_close.close, bar_open.close);
+        assert_eq!(bar_close.volume, bar_open.volume);
+
+        // The close-timestamped bar should have later timestamp than open-timestamped bar
+        // For 1-second bars, this should be exactly 1 second difference
+        assert!(
+            bar_close.ts_event > bar_open.ts_event,
+            "Close-timestamped bar should have later timestamp than open-timestamped bar"
+        );
+
+        // The difference should be exactly 1 second (1_000_000_000 nanoseconds) for 1s bars
+        const ONE_SECOND_NS: u64 = 1_000_000_000;
+        assert_eq!(
+            bar_close.ts_event.as_u64() - bar_open.ts_event.as_u64(),
+            ONE_SECOND_NS,
+            "Timestamp difference should be exactly 1 second for 1s bars"
+        );
     }
 }

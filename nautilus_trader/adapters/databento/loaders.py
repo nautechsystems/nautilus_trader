@@ -124,6 +124,7 @@ class DatabentoDataLoader:
         as_legacy_cython: bool = True,
         include_trades: bool = False,
         use_exchange_as_venue: bool = False,
+        bars_timestamp_on_close: bool = True,
     ) -> list[Data]:
         """
         Return a list of data objects decoded from the DBN file at the given `path`.
@@ -150,8 +151,10 @@ class DatabentoDataLoader:
         include_trades : bool, default False
             If separate `TradeTick` elements will be included in the data for MBO and MBP-1 schemas
             when applicable (your code will have to handle these two types in the returned list).
-        use_exchange_as_venue : bool, optional
-            Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
+        use_exchange_as_venue : bool, default False
+            Whether to use actual exchanges for instrument ids or GLBX.
+        bars_timestamp_on_close : bool, default True
+            If bar timestamps should be set to close time (True) or open time (False).
 
         Returns
         -------
@@ -296,6 +299,7 @@ class DatabentoDataLoader:
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                         price_precision=price_precision,
+                        timestamp_on_close=bars_timestamp_on_close,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
@@ -307,6 +311,7 @@ class DatabentoDataLoader:
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                         price_precision=price_precision,
+                        timestamp_on_close=bars_timestamp_on_close,
                     )
             case DatabentoSchema.STATUS.value:
                 data = self._pyo3_loader.load_status(  # type: ignore [assignment]

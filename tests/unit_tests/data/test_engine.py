@@ -2869,8 +2869,8 @@ class TestDataEngine:
             Price.from_str("5528.50"),
             Price.from_str("5528.75"),
             Quantity.from_int(164),
-            1719878040000000000,
-            1719878040000000000,
+            1719878100000000000,
+            1719878100000000000,
         )
 
         last_2_minute_bar = Bar(

@@ -55,6 +55,7 @@ pub struct DatabentoLiveClient {
     publisher_venue_map: IndexMap<u16, Venue>,
     symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
 }
 
 impl DatabentoLiveClient {
@@ -137,6 +138,7 @@ impl DatabentoLiveClient {
         dataset: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
+        bars_timestamp_on_close: Option<bool>,
     ) -> PyResult<Self> {
         let publishers_json = fs::read_to_string(publishers_filepath).map_err(to_pyvalue_err)?;
         let publishers_vec: Vec<DatabentoPublisher> =
@@ -162,6 +164,7 @@ impl DatabentoLiveClient {
             publisher_venue_map,
             symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
             use_exchange_as_venue,
+            bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
         })
     }
 
@@ -252,6 +255,7 @@ impl DatabentoLiveClient {
             self.publisher_venue_map.clone(),
             self.symbol_venue_map.clone(),
             self.use_exchange_as_venue,
+            self.bars_timestamp_on_close,
         );
 
         self.send_command(LiveCommand::Start)?;

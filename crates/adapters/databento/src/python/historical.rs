@@ -318,6 +318,7 @@ impl DatabentoHistoricalClient {
                     price_precision,
                     None,
                     false, // Don't include trades
+                    true,
                 )
                 .map_err(to_pyvalue_err)?;
 
@@ -421,6 +422,7 @@ impl DatabentoHistoricalClient {
                     price_precision,
                     None,
                     false, // Not applicable (trade will be decoded regardless)
+                    true,
                 )
                 .map_err(to_pyvalue_err)?;
 
@@ -437,7 +439,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_bars")]
-    #[pyo3(signature = (dataset, instrument_ids, aggregation, start, end=None, limit=None, price_precision=None))]
+    #[pyo3(signature = (dataset, instrument_ids, aggregation, start, end=None, limit=None, price_precision=None, timestamp_on_close=true))]
     #[allow(clippy::too_many_arguments)]
     fn py_get_range_bars<'py>(
         &self,
@@ -449,6 +451,7 @@ impl DatabentoHistoricalClient {
         end: Option<u64>,
         limit: Option<u64>,
         price_precision: Option<u8>,
+        timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
         let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
@@ -512,6 +515,7 @@ impl DatabentoHistoricalClient {
                     price_precision,
                     None,
                     false, // Not applicable
+                    timestamp_on_close,
                 )
                 .map_err(to_pyvalue_err)?;
 
