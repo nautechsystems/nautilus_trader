@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added support for `MarkPriceUpdate` streaming from catalog (#2582), thanks @bartolootrit
 - Added support for Binance Futures margin type (#2660), thanks @bartolootrit
 - Added support for Binances mark price stream across all markets (#2670), thanks @sunlei
+- Added `bars_timestamp_on_close` config option for Databento which defaults to `True` to consistently align with Nautilus conventions
 - Added `activation_price` support for trailing stop orders (#2610), thanks @hope2see
 - Added trailing stops for OrderFactory bracket orders (#2654), thanks @hope2see
 - Added `raise_exception` config option for `BacktestRunConfig` (default `False` to retain current behavior) which will raise exceptions to interrupt a nodes run process

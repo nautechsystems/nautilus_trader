@@ -843,14 +843,22 @@ pub fn decode_ohlcv_msg(
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
+    timestamp_on_close: bool,
 ) -> anyhow::Result<Bar> {
     let bar_type = decode_bar_type(msg, instrument_id)?;
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
-    // Adjust `ts_event` from open to close of bar
-    let ts_event = msg.hd.ts_event.into();
-    let ts_init = ts_init.unwrap_or(ts_event);
-    let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
+    let ts_event_raw = msg.hd.ts_event.into();
+    let ts_init_raw = ts_init.unwrap_or(ts_event_raw);
+
+    let (ts_event, ts_init) = if timestamp_on_close {
+        // Both ts_event and ts_init are set to close time
+        let ts_close = cmp::max(ts_init_raw, ts_event_raw) + ts_event_adjustment;
+        (ts_close, ts_close)
+    } else {
+        // Both ts_event and ts_init are set to open time
+        (ts_event_raw, ts_event_raw)
+    };
 
     let bar = Bar::new(
         bar_type,
@@ -905,6 +913,7 @@ pub fn decode_record(
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
+    bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     // We don't handle `TbboMsg` here as Nautilus separates this schema
     // into quotes and trades when loading, and the live client will
@@ -955,7 +964,13 @@ pub fn decode_record(
         (Some(Data::from(depth)), None)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.hd.ts_event.into());
-        let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        let bar = decode_ohlcv_msg(
+            msg,
+            instrument_id,
+            price_precision,
+            Some(ts_init),
+            bars_timestamp_on_close,
+        )?;
         (Some(Data::Bar(bar)), None)
     } else {
         anyhow::bail!("DBN message type is not currently supported")
@@ -1659,7 +1674,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bar = decode_ohlcv_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let bar = decode_ohlcv_msg(msg, instrument_id, 2, Some(0.into()), true).unwrap();
 
         assert_eq!(
             bar.bar_type,

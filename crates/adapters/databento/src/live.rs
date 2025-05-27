@@ -76,11 +76,13 @@ pub struct DatabentoFeedHandler {
     symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
     replay: bool,
     use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
 }
 
 impl DatabentoFeedHandler {
     /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         key: String,
         dataset: String,
@@ -89,6 +91,7 @@ impl DatabentoFeedHandler {
         publisher_venue_map: IndexMap<PublisherId, Venue>,
         symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
         use_exchange_as_venue: bool,
+        bars_timestamp_on_close: bool,
     ) -> Self {
         Self {
             key,
@@ -99,6 +102,7 @@ impl DatabentoFeedHandler {
             symbol_venue_map,
             replay: false,
             use_exchange_as_venue,
+            bars_timestamp_on_close,
         }
     }
 
@@ -319,6 +323,7 @@ impl DatabentoFeedHandler {
                         &mut instrument_id_map,
                         ts_init,
                         &initialized_books,
+                        self.bars_timestamp_on_close,
                     )
                 } {
                     Ok(decoded) => decoded,
@@ -564,6 +569,7 @@ fn handle_statistics_msg(
     decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
@@ -572,6 +578,7 @@ fn handle_record(
     instrument_id_map: &mut HashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
     initialized_books: &HashSet<InstrumentId>,
+    bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let instrument_id = update_instrument_id_map(
         &record,
@@ -590,5 +597,6 @@ fn handle_record(
         price_precision,
         Some(ts_init),
         include_trades,
+        bars_timestamp_on_close,
     )
 }

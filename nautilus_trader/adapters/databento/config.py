@@ -38,6 +38,10 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset).
         After the timeout the MBO order book feed will start and replay messages from the initial
         snapshot and then all deltas.
+    bars_timestamp_on_close : bool, default True
+        If bar data should be timestamped on the close (True) or open (False) of the bar period.
+        When True, both ts_event and ts_init are set to the bar close time.
+        When False, both ts_event and ts_init are set to the bar open time.
     parent_symbols : dict[str, set[str]], optional
         The Databento parent symbols to subscribe to instrument definitions for on start.
         This is a map of Databento dataset keys -> to a sequence of the parent symbols,
@@ -55,6 +59,7 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     use_exchange_as_venue: bool = True
     timeout_initial_load: float | None = 15.0
     mbo_subscriptions_delay: float | None = 3.0  # Need to have received all definitions
+    bars_timestamp_on_close: bool = True
     instrument_ids: list[InstrumentId] | None = None
     parent_symbols: dict[str, set[str]] | None = None
     venue_dataset_map: dict[str, str] | None = None

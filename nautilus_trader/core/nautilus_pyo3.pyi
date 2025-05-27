@@ -4961,8 +4961,8 @@ class DatabentoDataLoader:
     def load_bbo_quotes_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> object: ...  # noqa: E501
     def load_trades(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[TradeTick]: ...
     def load_trades_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> object: ...
-    def load_bars(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[Bar]: ...
-    def load_bars_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> object: ...
+    def load_bars(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None, timestamp_on_close: bool = True) -> list[Bar]: ...  # noqa: E501
+    def load_bars_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None, timestamp_on_close: bool = True) -> object: ...  # noqa: E501
     def load_status(self, filepath: str, instrument_id: InstrumentId | None = None) -> list[InstrumentStatus]: ...
     def load_imbalance(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[DatabentoImbalance]: ...  # noqa: E501
     def load_statistics(self, filepath: str, instrument_id: InstrumentId | None = None, price_precision: int | None = None) -> list[DatabentoStatistics]: ...  # noqa: E501
@@ -5011,6 +5011,7 @@ class DatabentoHistoricalClient:
         start: int,
         end: int | None = None,
         limit: int | None = None,
+        timestamp_on_close: bool | None = None,
     ) -> list[Bar]: ...
     async def get_range_imbalance(
         self,
@@ -5044,6 +5045,7 @@ class DatabentoLiveClient:
         dataset: str,
         publishers_filepath: str,
         use_exchange_as_venue: bool,
+        bars_timestamp_on_close: bool = True,
     ) -> None: ...
     @property
     def key(self) -> str: ...

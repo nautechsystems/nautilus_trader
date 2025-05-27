@@ -125,6 +125,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             dataset=dataset,
             publishers_filepath=str(PUBLISHERS_FILEPATH),
             use_exchange_as_venue=self._use_exchange_as_venue,
+            bars_timestamp_on_close=True,  # Default as only subscribing for instruments
         )
 
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
