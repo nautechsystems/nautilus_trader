@@ -94,7 +94,7 @@ parquet = "55.1.0"  # Keep major version in line with datafusion
 pyo3 = { version = "0.24.2", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
 pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.1"
-reqwest = { version = "0.12.15", features = ["blocking"] }
+reqwest = { version = "0.12.16", features = ["blocking"] }
 ring = "0.17.14"
 rmp-serde = "1.3.0"
 rust_decimal = "1.37.1"
@@ -130,7 +130,7 @@ tracing-test = "0.2.5"
 dotenvy = "0.15.7"
 
 # build-dependencies
-cbindgen = "0.28.0"
+cbindgen = "0.29.0"
 
 [profile.dev]
 opt-level = 0
