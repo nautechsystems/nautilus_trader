@@ -21,7 +21,7 @@ The **Actors** guide covers capabilities and implementation specifics.
 ## [Strategies](strategies.md)
 
 The `Strategy` is at the heart of the NautilusTrader user experience when writing and working with
-trading strategies. The **Strategies** guide covers how to implement trading strategies for the platform.
+trading strategies. The **Strategies** guide covers how to implement strategies for the platform.
 
 ## [Instruments](instruments.md)
 
@@ -52,7 +52,7 @@ The **Cache** guide covers capabilities and best practices of the cache.
 
 The `MessageBus` is the core communication system enabling decoupled messaging patterns between components,
 including point-to-point, publish/subscribe, and request/response.
-The **Message Bus** guide covers capabilities and best practices of the message bus.
+The **Message Bus** guide covers capabilities and best practices of the `MessageBus`.
 
 ## [Portfolio](portfolio.md)
 
