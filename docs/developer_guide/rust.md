@@ -31,7 +31,8 @@ All Rust files must include the standardized copyright header:
 
 ### Code Formatting
 
-Import formatting is automatically handled by rustfmt when running `make format`. The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
+Import formatting is automatically handled by rustfmt when running `make format`.
+The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
 
 ### Error Handling
 
@@ -59,11 +60,128 @@ Use structured error handling patterns consistently:
 
 3. **Error Propagation**: Use the `?` operator for clean error propagation.
 
+### Attribute Patterns
+
+Consistent attribute usage and ordering:
+
+```rust
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
+pub struct Symbol(Ustr);
+```
+
+For enums with extensive derive attributes:
+
+```rust
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum AccountType {
+    /// An account with unleveraged cash assets only.
+    Cash = 1,
+    /// An account which facilitates trading on margin, using account assets as collateral.
+    Margin = 2,
+}
+```
+
+### Constructor Patterns
+
+Use the `new()` vs `new_checked()` convention consistently:
+
+```rust
+/// Creates a new [`Symbol`] instance with correctness checking.
+///
+/// # Errors
+///
+/// Returns an error if `value` is not a valid string.
+///
+/// # Notes
+///
+/// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+    // Implementation
+}
+
+/// Creates a new [`Symbol`] instance.
+///
+/// # Panics
+///
+/// Panics if `value` is not a valid string.
+pub fn new<T: AsRef<str>>(value: T) -> Self {
+    Self::new_checked(value).expect(FAILED)
+}
+```
+
+Always use the `FAILED` constant for `.expect()` messages related to correctness checks:
+
+```rust
+use nautilus_core::correctness::FAILED;
+```
+
+### Constants and Naming Conventions
+
+Use SCREAMING_SNAKE_CASE for constants with descriptive names:
+
+```rust
+/// Number of nanoseconds in one second.
+pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
+
+/// Bar specification for 1-minute last price bars.
+pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+```
+
+### Re-export Patterns
+
+Organize re-exports alphabetically and place at the end of lib.rs files:
+
+```rust
+// Re-exports
+pub use crate::{
+    nanos::UnixNanos,
+    time::AtomicTime,
+    uuid::UUID4,
+};
+
+// Module-level re-exports
+pub use crate::identifiers::{
+    account_id::AccountId,
+    actor_id::ActorId,
+    client_id::ClientId,
+};
+```
+
 ### Documentation Standards
 
 #### Module-Level Documentation
 
-All modules should have comprehensive module-level documentation:
+All modules must have module-level documentation starting with a brief description:
 
 ```rust
 //! Functions for correctness checks similar to the *design by contract* philosophy.
@@ -72,6 +190,38 @@ All modules should have comprehensive module-level documentation:
 //!
 //! A condition is a predicate which must be true just prior to the execution of
 //! some section of code - for correct behavior as per the design specification.
+```
+
+For modules with feature flags, document them clearly:
+
+```rust
+//! # Feature flags
+//!
+//! This crate provides feature flags to control source code inclusion during compilation,
+//! depending on the intended use case:
+//!
+//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
+//! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `stubs`: Enables type stubs for use in testing scenarios.
+```
+
+#### Field Documentation
+
+All struct and enum fields must have documentation with terminating periods:
+
+```rust
+pub struct Currency {
+    /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
+    pub code: Ustr,
+    /// The currency decimal precision.
+    pub precision: u8,
+    /// The ISO 4217 currency code.
+    pub iso4217: u16,
+    /// The full name of the currency.
+    pub name: Ustr,
+    /// The currency type, indicating its category (e.g. Fiat, Crypto).
+    pub currency_type: CurrencyType,
+}
 ```
 
 #### Function Documentation
@@ -171,14 +321,23 @@ impl Send for MessageBus {
 
 #### Test Organization
 
+Use consistent test module structure with section separators:
+
 ```rust
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
     use super::*;
-    use crate::stubs::*;
+    use crate::identifiers::{Symbol, stubs::*};
 
-    // Tests here
+    #[rstest]
+    fn test_string_reprs(symbol_eth_perp: Symbol) {
+        assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
+        assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
+    }
 }
 ```
 
@@ -188,11 +347,12 @@ Use the `rstest` attribute consistently, and for parameterized tests:
 
 ```rust
 #[rstest]
-#[case(1)]
-#[case(3)]
-#[case(5)]
-fn test_with_different_periods(#[case] period: usize) {
-    // Test implementation
+#[case("AUDUSD", false)]
+#[case("AUD/USD", false)]
+#[case("CL.FUT", true)]
+fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
+    let symbol = Symbol::new(input);
+    assert_eq!(symbol.is_composite(), expected);
 }
 ```
 
@@ -203,6 +363,7 @@ Use descriptive test names that explain the scenario:
 ```rust
 fn test_sma_with_no_inputs()
 fn test_sma_with_single_input()
+fn test_symbol_is_composite()
 ```
 
 ## Unsafe Rust
@@ -230,27 +391,6 @@ and covering the invariants which the function expects the callers to uphold, an
 // SAFETY: Message bus is not meant to be passed between threads
 #[allow(unsafe_code)]
 unsafe impl Send for MessageBus {}
-```
-
-### File Headers
-
-All Rust files should include the standard copyright header:
-
-```rust
-// -------------------------------------------------------------------------------------------------
-//  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
-//  https://nautechsystems.io
-//
-//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-//  You may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-// -------------------------------------------------------------------------------------------------`
 ```
 
 ## Tooling Configuration
