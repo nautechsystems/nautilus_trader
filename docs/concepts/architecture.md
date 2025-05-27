@@ -137,7 +137,7 @@ Understanding how data and execution flow through the system is crucial for effe
 #### Data Flow Pattern
 
 1. **External Data Ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
-2. **Data Processing**: `DataEngine` handles data processing for internal components.
+2. **Data Processing**: The `DataEngine` handles data processing for internal components.
 3. **Caching**: Processed data is stored in the high-performance `Cache` for fast access.
 4. **Event Publishing**: Data events are published to the `MessageBus`.
 5. **Consumer Delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
@@ -146,9 +146,9 @@ Understanding how data and execution flow through the system is crucial for effe
 
 1. **Command Generation**: User strategies create trading commands.
 2. **Command Publishing**: Commands are sent through the `MessageBus`.
-3. **Risk Validation**: `RiskEngine` validates trading commands against configured risk rules.
-4. **Execution Routing**: `ExecutionEngine` routes commands to appropriate venues.
-5. **External Submission**: `ExecutionClient` submits orders to external trading venues.
+3. **Risk Validation**: The `RiskEngine` validates trading commands against configured risk rules.
+4. **Execution Routing**: The `ExecutionEngine` routes commands to appropriate venues.
+5. **External Submission**: The `ExecutionClient` submits orders to external trading venues.
 6. **Event Flow Back**: Order events (fills, cancellations) flow back through the system.
 7. **State Updates**: Portfolio and position states are updated based on execution events.
 

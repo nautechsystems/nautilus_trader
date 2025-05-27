@@ -10,7 +10,7 @@ The *messaging patterns* include:
 - Publish/Subscribe
 - Request/Response
 
-Messages exchanged via the message bus fall into three categories:
+Messages exchanged via the `MessageBus` fall into three categories:
 
 - Data
 - Events

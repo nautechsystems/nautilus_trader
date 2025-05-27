@@ -218,7 +218,7 @@ For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated wit
 - Matching available size at each price level sequentially.
 - Maintaining realistic order book depth impact (per order fill).
 
-For L1 data types (e.g., L1 orderbook, trades, quotes, bars), slippage is handled through:
+For L1 data types (e.g., L1 order book, trades, quotes, bars), slippage is handled through:
 
 **Initial fill slippage** (`prob_slippage`):
 
@@ -254,9 +254,9 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 
 # Create a custom fill model with your desired probabilities
 fill_model = FillModel(
-    prob_fill_on_limit=0.2,    # Chance a limit order fills when price matches (applied to bars/trades/quotes + L1/L2/L3 orderbook)
+    prob_fill_on_limit=0.2,    # Chance a limit order fills when price matches (applied to bars/trades/quotes + L1/L2/L3 order book)
     prob_fill_on_stop=0.95,    # [DEPRECATED] Will be removed in a future version, use `prob_slippage` instead
-    prob_slippage=0.5,         # Chance of 1-tick slippage (applied to bars/trades/quotes + L1 orderbook only)
+    prob_slippage=0.5,         # Chance of 1-tick slippage (applied to bars/trades/quotes + L1 order book only)
     random_seed=None,          # Optional: Set for reproducible results
 )
 
@@ -275,7 +275,7 @@ engine = BacktestEngine(
   - Simulates the probability of a limit order getting filled when its price level is reached in the market.
 - Details:
   - Simulates your position in the order queue at a given price level.
-  - Applies to all data types (e.g., L3/L2/L1 orderbook, quotes, trades, bars).
+  - Applies to all data types (e.g., L1/L2/L3 order book, quotes, trades, bars).
   - New random probability check occurs each time market price touches your order price (but does not move through it).
   - On successful probability check, fills entire remaining order quantity.
 
