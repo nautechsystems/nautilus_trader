@@ -24,20 +24,20 @@ use nautilus_system::{
     kernel::NautilusKernel,
 };
 
-use crate::config::TradingNodeConfig;
+use crate::config::LiveNodeConfig;
 
-/// High-level abstraction for a live trading node.
+/// High-level abstraction for a live Nautilus system node.
 ///
-/// Provides a simplified interface for running live trading strategies
+/// Provides a simplified interface for running live systems
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
-pub struct TradingNode {
+pub struct LiveNode {
     kernel: NautilusKernel,
     is_running: bool,
 }
 
-impl TradingNode {
-    /// Creates a new [`TradingNodeBuilder`] for fluent configuration.
+impl LiveNode {
+    /// Creates a new [`LiveNodeBuilder`] for fluent configuration.
     ///
     /// # Errors
     ///
@@ -46,13 +46,13 @@ impl TradingNode {
         name: String,
         trader_id: TraderId,
         environment: Environment,
-    ) -> anyhow::Result<TradingNodeBuilder> {
-        TradingNodeBuilder::new(name, trader_id, environment)
+    ) -> anyhow::Result<LiveNodeBuilder> {
+        LiveNodeBuilder::new(name, trader_id, environment)
     }
 
-    /// Creates a new [`TradingNode`] directly from a kernel name and optional configuration.
+    /// Creates a new [`LiveNode`] directly from a kernel name and optional configuration.
     ///
-    /// This is a convenience method for creating a trading node with a pre-configured
+    /// This is a convenience method for creating a live node with a pre-configured
     /// kernel configuration, bypassing the builder pattern. If no config is provided,
     /// a default configuration will be used.
     ///
@@ -69,13 +69,13 @@ impl TradingNode {
         match config.environment {
             Environment::Sandbox | Environment::Live => {}
             Environment::Backtest => {
-                anyhow::bail!("TradingNode cannot be used with Backtest environment");
+                anyhow::bail!("LiveNode cannot be used with Backtest environment");
             }
         }
 
         let kernel = NautilusKernel::new(name, config)?;
 
-        log::info!("Trading node built successfully with kernel config");
+        log::info!("LiveNode built successfully with kernel config");
 
         Ok(Self {
             kernel,
@@ -83,43 +83,43 @@ impl TradingNode {
         })
     }
 
-    /// Starts the trading node.
+    /// Starts the live node.
     ///
     /// # Errors
     ///
     /// Returns an error if startup fails.
     pub async fn start(&mut self) -> anyhow::Result<()> {
         if self.is_running {
-            anyhow::bail!("Trading node is already running");
+            anyhow::bail!("LiveNode is already running");
         }
 
-        log::info!("Starting trading node");
+        log::info!("Starting live node");
         self.kernel.start();
         self.is_running = true;
 
-        log::info!("Trading node started successfully");
+        log::info!("LiveNode started successfully");
         Ok(())
     }
 
-    /// Stop the trading node.
+    /// Stop the live node.
     ///
     /// # Errors
     ///
     /// Returns an error if shutdown fails.
     pub async fn stop(&mut self) -> anyhow::Result<()> {
         if !self.is_running {
-            anyhow::bail!("Trading node is not running");
+            anyhow::bail!("LiveNode is not running");
         }
 
-        log::info!("Stopping trading node");
+        log::info!("Stopping live node");
         self.kernel.stop();
         self.is_running = false;
 
-        log::info!("Trading node stopped successfully");
+        log::info!("LiveNode stopped successfully");
         Ok(())
     }
 
-    /// Run the trading node with automatic shutdown handling.
+    /// Run the live node with automatic shutdown handling.
     ///
     /// This method will start the node, run indefinitely, and handle
     /// graceful shutdown on interrupt signals.
@@ -143,7 +143,7 @@ impl TradingNode {
         Ok(())
     }
 
-    /// Checks if the trading node is currently running.
+    /// Checks if the live node is currently running.
     #[must_use]
     pub const fn is_running(&self) -> bool {
         self.is_running
@@ -174,12 +174,12 @@ impl TradingNode {
     }
 }
 
-/// Builder for constructing a [`TradingNode`] with a fluent API.
+/// Builder for constructing a [`LiveNode`] with a fluent API.
 ///
-/// Provides configuration options specific to live trading nodes,
+/// Provides configuration options specific to live nodes,
 /// including client factory registration and timeout settings.
 #[derive(Debug)]
-pub struct TradingNodeBuilder {
+pub struct LiveNodeBuilder {
     kernel_builder: nautilus_system::builder::NautilusKernelBuilder,
     data_client_factories: HashMap<String, Box<dyn DataClientFactory>>,
     exec_client_factories: HashMap<String, Box<dyn ExecutionClientFactory>>,
@@ -187,8 +187,8 @@ pub struct TradingNodeBuilder {
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
 }
 
-impl TradingNodeBuilder {
-    /// Creates a new [`TradingNodeBuilder`] with required parameters.
+impl LiveNodeBuilder {
+    /// Creates a new [`LiveNodeBuilder`] with required parameters.
     ///
     /// # Errors
     ///
@@ -201,7 +201,7 @@ impl TradingNodeBuilder {
         match environment {
             Environment::Sandbox | Environment::Live => {}
             Environment::Backtest => {
-                anyhow::bail!("TradingNode cannot be used with Backtest environment");
+                anyhow::bail!("LiveNode cannot be used with Backtest environment");
             }
         }
 
@@ -288,7 +288,7 @@ impl TradingNodeBuilder {
     pub fn with_configs(
         mut self,
         kernel_config: Option<NautilusKernelConfig>,
-        node_config: Option<TradingNodeConfig>,
+        node_config: Option<LiveNodeConfig>,
     ) -> anyhow::Result<Self> {
         if let Some(config) = kernel_config {
             // Validate environment compatibility
@@ -296,7 +296,7 @@ impl TradingNodeBuilder {
                 Environment::Sandbox | Environment::Live => {}
                 Environment::Backtest => {
                     anyhow::bail!(
-                        "TradingNode cannot be used with Backtest environment from kernel config"
+                        "LiveNode cannot be used with Backtest environment from kernel config"
                     );
                 }
             }
@@ -354,7 +354,7 @@ impl TradingNodeBuilder {
                 Environment::Sandbox | Environment::Live => {}
                 Environment::Backtest => {
                     anyhow::bail!(
-                        "TradingNode cannot be used with Backtest environment from node config"
+                        "LiveNode cannot be used with Backtest environment from node config"
                     );
                 }
             }
@@ -417,7 +417,7 @@ impl TradingNodeBuilder {
         Ok(self)
     }
 
-    /// Build the [`TradingNode`] with the configured settings.
+    /// Build the [`LiveNode`] with the configured settings.
     ///
     /// This will:
     /// 1. Build the underlying kernel
@@ -427,7 +427,7 @@ impl TradingNodeBuilder {
     /// # Errors
     ///
     /// Returns an error if node construction fails.
-    pub fn build(self) -> anyhow::Result<TradingNode> {
+    pub fn build(self) -> anyhow::Result<LiveNode> {
         let kernel = self.kernel_builder.build()?;
 
         // TODO: Register client factories and create clients
@@ -436,9 +436,9 @@ impl TradingNodeBuilder {
         // 2. Registering clients with the data/execution engines
         // 3. Setting up routing configurations
 
-        log::info!("Trading node built successfully");
+        log::info!("LiveNode built successfully");
 
-        Ok(TradingNode {
+        Ok(LiveNode {
             kernel,
             is_running: false,
         })
@@ -458,7 +458,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_builder_creation() {
-        let result = TradingNode::builder(
+        let result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Sandbox,
@@ -469,7 +469,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_builder_rejects_backtest() {
-        let result = TradingNode::builder(
+        let result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Backtest,
@@ -486,7 +486,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_builder_fluent_api() {
-        let result = TradingNode::builder(
+        let result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Live,
@@ -503,7 +503,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_build() {
-        let builder_result = TradingNode::builder(
+        let builder_result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Sandbox,
@@ -522,7 +522,7 @@ mod tests {
     fn test_with_configs_rejects_backtest_environment() {
         use nautilus_system::config::NautilusKernelConfig;
 
-        let builder = TradingNode::builder(
+        let builder = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
             Environment::Sandbox,

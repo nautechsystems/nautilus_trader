@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Configuration types for live trading components.
+//! Configuration types for live Nautilus system nodes.
 
 use std::collections::HashMap;
 
@@ -185,9 +185,9 @@ pub struct LiveExecClientConfig {
     pub routing: RoutingConfig,
 }
 
-/// Configuration for trading nodes.
+/// Configuration for live Nautilus system nodes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct TradingNodeConfig {
+pub struct LiveNodeConfig {
     /// The trading environment.
     pub environment: Environment,
     /// The trader ID for the node.
@@ -204,7 +204,7 @@ pub struct TradingNodeConfig {
     pub exec_clients: HashMap<String, LiveExecClientConfig>,
 }
 
-impl Default for TradingNodeConfig {
+impl Default for LiveNodeConfig {
     fn default() -> Self {
         Self {
             environment: Environment::Live,
@@ -218,8 +218,8 @@ impl Default for TradingNodeConfig {
     }
 }
 
-impl From<TradingNodeConfig> for NautilusKernelConfig {
-    fn from(config: TradingNodeConfig) -> Self {
+impl From<LiveNodeConfig> for NautilusKernelConfig {
+    fn from(config: LiveNodeConfig) -> Self {
         Self::new(
             config.environment,
             config.trader_id,
@@ -256,7 +256,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_config_default() {
-        let config = TradingNodeConfig::default();
+        let config = LiveNodeConfig::default();
 
         assert_eq!(config.environment, Environment::Live);
         assert_eq!(config.trader_id, TraderId::from("TRADER-001"));
@@ -271,7 +271,7 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_config_to_kernel_config() {
-        let config = TradingNodeConfig::default();
+        let config = LiveNodeConfig::default();
         let kernel_config: NautilusKernelConfig = config.into();
 
         assert_eq!(kernel_config.environment, Environment::Live);

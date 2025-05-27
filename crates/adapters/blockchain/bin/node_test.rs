@@ -21,7 +21,7 @@ use nautilus_blockchain::{
 };
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
-use nautilus_live::node::TradingNode;
+use nautilus_live::node::LiveNode;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = Box::new(BlockchainDataClientFactory::new());
     let client_config = BlockchainClientConfig::new(blockchain_config, chain.clone());
 
-    let mut node = TradingNode::builder(node_name, trader_id, environment)?
+    let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
         .with_save_state(false)
         .add_data_client(
