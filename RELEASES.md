@@ -83,7 +83,6 @@ Released on TBD (UTC).
 - Upgraded `sqlx` crate to v0.8.6
 - Upgraded `tokio` crate to v1.45.1
 
-
 ### Fixes
 - Fixed portfolio account updates leading to incorrect balances (#2632, #2637), thanks for reporting @bartolootrit and @DeirhX
 - Fixed portfolio handling of `OrderExpired` events not updating state (margin requirements may change)
@@ -98,6 +97,7 @@ Released on TBD (UTC).
 - Fixed message bus subscription matching logic in Rust (#2646), thanks @twitu
 - Fixed trailing stop market fill behavior when top-level exhausted to align with market orders (#2540), thanks for reporting @stastnypremysl
 - Fixed stop limit fill behavior on initial trigger where the limit order was continuing to fill as a taker beyond available liquidity, thanks for reporting @hope2see
+- Fixed matching engine trade processing when aggressor side is `NO_AGGRESSOR` (we can still update the matching core)
 - Fixed modifying and updating trailing stop orders (#2619), thanks @hope2see
 - Fixed processing activated trailing stop update when no trigger price, thanks for reporting @hope2see
 - Fixed terminating backtest on `AccountError` when streaming, the exception needed to be reraised to interrupt the streaming of chunks (#2546), thanks for reporting @stastnypremysl

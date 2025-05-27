@@ -571,6 +571,12 @@ cdef class OrderMatchingEngine:
                 self._core.set_bid_raw(price_raw)
                 if price_raw > self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
+            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+                # Update both bid and ask when no specific aggressor
+                if price_raw <= self._core.bid_raw:
+                    self._core.set_bid_raw(price_raw)
+                if price_raw >= self._core.ask_raw:
+                    self._core.set_ask_raw(price_raw)
             else:
                 aggressor_side_str = aggressor_side_to_str(aggressor_side)
                 raise RuntimeError(  # pragma: no cover (design-time error)
