@@ -644,6 +644,7 @@ cdef class RiskEngine(Component):
             Money cash_value = None
             Currency base_currency = None
             double xrate
+            Quantity effective_quantity
         for order in orders:
             if self.debug:
                 self._log.debug(f"Pre-trade risk check: {order}", LogColor.MAGENTA)
@@ -682,9 +683,17 @@ cdef class RiskEngine(Component):
             else:
                 last_px = order.price
 
-            notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
+            # Convert quote quantity to base quantity if needed for balance calculations
+            if order.is_quote_quantity and not instrument.is_inverse:
+                effective_quantity = instrument.calculate_base_quantity(order.quantity, last_px)
+                if self.debug:
+                    self._log.debug(f"Converted quote quantity {order.quantity} to base quantity {effective_quantity}", LogColor.MAGENTA)
+            else:
+                effective_quantity = order.quantity
+
+            notional = instrument.notional_value(effective_quantity, last_px, use_quote_for_inverse=True)
             if self.debug:
-                self._log.debug(f"Notional: {order_balance_impact!r}", LogColor.MAGENTA)
+                self._log.debug(f"Notional: {notional!r}", LogColor.MAGENTA)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
@@ -717,7 +726,7 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
+            order_balance_impact = account.balance_impact(instrument, effective_quantity, last_px, order.side)
             if self.debug:
                 self._log.debug(f"Balance impact: {order_balance_impact!r}", LogColor.MAGENTA)
 
@@ -761,7 +770,7 @@ cdef class RiskEngine(Component):
                         )
                         return False  # Denied
                 elif base_currency is not None and account.type == AccountType.CASH:
-                    cash_value = Money(order.quantity.as_f64_c(), base_currency)
+                    cash_value = Money(effective_quantity.as_f64_c(), base_currency)
                     if self.debug:
                         total = account.balance_total(base_currency)
                         locked = account.balance_locked(base_currency)

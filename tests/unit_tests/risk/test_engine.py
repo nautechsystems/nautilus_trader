@@ -1233,6 +1233,101 @@ class TestRiskEngineWithCashAccount:
         assert order2.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
+    def test_submit_order_when_quote_quantity_buy_within_balance_then_allows(self):
+        # Arrange - Setup crypto instrument for quote quantity orders
+        self.cache.add_instrument(_ETHUSDT_BINANCE)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=_ETHUSDT_BINANCE,
+            bid_price=2000.0,
+            ask_price=2010.0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity=True
+        # Account has 1M USD, order for 400 USDT (quote currency)
+        # At price 2010, this equals ~0.199 ETH (base currency)
+        order = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(400),  # 400 USDT quote quantity
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be allowed since 400 USDT is within balance
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1
+
+    def test_submit_order_when_quote_quantity_buy_over_balance_then_denies(self):
+        # Arrange - Setup crypto instrument for quote quantity orders
+        self.cache.add_instrument(_ETHUSDT_BINANCE)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=_ETHUSDT_BINANCE,
+            bid_price=2000.0,
+            ask_price=2010.0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity=True that exceeds balance
+        # Account has 1M USD, order for 2M USDT (quote currency) - exceeds balance
+        order = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),  # 2M USDT quote quantity - exceeds 1M USD balance
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be denied since 2M USDT exceeds 1M USD balance
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0
+
     def test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional(
         self,
     ):

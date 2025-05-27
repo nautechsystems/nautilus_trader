@@ -88,6 +88,7 @@ Released on TBD (UTC).
 - Fixed portfolio handling of `OrderExpired` events not updating state (margin requirements may change)
 - Fixed event handling for `ExecutionEngine` so it fully updates the `Portfolio` before to publishing execution events (#2513), thanks for reporting @stastnypremysl
 - Fixed PnL calculation for margin account on position flip (#2657), thanks for reporting @Egisess
+- Fixed notional value pre-trade risk check when order using quote quantity (#2628), thanks for reporting @DeevsDeevs
 - Fixed position snapshot cache access for `ExecutionEngine`
 - Fixed position snapshot `SystemError` calling `copy.deepcopy()` by simply using a `pickle` round trip to copy the position instance
 - Fixed event purging edge cases for account and position where at least one event must be guaranteed
