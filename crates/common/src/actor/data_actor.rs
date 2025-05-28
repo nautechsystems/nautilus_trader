@@ -149,7 +149,7 @@ pub trait DataActor: Actor {
     }
 
     /// Returns `true` if the actor is in a `Faulted` state.
-    fn is_faulting(&self) -> bool {
+    fn is_faulted(&self) -> bool {
         self.state() == ComponentState::Faulted
     }
 
