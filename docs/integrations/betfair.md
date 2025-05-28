@@ -59,7 +59,57 @@ The Betfair adapter provides three primary components:
 - `BetfairDataClient`: streams real-time market data from the Exchange Streaming API.
 - `BetfairExecutionClient`: submits orders (bets) and tracks execution status via the REST API.
 
-data and execution clients. To achieve this, add a `BETFAIR` section to your client
+## Capability Matrix
+
+Betfair operates as a betting exchange with unique characteristics compared to traditional financial exchanges:
+
+### Order Types
+
+| Order Type             | Betfair | Notes                               |
+|------------------------|---------|-------------------------------------|
+| `MARKET`               | -       | Not applicable to betting exchange. |
+| `LIMIT`                | ✓       | Orders placed at specific odds.     |
+| `STOP_MARKET`          | -       | *Not supported*.                    |
+| `STOP_LIMIT`           | -       | *Not supported*.                    |
+| `MARKET_IF_TOUCHED`    | -       | *Not supported*.                    |
+| `LIMIT_IF_TOUCHED`     | -       | *Not supported*.                    |
+| `TRAILING_STOP_MARKET` | -       | *Not supported*.                    |
+
+### Execution Instructions
+
+| Instruction   | Betfair | Notes                                   |
+|---------------|---------|-----------------------------------------|
+| `post_only`   | -       | Not applicable to betting exchange.     |
+| `reduce_only` | -       | Not applicable to betting exchange.     |
+
+### Time-in-Force Options
+
+| Time-in-Force | Betfair | Notes                                   |
+|---------------|---------|-----------------------------------------|
+| `GTC`         | -       | Betting exchange uses different model.  |
+| `GTD`         | -       | Betting exchange uses different model.  |
+| `FOK`         | -       | Betting exchange uses different model.  |
+| `IOC`         | -       | Betting exchange uses different model.  |
+
+### Advanced order features
+
+| Feature            | Betfair | Notes                                    |
+|--------------------|---------|------------------------------------------|
+| Order Modification | ✓       | Limited to non-exposure changing fields. |
+| Bracket/OCO Orders | -       | *Not supported*.                         |
+| Iceberg Orders     | -       | *Not supported*.                         |
+
+### Configuration options
+
+The following execution client configuration options affect order behavior:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `calculate_account_state`    | `True`  | If `True`, calculates account state from events. |
+| `request_account_state_secs` | `300`   | Interval for account state checks in seconds (0 disables). |
+| `reconcile_market_ids_only`  | `False` | If `True`, only reconciles orders for configured market IDs. |
+| `ignore_external_orders`     | `False` | If `True`, silently ignores orders not found in cache. |
+
 ## Configuration
 
 Here is a minimal example showing how to configure a live `TradingNode` with Betfair clients:
