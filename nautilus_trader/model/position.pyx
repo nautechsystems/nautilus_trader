@@ -483,12 +483,9 @@ cdef class Position:
         ------
         KeyError
             If `fill.trade_id` already applied to the position.
-        ValueError
-            If `fill.ts_event` is invalid < `ts_opened`.
 
         """
         Condition.not_none(fill, "fill")
-        Condition.is_true(fill.ts_event >= self.ts_opened, "Invalid timestamps `fill.ts_event` was < `ts_opened`")
         self._check_duplicate_trade_id(fill)
 
         if self.side == PositionSide.FLAT:
