@@ -17,10 +17,16 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::enums::Environment;
+use nautilus_common::{
+    cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
+    msgbus::database::MessageBusConfig,
+};
+use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::engine::config::ExecutionEngineConfig;
 use nautilus_model::identifiers::TraderId;
+use nautilus_persistence::config::StreamingConfig;
+use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_system::config::NautilusKernelConfig;
 use serde::{Deserialize, Serialize};
@@ -186,12 +192,40 @@ pub struct LiveExecClientConfig {
 }
 
 /// Configuration for live Nautilus system nodes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct LiveNodeConfig {
     /// The trading environment.
     pub environment: Environment,
     /// The trader ID for the node.
     pub trader_id: TraderId,
+    /// If trading strategy state should be loaded from the database on start.
+    pub load_state: bool,
+    /// If trading strategy state should be saved to the database on stop.
+    pub save_state: bool,
+    /// The logging configuration for the kernel.
+    pub logging: LoggerConfig,
+    /// The unique instance identifier for the kernel
+    pub instance_id: Option<UUID4>,
+    /// The timeout (seconds) for all clients to connect and initialize.
+    pub timeout_connection: u32,
+    /// The timeout (seconds) for execution state to reconcile.
+    pub timeout_reconciliation: u32,
+    /// The timeout (seconds) for portfolio to initialize margins and unrealized pnls.
+    pub timeout_portfolio: u32,
+    /// The timeout (seconds) for all engine clients to disconnect.
+    pub timeout_disconnection: u32,
+    /// The timeout (seconds) after stopping the node to await residual events before final shutdown.
+    pub timeout_post_stop: u32,
+    /// The timeout (seconds) to await pending tasks cancellation during shutdown.
+    pub timeout_shutdown: u32,
+    /// The cache configuration.
+    pub cache: Option<CacheConfig>,
+    /// The message bus configuration.
+    pub msgbus: Option<MessageBusConfig>,
+    /// The portfolio configuration.
+    pub portfolio: Option<PortfolioConfig>,
+    /// The configuration for streaming to feather files.
+    pub streaming: Option<StreamingConfig>,
     /// The live data engine configuration.
     pub data_engine: LiveDataEngineConfig,
     /// The live risk engine configuration.
@@ -209,6 +243,20 @@ impl Default for LiveNodeConfig {
         Self {
             environment: Environment::Live,
             trader_id: TraderId::from("TRADER-001"),
+            load_state: false,
+            save_state: false,
+            logging: LoggerConfig::default(),
+            instance_id: None,
+            timeout_connection: 60,
+            timeout_reconciliation: 30,
+            timeout_portfolio: 10,
+            timeout_disconnection: 10,
+            timeout_post_stop: 10,
+            timeout_shutdown: 5,
+            cache: None,
+            msgbus: None,
+            portfolio: None,
+            streaming: None,
             data_engine: LiveDataEngineConfig::default(),
             risk_engine: LiveRiskEngineConfig::default(),
             exec_engine: LiveExecEngineConfig::default(),
@@ -218,29 +266,81 @@ impl Default for LiveNodeConfig {
     }
 }
 
-impl From<LiveNodeConfig> for NautilusKernelConfig {
-    fn from(config: LiveNodeConfig) -> Self {
-        Self::new(
-            config.environment,
-            config.trader_id,
-            None, // load_state
-            None, // save_state
-            None, // timeout_connection
-            None, // timeout_reconciliation
-            None, // timeout_portfolio
-            None, // timeout_disconnection
-            None, // timeout_post_stop
-            None, // timeout_shutdown
-            None, // logging
-            None, // instance_id
-            None, // cache
-            None, // msgbus
-            Some(config.data_engine.into()),
-            Some(config.risk_engine.into()),
-            Some(config.exec_engine.into()),
-            None, // portfolio
-            None, // streaming
-        )
+impl NautilusKernelConfig for LiveNodeConfig {
+    fn environment(&self) -> Environment {
+        self.environment
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn load_state(&self) -> bool {
+        self.load_state
+    }
+
+    fn save_state(&self) -> bool {
+        self.save_state
+    }
+
+    fn logging(&self) -> LoggerConfig {
+        self.logging.clone()
+    }
+
+    fn instance_id(&self) -> Option<UUID4> {
+        self.instance_id
+    }
+
+    fn timeout_connection(&self) -> u32 {
+        self.timeout_connection
+    }
+
+    fn timeout_reconciliation(&self) -> u32 {
+        self.timeout_reconciliation
+    }
+
+    fn timeout_portfolio(&self) -> u32 {
+        self.timeout_portfolio
+    }
+
+    fn timeout_disconnection(&self) -> u32 {
+        self.timeout_disconnection
+    }
+
+    fn timeout_post_stop(&self) -> u32 {
+        self.timeout_post_stop
+    }
+
+    fn timeout_shutdown(&self) -> u32 {
+        self.timeout_shutdown
+    }
+
+    fn cache(&self) -> Option<CacheConfig> {
+        self.cache.clone()
+    }
+
+    fn msgbus(&self) -> Option<MessageBusConfig> {
+        self.msgbus.clone()
+    }
+
+    fn data_engine(&self) -> Option<DataEngineConfig> {
+        Some(self.data_engine.clone().into())
+    }
+
+    fn risk_engine(&self) -> Option<RiskEngineConfig> {
+        Some(self.risk_engine.clone().into())
+    }
+
+    fn exec_engine(&self) -> Option<ExecutionEngineConfig> {
+        Some(self.exec_engine.clone().into())
+    }
+
+    fn portfolio(&self) -> Option<PortfolioConfig> {
+        self.portfolio.clone()
+    }
+
+    fn streaming(&self) -> Option<nautilus_persistence::config::StreamingConfig> {
+        self.streaming.clone()
     }
 }
 
@@ -270,15 +370,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_trading_node_config_to_kernel_config() {
+    fn test_trading_node_config_as_kernel_config() {
         let config = LiveNodeConfig::default();
-        let kernel_config: NautilusKernelConfig = config.into();
 
-        assert_eq!(kernel_config.environment, Environment::Live);
-        assert_eq!(kernel_config.trader_id, TraderId::from("TRADER-001"));
-        assert!(kernel_config.data_engine.is_some());
-        assert!(kernel_config.risk_engine.is_some());
-        assert!(kernel_config.exec_engine.is_some());
+        assert_eq!(config.environment(), Environment::Live);
+        assert_eq!(config.trader_id(), TraderId::from("TRADER-001"));
+        assert!(config.data_engine().is_some());
+        assert!(config.risk_engine().is_some());
+        assert!(config.exec_engine().is_some());
+        assert!(!config.load_state());
+        assert!(!config.save_state());
     }
 
     #[rstest]

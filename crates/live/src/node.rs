@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use std::collections::HashMap;
 
 use nautilus_common::enums::Environment;
@@ -24,7 +28,10 @@ use nautilus_system::{
     kernel::NautilusKernel,
 };
 
-use crate::config::LiveNodeConfig;
+use crate::{
+    config::LiveNodeConfig,
+    runner::{AsyncRunner, Runner},
+};
 
 /// High-level abstraction for a live Nautilus system node.
 ///
@@ -33,6 +40,8 @@ use crate::config::LiveNodeConfig;
 #[derive(Debug)]
 pub struct LiveNode {
     kernel: NautilusKernel,
+    runner: AsyncRunner,
+    config: LiveNodeConfig,
     is_running: bool,
 }
 
@@ -59,26 +68,27 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if kernel construction fails.
-    pub fn build(
-        name: String,
-        kernel_config: Option<NautilusKernelConfig>,
-    ) -> anyhow::Result<Self> {
-        let config = kernel_config.unwrap_or_default();
+    pub fn build(name: String, config: Option<LiveNodeConfig>) -> anyhow::Result<Self> {
+        let mut config = config.unwrap_or_default();
+        config.environment = Environment::Live;
 
         // Validate environment for live trading
-        match config.environment {
+        match config.environment() {
             Environment::Sandbox | Environment::Live => {}
             Environment::Backtest => {
                 anyhow::bail!("LiveNode cannot be used with Backtest environment");
             }
         }
 
-        let kernel = NautilusKernel::new(name, config)?;
+        let kernel = NautilusKernel::new(name, config.clone())?;
+        let runner = AsyncRunner::new();
 
         log::info!("LiveNode built successfully with kernel config");
 
         Ok(Self {
             kernel,
+            runner,
+            config,
             is_running: false,
         })
     }
@@ -143,10 +153,10 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Checks if the live node is currently running.
+    /// Gets the node's environment.
     #[must_use]
-    pub const fn is_running(&self) -> bool {
-        self.is_running
+    pub fn environment(&self) -> Environment {
+        self.kernel.environment()
     }
 
     /// Gets a reference to the underlying kernel.
@@ -157,7 +167,7 @@ impl LiveNode {
 
     /// Gets the node's trader ID.
     #[must_use]
-    pub const fn trader_id(&self) -> TraderId {
+    pub fn trader_id(&self) -> TraderId {
         self.kernel.trader_id()
     }
 
@@ -167,10 +177,10 @@ impl LiveNode {
         self.kernel.instance_id()
     }
 
-    /// Gets the node's environment.
+    /// Checks if the live node is currently running.
     #[must_use]
-    pub const fn environment(&self) -> Environment {
-        self.kernel.environment()
+    pub const fn is_running(&self) -> bool {
+        self.is_running
     }
 }
 
@@ -180,7 +190,7 @@ impl LiveNode {
 /// including client factory registration and timeout settings.
 #[derive(Debug)]
 pub struct LiveNodeBuilder {
-    kernel_builder: nautilus_system::builder::NautilusKernelBuilder,
+    config: LiveNodeConfig,
     data_client_factories: HashMap<String, Box<dyn DataClientFactory>>,
     exec_client_factories: HashMap<String, Box<dyn ExecutionClientFactory>>,
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
@@ -205,8 +215,14 @@ impl LiveNodeBuilder {
             }
         }
 
+        let config = LiveNodeConfig {
+            environment,
+            trader_id,
+            ..Default::default()
+        };
+
         Ok(Self {
-            kernel_builder: NautilusKernel::builder(name, trader_id, environment),
+            config,
             data_client_factories: HashMap::new(),
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
@@ -217,160 +233,64 @@ impl LiveNodeBuilder {
     /// Set the instance ID for the node.
     #[must_use]
     pub fn with_instance_id(mut self, instance_id: UUID4) -> Self {
-        self.kernel_builder = self.kernel_builder.with_instance_id(instance_id);
+        self.config.instance_id = Some(instance_id);
         self
     }
 
     /// Configure whether to load state on startup.
     #[must_use]
     pub fn with_load_state(mut self, load_state: bool) -> Self {
-        self.kernel_builder = self.kernel_builder.with_load_state(load_state);
+        self.config.load_state = load_state;
         self
     }
 
     /// Configure whether to save state on shutdown.
     #[must_use]
     pub fn with_save_state(mut self, save_state: bool) -> Self {
-        self.kernel_builder = self.kernel_builder.with_save_state(save_state);
+        self.config.save_state = save_state;
         self
     }
 
     /// Set the connection timeout in seconds.
     #[must_use]
     pub fn with_timeout_connection(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_connection(timeout);
+        self.config.timeout_connection = timeout;
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
     pub fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_reconciliation(timeout);
+        self.config.timeout_reconciliation = timeout;
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
     pub fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_portfolio(timeout);
+        self.config.timeout_portfolio = timeout;
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
     pub fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_disconnection(timeout);
+        self.config.timeout_disconnection = timeout;
         self
     }
 
     /// Set the post-stop timeout in seconds.
     #[must_use]
     pub fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_post_stop(timeout);
+        self.config.timeout_post_stop = timeout;
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
     pub fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
-        self.kernel_builder = self.kernel_builder.with_timeout_shutdown(timeout);
+        self.config.timeout_shutdown = timeout;
         self
-    }
-
-    /// Configure with optional kernel and node configs.
-    ///
-    /// Both configs are optional and will use defaults if not provided.
-    /// Node config settings will be applied on top of any existing builder settings.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the configurations contain invalid values.
-    pub fn with_configs(
-        mut self,
-        kernel_config: Option<NautilusKernelConfig>,
-        node_config: Option<LiveNodeConfig>,
-    ) -> anyhow::Result<Self> {
-        if let Some(config) = kernel_config {
-            // Validate environment compatibility
-            match config.environment {
-                Environment::Sandbox | Environment::Live => {}
-                Environment::Backtest => {
-                    anyhow::bail!(
-                        "LiveNode cannot be used with Backtest environment from kernel config"
-                    );
-                }
-            }
-
-            // Update kernel builder with config settings
-            self.kernel_builder = self
-                .kernel_builder
-                .with_load_state(config.load_state)
-                .with_save_state(config.save_state);
-
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_connection(config.timeout_connection);
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_reconciliation(config.timeout_reconciliation);
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_portfolio(config.timeout_portfolio);
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_disconnection(config.timeout_disconnection);
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_post_stop(config.timeout_post_stop);
-            self.kernel_builder = self
-                .kernel_builder
-                .with_timeout_shutdown(config.timeout_shutdown);
-            if let Some(cache_config) = config.cache {
-                self.kernel_builder = self.kernel_builder.with_cache_config(cache_config);
-            }
-            if let Some(data_engine_config) = config.data_engine {
-                self.kernel_builder = self
-                    .kernel_builder
-                    .with_data_engine_config(data_engine_config);
-            }
-            if let Some(risk_engine_config) = config.risk_engine {
-                self.kernel_builder = self
-                    .kernel_builder
-                    .with_risk_engine_config(risk_engine_config);
-            }
-            if let Some(exec_engine_config) = config.exec_engine {
-                self.kernel_builder = self
-                    .kernel_builder
-                    .with_exec_engine_config(exec_engine_config);
-            }
-            if let Some(portfolio_config) = config.portfolio {
-                self.kernel_builder = self.kernel_builder.with_portfolio_config(portfolio_config);
-            }
-        }
-
-        if let Some(config) = node_config {
-            // Validate environment compatibility TODO: Extract this
-            match config.environment {
-                Environment::Sandbox | Environment::Live => {}
-                Environment::Backtest => {
-                    anyhow::bail!(
-                        "LiveNode cannot be used with Backtest environment from node config"
-                    );
-                }
-            }
-
-            self.kernel_builder = self
-                .kernel_builder
-                .with_data_engine_config(config.data_engine.into())
-                .with_risk_engine_config(config.risk_engine.into())
-                .with_exec_engine_config(config.exec_engine.into());
-
-            // Note: data_clients and exec_clients would need to be handled differently
-            // since they contain the actual client configurations, not just factory configs
-            // TODO: client configs should be added via add_data_client/add_exec_client
-        }
-
-        Ok(self)
     }
 
     /// Adds a data client with both factory and configuration.
@@ -428,8 +348,6 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if node construction fails.
     pub fn build(self) -> anyhow::Result<LiveNode> {
-        let kernel = self.kernel_builder.build()?;
-
         // TODO: Register client factories and create clients
         // This would involve:
         // 1. Creating clients using factories and configs
@@ -438,8 +356,14 @@ impl LiveNodeBuilder {
 
         log::info!("LiveNode built successfully");
 
+        // Create kernel directly with the config
+        let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
+        let runner = AsyncRunner::new();
+
         Ok(LiveNode {
             kernel,
+            runner,
+            config: self.config,
             is_running: false,
         })
     }
@@ -503,6 +427,9 @@ mod tests {
 
     #[rstest]
     fn test_trading_node_build() {
+        #[cfg(feature = "python")]
+        pyo3::prepare_freethreaded_python();
+
         let builder_result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
@@ -519,21 +446,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_with_configs_rejects_backtest_environment() {
-        use nautilus_system::config::NautilusKernelConfig;
-
-        let builder = LiveNode::builder(
+    fn test_builder_rejects_backtest_environment() {
+        let result = LiveNode::builder(
             "TestNode".to_string(),
             TraderId::from("TRADER-001"),
-            Environment::Sandbox,
-        )
-        .unwrap();
+            Environment::Backtest,
+        );
 
-        // Create a kernel config with backtest environment
-        let mut kernel_config = NautilusKernelConfig::default();
-        kernel_config.environment = Environment::Backtest;
-
-        let result = builder.with_configs(Some(kernel_config), None);
         assert!(result.is_err());
         assert!(
             result

@@ -21,7 +21,7 @@ use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
-use crate::{config::NautilusKernelConfig, kernel::NautilusKernel};
+use crate::{config::KernelConfig, kernel::NautilusKernel};
 
 /// Builder for constructing a [`NautilusKernel`] with a fluent API.
 ///
@@ -186,27 +186,27 @@ impl NautilusKernelBuilder {
     ///
     /// Returns an error if kernel initialization fails.
     pub fn build(self) -> anyhow::Result<NautilusKernel> {
-        let config = NautilusKernelConfig::new(
-            self.environment,
-            self.trader_id,
-            Some(self.load_state),
-            Some(self.save_state),
-            Some(self.timeout_connection),
-            Some(self.timeout_reconciliation),
-            Some(self.timeout_portfolio),
-            Some(self.timeout_disconnection),
-            Some(self.timeout_post_stop),
-            Some(self.timeout_shutdown),
-            self.logging,
-            self.instance_id,
-            self.cache,
-            None, // msgbus config - not exposed in builder yet
-            self.data_engine,
-            self.risk_engine,
-            self.exec_engine,
-            self.portfolio,
-            None, // streaming config - not exposed in builder yet
-        );
+        let config = KernelConfig {
+            environment: self.environment,
+            trader_id: self.trader_id,
+            load_state: self.load_state,
+            save_state: self.save_state,
+            logging: self.logging.unwrap_or_default(),
+            instance_id: self.instance_id,
+            timeout_connection: self.timeout_connection,
+            timeout_reconciliation: self.timeout_reconciliation,
+            timeout_portfolio: self.timeout_portfolio,
+            timeout_disconnection: self.timeout_disconnection,
+            timeout_post_stop: self.timeout_post_stop,
+            timeout_shutdown: self.timeout_shutdown,
+            cache: self.cache,
+            msgbus: None, // msgbus config - not exposed in builder yet
+            data_engine: self.data_engine,
+            risk_engine: self.risk_engine,
+            exec_engine: self.exec_engine,
+            portfolio: self.portfolio,
+            streaming: None, // streaming config - not exposed in builder yet
+        };
 
         NautilusKernel::new(self.name, config)
     }
@@ -266,6 +266,9 @@ mod tests {
 
     #[rstest]
     fn test_builder_build() {
+        #[cfg(feature = "python")]
+        pyo3::prepare_freethreaded_python();
+
         let result = NautilusKernelBuilder::default().build();
         assert!(result.is_ok());
 

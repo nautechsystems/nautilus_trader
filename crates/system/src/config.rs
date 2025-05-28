@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::database::MessageBusConfig,
@@ -25,9 +27,51 @@ use nautilus_persistence::config::StreamingConfig;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
+/// Configuration trait for a `NautilusKernel` core system instance.
+pub trait NautilusKernelConfig: Debug {
+    /// Returns the kernel environment context.
+    fn environment(&self) -> Environment;
+    /// Returns the trader ID for the node.
+    fn trader_id(&self) -> TraderId;
+    /// Returns if trading strategy state should be loaded from the database on start.
+    fn load_state(&self) -> bool;
+    /// Returns if trading strategy state should be saved to the database on stop.
+    fn save_state(&self) -> bool;
+    /// Returns the logging configuration for the kernel.
+    fn logging(&self) -> LoggerConfig;
+    /// Returns the unique instance identifier for the kernel.
+    fn instance_id(&self) -> Option<UUID4>;
+    /// Returns the timeout (seconds) for all clients to connect and initialize.
+    fn timeout_connection(&self) -> u32;
+    /// Returns the timeout (seconds) for execution state to reconcile.
+    fn timeout_reconciliation(&self) -> u32;
+    /// Returns the timeout (seconds) for portfolio to initialize margins and unrealized pnls.
+    fn timeout_portfolio(&self) -> u32;
+    /// Returns the timeout (seconds) for all engine clients to disconnect.
+    fn timeout_disconnection(&self) -> u32;
+    /// Returns the timeout (seconds) after stopping the node to await residual events before final shutdown.
+    fn timeout_post_stop(&self) -> u32;
+    /// Returns the timeout (seconds) to await pending tasks cancellation during shutdown.
+    fn timeout_shutdown(&self) -> u32;
+    /// Returns the cache configuration.
+    fn cache(&self) -> Option<CacheConfig>;
+    /// Returns the message bus configuration.
+    fn msgbus(&self) -> Option<MessageBusConfig>;
+    /// Returns the data engine configuration.
+    fn data_engine(&self) -> Option<DataEngineConfig>;
+    /// Returns the risk engine configuration.
+    fn risk_engine(&self) -> Option<RiskEngineConfig>;
+    /// Returns the execution engine configuration.
+    fn exec_engine(&self) -> Option<ExecutionEngineConfig>;
+    /// Returns the portfolio configuration.
+    fn portfolio(&self) -> Option<PortfolioConfig>;
+    /// Returns the configuration for streaming to feather files.
+    fn streaming(&self) -> Option<StreamingConfig>;
+}
+
+/// Basic implementation of `NautilusKernelConfig` for builder and testing.
 #[derive(Debug, Clone)]
-/// Configuration for a `NautilusKernel` core system instance.
-pub struct NautilusKernelConfig {
+pub struct KernelConfig {
     /// The kernel environment context.
     pub environment: Environment,
     /// The trader ID for the node (must be a name and ID tag separated by a hyphen).
@@ -68,56 +112,85 @@ pub struct NautilusKernelConfig {
     pub streaming: Option<StreamingConfig>,
 }
 
-impl NautilusKernelConfig {
-    /// Creates a new [`NautilusKernelConfig`] instance.
-    #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        environment: Environment,
-        trader_id: TraderId,
-        load_state: Option<bool>,
-        save_state: Option<bool>,
-        timeout_connection: Option<u32>,
-        timeout_reconciliation: Option<u32>,
-        timeout_portfolio: Option<u32>,
-        timeout_disconnection: Option<u32>,
-        timeout_post_stop: Option<u32>,
-        timeout_shutdown: Option<u32>,
-        logging: Option<LoggerConfig>,
-        instance_id: Option<UUID4>,
-        cache: Option<CacheConfig>,
-        msgbus: Option<MessageBusConfig>,
-        data_engine: Option<DataEngineConfig>,
-        risk_engine: Option<RiskEngineConfig>,
-        exec_engine: Option<ExecutionEngineConfig>,
-        portfolio: Option<PortfolioConfig>,
-        streaming: Option<StreamingConfig>,
-    ) -> Self {
-        Self {
-            environment,
-            trader_id,
-            instance_id,
-            cache,
-            msgbus,
-            data_engine,
-            risk_engine,
-            exec_engine,
-            portfolio,
-            streaming,
-            load_state: load_state.unwrap_or(true),
-            save_state: save_state.unwrap_or(true),
-            timeout_connection: timeout_connection.unwrap_or(60),
-            timeout_reconciliation: timeout_reconciliation.unwrap_or(30),
-            timeout_portfolio: timeout_portfolio.unwrap_or(10),
-            timeout_disconnection: timeout_disconnection.unwrap_or(10),
-            timeout_post_stop: timeout_post_stop.unwrap_or(10),
-            timeout_shutdown: timeout_shutdown.unwrap_or(5),
-            logging: logging.unwrap_or_default(),
-        }
+impl NautilusKernelConfig for KernelConfig {
+    fn environment(&self) -> Environment {
+        self.environment
+    }
+
+    fn trader_id(&self) -> TraderId {
+        self.trader_id
+    }
+
+    fn load_state(&self) -> bool {
+        self.load_state
+    }
+
+    fn save_state(&self) -> bool {
+        self.save_state
+    }
+
+    fn logging(&self) -> LoggerConfig {
+        self.logging.clone()
+    }
+
+    fn instance_id(&self) -> Option<UUID4> {
+        self.instance_id
+    }
+
+    fn timeout_connection(&self) -> u32 {
+        self.timeout_connection
+    }
+
+    fn timeout_reconciliation(&self) -> u32 {
+        self.timeout_reconciliation
+    }
+
+    fn timeout_portfolio(&self) -> u32 {
+        self.timeout_portfolio
+    }
+
+    fn timeout_disconnection(&self) -> u32 {
+        self.timeout_disconnection
+    }
+
+    fn timeout_post_stop(&self) -> u32 {
+        self.timeout_post_stop
+    }
+
+    fn timeout_shutdown(&self) -> u32 {
+        self.timeout_shutdown
+    }
+
+    fn cache(&self) -> Option<CacheConfig> {
+        self.cache.clone()
+    }
+
+    fn msgbus(&self) -> Option<MessageBusConfig> {
+        self.msgbus.clone()
+    }
+
+    fn data_engine(&self) -> Option<DataEngineConfig> {
+        self.data_engine.clone()
+    }
+
+    fn risk_engine(&self) -> Option<RiskEngineConfig> {
+        self.risk_engine.clone()
+    }
+
+    fn exec_engine(&self) -> Option<ExecutionEngineConfig> {
+        self.exec_engine.clone()
+    }
+
+    fn portfolio(&self) -> Option<PortfolioConfig> {
+        self.portfolio.clone()
+    }
+
+    fn streaming(&self) -> Option<StreamingConfig> {
+        self.streaming.clone()
     }
 }
 
-impl Default for NautilusKernelConfig {
+impl Default for KernelConfig {
     fn default() -> Self {
         Self {
             environment: Environment::Backtest,

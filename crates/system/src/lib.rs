@@ -39,3 +39,6 @@ pub mod builder;
 pub mod config;
 pub mod factories;
 pub mod kernel;
+
+// Re-exports
+pub use config::NautilusKernelConfig;
