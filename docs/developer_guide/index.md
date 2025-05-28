@@ -33,6 +33,7 @@ types and how these map to their corresponding `PyObject` types.
 - [Coding Standards](coding_standards.md)
 - [Cython](cython.md)
 - [Rust](rust.md)
+- [Docs](docs.md)
 - [Testing](testing.md)
 - [Adapters](adapters.md)
 - [Packaged Data](packaged_data.md)
