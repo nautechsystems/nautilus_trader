@@ -1198,17 +1198,6 @@ cdef class Strategy(Actor):
 
             self.cache.update_order(order)
 
-        cdef CancelAllOrders command = CancelAllOrders(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=instrument_id,
-            order_side=order_side,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-            client_id=client_id,
-            params=params,
-        )
-
         # Cancel all execution algorithm orders
         cdef set exec_algorithm_ids = self.cache.exec_algorithm_ids()
 
@@ -1220,8 +1209,33 @@ cdef class Strategy(Actor):
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
 
-        self._manager.send_exec_command(command)
-        self._manager.send_emulator_command(command)
+        cdef CancelAllOrders command
+
+        if open_count > 0:
+            command = CancelAllOrders(
+                trader_id=self.trader_id,
+                strategy_id=self.id,
+                instrument_id=instrument_id,
+                order_side=order_side,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                client_id=client_id,
+                params=params,
+            )
+            self._manager.send_exec_command(command)
+
+        if emulated_count > 0:
+            command = CancelAllOrders(
+                trader_id=self.trader_id,
+                strategy_id=self.id,
+                instrument_id=instrument_id,
+                order_side=order_side,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+                client_id=client_id,
+                params=params,
+            )
+            self._manager.send_emulator_command(command)
 
     cpdef void close_position(
         self,
