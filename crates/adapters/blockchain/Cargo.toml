@@ -44,6 +44,7 @@ enum_dispatch = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
+pyo3 = { workspace = true }  # TODO: Untangle python feature
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

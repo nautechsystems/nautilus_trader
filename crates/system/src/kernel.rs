@@ -26,7 +26,7 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     logging::{
-        init_logging, init_tracing,
+        headers, init_logging, init_tracing,
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
@@ -40,6 +40,7 @@ use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use nautilus_trading::trader::Trader;
+use ustr::Ustr;
 
 use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
 
@@ -55,7 +56,7 @@ pub struct NautilusKernel {
     /// The machine identifier (hostname or similar).
     pub machine_id: String,
     /// The kernel configuration.
-    pub config: NautilusKernelConfig,
+    pub config: Box<dyn NautilusKernelConfig>,
     /// The shared in-memory cache.
     pub cache: Rc<RefCell<Cache>>,
     /// The clock driving the kernel.
@@ -96,44 +97,46 @@ impl NautilusKernel {
     /// # Errors
     ///
     /// Returns an error if the kernel fails to initialize.
-    pub fn new(name: String, config: NautilusKernelConfig) -> anyhow::Result<Self> {
-        let instance_id = config.instance_id.unwrap_or_default();
+    pub fn new<T: NautilusKernelConfig + 'static>(name: String, config: T) -> anyhow::Result<Self> {
+        let instance_id = config.instance_id().unwrap_or_default();
         let machine_id = Self::determine_machine_id()?;
 
-        let logger_config = config.logging.clone();
-        let log_guard = Self::initialize_logging(config.trader_id, instance_id, logger_config)?;
+        let logger_config = config.logging();
+        let log_guard = Self::initialize_logging(config.trader_id(), instance_id, logger_config)?;
+        headers::log_header(
+            config.trader_id(),
+            &machine_id,
+            instance_id,
+            Ustr::from(stringify!(LiveNode)),
+        );
 
-        log::info!("Building Nautilus system kernel");
+        log::info!("Building system kernel");
 
-        let clock = Self::initialize_clock(&config.environment);
-        let cache = Self::initialize_cache(config.cache.clone());
+        let clock = Self::initialize_clock(&config.environment());
+        let cache = Self::initialize_cache(config.cache());
 
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
-            config.trader_id,
+            config.trader_id(),
             instance_id,
             Some(name.to_string()),
             None,
         )));
         set_message_bus(msgbus);
 
-        let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio.clone());
-
-        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine.clone());
-
+        let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
+        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let risk_engine = RiskEngine::new(
-            config.risk_engine.clone().unwrap_or_default(),
-            Portfolio::new(cache.clone(), clock.clone(), config.portfolio.clone()),
+            config.risk_engine().unwrap_or_default(),
+            Portfolio::new(cache.clone(), clock.clone(), config.portfolio()),
             clock.clone(),
             cache.clone(),
         );
-
-        let exec_engine =
-            ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine.clone());
+        let exec_engine = ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine());
 
         let trader = Trader::new(
-            config.trader_id,
+            config.trader_id(),
             instance_id,
-            config.environment,
+            config.environment(),
             clock.clone(),
         );
 
@@ -143,7 +146,7 @@ impl NautilusKernel {
             name,
             instance_id,
             machine_id,
-            config,
+            config: Box::new(config),
             cache,
             clock,
             portfolio,
@@ -213,8 +216,8 @@ impl NautilusKernel {
 
     /// Returns the kernel's environment context (Backtest, Sandbox, Live).
     #[must_use]
-    pub const fn environment(&self) -> Environment {
-        self.config.environment
+    pub fn environment(&self) -> Environment {
+        self.config.environment()
     }
 
     /// Returns the kernel's name.
@@ -225,8 +228,8 @@ impl NautilusKernel {
 
     /// Returns the kernel's trader ID.
     #[must_use]
-    pub const fn trader_id(&self) -> TraderId {
-        self.config.trader_id
+    pub fn trader_id(&self) -> TraderId {
+        self.config.trader_id()
     }
 
     /// Returns the kernel's machine ID.
@@ -261,14 +264,14 @@ impl NautilusKernel {
 
     /// Returns whether the kernel has been configured to load state.
     #[must_use]
-    pub const fn load_state(&self) -> bool {
-        self.config.load_state
+    pub fn load_state(&self) -> bool {
+        self.config.load_state()
     }
 
     /// Returns whether the kernel has been configured to save state.
     #[must_use]
-    pub const fn save_state(&self) -> bool {
-        self.config.save_state
+    pub fn save_state(&self) -> bool {
+        self.config.save_state()
     }
 
     /// Returns the kernel's clock.

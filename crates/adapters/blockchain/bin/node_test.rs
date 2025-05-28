@@ -30,6 +30,9 @@ use tokio::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // TODO: Needed while blockchain requires python feature
+    pyo3::prepare_freethreaded_python();
+
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;

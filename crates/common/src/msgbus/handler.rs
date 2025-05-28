@@ -25,6 +25,7 @@ use std::{
     rc::Rc,
 };
 
+use nautilus_core::UUID4;
 use ustr::Ustr;
 
 pub trait MessageHandler: Any {
@@ -56,7 +57,7 @@ impl<T: 'static, F: Fn(&T) + 'static> TypedMessageHandler<T, F> {
     pub fn new<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
+            .unwrap_or_else(|| generate_handler_id(&callback));
 
         Self {
             id: id_ustr,
@@ -94,7 +95,7 @@ impl<F: Fn(&dyn Any) + 'static> TypedMessageHandler<dyn Any, F> {
     pub fn new_any<S: AsRef<str>>(id: Option<S>, callback: F) -> Self {
         let id_ustr = id
             .map(|s| Ustr::from(s.as_ref()))
-            .unwrap_or_else(|| generate_deterministic_handler_id(&callback));
+            .unwrap_or_else(|| generate_handler_id(&callback));
 
         Self {
             id: id_ustr,
@@ -128,11 +129,10 @@ impl<F: Fn(&dyn Any) + 'static> MessageHandler for TypedMessageHandler<dyn Any, 
     }
 }
 
-fn generate_deterministic_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(
-    callback: &F,
-) -> Ustr {
+fn generate_handler_id<T: 'static + ?Sized, F: 'static + Fn(&T)>(callback: &F) -> Ustr {
     let callback_ptr = std::ptr::from_ref(callback);
-    Ustr::from(&format!("<{callback_ptr:?}>"))
+    let uuid = UUID4::new();
+    Ustr::from(&format!("<{callback_ptr:?}>-{uuid}"))
 }
 
 #[repr(transparent)]
