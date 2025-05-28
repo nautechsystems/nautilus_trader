@@ -37,6 +37,7 @@ This guide outlines the style conventions and best practices for writing documen
 
 - Use `✓` for supported features.
 - Use `-` for unsupported features (not `✗` or other symbols).
+- When adding notes for unsupported features, emphasize with italics: `*Not supported*`.
 - Leave cells empty when no content is needed.
 
 ## Code References

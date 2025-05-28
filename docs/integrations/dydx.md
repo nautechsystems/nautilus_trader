@@ -129,6 +129,64 @@ order = self.order_factory.market(
 Both stop limit and stop market conditional orders can be submitted. dYdX only supports long-term orders
 for conditional orders.
 
+## Capability Matrix
+
+dYdX supports perpetual futures trading with a comprehensive set of order types and execution features.
+
+### Order Types
+
+| Order Type             | Perpetuals | Notes                                   |
+|------------------------|------------|-----------------------------------------|
+| `MARKET`               | ✓          | Requires price for slippage protection. |
+| `LIMIT`                | ✓          |                                         |
+| `STOP_MARKET`          | ✓          | Long-term orders only.                  |
+| `STOP_LIMIT`           | ✓          | Long-term orders only.                  |
+| `MARKET_IF_TOUCHED`    | -          | *Not supported*.                        |
+| `LIMIT_IF_TOUCHED`     | -          | *Not supported*.                        |
+| `TRAILING_STOP_MARKET` | -          | *Not supported*.                        |
+
+### Execution Instructions
+
+| Instruction   | Perpetuals | Notes                                           |
+|---------------|------------|-------------------------------------------------|
+| `post_only`   | ✓          | Supported on all order types.                   |
+| `reduce_only` | ✓          | Supported on all order types.                   |
+
+### Time-in-Force Options
+
+| Time-in-Force | Perpetuals | Notes                                           |
+|---------------|------------|-------------------------------------------------|
+| `GTC`         | ✓          | Good Till Canceled.                             |
+| `GTD`         | ✓          | Good Till Date.                                 |
+| `FOK`         | ✓          | Fill or Kill.                                   |
+| `IOC`         | ✓          | Immediate or Cancel.                            |
+
+### Advanced order features
+
+| Feature            | Perpetuals | Notes                                           |
+|--------------------|------------|-------------------------------------------------|
+| Order Modification | ✓          | Short-term orders only; cancel-replace method.  |
+| Bracket/OCO Orders | -          | *Not supported*.                                |
+| Iceberg Orders     | -          | *Not supported*.                                |
+
+### Configuration options
+
+The following execution client configuration options are available:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `subaccount`                 | `0`     | Subaccount number (venue creates subaccount 0 by default). |
+| `wallet_address`             | `None`  | dYdX wallet address for the account. |
+| `mnemonic`                   | `None`  | Mnemonic for generating private key for order signing. |
+| `is_testnet`                 | `False` | If `True`, connects to testnet; if `False`, connects to mainnet. |
+
+### Order Classification
+
+dYdX classifies orders as either **short-term** or **long-term** orders:
+
+- **Short-term orders**: Default for all orders; intended for high-frequency trading and market orders.
+- **Long-term orders**: Required for conditional orders; use `DYDXOrderTags` to specify.
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.

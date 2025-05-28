@@ -84,17 +84,67 @@ pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for *bot
 Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
 E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
 
-## Order types
+## Capability Matrix
 
-|                        | Spot                            | Margin                          | Futures           |
-|------------------------|---------------------------------|---------------------------------|-------------------|
-| `MARKET`               | ✓                               | ✓                               | ✓                 |
-| `LIMIT`                | ✓                               | ✓                               | ✓                 |
-| `STOP_MARKET`          | Not supported                   | ✓                               | ✓                 |
-| `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
-| `MARKET_IF_TOUCHED`    | Not supported                   | Not supported                   | ✓                 |
-| `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
-| `TRAILING_STOP_MARKET` | Not supported                   | Not supported                   | ✓                 |
+The following tables detail the order types, execution instructions, and time-in-force options supported across different Binance account types:
+
+### Order Types
+
+| Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
+|------------------------|------|--------|--------------|--------------|-------------------------|
+| `MARKET`               | ✓    | ✓      | ✓            | ✓            |                         |
+| `LIMIT`                | ✓    | ✓      | ✓            | ✓            |                         |
+| `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
+| `STOP_LIMIT`           | ✓    | ✓      | ✓            | ✓            |                         |
+| `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.           |
+| `LIMIT_IF_TOUCHED`     | ✓    | ✓      | ✓            | ✓            |                         |
+| `TRAILING_STOP_MARKET` | -    | -      | ✓            | ✓            | Futures only.           |
+
+### Execution Instructions
+
+| Instruction   | Spot | Margin | USDT Futures | Coin Futures | Notes                                 |
+|---------------|------|--------|--------------|--------------|---------------------------------------|
+| `post_only`   | ✓    | ✓      | ✓            | ✓            | See restrictions below.               |
+| `reduce_only` | -    | -      | ✓            | ✓            | Futures only; disabled in Hedge Mode. |
+
+#### Post-Only Restrictions
+
+Only *limit* order types support `post_only`.
+
+| Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                                      |
+|--------------------------|------|--------|--------------|--------------|------------------------------------------------------------|
+| `LIMIT`                  | ✓    | ✓      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot/Margin, `GTX` TIF for Futures. |
+| `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Not supported for Spot/Margin.                             |
+
+### Time-in-Force Options
+
+| Time-in-Force | Spot | Margin | USDT Futures | Coin Futures | Notes                                           |
+|---------------|------|--------|--------------|--------------|-------------------------------------------------|
+| `GTC`         | ✓    | ✓      | ✓            | ✓            | Good Till Canceled.                             |
+| `GTD`         | ✓*   | ✓*     | ✓            | ✓            | *Converted to GTC for Spot/Margin with warning. |
+| `FOK`         | ✓    | ✓      | ✓            | ✓            | Fill or Kill.                                   |
+| `IOC`         | ✓    | ✓      | ✓            | ✓            | Immediate or Cancel.                            |
+
+### Advanced order features
+
+| Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|--------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Order Modification | ✓    | ✓      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
+| Bracket/OCO Orders | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
+| Iceberg Orders     | ✓    | ✓      | ✓            | ✓            | Large orders split into visible portions.    |
+
+### Configuration options
+
+The following execution client configuration options affect order behavior:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
+| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
+| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
+| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
+| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
+| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
 
 ### Trailing stops
 
