@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Check for "codegen-backend" in TOML files
 EXIT_CODE=0
