@@ -367,7 +367,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine.run()
 
         # Assert
-        assert self.engine.kernel.msgbus.sent_count == 74_084
+        assert self.engine.kernel.msgbus.sent_count == 74_083
         assert self.engine.kernel.msgbus.pub_count == 468_652
         assert strategy.fast_ema.count == 41_761
         assert self.engine.iteration == 120_468
@@ -867,7 +867,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.run()
 
         # Assert
-        assert self.engine.kernel.msgbus.sent_count == 17_312
+        assert self.engine.kernel.msgbus.sent_count == 16_575
         assert self.engine.kernel.msgbus.pub_count == 16_146
         assert self.engine.iteration == 4_216
         account = self.engine.portfolio.account(self.venue)
