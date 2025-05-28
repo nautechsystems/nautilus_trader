@@ -28,7 +28,7 @@ use databento::{
 };
 use indexmap::IndexMap;
 use nautilus_core::{
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -185,7 +185,9 @@ impl DatabentoHistoricalClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2);
+            decoder
+                .set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2)
+                .map_err(to_pyruntime_err)?;
 
             let metadata = decoder.metadata().clone();
             let mut metadata_cache = MetadataCache::new(metadata);

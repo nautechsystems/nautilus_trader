@@ -77,7 +77,7 @@ Released on TBD (UTC).
 - Changed to faster message bus pattern matching logic from Rust (#2643), thanks @twitu
 - Upgraded Rust (MSRV) to 1.87.0
 - Upgraded Cython to v3.1.0 (now stable)
-- Upgraded `databento` crate to v0.25.0
+- Upgraded `databento` crate to v0.26.0
 - Upgraded `redis` crate to v0.31.0
 - Upgraded `sqlx` crate to v0.8.6
 - Upgraded `tokio` crate to v1.45.1
@@ -118,7 +118,7 @@ Released on TBD (UTC).
 - Fixed several errors in concept guides
 
 ### Deprecations
-None
+- Deprecated support for Databento [instrument definitions](https://databento.com/docs/schemas-and-data-formats/instrument-definitions) v1 data, v2 & v3 continue to be supported and v1 data can be migrated (see Databento documentation)
 
 ---
 

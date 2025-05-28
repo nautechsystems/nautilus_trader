@@ -203,7 +203,7 @@ impl DatabentoDataLoader {
         // Setting the policy to decode v1 data in its original format,
         // rather than upgrading to v2 for now (decoding tests fail on `UpgradeToV2`).
         let upgrade_policy = dbn::VersionUpgradePolicy::AsIs;
-        decoder.set_upgrade_policy(upgrade_policy);
+        decoder.set_upgrade_policy(upgrade_policy)?;
 
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 

@@ -267,9 +267,9 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
 
 /// Decodes a quantity from the given optional value, expressed in standard whole-number units.
 #[must_use]
-pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
+pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
     match value {
-        i32::MAX => None,
+        i64::MAX => None,
         _ => Some(Quantity::from(value)),
     }
 }
@@ -1494,10 +1494,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(i32::MAX, None)] // None for i32::MAX
+    #[case(i64::MAX, None)] // None for i32::MAX
     #[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
     #[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
-    fn test_decode_optional_quantity(#[case] value: i32, #[case] expected: Option<Quantity>) {
+    fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
         let actual = decode_optional_quantity(value);
         assert_eq!(actual, expected);
     }
@@ -1698,21 +1698,6 @@ mod tests {
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()));
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
-    }
-
-    #[rstest]
-    fn test_decode_definition_v1_msg() {
-        let path = test_data_path().join("test_data.definition.v1.dbn.zst");
-        let mut dbn_stream = Decoder::from_zstd_file(path)
-            .unwrap()
-            .decode_stream::<dbn::compat::InstrumentDefMsgV1>();
-        let msg = dbn_stream.next().unwrap().unwrap();
-
-        let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let result = decode_instrument_def_msg_v1(msg, instrument_id, Some(0.into()));
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
