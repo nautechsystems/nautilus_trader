@@ -379,15 +379,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
             known_venue_order_ids.update({r.venue_order_id for r in reports})
 
             # Check fills to generate order reports
-            command = GenerateFillReports(
-                instrument_id=instrument_id,
+            fill_command = GenerateFillReports(
+                instrument_id=command.instrument_id,
                 venue_order_id=None,
                 start=None,
                 end=None,
                 command_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
             )
-            fill_reports = await self.generate_fill_reports(command)
+            fill_reports = await self.generate_fill_reports(fill_command)
             if fill_reports and not known_venue_order_ids:
                 self._log.warning(
                     "No previously known venue order IDs found in cache or from active orders",
@@ -712,7 +712,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
-            order_ids = [o.venue_order_id.value for o in valid_cancels]
+            order_ids = []
+            for cancel in valid_cancels:
+                order = self._cache.order(cancel.client_order_id)
+                if order and order.venue_order_id:
+                    order_ids.append(order.venue_order_id.value)
             response: JSON | None = await retry_manager.run(
                 "batch_cancel_orders",
                 [command.instrument_id],
@@ -945,7 +949,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
-            raise ValueError(f"Cannot handle ws message: instrument {instrument_id} not found")
+            self._log.warning(
+                f"Received order message for unknown instrument {instrument_id} "
+                f"(market={msg.market}, asset_id={msg.asset_id}). "
+                f"This may indicate the instrument is not subscribed or cached. Skipping order processing.",
+            )
+            return
 
         if wait_for_ack:
             self._loop.create_task(self._wait_for_ack_order(msg, venue_order_id))
@@ -972,13 +981,20 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         match msg.type:
             case PolymarketEventType.PLACEMENT:
-                self.generate_order_accepted(
-                    strategy_id=strategy_id,
-                    instrument_id=instrument_id,
-                    client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,
-                    ts_event=self._clock.timestamp_ns(),
-                )
+                # Check if order is already accepted to avoid duplicate accepted events
+                order = self._cache.order(client_order_id) if client_order_id else None
+                if order is None or not order.is_open:
+                    self.generate_order_accepted(
+                        strategy_id=strategy_id,
+                        instrument_id=instrument_id,
+                        client_order_id=client_order_id,
+                        venue_order_id=venue_order_id,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+                else:
+                    self._log.debug(
+                        f"Order {client_order_id!r} already accepted - skipping duplicate placement event",
+                    )
             case PolymarketEventType.CANCELLATION:
                 self.generate_order_canceled(
                     strategy_id=strategy_id,
@@ -1015,7 +1031,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
         instrument = self._cache.instrument(instrument_id)
 
         if instrument is None:
-            raise ValueError(f"Cannot handle ws message: instrument {instrument_id} not found")
+            self._log.warning(
+                f"Received trade message for unknown instrument {instrument_id} "
+                f"(market={msg.market}, asset_id={msg.asset_id}). "
+                f"This may indicate the instrument is not subscribed or cached. Skipping trade processing.",
+            )
+            return
 
         if wait_for_ack:
             self._loop.create_task(self._wait_for_ack_trade(msg, venue_order_id))
@@ -1056,6 +1077,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         last_qty = instrument.make_qty(msg.last_qty(self._wallet_address))
         last_px = instrument.make_price(msg.last_px(self._wallet_address))
         commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
+        ts_event = millis_to_nanos(int(msg.match_time))
 
         self.generate_order_filled(
             strategy_id=strategy_id,
@@ -1071,7 +1093,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             quote_currency=USDC_POS,
             commission=Money(commission, USDC_POS),
             liquidity_side=msg.liquidity_side(),
-            ts_event=millis_to_nanos(int(msg.match_time)),
+            ts_event=ts_event,
             info=msg.to_dict(),
         )
 

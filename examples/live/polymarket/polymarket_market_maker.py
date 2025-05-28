@@ -168,6 +168,7 @@ class TOBQuoter(Strategy):
     def __init__(self, config: TOBQuoterConfig) -> None:
         super().__init__(config)
 
+        self.min_size: Decimal = Decimal(5)
         self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
@@ -312,7 +313,7 @@ class TOBQuoter(Strategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.config.trade_size),
+            quantity=self.instrument.make_qty(max(self.min_size, self.config.trade_size)),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
@@ -334,7 +335,7 @@ class TOBQuoter(Strategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.trade_size),
+            quantity=self.instrument.make_qty(max(self.min_size, self.config.trade_size)),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
