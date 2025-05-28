@@ -585,3 +585,43 @@ class TestPolymarketExecutionClient:
         venue_order_id = VenueOrderId("test_order_id")
         cached_client_order_id = self.cache.client_order_id(venue_order_id)
         assert cached_client_order_id is None
+
+    def test_handle_unknown_instrument_gracefully(self):
+        """
+        Test handling websocket messages for unknown instruments gracefully.
+        """
+        # Arrange - Create a trade message for an instrument not in cache
+        raw_message = msgspec.json.encode(
+            [
+                {
+                    "asset_id": "99999999999999999999999999999999999999999999999999999999999999999999999999999",
+                    "bucket_index": "0",
+                    "event_type": "trade",
+                    "fee_rate_bps": "0",
+                    "id": "test-trade-id",
+                    "last_update": "1748092619",
+                    "maker_address": "0xD16896480F5768B7b34696a1F888F36Ae109f3cF",
+                    "maker_orders": [],
+                    "market": "0xunknownmarket0000000000000000000000000000000000000000000000000000",
+                    "match_time": "1748092618",
+                    "outcome": "No",
+                    "owner": "test-owner",
+                    "price": "0.968",
+                    "side": "BUY",
+                    "size": "100",
+                    "status": "MATCHED",
+                    "taker_order_id": "0xtest000000000000000000000000000000000000000000000000000000000000",
+                    "timestamp": "1748092619162",
+                    "trade_owner": "test-owner",
+                    "trader_side": "MAKER",
+                    "transaction_hash": "0xtest000000000000000000000000000000000000000000000000000000000000",
+                    "type": "TRADE",
+                },
+            ],
+        )
+
+        # Act - should handle gracefully without raising exception
+        self.exec_client._handle_ws_message(raw_message)
+
+        # Assert - no exception raised, warning logged
+        # Test passes if we reach this point without exception
