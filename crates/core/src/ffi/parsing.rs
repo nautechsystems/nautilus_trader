@@ -18,7 +18,7 @@ use std::{
     ffi::{CStr, CString, c_char},
 };
 
-use serde_json::{Result, Value};
+use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
@@ -34,17 +34,19 @@ use crate::{
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is null, or if the pointed data is not valid UTF-8 or valid JSON array of strings.
+/// Panics if `ptr` is null, contains invalid UTF-8, or is invalid JSON.
 #[must_use]
 pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
     assert!(!ptr.is_null(), "`ptr` was NULL");
 
     let c_str = unsafe { CStr::from_ptr(ptr) };
     let bytes = c_str.to_bytes();
-    let json_string = std::str::from_utf8(bytes).unwrap();
-    let parsed_value: serde_json::Value = serde_json::from_str(json_string).unwrap();
 
-    match parsed_value {
+    let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
+    let value: serde_json::Value =
+        serde_json::from_str(json_string).expect("C string contains invalid JSON");
+
+    match value {
         serde_json::Value::Array(arr) => arr
             .into_iter()
             .filter_map(|value| match value {
@@ -63,8 +65,9 @@ pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
 /// Panics if JSON serialization fails or if the generated string contains interior null bytes.
 #[must_use]
 pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
-    let json_string = serde_json::to_string(strings).unwrap();
-    let c_string = CString::new(json_string).unwrap();
+    let json_string = serde_json::to_string(strings).expect("Failed to serialize strings to JSON");
+    let c_string = CString::new(json_string).expect("JSON string contains interior null bytes");
+
     c_string.into_raw()
 }
 
@@ -76,7 +79,7 @@ pub fn string_vec_to_bytes(strings: &[String]) -> *const c_char {
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is non-null but the data is not valid UTF-8.
+/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<String, Value>> {
     if ptr.is_null() {
@@ -84,15 +87,11 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
     } else {
         let c_str = unsafe { CStr::from_ptr(ptr) };
         let bytes = c_str.to_bytes();
-        let json_string = std::str::from_utf8(bytes).unwrap();
-        let result: Result<HashMap<String, Value>> = serde_json::from_str(json_string);
-        match result {
-            Ok(map) => Some(map),
-            Err(e) => {
-                eprintln!("Error parsing JSON: {e}");
-                None
-            }
-        }
+
+        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
+        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
+
+        Some(result)
     }
 }
 
@@ -104,7 +103,7 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is non-null but the data is not valid UTF-8.
+/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
     if ptr.is_null() {
@@ -112,15 +111,11 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
     } else {
         let c_str = unsafe { CStr::from_ptr(ptr) };
         let bytes = c_str.to_bytes();
-        let json_string = std::str::from_utf8(bytes).unwrap();
-        let result: Result<HashMap<Ustr, Ustr>> = serde_json::from_str(json_string);
-        match result {
-            Ok(map) => Some(map),
-            Err(e) => {
-                eprintln!("Error parsing JSON: {e}");
-                None
-            }
-        }
+
+        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
+        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
+
+        Some(result)
     }
 }
 
@@ -132,7 +127,7 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
 ///
 /// # Panics
 ///
-/// Panics if `ptr` is non-null but the data is not valid UTF-8 or valid JSON array of strings.
+/// Panics if `ptr` is not null but contains invalid UTF-8 or JSON.
 #[must_use]
 pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
     if ptr.is_null() {
@@ -140,15 +135,11 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
     } else {
         let c_str = unsafe { CStr::from_ptr(ptr) };
         let bytes = c_str.to_bytes();
-        let json_string = std::str::from_utf8(bytes).unwrap();
-        let result: Result<Vec<String>> = serde_json::from_str(json_string);
-        match result {
-            Ok(map) => Some(map),
-            Err(e) => {
-                eprintln!("Error parsing JSON: {e}");
-                None
-            }
-        }
+
+        let json_string = std::str::from_utf8(bytes).expect("C string contains invalid UTF-8");
+        let result = serde_json::from_str(json_string).expect("C string contains invalid JSON");
+
+        Some(result)
     }
 }
 
@@ -281,11 +272,11 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "C string contains invalid JSON")]
     fn test_optional_bytes_to_json_invalid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
         let ptr = json_str.as_ptr().cast::<c_char>();
-        let result = unsafe { optional_bytes_to_json(ptr) };
-        assert_eq!(result, None);
+        let _result = unsafe { optional_bytes_to_json(ptr) };
     }
 
     #[rstest]
