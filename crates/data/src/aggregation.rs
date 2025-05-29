@@ -993,7 +993,7 @@ where
 
         if spec.aggregation == BarAggregation::Month {
             let step = spec.step.get() as u32;
-            let alert_time_ns = add_n_months_nanos(start_time_ns, step);
+            let alert_time_ns = add_n_months_nanos(start_time_ns, step).expect(FAILED);
 
             self.clock
                 .borrow_mut()
@@ -1022,6 +1022,11 @@ where
         self.clock.borrow_mut().cancel_timer(&self.timer_name);
     }
 
+    /// Starts batch time for bar aggregation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if month arithmetic operations fail for monthly aggregation intervals.
     pub fn start_batch_time(&mut self, time_ns: UnixNanos) {
         let spec = self.bar_type().spec();
         self.core.batch_mode = true;
@@ -1034,10 +1039,11 @@ where
             let step = spec.step.get() as u32;
 
             if self.batch_open_ns == time_ns {
-                self.batch_open_ns = subtract_n_months_nanos(self.batch_open_ns, step);
+                self.batch_open_ns =
+                    subtract_n_months_nanos(self.batch_open_ns, step).expect(FAILED);
             }
 
-            self.batch_next_close_ns = add_n_months_nanos(self.batch_open_ns, step);
+            self.batch_next_close_ns = add_n_months_nanos(self.batch_open_ns, step).expect(FAILED);
         } else {
             if self.batch_open_ns == time_ns {
                 self.batch_open_ns -= self.interval_ns;
@@ -1092,10 +1098,12 @@ where
             // Ensure batch times are coherent with last builder update
             if self.bar_type().spec().aggregation == BarAggregation::Month {
                 while self.batch_next_close_ns < time_ns {
-                    self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
+                    self.batch_next_close_ns =
+                        add_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
                 }
 
-                self.batch_open_ns = subtract_n_months_nanos(self.batch_next_close_ns, step);
+                self.batch_open_ns =
+                    subtract_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
             } else {
                 while self.batch_next_close_ns < time_ns {
                     self.batch_next_close_ns += self.interval_ns;
@@ -1111,7 +1119,8 @@ where
             self.batch_open_ns = self.batch_next_close_ns;
 
             if self.bar_type().spec().aggregation == BarAggregation::Month {
-                self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
+                self.batch_next_close_ns =
+                    add_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
             } else {
                 self.batch_next_close_ns += self.interval_ns;
             }
@@ -1142,7 +1151,7 @@ where
 
         if self.bar_type().spec().aggregation == BarAggregation::Month {
             let step = self.bar_type().spec().step.get() as u32;
-            let next_alert_ns = add_n_months_nanos(ts_init, step);
+            let next_alert_ns = add_n_months_nanos(ts_init, step).expect(FAILED);
 
             self.clock
                 .borrow_mut()
