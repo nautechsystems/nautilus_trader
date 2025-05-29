@@ -84,6 +84,7 @@ impl CoreBlockchainRpcClient {
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
             handler: Consumer::Rust(tx),
+            #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None,
@@ -91,7 +92,18 @@ impl CoreBlockchainRpcClient {
             reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
         };
-        let client = WebSocketClient::connect(config, None, None, None, vec![], None).await?;
+        let client = WebSocketClient::connect(
+            config,
+            #[cfg(feature = "python")]
+            None,
+            #[cfg(feature = "python")]
+            None,
+            #[cfg(feature = "python")]
+            None,
+            vec![],
+            None,
+        )
+        .await?;
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);
