@@ -236,7 +236,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
 #[inline(always)]
 pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
     if value <= 0 {
-        anyhow::bail!("invalid i64 for '{param}' not positive, was {value}")
+        anyhow::bail!("invalid i128 for '{param}' not positive, was {value}")
     }
     Ok(())
 }
