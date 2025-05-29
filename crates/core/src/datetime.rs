@@ -162,7 +162,7 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
         .timestamp_nanos_opt()
         .ok_or_else(|| anyhow::anyhow!("Failed `timestamp_nanos_opt`"))?;
     let ns_u64 =
-        u64::try_from(raw_ns).map_err(|_| anyhow::anyhow!("Negative timestamp: {}", raw_ns))?;
+        u64::try_from(raw_ns).map_err(|_| anyhow::anyhow!("Negative timestamp: {raw_ns}"))?;
     Ok(UnixNanos::from(ns_u64))
 }
 
@@ -177,7 +177,7 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
     let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
     // Convert seconds to i64 safely
     let secs_i64 = i64::try_from(seconds)
-        .map_err(|_| anyhow::anyhow!("Timestamp seconds overflow: {}", seconds))?;
+        .map_err(|_| anyhow::anyhow!("Timestamp seconds overflow: {seconds}"))?;
     let timestamp = DateTime::from_timestamp(secs_i64, nanoseconds)
         .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
@@ -187,54 +187,66 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
 
 /// Subtract `n` months from a chrono `DateTime<Utc>`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `checked_sub_months` returns `None` for the given `datetime` and `n`.
-#[must_use]
-pub fn subtract_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
-    datetime
-        .checked_sub_months(chrono::Months::new(n))
-        .expect("Failed to subtract months")
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn subtract_n_months(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    match datetime.checked_sub_months(chrono::Months::new(n)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to subtract {n} months from {datetime}"),
+    }
 }
 
 /// Add `n` months to a chrono `DateTime<Utc>`.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if `checked_add_months` returns `None` for the given `datetime` and `n`.
-#[must_use]
-pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> DateTime<Utc> {
-    datetime
-        .checked_add_months(chrono::Months::new(n))
-        .expect("Failed to add months")
+/// Returns an error if the resulting date would be invalid or out of range.
+pub fn add_n_months(datetime: DateTime<Utc>, n: u32) -> anyhow::Result<DateTime<Utc>> {
+    match datetime.checked_add_months(chrono::Months::new(n)) {
+        Some(result) => Ok(result),
+        None => anyhow::bail!("Failed to add {n} months to {datetime}"),
+    }
 }
 
 /// Subtract `n` months from a given UNIX nanoseconds timestamp.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the resulting timestamp is out of range (i.e., `timestamp_nanos_opt` returns `None`).
-#[must_use]
-pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn subtract_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
     let datetime = unix_nanos.to_datetime_utc();
-    (subtract_n_months(datetime, n)
-        .timestamp_nanos_opt()
-        .expect("Months should be within 584 years") as u64)
-        .into()
+    let result = subtract_n_months(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after subtracting {n} months"),
+    };
+
+    if timestamp < 0 {
+        anyhow::bail!("Negative timestamp not allowed");
+    }
+
+    Ok(UnixNanos::from(timestamp as u64))
 }
 
 /// Add `n` months to a given UNIX nanoseconds timestamp.
 ///
-/// # Panics
+/// # Errors
 ///
-/// Panics if the resulting timestamp is out of range (i.e., `timestamp_nanos_opt` returns `None`).
-#[must_use]
-pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
-    let date = unix_nanos.to_datetime_utc();
-    (add_n_months(date, n)
-        .timestamp_nanos_opt()
-        .expect("Months should be within 584 years") as u64)
-        .into()
+/// Returns an error if the resulting timestamp is out of range or invalid.
+pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> anyhow::Result<UnixNanos> {
+    let datetime = unix_nanos.to_datetime_utc();
+    let result = add_n_months(datetime, n)?;
+    let timestamp = match result.timestamp_nanos_opt() {
+        Some(ts) => ts,
+        None => anyhow::bail!("Timestamp out of range after adding {n} months"),
+    };
+
+    if timestamp < 0 {
+        anyhow::bail!("Negative timestamp not allowed");
+    }
+
+    Ok(UnixNanos::from(timestamp as u64))
 }
 
 /// Returns the last valid day of `(year, month)`.
@@ -443,7 +455,7 @@ mod tests {
         #[case] months: u32,
         #[case] expected: DateTime<Utc>,
     ) {
-        let result = subtract_n_months(input, months);
+        let result = subtract_n_months(input, months).unwrap();
         assert_eq!(result, expected);
     }
 
@@ -457,7 +469,7 @@ mod tests {
         #[case] months: u32,
         #[case] expected: DateTime<Utc>,
     ) {
-        let result = add_n_months(input, months);
+        let result = add_n_months(input, months).unwrap();
         assert_eq!(result, expected);
     }
 

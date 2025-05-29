@@ -294,15 +294,18 @@ pub fn get_time_bar_start(
             start_time += origin_offset;
 
             if now < start_time {
-                start_time = subtract_n_months(start_time, 12);
+                start_time =
+                    subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
             }
 
             let months_step = step as u32;
             while start_time <= now {
-                start_time = add_n_months(start_time, months_step);
+                start_time =
+                    add_n_months(start_time, months_step).expect("Failed to add months in loop");
             }
 
-            start_time = subtract_n_months(start_time, months_step);
+            start_time =
+                subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
             start_time
         }
         _ => panic!(

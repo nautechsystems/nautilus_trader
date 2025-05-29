@@ -60,6 +60,37 @@ Use structured error handling patterns consistently:
 
 3. **Error Propagation**: Use the `?` operator for clean error propagation.
 
+4. **Error Creation**: Prefer `anyhow::bail!` for early returns with errors:
+
+   ```rust
+   // Preferred - using bail! for early returns
+   pub fn process_value(value: i32) -> anyhow::Result<i32> {
+       if value < 0 {
+           anyhow::bail!("Value cannot be negative: {}", value);
+       }
+       Ok(value * 2)
+   }
+
+   // Instead of - verbose return statement
+   if value < 0 {
+       return Err(anyhow::anyhow!("Value cannot be negative: {}", value));
+   }
+   ```
+
+   **Note**: Use `anyhow::bail!` for early returns, but `anyhow::anyhow!` in closure contexts like `ok_or_else()` where early returns aren't possible.
+
+5. **Error Message Formatting**: Prefer inline format strings over positional arguments:
+
+   ```rust
+   // Preferred - inline format with variable names
+   anyhow::bail!("Failed to subtract {n} months from {datetime}");
+
+   // Instead of - positional arguments
+   anyhow::bail!("Failed to subtract {} months from {}", n, datetime);
+   ```
+
+   This makes error messages more readable and self-documenting, especially when there are multiple variables.
+
 ### Attribute Patterns
 
 Consistent attribute usage and ordering:
