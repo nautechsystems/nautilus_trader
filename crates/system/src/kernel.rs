@@ -326,6 +326,12 @@ impl NautilusKernel {
     pub fn start(&mut self) {
         self.start_engines();
 
+        // Initialize the trader first
+        if let Err(e) = self.trader.initialize() {
+            log::error!("Error initializing trader: {e:?}");
+            return;
+        }
+
         // Start the trader (it will start all registered components)
         if let Err(e) = self.trader.start() {
             log::error!("Error starting trader: {e:?}");

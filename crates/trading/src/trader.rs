@@ -470,6 +470,23 @@ impl Trader {
         log::info!("All components disposed successfully");
         Ok(())
     }
+
+    /// Initializes the trader, transitioning from `PreInitialized` to `Ready` state.
+    ///
+    /// This method must be called before starting the trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trader cannot be initialized from its current state.
+    pub fn initialize(&mut self) -> anyhow::Result<()> {
+        log::info!("Initializing trader {}", self.trader_id);
+
+        let new_state = self.state.transition(&ComponentTrigger::Initialize)?;
+        self.state = new_state;
+
+        log::info!("Trader {} initialized successfully", self.trader_id);
+        Ok(())
+    }
 }
 
 impl Component for Trader {
@@ -498,30 +515,21 @@ impl Component for Trader {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        match self.state {
-            ComponentState::PreInitialized => {
-                anyhow::bail!(
-                    "Cannot start trader from PreInitialized state. Call initialize() first."
-                );
-            }
-            ComponentState::Running => {
-                log::warn!("Trader is already running");
-                return Ok(());
-            }
-            ComponentState::Disposed => {
-                anyhow::bail!("Cannot start disposed trader");
-            }
-            ComponentState::Ready | ComponentState::Stopped => {}
-            _ => {
-                anyhow::bail!("Cannot start trader in current state: {}", self.state);
-            }
+        if self.state == ComponentState::Running {
+            log::warn!("Trader is already running");
+            return Ok(());
+        }
+
+        // Validate that we can start from current state
+        if !matches!(self.state, ComponentState::Ready | ComponentState::Stopped) {
+            anyhow::bail!("Cannot start trader from {} state", self.state);
         }
 
         log::info!("Starting trader {}", self.trader_id);
 
-        // Start all components
         self.start_components()?;
 
+        // Transition to running state
         self.state = ComponentState::Running;
         self.ts_started = Some(self.clock.borrow().timestamp_ns());
 
