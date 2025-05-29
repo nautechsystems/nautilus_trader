@@ -169,19 +169,19 @@ impl AtomicTime {
         }
     }
 
-    /// Return the current time as microseconds.
+    /// Returns the current time as microseconds.
     #[must_use]
     pub fn get_time_us(&self) -> u64 {
         self.get_time_ns().as_u64() / NANOSECONDS_IN_MICROSECOND
     }
 
-    /// Return the current time as milliseconds.
+    /// Returns the current time as milliseconds.
     #[must_use]
     pub fn get_time_ms(&self) -> u64 {
         self.get_time_ns().as_u64() / NANOSECONDS_IN_MILLISECOND
     }
 
-    /// Return the current time as seconds.
+    /// Returns the current time as seconds.
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     pub fn get_time(&self) -> f64 {
