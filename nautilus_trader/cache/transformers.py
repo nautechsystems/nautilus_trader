@@ -28,6 +28,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderEmulated
 from nautilus_trader.model.events import OrderExpired
@@ -150,8 +151,7 @@ def transform_order_event_to_pyo3(order_event):  # noqa: C901
     elif isinstance(order_event, OrderSubmitted):
         return nautilus_pyo3.OrderSubmitted.from_dict(OrderSubmitted.to_dict(order_event))
     elif isinstance(order_event, OrderAccepted):
-        order_event_dict = OrderAccepted.to_dict(order_event)
-        return nautilus_pyo3.OrderAccepted.from_dict(order_event_dict)
+        return nautilus_pyo3.OrderAccepted.from_dict(OrderAccepted.to_dict(order_event))
     elif isinstance(order_event, OrderRejected):
         return nautilus_pyo3.OrderRejected.from_dict(OrderRejected.to_dict(order_event))
     elif isinstance(order_event, OrderCanceled):
@@ -162,16 +162,16 @@ def transform_order_event_to_pyo3(order_event):  # noqa: C901
         return nautilus_pyo3.OrderTriggered.from_dict(OrderTriggered.to_dict(order_event))
     elif isinstance(order_event, OrderPendingUpdate):
         return nautilus_pyo3.OrderPendingUpdate.from_dict(OrderPendingUpdate.to_dict(order_event))
-    elif isinstance(order_event, OrderModifyRejected):
-        return nautilus_pyo3.OrderModifyRejected.from_dict(OrderModifyRejected.to_dict(order_event))
     elif isinstance(order_event, OrderPendingCancel):
         return nautilus_pyo3.OrderPendingCancel.from_dict(OrderPendingCancel.to_dict(order_event))
+    elif isinstance(order_event, OrderCancelRejected):
+        return nautilus_pyo3.OrderCancelRejected.from_dict(OrderCancelRejected.to_dict(order_event))
+    elif isinstance(order_event, OrderModifyRejected):
+        return nautilus_pyo3.OrderModifyRejected.from_dict(OrderModifyRejected.to_dict(order_event))
     elif isinstance(order_event, OrderUpdated):
         return nautilus_pyo3.OrderUpdated.from_dict(OrderUpdated.to_dict(order_event))
     elif isinstance(order_event, OrderFilled):
         return nautilus_pyo3.OrderFilled.from_dict(OrderFilled.to_dict(order_event))
-    elif isinstance(order_event, OrderPendingCancel):
-        return nautilus_pyo3.OrderPendingCancel.from_dict(OrderPendingCancel.to_dict(order_event))
     else:
         raise ValueError(f"Unknown order event type: {order_event}")
 
@@ -220,12 +220,14 @@ def transform_order_event_from_pyo3(order_event_pyo3):  # noqa: C901
         return OrderExpired.from_dict(order_event_pyo3.to_dict())
     elif isinstance(order_event_pyo3, nautilus_pyo3.OrderTriggered):
         return OrderTriggered.from_dict(order_event_pyo3.to_dict())
-    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderPendingUpdate):
-        return OrderPendingUpdate.from_dict(order_event_pyo3.to_dict())
-    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderModifyRejected):
-        return OrderModifyRejected.from_dict(order_event_pyo3.to_dict())
     elif isinstance(order_event_pyo3, nautilus_pyo3.OrderPendingCancel):
         return OrderPendingCancel.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderPendingUpdate):
+        return OrderPendingUpdate.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderCancelRejected):
+        return OrderCancelRejected.from_dict(order_event_pyo3.to_dict())
+    elif isinstance(order_event_pyo3, nautilus_pyo3.OrderModifyRejected):
+        return OrderModifyRejected.from_dict(order_event_pyo3.to_dict())
     elif isinstance(order_event_pyo3, nautilus_pyo3.OrderUpdated):
         return OrderUpdated.from_dict(order_event_pyo3.to_dict())
     elif isinstance(order_event_pyo3, nautilus_pyo3.OrderFilled):
