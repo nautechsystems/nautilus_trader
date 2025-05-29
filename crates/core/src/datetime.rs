@@ -240,7 +240,10 @@ pub fn add_n_months_nanos(unix_nanos: UnixNanos, n: u32) -> UnixNanos {
 /// Returns the last valid day of `(year, month)`.
 #[must_use]
 pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
-    // E.g., for February, check leap year logic
+    // Validate month range 1-12
+    assert!(month >= 1 && month <= 12, "`month` must be in 1..=12");
+
+    // February leap-year logic
     match month {
         2 => {
             if is_leap_year(year) {
@@ -250,7 +253,7 @@ pub const fn last_day_of_month(year: i32, month: u32) -> u32 {
             }
         }
         4 | 6 | 9 | 11 => 30,
-        _ => 31, // fallback for January, March, May, July, August, October, December, and invalid months
+        _ => 31, // January, March, May, July, August, October, December
     }
 }
 
@@ -295,6 +298,12 @@ mod tests {
     fn test_secs_to_millis(#[case] value: f64, #[case] expected: u64) {
         let result = secs_to_millis(value);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`month` must be in 1..=12")]
+    fn test_last_day_of_month_invalid_month() {
+        let _ = last_day_of_month(2024, 0);
     }
 
     #[rstest]
