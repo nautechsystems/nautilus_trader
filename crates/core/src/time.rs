@@ -97,9 +97,10 @@ pub fn duration_since_unix_epoch() -> Duration {
 #[must_use]
 pub fn nanos_since_unix_epoch() -> u64 {
     let ns = duration_since_unix_epoch().as_nanos();
-    if ns > u64::MAX as u128 {
-        panic!("System time overflow: value exceeds u64::MAX nanoseconds");
-    }
+    assert!(
+        (ns <= u128::from(u64::MAX)),
+        "System time overflow: value exceeds u64::MAX nanoseconds"
+    );
     ns as u64
 }
 
@@ -202,9 +203,10 @@ impl AtomicTime {
     ///
     /// Panics if invoked when in real-time mode.
     pub fn set_time(&self, time: UnixNanos) {
-        if self.realtime.load(Ordering::Acquire) {
-            panic!("Cannot set time while clock is in realtime mode");
-        }
+        assert!(
+            !self.realtime.load(Ordering::Acquire),
+            "Cannot set time while clock is in realtime mode"
+        );
 
         self.store(time.into(), Ordering::Release);
     }
@@ -218,9 +220,10 @@ impl AtomicTime {
     ///
     /// Panics if called while the clock is in real-time mode.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
-        if self.realtime.load(Ordering::Acquire) {
-            panic!("Cannot increment time while clock is in realtime mode");
-        }
+        assert!(
+            !self.realtime.load(Ordering::Acquire),
+            "Cannot increment time while clock is in realtime mode"
+        );
 
         let prev = self.fetch_add(delta, Ordering::AcqRel);
         UnixNanos::from(prev + delta)

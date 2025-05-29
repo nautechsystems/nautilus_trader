@@ -66,14 +66,14 @@ Use structured error handling patterns consistently:
    // Preferred - using bail! for early returns
    pub fn process_value(value: i32) -> anyhow::Result<i32> {
        if value < 0 {
-           anyhow::bail!("Value cannot be negative: {}", value);
+           anyhow::bail!("Value cannot be negative: {value}");
        }
        Ok(value * 2)
    }
 
    // Instead of - verbose return statement
    if value < 0 {
-       return Err(anyhow::anyhow!("Value cannot be negative: {}", value));
+       return Err(anyhow::anyhow!("Value cannot be negative: {value}"));
    }
    ```
 

@@ -232,63 +232,63 @@ impl LiveNodeBuilder {
 
     /// Set the instance ID for the node.
     #[must_use]
-    pub fn with_instance_id(mut self, instance_id: UUID4) -> Self {
+    pub const fn with_instance_id(mut self, instance_id: UUID4) -> Self {
         self.config.instance_id = Some(instance_id);
         self
     }
 
     /// Configure whether to load state on startup.
     #[must_use]
-    pub fn with_load_state(mut self, load_state: bool) -> Self {
+    pub const fn with_load_state(mut self, load_state: bool) -> Self {
         self.config.load_state = load_state;
         self
     }
 
     /// Configure whether to save state on shutdown.
     #[must_use]
-    pub fn with_save_state(mut self, save_state: bool) -> Self {
+    pub const fn with_save_state(mut self, save_state: bool) -> Self {
         self.config.save_state = save_state;
         self
     }
 
     /// Set the connection timeout in seconds.
     #[must_use]
-    pub fn with_timeout_connection(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_connection(mut self, timeout: u32) -> Self {
         self.config.timeout_connection = timeout;
         self
     }
 
     /// Set the reconciliation timeout in seconds.
     #[must_use]
-    pub fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_reconciliation(mut self, timeout: u32) -> Self {
         self.config.timeout_reconciliation = timeout;
         self
     }
 
     /// Set the portfolio initialization timeout in seconds.
     #[must_use]
-    pub fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_portfolio(mut self, timeout: u32) -> Self {
         self.config.timeout_portfolio = timeout;
         self
     }
 
     /// Set the disconnection timeout in seconds.
     #[must_use]
-    pub fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_disconnection(mut self, timeout: u32) -> Self {
         self.config.timeout_disconnection = timeout;
         self
     }
 
     /// Set the post-stop timeout in seconds.
     #[must_use]
-    pub fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_post_stop(mut self, timeout: u32) -> Self {
         self.config.timeout_post_stop = timeout;
         self
     }
 
     /// Set the shutdown timeout in seconds.
     #[must_use]
-    pub fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
+    pub const fn with_timeout_shutdown(mut self, timeout: u32) -> Self {
         self.config.timeout_shutdown = timeout;
         self
     }

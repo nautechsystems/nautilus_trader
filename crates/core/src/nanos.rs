@@ -103,9 +103,10 @@ impl UnixNanos {
     /// Panics if the value exceeds `i64::MAX` (approximately year 2262).
     #[must_use]
     pub const fn as_i64(&self) -> i64 {
-        if self.0 > i64::MAX as u64 {
-            panic!("UnixNanos value exceeds i64::MAX");
-        }
+        assert!(
+            (self.0 <= i64::MAX as u64),
+            "UnixNanos value exceeds i64::MAX"
+        );
         self.0 as i64
     }
 
