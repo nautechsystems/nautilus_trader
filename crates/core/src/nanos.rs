@@ -97,8 +97,15 @@ impl UnixNanos {
     }
 
     /// Returns the underlying value as `i64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value exceeds `i64::MAX` (approximately year 2262).
     #[must_use]
     pub const fn as_i64(&self) -> i64 {
+        if self.0 > i64::MAX as u64 {
+            panic!("UnixNanos value exceeds i64::MAX");
+        }
         self.0 as i64
     }
 
@@ -178,6 +185,7 @@ impl UnixNanos {
                 return Err("Unix timestamp cannot be negative".into());
             }
 
+            // SAFETY: Checked that nanos >= 0, so cast to u64 is safe
             return Ok(Self(nanos as u64));
         }
 
@@ -189,6 +197,7 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
+            // SAFETY: timestamp_nanos_opt() returns >= 0 for valid dates
             return Ok(Self(nanos as u64));
         }
 
@@ -840,5 +849,12 @@ mod tests {
         let json = "18446744073709551615"; // u64::MAX
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
         assert_eq!(deserialized.as_u64(), u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "UnixNanos value exceeds i64::MAX")]
+    fn test_as_i64_overflow_panics() {
+        let nanos = UnixNanos::from(u64::MAX);
+        let _ = nanos.as_i64(); // Should panic
     }
 }
