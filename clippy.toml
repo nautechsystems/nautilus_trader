@@ -6,6 +6,7 @@ doc-valid-idents = [
   "BaseX",
   "DeFi",
   "HyperSync",
+  "NautilusTrader",
   "PancakeSwap",
   "PascalCase",
   "PnL",
