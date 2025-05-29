@@ -28,9 +28,12 @@ use nautilus_model::{
 };
 use tokio::time::Duration;
 
+// Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync,python`
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Needed while blockchain requires python feature
+    // TODO: Initialize Python interpreter only if python feature is enabled
+    // #[cfg(feature = "python")]
     pyo3::prepare_freethreaded_python();
 
     dotenvy::dotenv().ok();

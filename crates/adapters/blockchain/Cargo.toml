@@ -21,6 +21,7 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = []
 hypersync = ["hypersync-client", "hypersync-schema"]
+python = ["pyo3", "nautilus-network/python"]
 
 [package.metadata.docs.rs]
 features = ["defi", "python"]
@@ -33,7 +34,7 @@ nautilus-data = { workspace = true }
 nautilus-infrastructure = { workspace = true, features = ["postgres"] }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true, features = ["defi"] }
-nautilus-network = { workspace = true, features = ["python"] }  # TODO: Untangle python feature
+nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
 
 anyhow = { workspace = true }
@@ -44,7 +45,7 @@ enum_dispatch = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true }  # TODO: Untangle python feature
+pyo3 = { workspace = true, optional = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -80,4 +81,4 @@ required-features = ["hypersync"]
 [[bin]]
 name = "node_test"
 path = "bin/node_test.rs"
-required-features = ["hypersync"]
+required-features = ["hypersync", "python"]  # TODO: Requires python for now
