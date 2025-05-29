@@ -13,6 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Live node handling execution and data streaming for Nautilus systems.
+//!
+//! This crate provides high-level abstractions and infrastructure for running live trading
+//! systems, including data streaming, execution management, and system lifecycle handling.
+//! It builds on top of the system kernel to provide simplified interfaces for live deployment.
+//!
+//! The main components include:
+//! - [`LiveNode`] - High-level abstraction for live system nodes
+//! - [`LiveNodeConfig`] - Configuration for live node deployment
+//! - Data streaming and execution management for live environments
+//! - Async runners for managing system lifecycle
+//!
+//! [`LiveNode`]: node::LiveNode
+//! [`LiveNodeConfig`]: config::LiveNodeConfig
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
