@@ -15,6 +15,7 @@
 
 import asyncio
 
+from betfair_parser.exceptions import IdentityError
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
@@ -176,7 +177,11 @@ class BetfairDataClient(LiveMarketDataClient):
             try:
                 await asyncio.sleep(self.config.keep_alive_secs)
                 self._log.info("Sending keep-alive")
-                await self._client.keep_alive()
+                try:
+                    await self._client.keep_alive()
+                except IdentityError:
+                    self._log.warning("Identity error during keep-alive, reconnecting")
+                    await self._reconnect()
             except asyncio.CancelledError:
                 self._log.debug("Canceled task 'keep_alive'")
                 return
@@ -212,7 +217,6 @@ class BetfairDataClient(LiveMarketDataClient):
     def _dispose(self) -> None:
         if self._stream.is_active():
             self._log.error("Cannot dispose a connected data client")
-            return
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
