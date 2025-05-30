@@ -47,12 +47,21 @@ repos:
         entry: .pre-commit-hooks/check_hidden_chars.sh
         language: script
         files: '\\.(rs|py|pyx|toml|md)$'
+
       - id: check-toml-codegen
         name: check toml-codegen
         description: Ensures TOML files don't contain the 'codegen-backend' keyword
         entry: .pre-commit-hooks/check_toml_codegen.sh
         language: script
         files: \.toml$
+
+      - id: check-todo-exclamation
+        name: check todo! markers
+        description: Prevents committing TODO! markers that indicate incomplete work
+        entry: .pre-commit-hooks/check_todo_exclamation.sh
+        language: script
+        types: [text]
+        pass_filenames: false
 
   ##############################################################################
   #  Rust formatting and linting
@@ -68,6 +77,7 @@ repos:
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
+
       - id: cargo-clippy
         name: cargo clippy
         description: Run the Clippy linter on the package.
@@ -77,6 +87,7 @@ repos:
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
+
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors.
