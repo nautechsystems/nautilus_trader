@@ -39,10 +39,13 @@ def place_order() -> None:
     response = client.cancel_all()
     print(response)
 
+    # "25143473975747606484038304917293813549571262015788668262095587119656373441253"
+
     order_args = OrderArgs(
         price=0.001,
-        token_id="25143473975747606484038304917293813549571262015788668262095587119656373441253",
-        size=5,
+        token_id="3642309182816755995211647069086230404892359515361325090555875625429003317932",
+        size=5.004282,
+        # size=5,
         side="SELL",
     )
     options = PartialCreateOrderOptions(neg_risk=False)

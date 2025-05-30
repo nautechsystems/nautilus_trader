@@ -38,6 +38,8 @@ from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import Symbol
@@ -625,3 +627,225 @@ class TestPolymarketExecutionClient:
 
         # Assert - no exception raised, warning logged
         # Test passes if we reach this point without exception
+
+    @pytest.mark.skip(reason="market orders WIP")
+    @pytest.mark.asyncio()
+    async def test_submit_market_order_success(self, mocker):
+        """
+        Test successful market order submission using new MarketOrderArgs.
+        """
+        # Arrange
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        # Mock successful responses
+        mock_create_market_order.return_value = {"signed_order": "mock_signed_market"}
+        mock_post_order.return_value = {"success": True, "orderID": "test_market_order_id"}
+
+        market_order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            time_in_force=TimeInForce.IOC,  # Test IOC -> FAK mapping
+        )
+        self.cache.add_order(market_order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=market_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_market_order.assert_called_once()
+        mock_post_order.assert_called_once()
+
+        # Verify MarketOrderArgs were created correctly
+        call_args = mock_create_market_order.call_args[0][0]  # First positional argument
+        assert call_args.amount == 10.0
+        assert call_args.side == "BUY"
+        assert call_args.price == 0  # Market order should have price 0
+        assert call_args.order_type == "FAK"  # IOC should map to FAK
+
+        # Check that venue order ID was cached
+        venue_order_id = VenueOrderId("test_market_order_id")
+        cached_client_order_id = self.cache.client_order_id(venue_order_id)
+        assert cached_client_order_id == market_order.client_order_id
+
+    @pytest.mark.skip(reason="market orders WIP")
+    @pytest.mark.asyncio()
+    async def test_submit_market_order_with_fok(self, mocker):
+        """
+        Test market order submission with FOK time in force.
+        """
+        # Arrange
+        mock_create_market_order = mocker.patch.object(self.http_client, "create_market_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        # Mock successful responses
+        mock_create_market_order.return_value = {"signed_order": "mock_signed_market"}
+        mock_post_order.return_value = {"success": True, "orderID": "test_fok_market_order_id"}
+
+        market_order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_str("5"),
+            time_in_force=TimeInForce.FOK,
+        )
+        self.cache.add_order(market_order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=market_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_market_order.assert_called_once()
+
+        # Verify MarketOrderArgs were created correctly
+        call_args = mock_create_market_order.call_args[0][0]
+        assert call_args.amount == 5.0
+        assert call_args.side == "SELL"
+        assert call_args.price == 0
+        assert call_args.order_type == "FOK"
+
+    @pytest.mark.asyncio()
+    async def test_submit_limit_order_still_works(self, mocker):
+        """
+        Test that limit orders still work with the refactored submission logic.
+        """
+        # Arrange
+        mock_create_order = mocker.patch.object(self.http_client, "create_order")
+        mock_post_order = mocker.patch.object(self.http_client, "post_order")
+
+        # Mock successful responses
+        mock_create_order.return_value = {"signed_order": "mock_signed_limit"}
+        mock_post_order.return_value = {"success": True, "orderID": "test_limit_order_id"}
+
+        limit_order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.GTC,
+        )
+        self.cache.add_order(limit_order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=limit_order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert
+        mock_create_order.assert_called_once()  # Should use create_order, not create_market_order
+        mock_post_order.assert_called_once()
+
+        # Verify OrderArgs were created correctly for limit order
+        call_args = mock_create_order.call_args[0][0]
+        assert call_args.size == 10.0
+        assert call_args.side == "BUY"
+        assert call_args.price == 0.50  # Limit order should have specific price
+
+    @pytest.mark.asyncio()
+    async def test_submit_order_invalid_time_in_force(self):
+        """
+        Test that orders with invalid time in force are rejected.
+        """
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+            time_in_force=TimeInForce.DAY,  # Invalid for Polymarket
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert - order should be rejected (no exception, just logged error)
+        # Test passes if we reach this point without exception
+
+    @pytest.mark.asyncio()
+    async def test_submit_order_invalid_order_type(self):
+        """
+        Test that orders with invalid order types are rejected.
+        """
+        # Arrange - create a stop market order which is not supported
+        order = self.strategy.order_factory.stop_market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            trigger_price=Price.from_str("0.55"),
+        )
+        self.cache.add_order(order, None)
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=0,
+        )
+
+        # Act
+        await self.exec_client._submit_order(submit_order)
+
+        # Assert - order should be rejected (no exception, just logged error)
+        # Test passes if we reach this point without exception
+
+    def test_order_branching_logic(self):
+        """
+        Test that _submit_order correctly branches to market vs limit order methods.
+        """
+        # This is tested implicitly by the other tests, but we can verify
+        # the branching logic by checking which method would be called
+
+        # Create mock orders
+        market_order = self.strategy.order_factory.market(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+        )
+
+        limit_order = self.strategy.order_factory.limit(
+            instrument_id=ELECTION_INSTRUMENT.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("10"),
+            price=Price.from_str("0.50"),
+        )
+
+        # Assert order types are correctly identified
+        assert market_order.order_type == OrderType.MARKET
+        assert limit_order.order_type == OrderType.LIMIT

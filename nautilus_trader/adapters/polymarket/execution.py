@@ -795,42 +795,75 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return
 
         if order.is_reduce_only:
-            self._log.warning("Reduce-only orders not supported on Polymarket")
+            self._log.error("Reduce-only orders not supported on Polymarket")
+            return  # TODO: Change to deny after next release
 
         if order.is_post_only:
-            self._log.warning("Post-only orders not supported on Polymarket")
+            self._log.error("Post-only orders not supported on Polymarket")
+            return  # TODO: Change to deny after next release
 
         if order.time_in_force not in VALID_POLYMARKET_TIME_IN_FORCE:
             self._log.error(
                 f"Order time in force {order.tif_string()} not supported on Polymarket, "
-                "use any of FOK, GTC, GTD",
+                "use any of FOK, GTC, GTD, IOC",
             )
-            return
+            return  # TODO: Change to deny after next release
 
         if order.order_type == OrderType.MARKET:
-            price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
-            expire_time_ns = 0
+            await self._submit_market_order(command)
         elif order.order_type == OrderType.LIMIT:
-            price = float(order.price)
-            expire_time_ns = order.expire_time_ns
+            await self._submit_limit_order(command)
         else:
             self._log.error(
                 f"Order type {order.type_string()} not supported on Polymarket, "
                 "use either MARKET, LIMIT",
             )
-            return
 
-        # Create signed Polymarket order
+    # TODO: Submitting native market orders is under development
+    async def _submit_market_order(self, command: SubmitOrder) -> None:
+        self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
+
+        order = command.order
+
+        # if order.quantity.precision > POLYMARKET_MAX_PRECISION_TAKER:
+        #     self._log.error(
+        #         f"Market order quantity max precision {POLYMARKET_MAX_PRECISION_TAKER} on Polymarket, "
+        #         f"was {order.quantity.precision}",
+        #     )
+        #     return  # TODO: Change to deny after next release
+
+        # Create signed Polymarket market order
+        # market_order_args = MarketOrderArgs(
+        #     token_id=get_polymarket_token_id(order.instrument_id),
+        #     amount=amount,
+        #     side=order_side_to_str(order.side),
+        #     price=0,  # True market order
+        #     order_type=convert_tif_to_polymarket_order_type(order.time_in_force),
+        # )
+        # options = PartialCreateOrderOptions(neg_risk=False)
+        # signing_start = self._clock.timestamp()
+        # signed_order = await asyncio.to_thread(
+        #     self._http_client.create_market_order,
+        #     market_order_args,
+        #     options=options,
+        # )
+        # interval = self._clock.timestamp() - signing_start
+        # self._log.info(f"Signed Polymarket market order in {interval:.3f}s", LogColor.BLUE)
+
+        # amount = round(order.quantity, POLYMARKET_MAX_PRECISION_TAKER)
+
+        price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
+
+        # Create signed Polymarket limit order for now
         order_args = OrderArgs(
             price=price,
             token_id=get_polymarket_token_id(order.instrument_id),
             size=float(order.quantity),
             side=order_side_to_str(order.side),
-            expiration=int(nanos_to_secs(expire_time_ns)),
         )
         options = PartialCreateOrderOptions(neg_risk=False)
         signing_start = self._clock.timestamp()
-        signed_order = await asyncio.to_thread(  # Send to thread to avoid blocking event loop
+        signed_order = await asyncio.to_thread(
             self._http_client.create_order,
             order_args,
             options=options,
@@ -838,7 +871,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         interval = self._clock.timestamp() - signing_start
         self._log.info(f"Signed Polymarket order in {interval:.3f}s", LogColor.BLUE)
 
-        # Generate order submitted event, to ensure correct ordering of events
         self.generate_order_submitted(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -846,6 +878,41 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        await self._post_signed_order(order, signed_order)
+
+    async def _submit_limit_order(self, command: SubmitOrder) -> None:
+        self._log.debug("Creating Polymarket order", LogColor.MAGENTA)
+
+        order = command.order
+
+        # Create signed Polymarket limit order
+        order_args = OrderArgs(
+            price=float(order.price),
+            token_id=get_polymarket_token_id(order.instrument_id),
+            size=float(order.quantity),
+            side=order_side_to_str(order.side),
+            expiration=int(nanos_to_secs(order.expire_time_ns)),
+        )
+        options = PartialCreateOrderOptions(neg_risk=False)
+        signing_start = self._clock.timestamp()
+        signed_order = await asyncio.to_thread(
+            self._http_client.create_order,
+            order_args,
+            options=options,
+        )
+        interval = self._clock.timestamp() - signing_start
+        self._log.info(f"Signed Polymarket order in {interval:.3f}s", LogColor.BLUE)
+
+        self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        await self._post_signed_order(order, signed_order)
+
+    async def _post_signed_order(self, order: Order, signed_order) -> None:
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
@@ -1034,7 +1101,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(
                 f"Received trade message for unknown instrument {instrument_id} "
                 f"(market={msg.market}, asset_id={msg.asset_id}). "
-                f"This may indicate the instrument is not subscribed or cached. Skipping trade processing.",
+                f"This may indicate the instrument is not subscribed or cached, skipping trade processing",
             )
             return
 
