@@ -337,7 +337,7 @@ class OKXWebsocketClient:
             return
 
         self._log.warning(f"Trying to reconnect to {self._base_url}")
-        self._loop.create_task(self._reconnect_wrapper())  # type: ignore
+        self._loop.create_task(self._reconnect_wrapper())
 
     async def _reconnect_wrapper(self):
         if self._check_pong_age_task:
