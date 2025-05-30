@@ -22,7 +22,6 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceExecClientConfig
 from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
-from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -56,12 +55,12 @@ config_node = TradingNodeConfig(
         open_check_interval_secs=5.0,
         # manage_own_order_books=True,
     ),
-    cache=CacheConfig(
-        # database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        buffer_interval_ms=100,
-        flush_on_start=False,
-    ),
+    # cache=CacheConfig(
+    #     # database=DatabaseConfig(),
+    #     timestamps_as_iso8601=True,
+    #     buffer_interval_ms=100,
+    #     flush_on_start=False,
+    # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
