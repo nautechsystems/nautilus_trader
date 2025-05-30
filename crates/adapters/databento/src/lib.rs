@@ -56,3 +56,6 @@ pub mod factories;
 
 #[cfg(feature = "live")]
 pub mod live;
+
+#[cfg(feature = "live")]
+pub mod actor;
