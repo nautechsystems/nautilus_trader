@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::{cmp::max, sync::Arc};
 
+use futures_util::StreamExt;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
     RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
@@ -33,6 +34,7 @@ use nautilus_model::{
         amm::Pool,
         chain::{Blockchain, SharedChain},
         dex::Dex,
+        swap::Swap,
         token::Token,
     },
     identifiers::{ClientId, Venue},
@@ -54,6 +56,7 @@ use crate::{
         http::BlockchainHttpRpcClient,
         types::BlockchainMessage,
     },
+    validation::validate_address,
 };
 
 /// A comprehensive client for interacting with blockchain data from multiple sources.
@@ -149,12 +152,14 @@ impl BlockchainDataClient {
             .await;
     }
 
-    /// Establishes connections to the data providers and cache.
-    pub async fn connect(&mut self) -> anyhow::Result<()> {
+    /// Establishes connections to the data providers and cache, then starts block syncing.
+    pub async fn connect(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
+        let from_block = from_block.unwrap_or(0);
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
         }
-        self.cache.connect().await?;
+        self.cache.connect(from_block).await?;
+        self.sync_blocks(from_block).await?;
         Ok(())
     }
 
@@ -164,29 +169,155 @@ impl BlockchainDataClient {
         Ok(())
     }
 
+    /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
+    pub async fn sync_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
+        let from_block = match self.cache.last_cached_block_number() {
+            None => from_block,
+            Some(cached_block_number) => max(from_block, cached_block_number + 1),
+        };
+        let current_block = self.hypersync_client.current_block().await;
+        log::info!("Syncing blocks from {from_block} to {current_block}");
+        let blocks_stream = self
+            .hypersync_client
+            .request_blocks_stream(from_block, Some(current_block))
+            .await;
+        tokio::pin!(blocks_stream);
+        while let Some(block) = blocks_stream.next().await {
+            self.cache.add_block(block).await?;
+        }
+        log::info!("Finished syncing blocks");
+        Ok(())
+    }
+
+    /// Fetches and caches all swap events for a specific liquidity pool within the given block range.
+    pub async fn sync_pool_swaps(
+        &mut self,
+        dex_id: &str,
+        pool_address: String,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
+        let dex_extended = self.get_dex(dex_id)?.clone();
+        let pool_address = validate_address(&pool_address)?;
+        let pool = match self.cache.get_pool(&pool_address) {
+            Some(pool) => pool,
+            None => return Err(anyhow::anyhow!("Pool {} is not registered", pool_address)),
+        };
+
+        if dex_extended.parse_swap_event_fn.is_none() {
+            return Err(anyhow::anyhow!(
+                "Swap event parsing function is not set for dex {}",
+                dex_id
+            ));
+        }
+
+        if dex_extended.convert_to_trade_data_fn.is_none() {
+            return Err(anyhow::anyhow!(
+                "Trade data conversion function is not set for dex {}",
+                dex_id
+            ));
+        }
+
+        let from_block = from_block
+            .map(|block| max(block, pool.creation_block))
+            .unwrap_or(pool.creation_block);
+        let swap_event_signature = dex_extended.swap_created_event.as_ref();
+        let parse_swap_event_fn = dex_extended.parse_swap_event_fn.as_ref().unwrap();
+        let convert_to_trade_data_fn = dex_extended.convert_to_trade_data_fn.as_ref().unwrap();
+        let pool_address = pool.address.to_string();
+        let swaps_stream = self
+            .hypersync_client
+            .request_contract_events_stream(
+                from_block,
+                to_block,
+                &pool_address,
+                swap_event_signature,
+                Vec::new(),
+            )
+            .await;
+
+        tokio::pin!(swaps_stream);
+        while let Some(log) = swaps_stream.next().await {
+            match parse_swap_event_fn(log) {
+                Ok(swap_event) => {
+                    let timestamp = match self.cache.get_block_timestamp(swap_event.block_number) {
+                        Some(num) => num,
+                        None => {
+                            log::error!(
+                                "Missing block timestamp for block {} while processing swap event in the cache",
+                                swap_event.block_number
+                            );
+                            continue;
+                        }
+                    };
+                    let (order_side, size, price) =
+                        convert_to_trade_data_fn(&pool.token0, &pool.token1, &swap_event)
+                            .expect("Failed to convert swap event to trade data");
+
+                    let swap = Swap::new(
+                        self.chain.clone(),
+                        dex_extended.dex.clone(),
+                        pool.clone(),
+                        swap_event.block_number,
+                        timestamp.clone(),
+                        swap_event.sender,
+                        order_side,
+                        size,
+                        price,
+                    );
+                    self.cache.add_swap(swap).await?;
+                }
+                Err(e) => log::error!("Error processing swap event: {}", e),
+            }
+        }
+        log::info!("Finished syncing pool swaps");
+        Ok(())
+    }
+
     /// Synchronizes token and pool data for a specific DEX from the specified block.
     pub async fn sync_exchange_pools(
         &mut self,
         dex_id: &str,
-        from_block: Option<u32>,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
     ) -> anyhow::Result<()> {
         let from_block = from_block.unwrap_or(0);
         log::info!("Syncing dex exchange pools for {dex_id} from block {from_block}");
 
-        let dex = if let Some(dex) = self.cache.get_dex(dex_id) {
-            dex.clone()
-        } else {
-            anyhow::bail!("Dex {dex_id} is not registered");
-        };
+        let dex = self.get_dex(dex_id)?.clone();
 
-        let pools = self
+        // Parsing of pool-created events should be defined in the DEX implementation.
+        if dex.parse_pool_created_event_fn.is_none() {
+            return Err(anyhow::anyhow!(
+                "Pool created event parsing function not set for dex {}",
+                dex_id
+            ));
+        }
+
+        let parse_pool_created_event_fn = dex.parse_pool_created_event_fn.as_ref().unwrap();
+        let factory_address = dex.factory.as_ref();
+        let pair_created_event_signature = dex.pool_created_event.as_ref();
+        let pools_stream = self
             .hypersync_client
-            .request_pool_created_events(from_block, &dex)
+            .request_contract_events_stream(
+                from_block,
+                to_block,
+                factory_address,
+                pair_created_event_signature,
+                Vec::new(),
+            )
             .await;
-        for pool in pools {
-            self.process_token(pool.token0.to_string()).await?;
-            self.process_token(pool.token1.to_string()).await?;
-            self.process_pool(&dex, pool).await?;
+
+        tokio::pin!(pools_stream);
+        while let Some(log) = pools_stream.next().await {
+            match parse_pool_created_event_fn(log) {
+                Ok(pool) => {
+                    self.process_token(pool.token0.to_string()).await?;
+                    self.process_token(pool.token1.to_string()).await?;
+                    self.process_pool(&dex.dex, pool).await?;
+                }
+                Err(e) => log::error!("Error processing pool created event: {}", e),
+            }
         }
         Ok(())
     }
@@ -196,7 +327,8 @@ impl BlockchainDataClient {
     /// # Errors
     ///
     /// Returns an error if fetching token info or adding to cache fails.
-    async fn process_token(&mut self, token_address: String) -> anyhow::Result<()> {
+    pub async fn process_token(&mut self, token_address: String) -> anyhow::Result<()> {
+        let token_address = validate_address(&token_address)?;
         if self.cache.get_token(&token_address).is_none() {
             let token_info = self.tokens.fetch_token_info(&token_address).await?;
             let token = Token::new(
@@ -217,16 +349,10 @@ impl BlockchainDataClient {
         let pool = Pool::new(
             self.chain.clone(),
             dex.clone(),
-            event.pool_address.to_string(),
+            event.pool_address,
             event.block_number,
-            self.cache
-                .get_token(&event.token0.to_string())
-                .cloned()
-                .unwrap(),
-            self.cache
-                .get_token(&event.token1.to_string())
-                .cloned()
-                .unwrap(),
+            self.cache.get_token(&event.token0).cloned().unwrap(),
+            self.cache.get_token(&event.token1).cloned().unwrap(),
             event.fee,
             event.tick_spacing,
         );
@@ -294,6 +420,14 @@ impl BlockchainDataClient {
             rpc_client.unsubscribe_blocks().await.unwrap();
         } else {
             self.hypersync_client.unsubscribe_blocks();
+        }
+    }
+
+    fn get_dex(&self, dex_id: &str) -> anyhow::Result<&DexExtended> {
+        if let Some(dex) = self.cache.get_dex(dex_id) {
+            Ok(dex)
+        } else {
+            Err(anyhow::anyhow!("Dex {dex_id} is not registered"))
         }
     }
 }

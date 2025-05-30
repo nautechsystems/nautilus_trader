@@ -70,6 +70,7 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.49.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.49.0" }
 
 ahash = "0.8.12"
+alloy = { version = "1.0.4" }
 anyhow = "1.0.98"
 arrow = "55.1.0"  # Keep major version in line with datafusion
 async-stream = "0.3.6"

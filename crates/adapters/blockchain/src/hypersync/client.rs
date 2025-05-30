@@ -16,17 +16,16 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use alloy::primitives::keccak256;
+use futures_util::Stream;
 use hypersync_client::{
     Client, ClientConfig,
     net_types::{BlockSelection, FieldSelection, Query},
+    simple_types::Log,
 };
-use nautilus_model::defi::chain::SharedChain;
+use nautilus_model::defi::{block::Block, chain::SharedChain};
 use reqwest::Url;
 
-use crate::{
-    events::pool_created::PoolCreated, exchanges::extended::DexExtended,
-    hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage,
-};
+use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
@@ -69,28 +68,30 @@ impl HyperSyncClient {
         }
     }
 
-    /// Fetches historical pool creation events for a specific DEX from the HyperSync API.
-    pub async fn request_pool_created_events(
-        &mut self,
-        from_block: u32,
-        dex: &DexExtended,
-    ) -> Vec<PoolCreated> {
-        let factory_address = dex.factory.as_ref();
-        let pair_created_event = dex.pool_created_event.as_ref();
-        log::info!(
-            "Requesting pair created events from Hypersync emitted by factory {factory_address} and from block {from_block}"
-        );
-        let event_hash = keccak256(pair_created_event.as_bytes());
+    /// Creates a stream of contract event logs matching the specified criteria.
+    pub async fn request_contract_events_stream(
+        &self,
+        from_block: u64,
+        to_block: Option<u64>,
+        contract_address: &str,
+        event_signature: &str,
+        additional_topics: Vec<String>,
+    ) -> impl Stream<Item = Log> + use<> {
+        let event_hash = keccak256(event_signature.as_bytes());
         let topic0 = format!("0x{}", hex::encode(event_hash));
 
-        let query = serde_json::from_value(serde_json::json!({
+        let mut topics_array = Vec::new();
+        topics_array.push(vec![topic0]);
+        for additional_topic in additional_topics {
+            topics_array.push(vec![additional_topic]);
+        }
+
+        let mut query_value = serde_json::json!({
             "from_block": from_block,
             "logs": [{
-                "topic": [
-                    topic0
-                ],
+                "topics": topics_array,
                 "address": [
-                    factory_address,
+                    contract_address,
                 ]
             }],
             "field_selection": {
@@ -102,26 +103,35 @@ impl HyperSyncClient {
                     "topic2",
                     "topic3",
                 ]
-        }}))
-        .unwrap();
+            }
+        });
+
+        if let Some(to_block) = to_block {
+            if let Some(obj) = query_value.as_object_mut() {
+                obj.insert("to_block".to_string(), serde_json::json!(to_block));
+            }
+        }
+
+        let query = serde_json::from_value(query_value).unwrap();
 
         let mut rx = self
             .client
             .clone()
             .stream(query, Default::default())
             .await
-            .unwrap();
-        let mut result = Vec::new();
-        while let Some(response) = rx.recv().await {
-            let response = response.unwrap();
-            for batch in response.data.logs {
-                for log in batch {
-                    let pool = dex.parse_pool_created_event(log).unwrap();
-                    result.push(pool);
+            .expect("Failed to create stream");
+
+        async_stream::stream! {
+              while let Some(response) = rx.recv().await {
+                let response = response.unwrap();
+
+                for batch in response.data.logs {
+                    for log in batch {
+                        yield log
+                    }
                 }
             }
         }
-        result
     }
 
     /// Disconnects from the HyperSync service and stops all background tasks.
@@ -129,27 +139,45 @@ impl HyperSyncClient {
         self.unsubscribe_blocks();
     }
 
+    /// Returns the current block
+    pub async fn current_block(&self) -> u64 {
+        self.client.get_height().await.unwrap()
+    }
+
+    /// Creates a stream that yields blockchain blocks within the specified range.
+    pub async fn request_blocks_stream(
+        &self,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> impl Stream<Item = Block> {
+        let query = Self::construct_block_query(from_block, to_block);
+        let mut rx = self
+            .client
+            .clone()
+            .stream(query, Default::default())
+            .await
+            .unwrap();
+        async_stream::stream! {
+            while let Some(response) = rx.recv().await {
+                let response = response.unwrap();
+                for batch in response.data.blocks {
+                        for received_block in batch {
+                            let block = transform_hypersync_block(received_block).unwrap();
+                            yield block
+                        }
+                    }
+            }
+        }
+    }
+
     /// Starts a background task that continuously polls for new blockchain blocks.
     pub fn subscribe_blocks(&mut self) {
-        let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
-            .fields
-            .iter()
-            .map(|x| x.name.clone())
-            .collect();
         let client = self.client.clone();
         let tx = self.tx.clone();
         let chain = self.chain.clone();
         let task = tokio::spawn(async move {
             let current_block_height = client.get_height().await.unwrap();
-            let mut query = Query {
-                from_block: current_block_height,
-                blocks: vec![BlockSelection::default()],
-                field_selection: FieldSelection {
-                    block: all_block_fields,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
+            let mut query = Self::construct_block_query(current_block_height, None);
 
             loop {
                 let response = client.get(&query).await.unwrap();
@@ -179,6 +207,26 @@ impl HyperSyncClient {
             }
         });
         self.blocks_subscription_task = Some(task);
+    }
+
+    /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
+    fn construct_block_query(from_block: u64, to_block: Option<u64>) -> Query {
+        let all_block_fields: BTreeSet<String> = hypersync_schema::block_header()
+            .fields
+            .iter()
+            .map(|x| x.name.clone())
+            .collect();
+
+        Query {
+            from_block,
+            to_block,
+            blocks: vec![BlockSelection::default()],
+            field_selection: FieldSelection {
+                block: all_block_fields,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
     /// Unsubscribes to the new blocks by stopping the background watch task.

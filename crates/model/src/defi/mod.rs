@@ -19,5 +19,6 @@ pub mod chain;
 pub mod dex;
 pub mod hex;
 pub mod rpc;
+pub mod swap;
 pub mod token;
 pub mod transaction;

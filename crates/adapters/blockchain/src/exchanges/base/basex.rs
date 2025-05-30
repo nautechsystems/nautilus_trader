@@ -30,6 +30,7 @@ pub static BASEX: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x38015D05f4fEC8AFe15D7cc0386a126574e8077B",
         AmmType::CLAMM,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

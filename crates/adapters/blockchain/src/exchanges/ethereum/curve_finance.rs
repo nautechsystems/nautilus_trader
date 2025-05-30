@@ -30,6 +30,7 @@ pub static CURVE_FINANCE: LazyLock<DexExtended> = LazyLock::new(|| {
         "0xB9fC157394Af804a3578134A6585C0dc9cc990d4",
         AmmType::StableSwap,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

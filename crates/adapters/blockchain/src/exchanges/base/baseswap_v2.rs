@@ -30,6 +30,7 @@ pub static BASESWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "0xFDa619b6d20975be80A10332cD39b9a4b0FAa8BB",
         AmmType::CPAMM,
         "",
+        "",
     );
     DexExtended::new(dex)
 });
