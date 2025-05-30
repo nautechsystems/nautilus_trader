@@ -61,7 +61,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 ustr = { workspace = true }
-databento = "0.26.0"
+databento = "=0.26.0"
 fallible-streaming-iterator = "0.1.9"
 time = "0.3.41"
 
