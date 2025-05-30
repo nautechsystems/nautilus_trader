@@ -146,7 +146,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+    rev: v1.16.0
     hooks:
       - id: mypy
         args: [
@@ -163,7 +163,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.8  # uv version
+    rev: 0.7.9  # uv version
     hooks:
       - id: uv-lock
 
