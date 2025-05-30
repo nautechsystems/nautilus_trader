@@ -62,6 +62,7 @@ nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [[bin]]
 name = "databento-sandbox"

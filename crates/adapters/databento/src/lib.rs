@@ -40,6 +40,7 @@
 pub mod common;
 pub mod decode;
 pub mod enums;
+pub mod historical;
 pub mod live;
 pub mod loader;
 pub mod symbology;

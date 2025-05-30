@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the Databento live client.
+
 use std::{
     collections::HashMap,
     fs,
