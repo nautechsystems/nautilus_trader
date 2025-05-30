@@ -14,11 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use databento::dbn;
 use dbn::{
@@ -76,7 +76,7 @@ pub struct DatabentoDataLoader {
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    symbol_venue_map: HashMap<Symbol, Venue>,
+    symbol_venue_map: AHashMap<Symbol, Venue>,
 }
 
 impl DatabentoDataLoader {
@@ -90,7 +90,7 @@ impl DatabentoDataLoader {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
-            symbol_venue_map: HashMap::new(),
+            symbol_venue_map: AHashMap::new(),
         };
 
         // Load publishers

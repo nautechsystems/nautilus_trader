@@ -16,7 +16,6 @@
 //! Core Databento historical client for both Rust and Python usage.
 
 use std::{
-    collections::HashMap,
     fs,
     num::NonZeroU64,
     path::PathBuf,
@@ -24,6 +23,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use ahash::AHashMap;
 use databento::{
     dbn::{self},
     historical::timeseries::GetRangeParams,
@@ -62,7 +62,7 @@ pub struct DatabentoHistoricalClient {
     clock: &'static AtomicTime,
     inner: Arc<Mutex<databento::HistoricalClient>>,
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+    symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
 }
 
@@ -114,7 +114,7 @@ impl DatabentoHistoricalClient {
             clock,
             inner: Arc::new(Mutex::new(client)),
             publisher_venue_map: Arc::new(publisher_venue_map),
-            symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
+            symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             key,
             use_exchange_as_venue,
         })
