@@ -17,9 +17,11 @@
 
 pub mod enums;
 pub mod historical;
-pub mod live;
 pub mod loader;
 pub mod types;
+
+#[cfg(feature = "live")]
+pub mod live;
 
 use pyo3::prelude::*;
 
@@ -36,7 +38,9 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::types::DatabentoStatistics>()?;
     m.add_class::<super::types::DatabentoImbalance>()?;
     m.add_class::<super::loader::DatabentoDataLoader>()?;
-    m.add_class::<live::DatabentoLiveClient>()?;
     m.add_class::<historical::DatabentoHistoricalClient>()?;
+
+    #[cfg(feature = "live")]
+    m.add_class::<live::DatabentoLiveClient>()?;
     Ok(())
 }

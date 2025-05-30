@@ -18,12 +18,13 @@ name = "nautilus_databento"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["live"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
+live = ["nautilus-live", "nautilus-system", "dotenvy", "tracing-subscriber", "pyo3"]
 python = [
   "pyo3",
   "pyo3-async-runtimes",
@@ -40,11 +41,14 @@ rustdoc-args = ["--cfg", "docsrs"]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true, features = ["python"] }
 nautilus-data = { workspace = true }
+nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+dotenvy = { workspace = true, optional = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
@@ -55,6 +59,7 @@ serde_json = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
 ustr = { workspace = true }
 databento = "0.26.0"
 fallible-streaming-iterator = "0.1.9"
@@ -65,9 +70,13 @@ nautilus-testkit = { workspace = true }
 criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 [[bin]]
 name = "databento-sandbox"
 path = "bin/sandbox.rs"
 required-features = ["python"]
+
+[[bin]]
+name = "databento-node-test"
+path = "bin/node_test.rs"
+required-features = ["live"]

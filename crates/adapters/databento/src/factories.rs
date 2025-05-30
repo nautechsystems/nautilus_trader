@@ -15,22 +15,67 @@
 
 //! Factory functions for creating Databento clients and components.
 
-use std::path::PathBuf;
+use std::{any::Any, cell::RefCell, path::PathBuf, rc::Rc};
 
-use nautilus_core::time::AtomicTime;
+use nautilus_common::{cache::Cache, clock::Clock};
+use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
+use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::ClientId;
+use nautilus_system::factories::{ClientConfig, DataClientFactory};
 
 use crate::{
     data::{DatabentoDataClient, DatabentoDataClientConfig},
     historical::DatabentoHistoricalClient,
 };
 
+/// Configuration for Databento data clients used with `LiveNode`.
+#[derive(Debug, Clone)]
+pub struct DatabentoLiveClientConfig {
+    /// Databento API key.
+    pub api_key: String,
+    /// Path to publishers.json file.
+    pub publishers_filepath: PathBuf,
+    /// Whether to use exchange as venue for GLBX instruments.
+    pub use_exchange_as_venue: bool,
+    /// Whether to timestamp bars on close.
+    pub bars_timestamp_on_close: bool,
+}
+
+impl DatabentoLiveClientConfig {
+    /// Creates a new [`DatabentoLiveClientConfig`] instance.
+    #[must_use]
+    pub const fn new(
+        api_key: String,
+        publishers_filepath: PathBuf,
+        use_exchange_as_venue: bool,
+        bars_timestamp_on_close: bool,
+    ) -> Self {
+        Self {
+            api_key,
+            publishers_filepath,
+            use_exchange_as_venue,
+            bars_timestamp_on_close,
+        }
+    }
+}
+
+impl ClientConfig for DatabentoLiveClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Factory for creating Databento data clients.
-#[cfg_attr(feature = "python", pyo3::pyclass)]
 #[derive(Debug)]
 pub struct DatabentoDataClientFactory;
 
 impl DatabentoDataClientFactory {
+    /// Creates a new [`DatabentoDataClientFactory`] instance.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+
     /// Creates a new [`DatabentoDataClient`] instance.
     ///
     /// # Errors
@@ -68,19 +113,57 @@ impl DatabentoDataClientFactory {
     }
 }
 
+impl Default for DatabentoDataClientFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DataClientFactory for DatabentoDataClientFactory {
+    fn create(
+        &self,
+        name: &str,
+        config: &dyn ClientConfig,
+        _cache: Rc<RefCell<Cache>>,
+        _clock: Rc<RefCell<dyn Clock>>,
+    ) -> anyhow::Result<Box<dyn DataClient>> {
+        let databento_config = config
+            .as_any()
+            .downcast_ref::<DatabentoLiveClientConfig>()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Invalid config type for DatabentoDataClientFactory. Expected DatabentoLiveClientConfig, got {:?}",
+                    config
+                )
+            })?;
+
+        let client_id = ClientId::from(name);
+        let config = DatabentoDataClientConfig::new(
+            databento_config.api_key.clone(),
+            databento_config.publishers_filepath.clone(),
+            databento_config.use_exchange_as_venue,
+            databento_config.bars_timestamp_on_close,
+        );
+
+        let client = DatabentoDataClient::new(client_id, config, get_atomic_clock_realtime())?;
+        Ok(Box::new(client))
+    }
+
+    fn name(&self) -> &'static str {
+        "DATABENTO"
+    }
+
+    fn config_type(&self) -> &'static str {
+        "DatabentoLiveClientConfig"
+    }
+}
+
 /// Factory for creating Databento historical clients.
 #[derive(Debug)]
 pub struct DatabentoHistoricalClientFactory;
 
 impl DatabentoHistoricalClientFactory {
     /// Creates a new [`DatabentoHistoricalClient`] instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `api_key` - Databento API key for authentication
-    /// * `publishers_filepath` - Path to the publishers.json configuration file
-    /// * `use_exchange_as_venue` - Whether to use exchange codes as venues for GLBX instruments
-    /// * `clock` - Atomic clock for timestamping
     ///
     /// # Errors
     ///

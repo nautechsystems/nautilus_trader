@@ -38,15 +38,21 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod common;
-pub mod data;
 pub mod decode;
 pub mod enums;
-pub mod factories;
 pub mod historical;
-pub mod live;
 pub mod loader;
 pub mod symbology;
 pub mod types;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(feature = "live")]
+pub mod data;
+
+#[cfg(feature = "live")]
+pub mod factories;
+
+#[cfg(feature = "live")]
+pub mod live;
