@@ -13,30 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    fs,
-    num::NonZeroU64,
-    path::PathBuf,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+//! Python bindings for the Databento historical client.
 
-use databento::{
-    dbn::{self},
-    historical::timeseries::GetRangeParams,
-};
-use indexmap::IndexMap;
+use std::path::PathBuf;
+
 use nautilus_core::{
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
-    time::{AtomicTime, get_atomic_clock_realtime},
+    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{Bar, Data, InstrumentStatus, QuoteTick, TradeTick},
-    enums::BarAggregation,
-    identifiers::{InstrumentId, Symbol, Venue},
+    enums::BarAggregation, identifiers::InstrumentId,
     python::instruments::instrument_any_to_pyobject,
-    types::Currency,
 };
 use pyo3::{
     IntoPyObjectExt,
@@ -44,21 +31,12 @@ use pyo3::{
     prelude::*,
     types::{PyDict, PyList},
 };
-use tokio::sync::Mutex;
 
-use crate::{
-    common::get_date_time_range,
-    decode::{
-        decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        decode_status_msg,
-    },
-    symbology::{
-        MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
-        infer_symbology_type, instrument_id_to_symbol_string,
-    },
-    types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
+use crate::historical::{
+    DatabentoHistoricalClient as CoreDatabentoHistoricalClient, RangeQueryParams,
 };
 
+/// Python wrapper for the core Databento historical client.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")
@@ -67,11 +45,7 @@ use crate::{
 pub struct DatabentoHistoricalClient {
     #[pyo3(get)]
     pub key: String,
-    clock: &'static AtomicTime,
-    inner: Arc<Mutex<databento::HistoricalClient>>,
-    publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
-    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
-    use_exchange_as_venue: bool,
+    inner: CoreDatabentoHistoricalClient,
 }
 
 #[pymethods]
@@ -82,29 +56,16 @@ impl DatabentoHistoricalClient {
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
     ) -> PyResult<Self> {
-        let client = databento::HistoricalClient::builder()
-            .key(key.clone())
-            .map_err(to_pyvalue_err)?
-            .build()
-            .map_err(to_pyvalue_err)?;
-
-        let file_content = fs::read_to_string(publishers_filepath)?;
-        let publishers_vec: Vec<DatabentoPublisher> =
-            serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
-
-        let publisher_venue_map = publishers_vec
-            .into_iter()
-            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
-            .collect::<IndexMap<u16, Venue>>();
-
-        Ok(Self {
-            clock: get_atomic_clock_realtime(),
-            inner: Arc::new(Mutex::new(client)),
-            publisher_venue_map: Arc::new(publisher_venue_map),
-            symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
-            key,
+        let clock = get_atomic_clock_realtime();
+        let inner = CoreDatabentoHistoricalClient::new(
+            key.clone(),
+            publishers_filepath,
+            clock,
             use_exchange_as_venue,
-        })
+        )
+        .map_err(to_pyvalue_err)?;
+
+        Ok(Self { key, inner })
     }
 
     #[pyo3(name = "get_dataset_range")]
@@ -113,16 +74,15 @@ impl DatabentoHistoricalClient {
         py: Python<'py>,
         dataset: String,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
+        let inner = self.inner.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let response = client.metadata().get_dataset_range(&dataset).await;
+            let response = inner.get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
                     let dict = PyDict::new(py);
-                    dict.set_item("start", res.start.to_string())?;
-                    dict.set_item("end", res.end.to_string())?;
+                    dict.set_item("start", res.start)?;
+                    dict.set_item("end", res.end)?;
                     dict.into_py_any(py)
                 }),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
@@ -144,84 +104,25 @@ impl DatabentoHistoricalClient {
         end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self
-            .symbol_venue_map
-            .write()
-            .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let first_symbol = symbols
-            .first()
-            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
-        let stype_in = infer_symbology_type(first_symbol);
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn::Schema::Definition)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
-        let use_exchange_as_venue = self.use_exchange_as_venue;
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision: None,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let instruments = inner
+                .get_range_instruments(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            decoder
-                .set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2)
-                .map_err(to_pyruntime_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut instruments = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let sym_map = symbol_venue_map
-                    .read()
-                    .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
-                let mut instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &sym_map,
-                )
-                .map_err(to_pyvalue_err)?;
-
-                if use_exchange_as_venue && instrument_id.venue == Venue::GLBX() {
-                    let exchange = msg
-                        .exchange()
-                        .map_err(|e| to_pyvalue_err(format!("Missing exchange in record: {e}")))?;
-                    let venue = Venue::from_code(exchange).map_err(|e| {
-                        to_pyvalue_err(format!("Venue not found for exchange {exchange}: {e}"))
-                    })?;
-                    instrument_id.venue = venue;
-                }
-
-                let result = decode_instrument_def_msg(msg, instrument_id, None);
-                match result {
-                    Ok(instrument) => instruments.push(instrument),
-                    Err(e) => tracing::error!("{e:?}"),
-                }
-            }
 
             Python::with_gil(|py| -> PyResult<PyObject> {
                 let objs: Vec<PyObject> = instruments
@@ -230,7 +131,6 @@ impl DatabentoHistoricalClient {
                     .collect::<PyResult<Vec<PyObject>>>()?;
 
                 let list = PyList::new(py, &objs).expect("Invalid `ExactSizeIterator`");
-
                 Ok(list.into_py_any_unwrap(py))
             })
         })
@@ -250,109 +150,26 @@ impl DatabentoHistoricalClient {
         price_precision: Option<u8>,
         schema: Option<String>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self
-            .symbol_venue_map
-            .write()
-            .map_err(|e| to_pyvalue_err(format!("symbol_venue_map lock poisoned: {e}")))?;
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let first_symbol = symbols
-            .first()
-            .ok_or_else(|| to_pyvalue_err("No symbols provided"))?;
-        let stype_in = infer_symbology_type(first_symbol);
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let schema = schema.unwrap_or_else(|| "mbp-1".to_string());
-        let dbn_schema = dbn::Schema::from_str(&schema).map_err(to_pyvalue_err)?;
-        match dbn_schema {
-            dbn::Schema::Mbp1 | dbn::Schema::Bbo1S | dbn::Schema::Bbo1M => (),
-            _ => {
-                return Err(to_pyvalue_err(
-                    "Invalid schema. Must be one of: mbp-1, bbo-1s, bbo-1m",
-                ));
-            }
-        }
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn_schema)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let quotes = inner
+                .get_range_quotes(params, schema)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<QuoteTick> = Vec::new();
-
-            let mut process_record = |record: dbn::RecordRef| -> PyResult<()> {
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let (data, _) = decode_record(
-                    &record,
-                    instrument_id,
-                    price_precision,
-                    None,
-                    false, // Don't include trades
-                    true,
-                )
-                .map_err(to_pyvalue_err)?;
-
-                match data {
-                    Some(Data::Quote(quote)) => {
-                        result.push(quote);
-                        Ok(())
-                    }
-                    _ => panic!("Invalid data element not `QuoteTick`, was {data:?}"),
-                }
-            };
-
-            match dbn_schema {
-                dbn::Schema::Mbp1 => {
-                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Mbp1Msg>().await {
-                        process_record(dbn::RecordRef::from(msg))?;
-                    }
-                }
-                dbn::Schema::Bbo1M => {
-                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1MMsg>().await {
-                        process_record(dbn::RecordRef::from(msg))?;
-                    }
-                }
-                dbn::Schema::Bbo1S => {
-                    while let Ok(Some(msg)) = decoder.decode_record::<dbn::Bbo1SMsg>().await {
-                        process_record(dbn::RecordRef::from(msg))?;
-                    }
-                }
-                _ => panic!("Invalid schema {dbn_schema}"),
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| quotes.into_py_any(py))
         })
     }
 
@@ -369,74 +186,26 @@ impl DatabentoHistoricalClient {
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn::Schema::Trades)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let trades = inner
+                .get_range_trades(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<TradeTick> = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::TradeMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let (data, _) = decode_record(
-                    &record,
-                    instrument_id,
-                    price_precision,
-                    None,
-                    false, // Not applicable (trade will be decoded regardless)
-                    true,
-                )
-                .map_err(to_pyvalue_err)?;
-
-                match data {
-                    Some(Data::Trade(trade)) => {
-                        result.push(trade);
-                    }
-                    _ => panic!("Invalid data element not `TradeTick`, was {data:?}"),
-                }
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| trades.into_py_any(py))
         })
     }
 
@@ -455,81 +224,26 @@ impl DatabentoHistoricalClient {
         price_precision: Option<u8>,
         timestamp_on_close: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let schema = match aggregation {
-            BarAggregation::Second => dbn::Schema::Ohlcv1S,
-            BarAggregation::Minute => dbn::Schema::Ohlcv1M,
-            BarAggregation::Hour => dbn::Schema::Ohlcv1H,
-            BarAggregation::Day => dbn::Schema::Ohlcv1D,
-            _ => panic!("Invalid `BarAggregation` for request, was {aggregation}"),
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
         };
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(schema)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let bars = inner
+                .get_range_bars(params, aggregation, timestamp_on_close)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<Bar> = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::OhlcvMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let (data, _) = decode_record(
-                    &record,
-                    instrument_id,
-                    price_precision,
-                    None,
-                    false, // Not applicable
-                    timestamp_on_close,
-                )
-                .map_err(to_pyvalue_err)?;
-
-                match data {
-                    Some(Data::Bar(bar)) => {
-                        result.push(bar);
-                    }
-                    _ => panic!("Invalid data element not `Bar`, was {data:?}"),
-                }
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| bars.into_py_any(py))
         })
     }
 
@@ -546,62 +260,26 @@ impl DatabentoHistoricalClient {
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn::Schema::Imbalance)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let imbalances = inner
+                .get_range_imbalance(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<DatabentoImbalance> = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::ImbalanceMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, None)
-                    .map_err(to_pyvalue_err)?;
-
-                result.push(imbalance);
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| imbalances.into_py_any(py))
         })
     }
 
@@ -618,62 +296,26 @@ impl DatabentoHistoricalClient {
         limit: Option<u64>,
         price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn::Schema::Statistics)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let statistics = inner
+                .get_range_statistics(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<DatabentoStatistics> = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let statistics = decode_statistics_msg(msg, instrument_id, price_precision, None)
-                    .map_err(to_pyvalue_err)?;
-
-                result.push(statistics);
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| statistics.into_py_any(py))
         })
     }
 
@@ -689,60 +331,26 @@ impl DatabentoHistoricalClient {
         end: Option<u64>,
         limit: Option<u64>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let client = self.inner.clone();
-        let mut symbol_venue_map = self.symbol_venue_map.write().unwrap();
-        let symbols: Vec<String> = instrument_ids
-            .iter()
-            .map(|instrument_id| {
-                instrument_id_to_symbol_string(*instrument_id, &mut symbol_venue_map)
-            })
-            .collect();
+        let inner = self.inner.clone();
+        let symbols = inner
+            .prepare_symbols_from_instrument_ids(&instrument_ids)
+            .map_err(to_pyvalue_err)?;
 
-        let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
-        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
-        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
-        let params = GetRangeParams::builder()
-            .dataset(dataset)
-            .date_time_range(time_range)
-            .symbols(symbols)
-            .stype_in(stype_in)
-            .schema(dbn::Schema::Status)
-            .limit(limit.and_then(NonZeroU64::new))
-            .build();
-
-        let publisher_venue_map = self.publisher_venue_map.clone();
-        let symbol_venue_map = self.symbol_venue_map.clone();
+        let params = RangeQueryParams {
+            dataset,
+            symbols,
+            start: start.into(),
+            end: end.map(Into::into),
+            limit,
+            price_precision: None,
+        };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut client = client.lock().await; // TODO: Use a client pool
-            let mut decoder = client
-                .timeseries()
-                .get_range(&params)
+            let statuses = inner
+                .get_range_status(params)
                 .await
                 .map_err(to_pyvalue_err)?;
-
-            let metadata = decoder.metadata().clone();
-            let mut metadata_cache = MetadataCache::new(metadata);
-            let mut result: Vec<InstrumentStatus> = Vec::new();
-
-            while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatusMsg>().await {
-                let record = dbn::RecordRef::from(msg);
-                let instrument_id = decode_nautilus_instrument_id(
-                    &record,
-                    &mut metadata_cache,
-                    &publisher_venue_map,
-                    &symbol_venue_map.read().unwrap(),
-                )
-                .map_err(to_pyvalue_err)?;
-
-                let status = decode_status_msg(msg, instrument_id, None).map_err(to_pyvalue_err)?;
-
-                result.push(status);
-            }
-
-            Python::with_gil(|py| result.into_py_any(py))
+            Python::with_gil(|py| statuses.into_py_any(py))
         })
     }
 }

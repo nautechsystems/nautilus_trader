@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the Databento data loader.
+
 use std::{collections::HashMap, path::PathBuf};
 
 use databento::dbn;
