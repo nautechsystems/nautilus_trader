@@ -70,6 +70,8 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     client_id : ClientId, optional
         The custom client ID for data and execution.
         For example if you have multiple clients for Binance you might use 'BINANCE-SPOT'.
+    reduce_only_on_stop : bool, default True
+        If position closing market orders on stop should be reduce-only.
 
     """
 
@@ -80,6 +82,7 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     trade_size: Decimal
     emulation_trigger: str = "NO_TRIGGER"
     client_id: ClientId | None = None
+    reduce_only_on_stop: bool = True
 
 
 class VolatilityMarketMaker(Strategy):
@@ -385,7 +388,11 @@ class VolatilityMarketMaker(Strategy):
         # if open_orders:
         #     self.cancel_orders(open_orders, client_id=self.client_id)
 
-        self.close_all_positions(self.config.instrument_id, client_id=self.client_id)
+        self.close_all_positions(
+            instrument_id=self.config.instrument_id,
+            client_id=self.client_id,
+            reduce_only=self.config.reduce_only_on_stop,
+        )
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.config.bar_type, client_id=self.client_id)

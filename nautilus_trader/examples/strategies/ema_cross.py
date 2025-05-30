@@ -31,8 +31,10 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -57,12 +59,22 @@ class EMACrossConfig(StrategyConfig, frozen=True):
         The fast EMA period.
     slow_ema_period : int, default 20
         The slow EMA period.
-    subscribe_trade_ticks : bool, default True
-        If trades should be subscribed to.
     subscribe_quote_ticks : bool, default False
         If quotes should be subscribed to.
+    subscribe_trade_ticks : bool, default True
+        If trades should be subscribed to.
+    request_bars : bool, default True
+        If historical bars should be requested on strategy start.
+    unsubscribe_data_on_stop : bool, default True
+        If live data feeds should be unsubscribed on strategy stop.
+    order_quantity_precision : int, optional
+        The quantity precision for strategy market orders.
+    order_time_in_force : TimeInForce, optional
+        The time in force for strategy market orders.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
+    reduce_only_on_stop : bool, default True
+        If position closing market orders on stop should be reduce-only.
 
     """
 
@@ -71,9 +83,14 @@ class EMACrossConfig(StrategyConfig, frozen=True):
     trade_size: Decimal
     fast_ema_period: PositiveInt = 10
     slow_ema_period: PositiveInt = 20
-    subscribe_trade_ticks: bool = True
     subscribe_quote_ticks: bool = False
+    subscribe_trade_ticks: bool = True
+    request_bars: bool = True
+    unsubscribe_data_on_stop: bool = True
+    order_quantity_precision: int | None = None
+    order_time_in_force: TimeInForce | None = None
     close_positions_on_stop: bool = True
+    reduce_only_on_stop: bool = True
 
 
 class EMACross(Strategy):
@@ -102,12 +119,11 @@ class EMACross(Strategy):
         )
         super().__init__(config)
 
+        self.instrument: Instrument = None
+
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
-
-        self.close_positions_on_stop = config.close_positions_on_stop
-        self.instrument: Instrument = None
 
     def on_start(self) -> None:
         """
@@ -124,11 +140,16 @@ class EMACross(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
+        if self.config.request_bars:
+            self.request_bars(
+                self.config.bar_type,
+                start=self._clock.utc_now() - pd.Timedelta(days=1),
+            )
+
         # self.request_quote_ticks(self.config.instrument_id)
         # self.request_trade_ticks(self.config.instrument_id)
 
-        # Subscribe to live data
+        # Subscribe to real-time data
         self.subscribe_bars(self.config.bar_type)
 
         if self.config.subscribe_quote_ticks:
@@ -226,7 +247,7 @@ class EMACross(Strategy):
             return  # Wait for indicators to warm up...
 
         if bar.is_single_price():
-            # Implies no market information for this bar
+            self._log.warning("Bar OHLC is single price; implies no market information")
             return
 
         # BUY LOGIC
@@ -251,8 +272,8 @@ class EMACross(Strategy):
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-            # time_in_force=TimeInForce.FOK,
+            quantity=self.create_order_qty(),
+            time_in_force=self.config.order_time_in_force or TimeInForce.GTC,
         )
 
         self.submit_order(order)
@@ -264,11 +285,17 @@ class EMACross(Strategy):
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.trade_size),
-            # time_in_force=TimeInForce.FOK,
+            quantity=self.create_order_qty(),
+            time_in_force=self.config.order_time_in_force or TimeInForce.GTC,
         )
 
         self.submit_order(order)
+
+    def create_order_qty(self) -> Quantity:
+        if self.config.order_quantity_precision is not None:
+            return Quantity(self.config.trade_size, self.config.order_quantity_precision)
+        else:
+            return self.instrument.make_qty(self.config.trade_size)
 
     def on_data(self, data: Data) -> None:
         """
@@ -297,13 +324,21 @@ class EMACross(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.config.instrument_id)
-        if self.close_positions_on_stop:
-            self.close_all_positions(self.config.instrument_id)
+        if self.config.close_positions_on_stop:
+            self.close_all_positions(
+                instrument_id=self.config.instrument_id,
+                reduce_only=self.config.reduce_only_on_stop,
+            )
 
-        # Unsubscribe from data
-        self.unsubscribe_bars(self.config.bar_type)
-        # self.unsubscribe_quote_ticks(self.config.instrument_id)
-        self.unsubscribe_trade_ticks(self.config.instrument_id)
+        if self.config.unsubscribe_data_on_stop:
+            self.unsubscribe_bars(self.config.bar_type)
+
+        if self.config.unsubscribe_data_on_stop and self.config.subscribe_quote_ticks:
+            self.unsubscribe_quote_ticks(self.config.instrument_id)
+
+        if self.config.unsubscribe_data_on_stop and self.config.subscribe_trade_ticks:
+            self.unsubscribe_trade_ticks(self.config.instrument_id)
+
         # self.unsubscribe_order_book_deltas(self.config.instrument_id)
         # self.unsubscribe_order_book_at_interval(self.config.instrument_id)
 
