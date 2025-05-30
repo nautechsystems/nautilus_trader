@@ -1019,7 +1019,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.warning(
                 f"Received order message for unknown instrument {instrument_id} "
                 f"(market={msg.market}, asset_id={msg.asset_id}). "
-                f"This may indicate the instrument is not subscribed or cached. Skipping order processing.",
+                f"This may indicate the instrument is not subscribed or cached, skipping order processing",
             )
             return
 
