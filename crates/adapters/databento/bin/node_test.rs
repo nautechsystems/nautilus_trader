@@ -17,9 +17,12 @@ use std::path::PathBuf;
 
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_databento::{
+    actor::{DatabentoSubscriberActor, DatabentoSubscriberActorConfig},
+    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+};
 use nautilus_live::node::LiveNode;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
 use tokio::time::Duration;
 
 // Run with `cargo run -p nautilus-databento --bin databento-node-test --features live`
@@ -53,7 +56,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "⚠️  Publishers file not found at: {}",
             publishers_filepath.display()
         );
-        println!("   This is expected in CI/test environments");
     }
 
     // Configure Databento client
@@ -66,16 +68,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_factory = Box::new(DatabentoDataClientFactory::new());
 
+    // Create and register a Databento subscriber actor
+    let client_id = ClientId::new("DATABENTO");
+    let instrument_ids = vec![
+        InstrumentId::from("ES.c.0.GLBX"),
+        // Add more instruments as needed
+    ];
+
     // Build the live node with Databento data client
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
         .with_save_state(false)
-        .add_data_client(
-            Some("DATABENTO".to_string()), // Use custom name
-            client_factory,
-            Box::new(databento_config),
-        )?
+        .add_data_client(None, client_factory, Box::new(databento_config))?
         .build()?;
+
+    // TODO: Move this into trader registration
+    let actor_config = DatabentoSubscriberActorConfig::new(instrument_ids, client_id);
+    let cache = node.kernel().cache();
+    let clock = node.kernel().clock();
+    let actor = DatabentoSubscriberActor::new(actor_config, cache, clock);
+    node.add_actor(Box::new(actor))?;
 
     node.start().await?;
 
