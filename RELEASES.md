@@ -1,6 +1,6 @@
 # NautilusTrader 1.218.0 Beta
 
-Released on TBD (UTC).
+Released on 31st May 2025 (UTC).
 
 ### Enhancements
 - Added convenient re-exports for Betfair adapter (constants, configs, factories, types)
@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed quote tick parsing for one-sided books on Polymarket
 - Fixed order fill handling for limit orders with `MAKER` liquidity side on Polymarket
 - Fixed currency parsing for `BinaryOption` on Polymarket to consistently use USDC.e (PoS USDC on Polygon)
+- Fixed identity error handling during keep-alive for Betfair, will now reconnect
 - Updated `BinanceFuturesEventType` enum with additional variants, thanks for reporting @miller-moore
 
 ### Documentation Updates
