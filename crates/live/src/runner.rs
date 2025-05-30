@@ -19,7 +19,7 @@ use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
     messages::DataEvent,
-    runner::{DataQueue, RunnerEvent, get_data_cmd_queue, set_data_evt_queue, set_global_clock},
+    runner::{DataQueue, RunnerEvent, get_data_cmd_queue, set_data_evt_queue},
     runtime::get_runtime,
 };
 use nautilus_data::engine::DataEngine;
@@ -43,7 +43,6 @@ impl DataQueue for AsyncDataQueue {
 
 // TODO: Use message bus instead of direct reference to DataEngine
 pub trait Runner {
-    fn new() -> Self;
     fn run(&mut self, data_engine: &mut DataEngine);
 }
 
@@ -60,17 +59,16 @@ impl Debug for AsyncRunner {
     }
 }
 
-impl Runner for AsyncRunner {
-    fn new() -> Self {
+impl AsyncRunner {
+    pub fn new(clock: Rc<RefCell<LiveClock>>) -> Self {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         set_data_evt_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
 
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
-        set_global_clock(clock.clone());
-
         Self { clock, data_rx }
     }
+}
 
+impl Runner for AsyncRunner {
     fn run(&mut self, data_engine: &mut DataEngine) {
         let mut time_event_stream = self.clock.borrow().get_event_stream();
         let data_cmd_queue = get_data_cmd_queue();

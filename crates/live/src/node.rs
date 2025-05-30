@@ -17,9 +17,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use nautilus_common::enums::Environment;
+use nautilus_common::{clock::LiveClock, component::Component, enums::Environment};
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
@@ -28,10 +28,7 @@ use nautilus_system::{
     kernel::NautilusKernel,
 };
 
-use crate::{
-    config::LiveNodeConfig,
-    runner::{AsyncRunner, Runner},
-};
+use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
 /// High-level abstraction for a live Nautilus system node.
 ///
@@ -39,6 +36,7 @@ use crate::{
 /// with automatic client management and lifecycle handling.
 #[derive(Debug)]
 pub struct LiveNode {
+    clock: Rc<RefCell<LiveClock>>,
     kernel: NautilusKernel,
     runner: AsyncRunner,
     config: LiveNodeConfig,
@@ -80,12 +78,14 @@ impl LiveNode {
             }
         }
 
+        let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new(name, config.clone())?;
-        let runner = AsyncRunner::new();
+        let runner = AsyncRunner::new(clock.clone());
 
         log::info!("LiveNode built successfully with kernel config");
 
         Ok(Self {
+            clock,
             kernel,
             runner,
             config,
@@ -181,6 +181,28 @@ impl LiveNode {
     #[must_use]
     pub const fn is_running(&self) -> bool {
         self.is_running
+    }
+
+    /// Adds an actor to the trader.
+    ///
+    /// This method provides a high-level interface for adding actors to the underlying
+    /// trader without requiring direct access to the kernel. Actors should be added
+    /// after the node is built but before starting the node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The trader is not in a valid state for adding components.
+    /// - An actor with the same ID is already registered.
+    /// - The node is currently running.
+    pub fn add_actor(&mut self, actor: Box<dyn Component>) -> anyhow::Result<()> {
+        if self.is_running {
+            anyhow::bail!(
+                "Cannot add actor while node is running. Add actors before calling start()."
+            );
+        }
+
+        self.kernel.trader.add_actor(actor)
     }
 }
 
@@ -357,10 +379,12 @@ impl LiveNodeBuilder {
         log::info!("LiveNode built successfully");
 
         // Create kernel directly with the config
+        let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new();
+        let runner = AsyncRunner::new(clock.clone());
 
         Ok(LiveNode {
+            clock,
             kernel,
             runner,
             config: self.config,
