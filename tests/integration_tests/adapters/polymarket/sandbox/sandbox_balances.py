@@ -31,38 +31,7 @@ def get_allowances() -> None:
     balance_usdc = usdce_from_units(int(response["balance"]))
     print(f"Wallet: {balance_usdc}")
 
-    # Check Trump 'Yes' position
-    token_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
-    params = BalanceAllowanceParams(
-        asset_type=AssetType.CONDITIONAL,
-        token_id=token_id,
-    )
-    response = http_client.get_balance_allowance(params)
-    balance_usdc = usdce_from_units(int(response["balance"]))
-    print(f"Balance {token_id}: {balance_usdc}")
-
-    # Check Trump 'No' position
-    token_id = "48331043336612883890938759509493159234755048973500640148014422747788308965732"
-    params = BalanceAllowanceParams(
-        asset_type=AssetType.CONDITIONAL,
-        token_id=token_id,
-    )
-    response = http_client.get_balance_allowance(params)
-    balance_usdc = usdce_from_units(int(response["balance"]))
-    print(f"Balance {token_id}: {balance_usdc}")
-
-    # Check Kamala 'Yes' position
-    token_id = "69236923620077691027083946871148646972011131466059644796654161903044970987404"
-    params = BalanceAllowanceParams(
-        asset_type=AssetType.CONDITIONAL,
-        token_id=token_id,
-    )
-    response = http_client.get_balance_allowance(params)
-    balance_usdc = usdce_from_units(int(response["balance"]))
-    print(f"Balance {token_id}: {balance_usdc}")
-
-    # Check Kamala 'No' position
-    token_id = "87584955359245246404952128082451897287778571240979823316620093987046202296181"
+    token_id = "3642309182816755995211647069086230404892359515361325090555875625429003317932"
     params = BalanceAllowanceParams(
         asset_type=AssetType.CONDITIONAL,
         token_id=token_id,

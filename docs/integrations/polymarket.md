@@ -213,13 +213,13 @@ Polymarket operates as a prediction market with limited order complexity compare
 | `GTC`         | ✓              | Good Till Canceled.                       |
 | `GTD`         | ✓              | Good Till Date.                           |
 | `FOK`         | ✓              | Fill or Kill.                             |
-| `IOC`         | -              | *Not supported*.                          |
+| `IOC`         | ✓              | Immediate or Cancel (maps to FAK).        |
 
 ### Advanced order features
 
 | Feature            | Binary Options | Notes                                |
 |--------------------|----------------|--------------------------------------|
-| Order Modification | ✓              | Cancellation functionality only.     |
+| Order Modification | -              | Cancellation functionality only.     |
 | Bracket/OCO Orders | -              | *Not supported*.                     |
 | Iceberg Orders     | -              | *Not supported*.                     |
 
@@ -227,12 +227,12 @@ Polymarket operates as a prediction market with limited order complexity compare
 
 The following execution client configuration options are available:
 
-| Option                               | Default | Description                                          |
-|--------------------------------------|---------|------------------------------------------------------|
+| Option                               | Default | Description                      |
+|--------------------------------------|---------|----------------------------------|
 | `signature_type`                     | `0`     | Polymarket signature type (EOA). |
 | `funder`                             | `None`  | Wallet address for funding USDC transactions. |
 | `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
-| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty). |
+| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |
 
 ## Trades
 

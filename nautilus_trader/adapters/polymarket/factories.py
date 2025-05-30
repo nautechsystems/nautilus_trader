@@ -151,7 +151,7 @@ class PolymarketLiveDataClientFactory(LiveDataClientFactory):
             The event loop for the client.
         name : str
             The custom client ID.
-        config : BybitDataClientConfig
+        config : PolymarketDataClientConfig
             The client configuration.
         msgbus : MessageBus
             The message bus for the client.
@@ -204,7 +204,7 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
-    ) -> PolymarketDataClient:
+    ) -> PolymarketExecutionClient:
         """
         Create a new Polymarket execution client.
 
@@ -214,7 +214,7 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             The event loop for the client.
         name : str
             The custom client ID.
-        config : BybitDataClientConfig
+        config : PolymarketExecClientConfig
             The client configuration.
         msgbus : MessageBus
             The message bus for the client.
@@ -225,7 +225,7 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
 
         Returns
         -------
-        PolymarketDataClient
+        PolymarketExecutionClient
 
         """
         http_client = get_polymarket_http_client(
