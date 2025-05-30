@@ -16,13 +16,13 @@
 //! Python bindings for the Databento live client.
 
 use std::{
-    collections::HashMap,
     fs,
     path::PathBuf,
     str::FromStr,
     sync::{Arc, RwLock},
 };
 
+use ahash::AHashMap;
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
@@ -55,7 +55,7 @@ pub struct DatabentoLiveClient {
     cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<LiveCommand>>,
     buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
-    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+    symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     use_exchange_as_venue: bool,
     bars_timestamp_on_close: bool,
 }
@@ -164,7 +164,7 @@ impl DatabentoLiveClient {
             is_running: false,
             is_closed: false,
             publisher_venue_map,
-            symbol_venue_map: Arc::new(RwLock::new(HashMap::new())),
+            symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
             use_exchange_as_venue,
             bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
         })

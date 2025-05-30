@@ -37,11 +37,14 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
+nautilus-common = { workspace = true }
 nautilus-core = { workspace = true, features = ["python"] }
+nautilus-data = { workspace = true }
 nautilus-model = { workspace = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }

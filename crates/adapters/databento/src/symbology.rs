@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use ahash::AHashMap;
 use databento::dbn::{self, PitSymbolMap, SType};
 use dbn::{Publisher, Record};
@@ -55,7 +53,7 @@ impl MetadataCache {
 
 pub fn instrument_id_to_symbol_string(
     instrument_id: InstrumentId,
-    symbol_venue_map: &mut HashMap<Symbol, Venue>,
+    symbol_venue_map: &mut AHashMap<Symbol, Venue>,
 ) -> String {
     symbol_venue_map
         .entry(instrument_id.symbol)
@@ -74,7 +72,7 @@ pub fn decode_nautilus_instrument_id(
     record: &dbn::RecordRef,
     metadata: &mut MetadataCache,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
 ) -> anyhow::Result<InstrumentId> {
     let publisher = record
         .publisher()
@@ -230,7 +228,7 @@ mod tests {
         let symbol = Symbol::from("TEST");
         let venue = Venue::from("XNAS");
         let instrument_id = InstrumentId::new(symbol, venue);
-        let mut map: HashMap<Symbol, Venue> = HashMap::new();
+        let mut map: AHashMap<Symbol, Venue> = AHashMap::new();
 
         // First call should insert the mapping
         let sym_str = instrument_id_to_symbol_string(instrument_id, &mut map);
