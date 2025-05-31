@@ -4422,7 +4422,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -4435,7 +4435,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4460,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "alloy",
  "anyhow",
@@ -4497,7 +4497,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4513,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase-intx"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4552,7 +4552,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4591,7 +4591,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4616,7 +4616,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -4635,7 +4635,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4655,7 +4655,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -4690,7 +4690,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-demo"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4720,7 +4720,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4746,7 +4746,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -4759,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4791,7 +4791,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4819,7 +4819,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -4849,7 +4849,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4885,7 +4885,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -4919,7 +4919,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "criterion",
  "log",
@@ -4937,7 +4937,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "nautilus-coinbase-intx",
  "nautilus-common",
@@ -4959,7 +4959,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "criterion",
  "log",
@@ -4977,7 +4977,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -4996,7 +4996,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5020,7 +5020,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5059,7 +5059,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -5078,11 +5078,11 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.48.0"
+version = "0.49.0"
 
 [[package]]
 name = "nautilus-trading"
-version = "0.48.0"
+version = "0.49.0"
 dependencies = [
  "anyhow",
  "chrono",
