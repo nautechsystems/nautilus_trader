@@ -18,8 +18,9 @@ use std::{ffi::c_void, fmt::Display, ptr::null};
 /// `CVec` is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
 ///
-/// NOTE: Changing the values here may lead to undefined behavior when the
-/// memory is dropped.
+/// # Safety
+///
+/// Changing the values here may lead to undefined behavior when the memory is dropped.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct CVec {
