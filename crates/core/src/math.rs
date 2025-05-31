@@ -83,6 +83,7 @@ pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
         (n_elem >= 3),
         "Need at least 3 points for quadratic interpolation"
     );
+    assert_eq!(xs.len(), ys.len(), "xs and ys must have the same length");
 
     if x <= xs[0] {
         return ys[0];

@@ -117,9 +117,13 @@ impl UnixNanos {
     }
 
     /// Converts the underlying value to a datetime (UTC).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value exceeds `i64::MAX` (approximately year 2262).
     #[must_use]
     pub const fn to_datetime_utc(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_nanos(self.0 as i64)
+        DateTime::from_timestamp_nanos(self.as_i64())
     }
 
     /// Converts the underlying value to an ISO 8601 (RFC 3339) string.
@@ -192,6 +196,8 @@ impl UnixNanos {
 
         // Try parsing as a simple date string (YYYY-MM-DD format)
         if let Ok(datetime) = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            // SAFETY: unwrap() is safe here because and_hms_opt(0, 0, 0) always succeeds
+            // for valid dates (midnight is always a valid time)
             .map(|date| date.and_hms_opt(0, 0, 0).unwrap())
             .map(|naive_dt| DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc))
         {
@@ -310,7 +316,15 @@ impl From<String> for UnixNanos {
 
 impl From<DateTime<Utc>> for UnixNanos {
     fn from(value: DateTime<Utc>) -> Self {
-        Self::from(value.timestamp_nanos_opt().expect("Invalid timestamp") as u64)
+        let nanos = value
+            .timestamp_nanos_opt()
+            .expect("DateTime timestamp out of range for UnixNanos");
+
+        if nanos < 0 {
+            panic!("DateTime timestamp cannot be negative: {nanos}");
+        }
+
+        Self::from(nanos as u64)
     }
 }
 
