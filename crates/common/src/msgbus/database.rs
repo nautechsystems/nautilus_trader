@@ -144,6 +144,9 @@ impl Default for MessageBusConfig {
 pub trait MessageBusDatabaseAdapter {
     type DatabaseType;
 
+    /// # Errors
+    ///
+    /// Returns an error if initializing the database connection fails.
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,

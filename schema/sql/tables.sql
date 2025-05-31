@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     client_order_id TEXT NOT NULL,
     client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
+    reason TEXT,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),
     order_type TEXT,
@@ -290,4 +291,43 @@ CREATE TABLE IF NOT EXISTS "custom" (
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+------------------- BLOCKCHAIN -------------------
+
+CREATE TABLE IF NOT EXISTS "chain" (
+    chain_id INTEGER PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "token"(
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    address TEXT NOT NULL,
+    symbol TEXT,
+    name TEXT,
+    decimals INTEGER,
+    PRIMARY KEY (chain_id, address)
+);
+CREATE TABLE IF NOT EXISTS "dex" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    factory_address TEXT UNIQUE,
+    PRIMARY KEY (chain_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS "pool" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    dex_name TEXT NOT NULL,
+    address TEXT NOT NULL,
+    creation_block BIGINT NOT NULL,
+    token0_chain INTEGER NOT NULL,
+    token0_address TEXT NOT NULL,
+    token1_chain INTEGER NOT NULL,
+    token1_address TEXT NOT NULL,
+    fee INTEGER,
+    tick_spacing INTEGER,
+    PRIMARY KEY (chain_id, address),
+    FOREIGN KEY (token0_chain, token0_address) REFERENCES token(chain_id, address),
+    FOREIGN KEY (token1_chain, token1_address) REFERENCES token(chain_id, address),
+    FOREIGN KEY (chain_id, dex_name) REFERENCES dex(chain_id, name)
 );

@@ -15,7 +15,7 @@
 
 //! Provides account management functionality.
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{cache::Cache, clock::Clock};
 use nautilus_core::{UUID4, UnixNanos};
@@ -34,11 +34,22 @@ pub struct AccountsManager {
     cache: Rc<RefCell<Cache>>,
 }
 
+impl Debug for AccountsManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(AccountsManager)).finish()
+    }
+}
+
 impl AccountsManager {
     pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         Self { clock, cache }
     }
 
+    /// Updates the given account state based on a filled order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the position list for the filled instrument is empty.
     #[must_use]
     pub fn update_balances(
         &self,
@@ -109,6 +120,11 @@ impl AccountsManager {
         }
     }
 
+    /// Updates the account based on current open positions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any position's `instrument_id` does not match the provided `instrument`.
     #[must_use]
     pub fn update_positions(
         &self,

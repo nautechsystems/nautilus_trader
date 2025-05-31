@@ -97,6 +97,10 @@ pub struct FakeRelativeClock {
 
 impl FakeRelativeClock {
     /// Advances the fake clock by the given amount.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `by` cannot be represented as a `u64` number of nanoseconds (i.e., exceeds 584 years).
     pub fn advance(&self, by: Duration) {
         let by: u64 = by
             .as_nanos()

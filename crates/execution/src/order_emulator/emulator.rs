@@ -16,6 +16,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -23,10 +24,10 @@ use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, RECV},
-    msgbus::{
-        handler::ShareableMessageHandler,
-        {self},
+    messages::execution::{
+        CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
+    msgbus::{self, handler::ShareableMessageHandler},
 };
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
@@ -40,13 +41,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    matching_core::OrderMatchingCore,
-    messages::{
-        CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand,
-        cancel::CancelOrderHandlerAny, modify::ModifyOrderHandlerAny,
-        submit::SubmitOrderHandlerAny,
-    },
-    order_manager::manager::OrderManager,
+    matching_core::OrderMatchingCore, order_manager::manager::OrderManager,
     trailing::trailing_stop_calculate,
 };
 
@@ -62,14 +57,22 @@ pub struct OrderEmulator {
     on_event_handler: Option<ShareableMessageHandler>,
 }
 
+impl Debug for OrderEmulator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderEmulator))
+            .field("cores", &self.matching_cores.len())
+            .field("subscribed_quotes", &self.subscribed_quotes.len())
+            .finish()
+    }
+}
+
 impl OrderEmulator {
     pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         // TODO: Impl Actor Trait
         // self.register_base(portfolio, msgbus, cache, clock);
 
         let active_local = true;
-        let manager =
-            OrderManager::new(clock.clone(), cache.clone(), active_local, None, None, None);
+        let manager = OrderManager::new(clock.clone(), cache.clone(), active_local);
 
         Self {
             clock,
@@ -88,17 +91,18 @@ impl OrderEmulator {
         self.on_event_handler = Some(handler);
     }
 
-    pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
-        self.manager.set_submit_order_handler(handler);
-    }
-
-    pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
-        self.manager.set_cancel_order_handler(handler);
-    }
-
-    pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
-        self.manager.set_modify_order_handler(handler);
-    }
+    // TODO: WIP
+    // pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
+    //     self.manager.set_submit_order_handler(handler);
+    // }
+    //
+    // pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
+    //     self.manager.set_cancel_order_handler(handler);
+    // }
+    //
+    // pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
+    //     self.manager.set_modify_order_handler(handler);
+    // }
 
     #[must_use]
     pub fn subscribed_quotes(&self) -> Vec<InstrumentId> {
@@ -124,6 +128,15 @@ impl OrderEmulator {
         self.matching_cores.get(instrument_id).cloned()
     }
 
+    /// Reactivates emulated orders from cache on start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no emulated orders are found or processing fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a cached client ID cannot be unwrapped.
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache
@@ -255,6 +268,9 @@ impl OrderEmulator {
         matching_core
     }
 
+    /// # Panics
+    ///
+    /// Panics if the emulation trigger type is `NoTrigger`.
     pub fn handle_submit_order(&mut self, command: SubmitOrder) {
         let mut order = command.order.clone();
         let emulation_trigger = order.emulation_trigger();
@@ -416,7 +432,7 @@ impl OrderEmulator {
             self.manager.send_risk_event(OrderEventAny::Emulated(event));
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Emulated(event),
             );
         }
@@ -735,8 +751,8 @@ impl OrderEmulator {
         if !self.subscribed_strategies.contains(&strategy_id) {
             // Subscribe to all strategy events
             if let Some(handler) = &self.on_event_handler {
-                msgbus::subscribe(format!("events.order.{strategy_id}"), handler.clone(), None);
-                msgbus::subscribe(
+                msgbus::subscribe_str(format!("events.order.{strategy_id}"), handler.clone(), None);
+                msgbus::subscribe_str(
                     format!("events.position.{strategy_id}"),
                     handler.clone(),
                     None,
@@ -753,6 +769,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the order type is invalid for a stop order.
     pub fn trigger_stop_order(&mut self, order: &mut OrderAny) {
         match order.order_type() {
             OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
@@ -765,6 +784,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a limit order has no price.
     pub fn fill_limit_order(&mut self, order: &mut OrderAny) {
         if matches!(order.order_type(), OrderType::Limit) {
             self.fill_market_order(order);
@@ -792,7 +814,7 @@ impl OrderEmulator {
             let emulation_trigger = TriggerType::NoTrigger;
 
             // Transform order
-            let mut transformed = if let Ok(transformed) = LimitOrder::new(
+            let mut transformed = if let Ok(transformed) = LimitOrder::new_checked(
                 order.trader_id(),
                 order.strategy_id(),
                 order.instrument_id(),
@@ -851,7 +873,7 @@ impl OrderEmulator {
             command.order = OrderAny::Limit(transformed.clone());
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
 
@@ -892,7 +914,7 @@ impl OrderEmulator {
 
             // Publish event
             msgbus::publish(
-                &format!("events.order.{}", transformed.strategy_id()).into(),
+                format!("events.order.{}", transformed.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
 
@@ -909,6 +931,9 @@ impl OrderEmulator {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a market order command is missing.
     pub fn fill_market_order(&mut self, order: &mut OrderAny) {
         // Fetch command
         let mut command = match self
@@ -972,7 +997,7 @@ impl OrderEmulator {
             command.order = OrderAny::Market(transformed.clone());
 
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 transformed.last_event(),
             );
 
@@ -1014,7 +1039,7 @@ impl OrderEmulator {
 
             // Publish event
             msgbus::publish(
-                &format!("events.order.{}", order.strategy_id()).into(),
+                format!("events.order.{}", order.strategy_id()).into(),
                 &OrderEventAny::Released(event),
             );
 

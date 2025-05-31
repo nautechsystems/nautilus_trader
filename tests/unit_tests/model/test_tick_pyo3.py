@@ -108,7 +108,7 @@ class TestQuoteTick:
         assert result2 == Quantity.from_int(650_000)  # Average size
         assert result3 == Quantity.from_int(500_000)
 
-    def test_as_dict_returns_expected_dict(self):
+    def test_to_dict_returns_expected_dict(self):
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM_ID,
@@ -121,7 +121,7 @@ class TestQuoteTick:
         )
 
         # Act
-        result = QuoteTick.as_dict(tick)
+        result = QuoteTick.to_dict(tick)
 
         # Assert
         assert result == {
@@ -148,7 +148,7 @@ class TestQuoteTick:
         )
 
         # Act
-        result = QuoteTick.from_dict(QuoteTick.as_dict(tick))
+        result = QuoteTick.from_dict(QuoteTick.to_dict(tick))
 
         # Assert
         assert result == tick
@@ -223,7 +223,7 @@ class TestTradeTick:
         assert str(tick) == "AUD/USD.SIM,1.00000,50000,BUYER,123456789,1"
         assert repr(tick) == "TradeTick(AUD/USD.SIM,1.00000,50000,BUYER,123456789,1)"
 
-    def test_as_dict_returns_expected_dict(self):
+    def test_to_dict_returns_expected_dict(self):
         # Arrange
         tick = TradeTick(
             instrument_id=AUDUSD_SIM_ID,
@@ -236,7 +236,7 @@ class TestTradeTick:
         )
 
         # Act
-        result = TradeTick.as_dict(tick)
+        result = TradeTick.to_dict(tick)
 
         # Assert
         assert result == {
@@ -263,7 +263,7 @@ class TestTradeTick:
         )
 
         # Act
-        result = TradeTick.from_dict(TradeTick.as_dict(tick))
+        result = TradeTick.from_dict(TradeTick.to_dict(tick))
 
         # Assert
         assert result == tick

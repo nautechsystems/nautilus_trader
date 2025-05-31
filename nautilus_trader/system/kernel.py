@@ -266,7 +266,7 @@ class NautilusKernel:
             self._loop = loop or asyncio.get_running_loop()
             if loop is not None:
                 self._executor = concurrent.futures.ThreadPoolExecutor()
-                self._loop.set_default_executor(self.executor)
+                self._loop.set_default_executor(self._executor)
                 self._loop.set_debug(config.loop_debug)
                 self._loop_sig_callback = loop_sig_callback
                 if platform.system() != "Windows":

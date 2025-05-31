@@ -25,7 +25,7 @@ pub trait FillMarketOrderHandler {
     fn fill_market_order(&mut self, order: &OrderAny);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FillMarketOrderHandlerAny {
     OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
@@ -44,14 +44,14 @@ impl FillMarketOrderHandler for FillMarketOrderHandlerAny {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShareableFillMarketOrderHandler(pub FillMarketOrderHandlerAny);
 
 pub trait FillLimitOrderHandler {
     fn fill_limit_order(&mut self, order: &mut OrderAny);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FillLimitOrderHandlerAny {
     OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
@@ -70,14 +70,14 @@ impl FillLimitOrderHandler for FillLimitOrderHandlerAny {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShareableFillLimitOrderHandler(pub FillLimitOrderHandlerAny);
 
 pub trait TriggerStopOrderHandler {
     fn trigger_stop_order(&mut self, order: &mut OrderAny);
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TriggerStopOrderHandlerAny {
     OrderMatchingEngine(Rc<RefCell<OrderMatchingEngine>>),
     OrderEmulator(Rc<RefCell<OrderEmulator>>),
@@ -96,5 +96,5 @@ impl TriggerStopOrderHandler for TriggerStopOrderHandlerAny {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShareableTriggerStopOrderHandler(pub TriggerStopOrderHandlerAny);

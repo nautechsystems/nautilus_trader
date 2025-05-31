@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt::Debug,
+    ops::{Deref, DerefMut},
+};
 
 use nautilus_common::ffi::{clock::TestClock_API, timer::TimeEventHandler};
 use nautilus_core::{
@@ -31,6 +34,14 @@ impl Deref for TimeEventAccumulatorAPI {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl Debug for TimeEventAccumulatorAPI {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Print the type name plus a pointer-style hint so callers can at least
+        // see that two wrappers refer to the same accumulator.
+        write!(f, "TimeEventAccumulatorAPI({:p})", &*self.0)
     }
 }
 

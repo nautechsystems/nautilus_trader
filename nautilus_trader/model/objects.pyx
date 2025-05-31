@@ -270,21 +270,27 @@ cdef class Quantity:
         return self._mem.precision
 
     cdef bint eq(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw == other._mem.raw
 
     cdef bint ne(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw != other._mem.raw
 
     cdef bint lt(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw < other._mem.raw
 
     cdef bint le(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw <= other._mem.raw
 
     cdef bint gt(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw > other._mem.raw
 
     cdef bint ge(self, Quantity other):
+        Condition.not_none(other, "other")
         return self._mem.raw >= other._mem.raw
 
     cdef bint is_zero(self):
@@ -760,21 +766,27 @@ cdef class Price:
         return Price(value, precision=0)
 
     cdef bint eq(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw == other._mem.raw
 
     cdef bint ne(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw != other._mem.raw
 
     cdef bint lt(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw < other._mem.raw
 
     cdef bint le(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw <= other._mem.raw
 
     cdef bint gt(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw > other._mem.raw
 
     cdef bint ge(self, Price other):
+        Condition.not_none(other, "other")
         return self._mem.raw >= other._mem.raw
 
     cdef bint is_zero(self):
@@ -977,22 +989,27 @@ cdef class Money:
         self._mem = money_from_raw(state[0], currency._mem)
 
     def __eq__(self, Money other) -> bool:
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw == other._mem.raw
 
     def __lt__(self, Money other) -> bool:
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw < other._mem.raw
 
     def __le__(self, Money other) -> bool:
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw <= other._mem.raw
 
     def __gt__(self, Money other) -> bool:
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw > other._mem.raw
 
     def __ge__(self, Money other) -> bool:
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return self._mem.raw >= other._mem.raw
 
@@ -1148,18 +1165,22 @@ cdef class Money:
         return self._mem.raw > 0
 
     cdef Money add(self, Money other):
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return Money.from_raw_c(self._mem.raw + other._mem.raw, self.currency)
 
     cdef Money sub(self, Money other):
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return Money.from_raw_c(self._mem.raw - other._mem.raw, self.currency)
 
     cdef void add_assign(self, Money other):
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         self._mem.raw += other._mem.raw
 
     cdef void sub_assign(self, Money other):
+        Condition.not_none(other, "other")
         Condition.is_true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         self._mem.raw -= other._mem.raw
 

@@ -155,28 +155,32 @@ impl InstrumentClose {
     }
 
     /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+    #[pyo3(name = "to_dict")]
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         to_dict_pyo3(py, self)
     }
 
     /// Return JSON encoded bytes representation of the object.
-    #[pyo3(name = "as_json")]
-    fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py_any_unwrap(py)
+    #[pyo3(name = "to_json_bytes")]
+    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
+        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    #[pyo3(name = "as_msgpack")]
-    fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    #[pyo3(name = "to_msgpack_bytes")]
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        // SAFETY: Unwrap safe when serializing a valid object
+        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
     }
 }
 
 impl InstrumentClose {
-    /// Create a [`InstrumentClose`] from a PyObject reference.
+    /// Creates a new [`InstrumentClose`] from a Python object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if retrieving any attribute or converting types fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         let instrument_id = obj.getattr("instrument_id")?.extract::<InstrumentId>()?;
         let close_price = obj.getattr("close_price")?.extract::<Price>()?;
@@ -196,7 +200,11 @@ impl InstrumentClose {
     }
 }
 
-/// Transforms the given `data` Python objects into a vector of [`InstrumentClose`] objects.
+/// Transforms the given Python objects into a vector of [`InstrumentClose`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if any element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_closes(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentClose>> {

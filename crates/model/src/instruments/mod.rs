@@ -121,12 +121,12 @@ pub trait Instrument: 'static + Send {
     fn ts_event(&self) -> UnixNanos;
     fn ts_init(&self) -> UnixNanos;
 
-    /// Creates a new `Price` from the given `value` with the correct price precision for the instrument.
+    /// Creates a new [`Price`] from the given `value` with the correct price precision for the instrument.
     fn make_price(&self, value: f64) -> Price {
         Price::new(value, self.price_precision())
     }
 
-    /// Creates a new `Quantity` from the given `value` with the correct size precision for the instrument.
+    /// Creates a new [`Quantity`] from the given `value` with the correct size precision for the instrument.
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
         if round_down.unwrap_or(false) {
             // Round down to the nearest valid increment
@@ -144,8 +144,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If instrument is inverse and not `use_quote_for_inverse`, with no base currency.
+    /// This function panics if instrument is inverse and not `use_quote_for_inverse`, with no base currency.
     fn calculate_notional_value(
         &self,
         quantity: Quantity,

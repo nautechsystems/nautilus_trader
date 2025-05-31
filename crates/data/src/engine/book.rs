@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_common::{
     cache::Cache,
-    msgbus::{self, handler::MessageHandler},
+    msgbus::{self, MStr, Topic, handler::MessageHandler},
     timer::TimeEvent,
 };
 use nautilus_model::{
@@ -39,10 +39,11 @@ pub struct BookSnapshotInfo {
     pub venue: Venue,
     pub is_composite: bool,
     pub root: Ustr,
-    pub topic: Ustr,
+    pub topic: MStr<Topic>,
     pub interval_ms: NonZeroUsize,
 }
 
+#[derive(Debug)]
 pub struct BookUpdater {
     pub id: Ustr,
     pub instrument_id: InstrumentId,
@@ -88,6 +89,7 @@ impl MessageHandler for BookUpdater {
     }
 }
 
+#[derive(Debug)]
 pub struct BookSnapshotter {
     pub id: Ustr,
     pub timer_name: Ustr,
@@ -116,21 +118,26 @@ impl BookSnapshotter {
         }
     }
 
-    pub fn snapshot(&self, event: TimeEvent) {
+    pub fn snapshot(&self, _event: TimeEvent) {
         let cache = self.cache.borrow();
 
         if self.snap_info.is_composite {
             let topic = self.snap_info.topic;
             let underlying = self.snap_info.root;
             for instrument in cache.instruments(&self.snap_info.venue, Some(&underlying)) {
-                self.publish_order_book(&instrument.id(), &topic, &cache);
+                self.publish_order_book(&instrument.id(), topic, &cache);
             }
         } else {
-            self.publish_order_book(&self.snap_info.instrument_id, &self.snap_info.topic, &cache);
+            self.publish_order_book(&self.snap_info.instrument_id, self.snap_info.topic, &cache);
         }
     }
 
-    fn publish_order_book(&self, instrument_id: &InstrumentId, topic: &Ustr, cache: &Ref<Cache>) {
+    fn publish_order_book(
+        &self,
+        instrument_id: &InstrumentId,
+        topic: MStr<Topic>,
+        cache: &Ref<Cache>,
+    ) {
         let book = cache
             .order_book(instrument_id)
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));

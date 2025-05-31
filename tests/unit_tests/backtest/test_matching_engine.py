@@ -22,8 +22,8 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
-from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatusAction
@@ -68,6 +68,7 @@ class TestOrderMatchingEngine:
             oms_type=OmsType.NETTING,
             account_type=AccountType.MARGIN,
             reject_stop_orders=True,
+            trade_execution=True,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -114,10 +115,10 @@ class TestOrderMatchingEngine:
         # Arrange
         exec_messages = []
         self.msgbus.register("ExecEngine.process", lambda x: exec_messages.append(x))
-        tick: QuoteTick = TestDataStubs.quote_tick(
+        quote = TestDataStubs.quote_tick(
             instrument=self.instrument,
         )
-        self.matching_engine.process_quote_tick(tick)
+        self.matching_engine.process_quote_tick(quote)
         order: MarketOrder = TestExecStubs.limit_order(
             instrument=self.instrument,
         )
@@ -126,7 +127,7 @@ class TestOrderMatchingEngine:
         # Act
         instrument_close = TestDataStubs.instrument_close(
             instrument_id=self.instrument_id,
-            price=Price(2, 2),
+            price=Price.from_str("2.00"),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=2,
         )
@@ -176,3 +177,209 @@ class TestOrderMatchingEngine:
         # Assert
         assert self.matching_engine.best_ask_price() == depth.asks[0].price
         assert self.matching_engine.best_bid_price() == depth.bids[0].price
+
+    def test_process_trade_buyer_aggressor(self) -> None:
+        # Arrange
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.BUYER,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade)
+
+        # Assert - Buyer aggressor should set ask price
+        assert self.matching_engine.best_ask_price() == Price.from_str("1000.0")
+
+    def test_process_trade_seller_aggressor(self) -> None:
+        # Arrange
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.SELLER,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade)
+
+        # Assert - Seller aggressor should set bid price
+        assert self.matching_engine.best_bid_price() == Price.from_str("1000.0")
+
+    def test_process_trade_tick_no_aggressor_above_ask(self) -> None:
+        # Arrange - Set initial bid/ask spread
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=990.0,
+            ask_price=1010.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Trade above ask with no aggressor
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1020.0,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade)
+
+        # Assert - L1_MBP book update_trade_tick sets both bid/ask to trade price
+        # Then NO_AGGRESSOR logic doesn't modify further since 1020 >= 1020 (ask)
+        assert self.matching_engine.best_ask_price() == Price.from_str("1020.0")
+        assert self.matching_engine.best_bid_price() == Price.from_str("1020.0")
+
+    def test_process_trade_tick_no_aggressor_within_spread(self) -> None:
+        # Arrange - Set initial bid/ask spread
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=990.0,
+            ask_price=1010.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Trade within the spread with no aggressor
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade)
+
+        # Assert - L1_MBP book update_trade_tick sets both bid/ask to trade price
+        assert self.matching_engine.best_bid_price() == Price.from_str("1000.0")
+        assert self.matching_engine.best_ask_price() == Price.from_str("1000.0")
+
+    def test_process_trade_tick_no_aggressor_below_bid(self) -> None:
+        # Arrange - Set initial bid/ask spread
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=1000.0,
+            ask_price=1020.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Trade below current bid with no aggressor
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=990.0,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade)
+
+        # Assert - L1_MBP book update_trade_tick sets both bid/ask to trade price
+        assert self.matching_engine.best_bid_price() == Price.from_str("990.0")
+        assert self.matching_engine.best_ask_price() == Price.from_str("990.0")
+
+    def test_process_trade_tick_no_aggressor_at_bid_and_ask(self) -> None:
+        # Arrange - Set initial bid/ask spread
+        quote = TestDataStubs.quote_tick(
+            instrument=self.instrument,
+            bid_price=995.0,
+            ask_price=1005.0,
+        )
+        self.matching_engine.process_quote_tick(quote)
+
+        # Trade exactly at bid level with no aggressor
+        trade1 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=995.0,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade1)
+
+        # Assert - L1_MBP book update_trade_tick sets both bid/ask to trade price
+        assert self.matching_engine.best_bid_price() == Price.from_str("995.0")
+        assert self.matching_engine.best_ask_price() == Price.from_str("995.0")
+
+        # Trade exactly at ask level with no aggressor
+        trade2 = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1005.0,
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+        )
+
+        # Act
+        self.matching_engine.process_trade_tick(trade2)
+
+        # Assert - L1_MBP book update_trade_tick sets both bid/ask to trade price
+        assert self.matching_engine.best_bid_price() == Price.from_str("1005.0")
+        assert self.matching_engine.best_ask_price() == Price.from_str("1005.0")
+
+    def test_process_trade_tick_with_trade_execution_disabled(self) -> None:
+        # Arrange - Create matching engine with trade_execution=False
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,  # Disabled
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Process trade tick with BUYER aggressor
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.BUYER,
+        )
+
+        # Act
+        matching_engine.process_trade_tick(trade)
+
+        # Assert - With trade_execution=False, only book update happens, no aggressor logic
+        # L1_MBP book update_trade_tick sets both bid/ask to trade price
+        assert matching_engine.best_bid_price() == Price.from_str("1000.0")
+        assert matching_engine.best_ask_price() == Price.from_str("1000.0")
+
+    def test_trade_execution_difference_buyer_aggressor(self) -> None:
+        # This test demonstrates that trade_execution=True vs False produces the same result
+        # for L1_MBP books since update_trade_tick sets both bid/ask to trade price anyway
+
+        # Test with trade_execution=True (our main matching engine)
+        trade_tick_enabled = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.BUYER,
+        )
+        self.matching_engine.process_trade_tick(trade_tick_enabled)
+
+        # Test with trade_execution=False
+        matching_engine = OrderMatchingEngine(
+            instrument=self.instrument,
+            raw_id=1,
+            fill_model=FillModel(),
+            fee_model=MakerTakerFeeModel(),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=False,  # Disabled
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        trade = TestDataStubs.trade_tick(
+            instrument=self.instrument,
+            price=1000.0,
+            aggressor_side=AggressorSide.BUYER,
+        )
+        matching_engine.process_trade_tick(trade)
+
+        # Assert - Both should have same result for L1_MBP
+        assert self.matching_engine.best_bid_price() == matching_engine.best_bid_price()
+        assert self.matching_engine.best_ask_price() == matching_engine.best_ask_price()

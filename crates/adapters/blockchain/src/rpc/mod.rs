@@ -18,22 +18,24 @@ use enum_dispatch::enum_dispatch;
 use crate::rpc::{
     chains::{
         arbitrum::ArbitrumRpcClient, base::BaseRpcClient, ethereum::EthereumRpcClient,
-        polygon::PolygonRpclient,
+        polygon::PolygonRpcClient,
     },
     error::BlockchainRpcClientError,
-    types::BlockchainRpcMessage,
+    types::BlockchainMessage,
 };
 
 pub mod chains;
 pub mod core;
 pub mod error;
+pub mod http;
 pub mod types;
 pub mod utils;
 
 #[enum_dispatch(BlockchainRpcClient)]
+#[derive(Debug)]
 pub enum BlockchainRpcClientAny {
     Ethereum(EthereumRpcClient),
-    Polygon(PolygonRpclient),
+    Polygon(PolygonRpcClient),
     Base(BaseRpcClient),
     Arbitrum(ArbitrumRpcClient),
 }
@@ -44,5 +46,5 @@ pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
     async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
     async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
-    async fn next_rpc_message(&mut self) -> Result<BlockchainRpcMessage, BlockchainRpcClientError>;
+    async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
 }

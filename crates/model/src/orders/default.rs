@@ -58,7 +58,6 @@ impl Default for LimitOrder {
             UUID4::default(),
             UnixNanos::default(),
         )
-        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -140,7 +139,6 @@ impl Default for MarketIfTouchedOrder {
             None,
             false,
             false,
-            None,
             None,
             None,
             None,

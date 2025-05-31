@@ -28,6 +28,10 @@ use parquet::{
 use crate::enums::ParquetWriteMode;
 
 /// Writes a `RecordBatch` to a Parquet file at the specified `filepath`, with optional compression.
+///
+/// # Errors
+///
+/// Returns an error if writing to Parquet fails or any I/O operation fails.
 pub fn write_batch_to_parquet(
     batch: RecordBatch,
     filepath: &PathBuf,
@@ -44,6 +48,11 @@ pub fn write_batch_to_parquet(
     )
 }
 
+/// Writes multiple `RecordBatch` items to a Parquet file at the specified `filepath`, with optional compression and row group sizing.
+///
+/// # Errors
+///
+/// Returns an error if writing to Parquet fails or any I/O operation fails.
 pub fn write_batches_to_parquet(
     batches: &[RecordBatch],
     filepath: &PathBuf,
@@ -95,6 +104,11 @@ pub fn write_batches_to_parquet(
     write_batches_to_file(batches, filepath, compression, max_row_group_size)
 }
 
+/// Combines multiple Parquet files by column range checks and ordering, then writes the merged result.
+///
+/// # Errors
+///
+/// Returns an error if file reading fails, metadata extraction fails, or merging safety checks fail.
 pub fn combine_data_files(
     parquet_files: Vec<PathBuf>,
     column_name: &str,
@@ -136,6 +150,11 @@ pub fn combine_data_files(
     combine_parquet_files(sorted_parquet_files, compression, max_row_group_size)
 }
 
+/// Merges multiple Parquet files into a single Parquet file, combining row groups.
+///
+/// # Errors
+///
+/// Returns an error if file I/O or Parquet merging fails.
 pub fn combine_parquet_files(
     file_list: Vec<PathBuf>,
     compression: Option<parquet::basic::Compression>,
@@ -193,6 +212,15 @@ fn write_batches_to_file(
     Ok(())
 }
 
+/// Extracts the minimum and maximum i64 values for the specified `column_name` from a Parquet file's metadata.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, metadata parsing fails, or the column is missing or has no statistics.
+///
+/// # Panics
+///
+/// Panics if the Parquet metadata's min/max unwrap operations fail unexpectedly.
 pub fn min_max_from_parquet_metadata(
     file_path: &PathBuf,
     column_name: &str,

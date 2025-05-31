@@ -95,6 +95,9 @@ impl CurrencyPair {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -160,6 +163,10 @@ impl CurrencyPair {
     }
 
     /// Creates a new [`CurrencyPair`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any input parameter is invalid (see `new_checked`).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument_id: InstrumentId,

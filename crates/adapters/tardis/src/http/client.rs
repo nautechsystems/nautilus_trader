@@ -47,6 +47,11 @@ pub struct TardisHttpClient {
 
 impl TardisHttpClient {
     /// Creates a new [`TardisHttpClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no API key is provided (argument or `TARDIS_API_KEY` env var),
+    /// or if the HTTP client cannot be built.
     pub fn new(
         api_key: Option<&str>,
         base_url: Option<&str>,
@@ -99,6 +104,10 @@ impl TardisHttpClient {
 
     /// Returns all Tardis instrument definitions for the given `exchange`.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
+    ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     pub async fn instruments_info(
         &self,
@@ -147,6 +156,10 @@ impl TardisHttpClient {
     }
 
     /// Returns all Nautilus instrument definitions for the given `exchange`, and filter params.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching instrument info or parsing into domain types fails.
     ///
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     #[allow(clippy::too_many_arguments)]

@@ -21,7 +21,7 @@
 use std::{
     any::{Any, TypeId},
     cell::{RefCell, UnsafeCell},
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Debug,
     num::NonZeroUsize,
     ops::{Deref, DerefMut},
@@ -31,6 +31,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use chrono::{DateTime, Utc};
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
 use nautilus_model::{
     data::{
@@ -55,21 +56,22 @@ use crate::{
     logging::{CMD, RECV, REQ, SEND},
     messages::{
         data::{
-            BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentsResponse,
-            QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand, RequestData,
-            RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand, SubscribeData,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeData, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, DataCommand, InstrumentResponse,
+            InstrumentsResponse, QuotesResponse, RequestBars, RequestBookSnapshot, RequestCommand,
+            RequestCustomData, RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookSnapshots, SubscribeCommand,
+            SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookSnapshots, UnsubscribeCommand,
+            UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::ShutdownSystem,
     },
     msgbus::{
-        self, get_message_bus,
+        self, MStr, Pattern, Topic, get_message_bus,
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
         switchboard::{
             self, MessagingSwitchboard, get_bars_topic, get_book_deltas_topic,
@@ -147,21 +149,33 @@ pub trait DataActor: Actor {
     }
 
     /// Returns `true` if the actor is in a `Faulted` state.
-    fn is_faulting(&self) -> bool {
+    fn is_faulted(&self) -> bool {
         self.state() == ComponentState::Faulted
     }
 
     /// Actions to be performed when the actor state is saved.
-    fn on_save(&self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-        Ok(HashMap::new())
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if saving the actor state fails.
+    fn on_save(&self) -> anyhow::Result<IndexMap<String, Vec<u8>>> {
+        Ok(IndexMap::new())
     }
 
     /// Actions to be performed when the actor state is loaded.
-    fn on_load(&mut self, state: HashMap<String, Vec<u8>>) -> anyhow::Result<()> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading the actor state fails.
+    fn on_load(&mut self, state: IndexMap<String, Vec<u8>>) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on start.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if starting the actor fails.
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_start` handler was called when not overridden, \
@@ -172,6 +186,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on stop.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stopping the actor fails.
     fn on_stop(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_stop` handler was called when not overridden, \
@@ -182,6 +200,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on resume.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resuming the actor fails.
     fn on_resume(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_resume` handler was called when not overridden, \
@@ -192,6 +214,10 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on reset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resetting the actor fails.
     fn on_reset(&mut self) -> anyhow::Result<()> {
         log::warn!(
             "The `on_reset` handler was called when not overridden, \
@@ -202,117 +228,209 @@ pub trait DataActor: Actor {
     }
 
     /// Actions to be performed on dispose.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disposing the actor fails.
     fn on_dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on degrade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if degrading the actor fails.
     fn on_degrade(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed on fault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if faulting the actor fails.
     fn on_fault(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the event fails.
     fn on_event(&mut self, event: &dyn Any) -> anyhow::Result<()> {
         // TODO: Implement `Event` enum?
         Ok(())
     }
 
-    /// Actions to be performanced when receiving a time event.
+    /// Actions to be performed when receiving a time event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the time event fails.
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving custom data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the data fails.
     fn on_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the signal fails.
     fn on_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument fails.
     fn on_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving order book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the book deltas fails.
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an order book.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the book fails.
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a quote.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the quote fails.
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a trade.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the trade fails.
     fn on_trade(&mut self, tick: &TradeTick) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a bar.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the bar fails.
     fn on_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving a mark price update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the mark price update fails.
     fn on_mark_price(&mut self, mark_price: &MarkPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an index price update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the index price update fails.
     fn on_index_price(&mut self, index_price: &IndexPriceUpdate) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument status update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument status update fails.
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving an instrument close update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the instrument close update fails.
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical data fails.
     fn on_historical_data(&mut self, data: &dyn Any) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical quotes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical quotes fails.
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical trades fails.
     fn on_historical_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical bars.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical bars fails.
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical mark prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical mark prices fails.
     fn on_historical_mark_prices(&mut self, mark_prices: &[MarkPriceUpdate]) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// Actions to be performed when receiving historical index prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical index prices fails.
     fn on_historical_index_prices(
         &mut self,
         index_prices: &[IndexPriceUpdate],
@@ -320,7 +438,7 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
-    /// Handles a received custom/generic data point.
+    /// Handles a received custom data point.
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
@@ -519,12 +637,17 @@ pub trait DataActor: Actor {
     fn handle_data_response(&mut self, response: &CustomDataResponse) {
         log_received(&response);
 
-        if let Some(data) = response.data.downcast_ref::<Vec<&dyn Any>>() {
-            for d in data {
-                self.handle_historical_data(d);
-            }
-        } else if let Some(data) = response.data.downcast_ref::<&dyn Any>() {
-            self.handle_historical_data(data);
+        if let Err(e) = self.on_historical_data(response.data.as_ref()) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles an instrument response.
+    fn handle_instrument_response(&mut self, response: &InstrumentResponse) {
+        log_received(&response);
+
+        if let Err(e) = self.on_instrument(&response.data) {
+            log_error(&e);
         }
     }
 
@@ -593,7 +716,7 @@ pub struct DataActorCore {
     signal_classes: AHashMap<String, String>,
     #[cfg(feature = "indicators")]
     indicators: Indicators,
-    topic_handlers: AHashMap<Ustr, ShareableMessageHandler>,
+    topic_handlers: AHashMap<MStr<Topic>, ShareableMessageHandler>,
 }
 
 impl Debug for DataActorCore {
@@ -652,6 +775,12 @@ impl DataActorCore {
     }
 
     // TODO: TBD initialization flow
+
+    /// Initializes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the initialization state transition fails.
     pub fn initialize(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Initialize)
     }
@@ -683,7 +812,7 @@ impl DataActorCore {
     ///
     /// # Panics
     ///
-    /// This function panics if a trader ID has already been set.
+    /// Panics if a trader ID has already been set.
     pub(crate) fn set_trader_id(&mut self, trader_id: TraderId) {
         if let Some(existing_trader_id) = self.trader_id {
             panic!("trader_id {existing_trader_id} already set");
@@ -709,7 +838,7 @@ impl DataActorCore {
         }
 
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send(&endpoint, command.as_any())
+        msgbus::send(endpoint, command.as_any())
     }
 
     fn send_data_req<A: DataActor>(&self, request: RequestCommand) {
@@ -729,9 +858,14 @@ impl DataActorCore {
             .register_response_handler(request.request_id(), handler);
 
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send(&endpoint, request.as_any())
+        msgbus::send(endpoint, request.as_any())
     }
 
+    /// Starts the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if starting the actor fails.
     pub fn start(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
@@ -745,6 +879,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Stops the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stopping the actor fails.
     pub fn stop(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
@@ -758,6 +897,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Resumes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resuming the actor fails.
     pub fn resume(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
 
@@ -771,6 +915,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Resets the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if resetting the actor fails.
     pub fn reset(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
@@ -784,6 +933,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Disposes the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if disposing the actor fails.
     pub fn dispose(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
@@ -797,6 +951,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Degrades the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if degrading the actor fails.
     pub fn degrade(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
 
@@ -810,6 +969,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Faults the actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if faulting the actor fails.
     pub fn fault(&mut self) -> anyhow::Result<()> {
         self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
 
@@ -823,6 +987,11 @@ impl DataActorCore {
         Ok(())
     }
 
+    /// Sends a shutdown command to the system with an optional reason.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered or has no trader ID.
     pub fn shutdown_system(&self, reason: Option<String>) {
         self.check_registered();
 
@@ -835,15 +1004,15 @@ impl DataActorCore {
             self.clock.borrow().timestamp_ns(),
         );
 
-        let topic = Ustr::from("command.system.shutdown");
-        msgbus::send(&topic, command.as_any());
+        let endpoint = "command.system.shutdown".into();
+        msgbus::send(endpoint, command.as_any());
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
     fn get_or_create_handler_for_topic<F>(
         &mut self,
-        topic: Ustr,
+        topic: MStr<Topic>,
         create_handler: F,
     ) -> ShareableMessageHandler
     where
@@ -858,7 +1027,7 @@ impl DataActorCore {
         }
     }
 
-    fn get_handler_for_topic(&self, topic: Ustr) -> Option<ShareableMessageHandler> {
+    fn get_handler_for_topic(&self, topic: MStr<Topic>) -> Option<ShareableMessageHandler> {
         self.topic_handlers.get(&topic).cloned()
     }
 
@@ -867,7 +1036,7 @@ impl DataActorCore {
         &mut self,
         data_type: DataType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -886,14 +1055,14 @@ impl DataActorCore {
             new_handler
         };
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         if client_id.is_none() {
             // If no client ID specified, just subscribe to the topic
             return;
         }
 
-        let command = SubscribeCommand::Data(SubscribeData {
+        let command = SubscribeCommand::Data(SubscribeCustomData {
             data_type,
             client_id,
             venue: None,
@@ -910,7 +1079,7 @@ impl DataActorCore {
         &mut self,
         venue: Venue,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -924,7 +1093,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Instruments(SubscribeInstruments {
             client_id,
@@ -942,7 +1111,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -956,7 +1125,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
             instrument_id,
@@ -981,7 +1150,7 @@ impl DataActorCore {
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -995,7 +1164,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
             instrument_id,
@@ -1027,7 +1196,7 @@ impl DataActorCore {
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1049,7 +1218,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
             instrument_id,
@@ -1071,7 +1240,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1085,7 +1254,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
@@ -1104,7 +1273,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1118,7 +1287,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
             instrument_id,
@@ -1141,7 +1310,7 @@ impl DataActorCore {
         bar_type: BarType,
         client_id: Option<ClientId>,
         await_partial: bool,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1153,7 +1322,7 @@ impl DataActorCore {
             })))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Bars(SubscribeBars {
             bar_type,
@@ -1176,7 +1345,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1190,7 +1359,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
             instrument_id,
@@ -1212,7 +1381,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1226,7 +1395,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
             instrument_id,
@@ -1248,7 +1417,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1262,7 +1431,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
             instrument_id,
@@ -1284,7 +1453,7 @@ impl DataActorCore {
         &mut self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
@@ -1298,7 +1467,7 @@ impl DataActorCore {
             )))
         });
 
-        msgbus::subscribe(topic, handler, None);
+        msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
             instrument_id,
@@ -1317,20 +1486,20 @@ impl DataActorCore {
         &self,
         data_type: DataType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         if client_id.is_none() {
             return;
         }
 
-        let command = UnsubscribeCommand::Data(UnsubscribeData {
+        let command = UnsubscribeCommand::Data(UnsubscribeCustomData {
             data_type,
             client_id,
             venue: None,
@@ -1347,13 +1516,13 @@ impl DataActorCore {
         &self,
         venue: Venue,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_instruments_topic(venue);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Instruments(UnsubscribeInstruments {
@@ -1372,13 +1541,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_instrument_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
@@ -1398,13 +1567,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_book_deltas_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
@@ -1427,13 +1596,13 @@ impl DataActorCore {
         instrument_id: InstrumentId,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_book_snapshots_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
@@ -1453,13 +1622,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_quotes_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
@@ -1479,13 +1648,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_trades_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
@@ -1505,13 +1674,13 @@ impl DataActorCore {
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_bars_topic(bar_type);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
@@ -1531,13 +1700,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_mark_price_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
@@ -1557,13 +1726,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_index_price_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
@@ -1583,13 +1752,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_instrument_status_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
@@ -1609,13 +1778,13 @@ impl DataActorCore {
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
         let topic = get_instrument_close_topic(instrument_id);
         if let Some(handler) = self.topic_handlers.get(&topic) {
-            msgbus::unsubscribe(topic, handler.clone());
+            msgbus::unsubscribe_topic(topic, handler.clone());
         };
 
         let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
@@ -1632,6 +1801,13 @@ impl DataActorCore {
 
     // -- REQUESTS --------------------------------------------------------------------------------
 
+    /// Request historical custom data of the given `data_type`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`CustomDataResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_data<A: DataActor>(
         &self,
         data_type: DataType,
@@ -1639,7 +1815,7 @@ impl DataActorCore {
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1647,7 +1823,7 @@ impl DataActorCore {
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
-        let command = RequestCommand::Data(RequestData {
+        let command = RequestCommand::Data(RequestCustomData {
             client_id,
             data_type,
             request_id,
@@ -1671,13 +1847,20 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`InstrumentResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_instrument<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1697,8 +1880,8 @@ impl DataActorCore {
 
         let actor_id = self.actor_id.inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentsResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_instruments_response(response);
+            move |response: &InstrumentResponse| {
+                get_actor_unchecked::<A>(&actor_id).handle_instrument_response(response);
             },
         )));
 
@@ -1711,13 +1894,20 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`InstrumentsResponse`] definitions for the optional `venue`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`InstrumentsResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_instruments<A: DataActor>(
         &self,
         venue: Option<Venue>,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1751,12 +1941,19 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`BookResponse`].
+    ///
+    /// # Errors
+    ///
+    /// This function never returns an error.
     pub fn request_book_snapshot<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1786,6 +1983,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`QuoteTick`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`QuotesResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_quotes<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -1793,7 +1997,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1828,6 +2032,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`TradeTick`] data for the given `instrument_id`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`TradesResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_trades<A: DataActor>(
         &self,
         instrument_id: InstrumentId,
@@ -1835,7 +2046,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1870,6 +2081,13 @@ impl DataActorCore {
         Ok(request_id)
     }
 
+    /// Request historical [`Bar`] data for the given `bar_type`.
+    ///
+    /// Returns a unique request ID to correlate subsequent [`BarsResponse`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided time range is invalid.
     pub fn request_bars<A: DataActor>(
         &self,
         bar_type: BarType,
@@ -1877,7 +2095,7 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
-        params: Option<HashMap<String, String>>,
+        params: Option<IndexMap<String, String>>,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1938,7 +2156,7 @@ fn log_error(e: &anyhow::Error) {
 
 fn log_not_running<T>(msg: &T)
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     // TODO: Potentially temporary for development? drop level at some stage
     log::warn!("Received message when not running - skipping {msg:?}");
@@ -1946,7 +2164,7 @@ where
 
 fn log_received<T>(msg: &T)
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
     log::debug!("{RECV} {msg:?}");
 }

@@ -17,7 +17,7 @@ use heck::ToSnakeCase;
 use pyo3::prelude::*;
 
 /// Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
-/// to *lower* snake_case.
+/// to *lower* `snake_case`.
 ///
 /// This function uses the `heck` Rust crate under the hood.
 ///

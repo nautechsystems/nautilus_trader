@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The test suite for `NautilusTrader` including unit, integration, acceptance and
+The test suite for NautilusTrader including unit, integration, acceptance and
 performance tests.
 """
 

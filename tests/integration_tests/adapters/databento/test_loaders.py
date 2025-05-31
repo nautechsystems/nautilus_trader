@@ -616,7 +616,18 @@ def test_loader_ohlcv_1s() -> None:
     assert bar.ts_init == 1609160401000000000
 
 
-def test_loader_with_ohlcv_1m() -> None:
+@pytest.mark.parametrize(
+    ("bars_timestamp_on_close", "expected_ts_event", "expected_ts_init"),
+    [
+        (True, 1715248860000000000, 1715248860000000000),  # Close time (default)
+        (False, 1715248800000000000, 1715248800000000000),  # Open time
+    ],
+)
+def test_loader_with_ohlcv_1m(
+    bars_timestamp_on_close: bool,
+    expected_ts_event: int,
+    expected_ts_init: int,
+) -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = (
@@ -627,7 +638,11 @@ def test_loader_with_ohlcv_1m() -> None:
     )
 
     # Act
-    data = loader.from_dbn_file(path, as_legacy_cython=True)
+    data = loader.from_dbn_file(
+        path,
+        as_legacy_cython=True,
+        bars_timestamp_on_close=bars_timestamp_on_close,
+    )
 
     # Assert
     assert len(data) == 5
@@ -636,11 +651,22 @@ def test_loader_with_ohlcv_1m() -> None:
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESM4.GLBX-1-MINUTE-LAST-EXTERNAL")
     assert bar.open == Price.from_str("5199.75")
-    assert bar.ts_event == 1715248800000000000
-    assert bar.ts_init == 1715248860000000000
+    assert bar.ts_event == expected_ts_event
+    assert bar.ts_init == expected_ts_init
 
 
-def test_loader_with_ohlcv_1m_and_xcme() -> None:
+@pytest.mark.parametrize(
+    ("bars_timestamp_on_close", "expected_ts_event", "expected_ts_init"),
+    [
+        (True, 1715248860000000000, 1715248860000000000),  # Close time (default)
+        (False, 1715248800000000000, 1715248800000000000),  # Open time
+    ],
+)
+def test_loader_with_ohlcv_1m_and_xcme(
+    bars_timestamp_on_close: bool,
+    expected_ts_event: int,
+    expected_ts_init: int,
+) -> None:
     # Arrange
     loader = DatabentoDataLoader()
     definition_path = (
@@ -660,7 +686,11 @@ def test_loader_with_ohlcv_1m_and_xcme() -> None:
         as_legacy_cython=True,
         use_exchange_as_venue=True,
     )
-    data = loader.from_dbn_file(path, as_legacy_cython=True)
+    data = loader.from_dbn_file(
+        path,
+        as_legacy_cython=True,
+        bars_timestamp_on_close=bars_timestamp_on_close,
+    )
 
     # Assert
     assert len(data) == 5
@@ -669,18 +699,33 @@ def test_loader_with_ohlcv_1m_and_xcme() -> None:
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESM4.XCME-1-MINUTE-LAST-EXTERNAL")
     assert bar.open == Price.from_str("5199.75")
-    assert bar.ts_event == 1715248800000000000
-    assert bar.ts_init == 1715248860000000000
+    assert bar.ts_event == expected_ts_event
+    assert bar.ts_init == expected_ts_init
 
 
 @pytest.mark.skip("requires updated test data")
-def test_loader_with_ohlcv_1m_pyo3() -> None:
+@pytest.mark.parametrize(
+    ("bars_timestamp_on_close", "expected_ts_event", "expected_ts_init"),
+    [
+        (True, 1609160460000000000, 1609160460000000000),  # Close time (default)
+        (False, 1609160400000000000, 1609160400000000000),  # Open time
+    ],
+)
+def test_loader_with_ohlcv_1m_pyo3(
+    bars_timestamp_on_close: bool,
+    expected_ts_event: int,
+    expected_ts_init: int,
+) -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "ohlcv-1m.dbn.zst"
 
     # Act
-    data = loader.from_dbn_file(path, as_legacy_cython=False)
+    data = loader.from_dbn_file(
+        path,
+        as_legacy_cython=False,
+        bars_timestamp_on_close=bars_timestamp_on_close,
+    )
 
     # Assert
     assert len(data) == 2
@@ -689,8 +734,8 @@ def test_loader_with_ohlcv_1m_pyo3() -> None:
     bar = data[0]
     assert bar.bar_type == nautilus_pyo3.BarType.from_str("ESH1.GLBX-1-MINUTE-LAST-EXTERNAL")
     assert bar.open == nautilus_pyo3.Price.from_str("3720.25")
-    assert bar.ts_event == 1609160400000000000
-    assert bar.ts_init == 1609160460000000000
+    assert bar.ts_event == expected_ts_event
+    assert bar.ts_init == expected_ts_init
 
 
 @pytest.mark.skip("requires updated test data")

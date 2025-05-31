@@ -25,6 +25,14 @@ use crate::{
     enums::AccountType,
 };
 
+/// Converts a Python account object into a Rust `AccountAny` enum.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if:
+/// - retrieving the `account_type` attribute fails.
+/// - extracting the object into `CashAccount` or `MarginAccount` fails.
+/// - the `account_type` is unsupported.
 pub fn pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<AccountAny> {
     let account_type = account
         .getattr(py, "account_type")?
@@ -40,6 +48,11 @@ pub fn pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<Accoun
     }
 }
 
+/// Converts a Rust `AccountAny` into a Python account object.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if converting the underlying account into a Python object fails.
 pub fn account_any_to_pyobject(py: Python, account: AccountAny) -> PyResult<PyObject> {
     match account {
         AccountAny::Cash(account) => account.into_py_any(py),

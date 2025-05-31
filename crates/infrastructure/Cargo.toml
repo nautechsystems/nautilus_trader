@@ -55,10 +55,11 @@ rust_decimal = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.30.0", features = [
+redis = { version = "0.31.0", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
@@ -67,11 +68,6 @@ redis = { version = "0.30.0", features = [
   "tokio-rustls-comp",
   "tls-rustls",
   "tls-rustls-webpki-roots",
-], optional = true }
-sqlx = { version = "0.8.5", features = [
-  "postgres",
-  "runtime-tokio",
-  "json"
 ], optional = true }
 
 [dev-dependencies]

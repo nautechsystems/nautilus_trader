@@ -31,22 +31,16 @@
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
-// #![deny(clippy::missing_errors_doc)]
-
-// Uncomment once we've added trivial debug impls everywhere
-// #![deny(missing_debug_implementations)]
 
 pub mod client;
 pub mod engine;
 pub mod matching_core;
 pub mod matching_engine;
-pub mod messages;
 pub mod models;
 pub mod order_emulator;
 pub mod order_manager;
-pub mod reports;
 pub mod trailing;
-
-#[cfg(feature = "python")]
-pub mod python;

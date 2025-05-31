@@ -388,7 +388,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._handle_deltas(instrument, deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
-            quote = ws_message.parse_to_quote_tick(instrument=instrument, ts_init=now_ns)
+            quote = ws_message.parse_to_quote(instrument=instrument, ts_init=now_ns)
             self._last_quotes[instrument.id] = quote
             self._handle_data(quote)
 

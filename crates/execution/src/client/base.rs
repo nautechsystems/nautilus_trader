@@ -19,13 +19,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
-use nautilus_common::{
-    cache::Cache,
-    clock::Clock,
-    msgbus::{self},
-};
+use nautilus_common::{cache::Cache, clock::Clock, msgbus};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
@@ -39,13 +35,8 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
         TraderId, Venue, VenueOrderId,
     },
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
-};
-use ustr::Ustr;
-
-use crate::reports::{
-    fill::FillReport, mass_status::ExecutionMassStatus, order::OrderStatusReport,
-    position::PositionStatusReport,
 };
 
 pub struct BaseExecutionClient {
@@ -59,6 +50,14 @@ pub struct BaseExecutionClient {
     pub is_connected: bool,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
+}
+
+impl Debug for BaseExecutionClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BaseExecutionClient))
+            .field("client_id", &self.client_id)
+            .finish()
+    }
 }
 
 impl BaseExecutionClient {
@@ -101,6 +100,11 @@ impl BaseExecutionClient {
         self.cache.borrow().account(&self.account_id).cloned()
     }
 
+    /// Generates and publishes the account state event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if constructing or sending the account state fails.
     pub fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,
@@ -400,32 +404,32 @@ impl BaseExecutionClient {
     }
 
     fn send_account_state(&self, account_state: AccountState) {
-        let endpoint = Ustr::from("Portfolio.update_account");
-        msgbus::send(&endpoint, &account_state as &dyn Any);
+        let endpoint = "Portfolio.update_account".into();
+        msgbus::send(endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
-        let endpoint = Ustr::from("ExecEngine.process");
-        msgbus::send(&endpoint, &event as &dyn Any);
+        let endpoint = "ExecEngine.process".into();
+        msgbus::send(endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_mass_status");
-        msgbus::send(&endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_mass_status".into();
+        msgbus::send(endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        msgbus::send(&endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_report".into();
+        msgbus::send(endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        msgbus::send(&endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_report".into();
+        msgbus::send(endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
-        let endpoint = Ustr::from("ExecEngine.reconcile_report");
-        msgbus::send(&endpoint, &report as &dyn Any);
+        let endpoint = "ExecEngine.reconcile_report".into();
+        msgbus::send(endpoint, &report as &dyn Any);
     }
 }

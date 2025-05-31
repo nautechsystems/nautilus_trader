@@ -24,20 +24,21 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_common::{
     cache::Cache,
     messages::data::{
-        RequestBars, RequestBookSnapshot, RequestData, RequestInstrument, RequestInstruments,
+        RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeBookSnapshots, SubscribeData, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeData,
-        UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-        UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-        UnsubscribeQuotes, UnsubscribeTrades,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
+#[derive(Debug)]
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
@@ -54,167 +55,202 @@ impl BacktestDataClient {
     }
 }
 
+#[async_trait::async_trait]
 impl DataClient for BacktestDataClient {
     fn client_id(&self) -> ClientId {
         self.client_id
     }
+
     fn venue(&self) -> Option<Venue> {
         Some(self.venue)
     }
 
-    fn start(&self) {}
-    fn stop(&self) {}
-    fn reset(&self) {}
-    fn dispose(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     fn is_connected(&self) -> bool {
         true
     }
+
     fn is_disconnected(&self) -> bool {
         false
     }
 
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
-    fn subscribe(&mut self, _cmd: SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _cmd: SubscribeInstruments) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _cmd: SubscribeInstrument) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_book_deltas(&mut self, _cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+    fn subscribe_book_deltas(&mut self, _cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_book_depth10(&mut self, _cmd: SubscribeBookDepth10) -> anyhow::Result<()> {
+    fn subscribe_book_depth10(&mut self, _cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_book_snapshots(&mut self, _cmd: SubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_quotes(&mut self, _cmd: SubscribeQuotes) -> anyhow::Result<()> {
+    fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_trades(&mut self, _cmd: SubscribeTrades) -> anyhow::Result<()> {
+    fn subscribe_trades(&mut self, _cmd: &SubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, _cmd: SubscribeBars) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
+    fn subscribe_mark_prices(&mut self, _cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
+    fn subscribe_index_prices(&mut self, _cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn subscribe_instrument_status(
         &mut self,
-        _cmd: SubscribeInstrumentStatus,
+        _cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(
+        &mut self,
+        _cmd: &SubscribeInstrumentClose,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, _cmd: UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, _cmd: UnsubscribeInstruments) -> anyhow::Result<()> {
+    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, _cmd: UnsubscribeInstrument) -> anyhow::Result<()> {
+    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_book_deltas(&mut self, _cmd: UnsubscribeBookDeltas) -> anyhow::Result<()> {
+    fn unsubscribe_book_deltas(&mut self, _cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_book_depth10(&mut self, _cmd: UnsubscribeBookDepth10) -> anyhow::Result<()> {
+    fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_book_snapshots(&mut self, _cmd: UnsubscribeBookSnapshots) -> anyhow::Result<()> {
+    fn unsubscribe_book_snapshots(
+        &mut self,
+        _cmd: &UnsubscribeBookSnapshots,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_quotes(&mut self, _cmd: UnsubscribeQuotes) -> anyhow::Result<()> {
+    fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_trades(&mut self, _cmd: UnsubscribeTrades) -> anyhow::Result<()> {
+    fn unsubscribe_trades(&mut self, _cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, _cmd: UnsubscribeBars) -> anyhow::Result<()> {
+    fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, _cmd: UnsubscribeMarkPrices) -> anyhow::Result<()> {
+    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, _cmd: UnsubscribeIndexPrices) -> anyhow::Result<()> {
+    fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
-        _cmd: UnsubscribeInstrumentStatus,
+        _cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn unsubscribe_instrument_close(
         &mut self,
-        _cmd: UnsubscribeInstrumentClose,
+        _cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
-    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+    fn request_instruments(&self, request: &RequestInstruments) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+    fn request_instrument(&self, request: &RequestInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+    fn request_book_snapshot(&self, request: &RequestBookSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: &RequestQuotes) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+    fn request_trades(&self, request: &RequestTrades) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+    fn request_bars(&self, request: &RequestBars) -> anyhow::Result<()> {
         todo!()
     }
 }
+
+// SAFETY: Cannot be sent across thread boundaries
+#[allow(unsafe_code)]
+unsafe impl Send for BacktestDataClient {}
+#[allow(unsafe_code)]
+unsafe impl Sync for BacktestDataClient {}

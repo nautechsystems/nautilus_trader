@@ -17,6 +17,7 @@ use std::fmt::Display;
 
 use nautilus_core::UnixNanos;
 
+#[derive(Debug)]
 pub struct LatencyModel {
     pub base_latency_nanos: UnixNanos,
     pub insert_latency_nanos: UnixNanos,

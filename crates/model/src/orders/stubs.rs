@@ -68,6 +68,9 @@ impl TestOrderEventStubs {
         OrderEventAny::Accepted(event)
     }
 
+    /// # Panics
+    ///
+    /// Panics if parsing the fallback price string fails or unwrapping default values fails.
     #[allow(clippy::too_many_arguments)]
     pub fn filled(
         order: &OrderAny,
@@ -125,6 +128,9 @@ impl TestOrderEventStubs {
 pub struct TestOrderStubs;
 
 impl TestOrderStubs {
+    /// # Panics
+    ///
+    /// Panics if applying the accepted event via `new_order.apply(...)` fails.
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
         let mut new_order = order.clone();
         let accepted_event = TestOrderEventStubs::accepted(
@@ -136,6 +142,9 @@ impl TestOrderStubs {
         new_order
     }
 
+    /// # Panics
+    ///
+    /// Panics if applying the filled event via `accepted_order.apply(...)` fails.
     pub fn make_filled_order(
         order: &OrderAny,
         instrument: &InstrumentAny,

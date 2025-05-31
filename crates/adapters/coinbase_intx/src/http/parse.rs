@@ -14,9 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{UUID4, nanos::UnixNanos};
-use nautilus_execution::reports::{
-    fill::FillReport, order::OrderStatusReport, position::PositionStatusReport,
-};
 use nautilus_model::{
     enums::{
         AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
@@ -24,6 +21,7 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, Symbol, TradeId, VenueOrderId},
     instruments::{CryptoPerpetual, CurrencyPair, any::InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
@@ -38,6 +36,11 @@ use crate::common::{
 };
 
 /// Parses a Coinbase International Spot instrument into an `InstrumentAny::CurrencyPair`.
+/// Parses a spot instrument definition into an `InstrumentAny::CurrencyPair`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_spot_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -91,6 +94,11 @@ pub fn parse_spot_instrument(
 }
 
 /// Parses a Coinbase International perpetual instrument into an `InstrumentAny::CryptoPerpetual`.
+/// Parses a perpetual instrument definition into an `InstrumentAny::CryptoPerpetual`.
+///
+/// # Errors
+///
+/// Returns an error if any numeric field cannot be parsed or required data is missing.
 pub fn parse_perp_instrument(
     definition: &CoinbaseIntxInstrument,
     margin_init: Option<Decimal>,
@@ -178,6 +186,11 @@ pub fn parse_instrument_any(
     }
 }
 
+/// Parses account balances into an `AccountState`.
+///
+/// # Errors
+///
+/// Returns an error if any balance or hold value cannot be parsed into a float.
 pub fn parse_account_state(
     coinbase_balances: Vec<CoinbaseIntxBalance>,
     account_id: AccountId,
@@ -211,16 +224,16 @@ pub fn parse_account_state(
     ))
 }
 
-fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> OrderStatus {
+fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> anyhow::Result<OrderStatus> {
     let exec_qty = coinbase_order
         .exec_qty
         .parse::<Decimal>()
-        .expect("Invalid value for `exec_qty`");
+        .map_err(|e| anyhow::anyhow!("Invalid value for `exec_qty`: {e}"))?;
 
-    match coinbase_order.order_status {
+    let status = match coinbase_order.order_status {
         CoinbaseIntxOrderStatus::Working => {
             if exec_qty > Decimal::ZERO {
-                return OrderStatus::PartiallyFilled;
+                return Ok(OrderStatus::PartiallyFilled);
             }
 
             match coinbase_order.event_type {
@@ -243,7 +256,7 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> OrderStatus {
         }
         CoinbaseIntxOrderStatus::Done => {
             if exec_qty > Decimal::ZERO {
-                return OrderStatus::Filled;
+                return Ok(OrderStatus::Filled);
             }
 
             match coinbase_order.event_type {
@@ -261,33 +274,38 @@ fn parse_order_status(coinbase_order: &CoinbaseIntxOrder) -> OrderStatus {
                 }
             }
         }
-    }
+    };
+    Ok(status)
 }
 
-fn parse_price(value: &str, precision: u8) -> Price {
-    Price::new(
-        value.parse::<f64>().expect("Invalid value for `Price`"),
-        precision,
-    )
+fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
+    let v = value
+        .parse::<f64>()
+        .map_err(|e| anyhow::anyhow!("Invalid value for `Price`: {e}"))?;
+    Ok(Price::new(v, precision))
 }
 
-fn parse_quantity(value: &str, precision: u8) -> Quantity {
-    Quantity::new(
-        value.parse::<f64>().expect("Invalid value for `Quantity`"),
-        precision,
-    )
+fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
+    let v = value
+        .parse::<f64>()
+        .map_err(|e| anyhow::anyhow!("Invalid value for `Quantity`: {e}"))?;
+    Ok(Quantity::new(v, precision))
 }
 
-#[must_use]
+/// Parses an order status report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_order_status_report(
     coinbase_order: CoinbaseIntxOrder,
     account_id: AccountId,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> OrderStatusReport {
-    let filled_qty = parse_quantity(&coinbase_order.exec_qty, size_precision);
-    let order_status: OrderStatus = parse_order_status(&coinbase_order);
+) -> anyhow::Result<OrderStatusReport> {
+    let filled_qty = parse_quantity(&coinbase_order.exec_qty, size_precision)?;
+    let order_status: OrderStatus = parse_order_status(&coinbase_order)?;
 
     let instrument_id = parse_instrument_id(coinbase_order.symbol);
     let client_order_id = ClientOrderId::new(coinbase_order.client_order_id);
@@ -295,7 +313,7 @@ pub fn parse_order_status_report(
     let order_side: OrderSide = coinbase_order.side.into();
     let order_type: OrderType = coinbase_order.order_type.into();
     let time_in_force: TimeInForce = coinbase_order.tif.into();
-    let quantity = parse_quantity(&coinbase_order.size, size_precision);
+    let quantity = parse_quantity(&coinbase_order.size, size_precision)?;
     let ts_accepted = UnixNanos::from(coinbase_order.submit_time.unwrap_or_default());
     let ts_last = UnixNanos::from(coinbase_order.event_time.unwrap_or_default());
 
@@ -317,12 +335,12 @@ pub fn parse_order_status_report(
     );
 
     if let Some(price) = coinbase_order.price {
-        let price = parse_price(&price, price_precision);
+        let price = parse_price(&price, price_precision)?;
         report = report.with_price(price);
     }
 
     if let Some(stop_price) = coinbase_order.stop_price {
-        let stop_price = parse_price(&stop_price, price_precision);
+        let stop_price = parse_price(&stop_price, price_precision)?;
         report = report.with_trigger_price(stop_price);
         report = report.with_trigger_type(TriggerType::Default); // TBD
     }
@@ -334,7 +352,7 @@ pub fn parse_order_status_report(
     if let Some(avg_price) = coinbase_order.avg_price {
         let avg_px = avg_price
             .parse::<f64>()
-            .expect("Invalid value for `avg_px`");
+            .map_err(|e| anyhow::anyhow!("Invalid value for `avg_px`: {e}"))?;
         report = report.with_avg_px(avg_px);
     }
 
@@ -345,24 +363,28 @@ pub fn parse_order_status_report(
     report = report.with_post_only(coinbase_order.post_only);
     report = report.with_reduce_only(coinbase_order.close_only);
 
-    report
+    Ok(report)
 }
 
-#[must_use]
+/// Parses a fill report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_fill_report(
     coinbase_fill: CoinbaseIntxFill,
     account_id: AccountId,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> anyhow::Result<FillReport> {
     let instrument_id = parse_instrument_id(coinbase_fill.symbol);
     let client_order_id = ClientOrderId::new(coinbase_fill.client_order_id);
     let venue_order_id = VenueOrderId::new(coinbase_fill.order_id);
     let trade_id = TradeId::from(coinbase_fill.fill_id);
     let order_side: OrderSide = coinbase_fill.side.into();
-    let last_px = parse_price(&coinbase_fill.fill_price, price_precision);
-    let last_qty = parse_quantity(&coinbase_fill.fill_qty, size_precision);
+    let last_px = parse_price(&coinbase_fill.fill_price, price_precision)?;
+    let last_qty = parse_quantity(&coinbase_fill.fill_qty, size_precision)?;
     let commission = Money::from(&format!(
         "{} {}",
         coinbase_fill.fee, coinbase_fill.fee_asset
@@ -370,7 +392,7 @@ pub fn parse_fill_report(
     let liquidity = LiquiditySide::Maker; // TBD
     let ts_event = UnixNanos::from(coinbase_fill.event_time);
 
-    FillReport::new(
+    Ok(FillReport::new(
         account_id,
         instrument_id,
         venue_order_id,
@@ -385,25 +407,29 @@ pub fn parse_fill_report(
         ts_event,
         ts_init,
         None, // Will generate a UUID4
-    )
+    ))
 }
 
-#[must_use]
+/// Parses a position status report from raw Coinbase REST data.
+///
+/// # Errors
+///
+/// Returns an error if any required field cannot be parsed.
 pub fn parse_position_status_report(
     coinbase_position: CoinbaseIntxPosition,
     account_id: AccountId,
     size_precision: u8,
     ts_init: UnixNanos,
-) -> PositionStatusReport {
+) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = parse_instrument_id(coinbase_position.symbol);
     let net_size = coinbase_position
         .net_size
         .parse::<f64>()
-        .expect("Invalid value for `net_size`");
+        .map_err(|e| anyhow::anyhow!("Invalid value for `net_size`: {e}"))?;
     let position_side = parse_position_side(Some(net_size));
     let quantity = Quantity::new(net_size.abs(), size_precision);
 
-    PositionStatusReport::new(
+    Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
         position_side,
@@ -412,7 +438,7 @@ pub fn parse_position_status_report(
         ts_init,
         ts_init,
         None, // Will generate a UUID4
-    )
+    ))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

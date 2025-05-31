@@ -27,12 +27,11 @@ use ustr::Ustr;
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
+/// Assumes `ptr` is borrowed from a valid Python UTF-8 `str`.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -43,12 +42,11 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -61,28 +59,33 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+/// - The returned slice is only valid while the original C string remains allocated.
+/// - Caller must ensure the C string outlives any usage of the returned slice.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
+///
+/// # Note
+///
+/// This function is designed for immediate consumption within FFI calls.
+/// Do not store the returned slice for use beyond the current function scope.
 #[must_use]
-pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
+pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> &'static [u8] {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     let cstr = unsafe { CStr::from_ptr(ptr) };
-    cstr.to_bytes().to_vec()
+    cstr.to_bytes()
 }
 
 /// Convert a C string pointer into an owned `Option<Ustr>`.
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer or NULL.
+/// Assumes `ptr` is a valid C string pointer or NULL.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     if ptr.is_null() {
@@ -92,16 +95,22 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     }
 }
 
-/// Convert a C string pointer into a static string slice.
+/// Convert a C string pointer into a string slice.
 ///
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+/// - The returned slice is only valid while the original C string remains allocated.
+/// - Caller must ensure the C string outlives any usage of the returned slice.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null or contains invalid UTF-8.
+///
+/// # Note
+///
+/// This function is designed for immediate consumption within FFI calls.
+/// Do not store the returned slice for use beyond the current function scope.
 #[must_use]
 pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -109,11 +118,22 @@ pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     cstr.to_str().expect("CStr::from_ptr failed")
 }
 
-/// Convert a C string pointer into an owned `Option<String>`.
+/// Convert a C string pointer into an `Option<&str>`.
 ///
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer or NULL.
+/// - The returned slice is only valid while the original C string remains allocated.
+/// - Caller must ensure the C string outlives any usage of the returned slice.
+///
+/// # Panics
+///
+/// Panics if `ptr` is not null but contains invalid UTF-8.
+///
+/// # Note
+///
+/// This function is designed for immediate consumption within FFI calls.
+/// Do not store the returned slice for use beyond the current function scope.
 #[must_use]
 pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     if ptr.is_null() {
@@ -123,7 +143,11 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     }
 }
 
-/// Create a C string pointer to newly allocated memory from a [&str].
+/// Create a C string pointer to newly allocated memory from a [`&str`].
+///
+/// # Panics
+///
+/// Panics if the input string contains interior null bytes.
 #[must_use]
 pub fn str_to_cstr(s: &str) -> *const c_char {
     CString::new(s).expect("CString::new failed").into_raw()
@@ -133,12 +157,11 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If `ptr` is null.
+/// Panics if `ptr` is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -151,6 +174,7 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "python")]
     use pyo3::types::PyString;
     use rstest::*;
 
@@ -169,7 +193,7 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_pystr_to_string_with_null_ptr() {
         // Create a null Python object pointer
         let ptr: *mut ffi::PyObject = std::ptr::null_mut();
@@ -198,7 +222,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_cstr_to_vec_with_null_ptr() {
         // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();

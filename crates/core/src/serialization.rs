@@ -49,7 +49,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// # Errors
     ///
     /// Returns serialization errors.
-    fn as_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
+    fn to_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
 
@@ -58,7 +58,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// # Errors
     ///
     /// Returns serialization errors.
-    fn as_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
+    fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self).map(Bytes::from)
     }
 }
@@ -77,11 +77,16 @@ impl Visitor<'_> for BoolVisitor {
         Ok(u8::from(value))
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        if value > u64::from(u8::MAX) {
+        // Only 0 or 1 are considered valid representations when provided as an
+        // integer. We deliberately reject values outside this range to avoid
+        // silently truncating larger integers into impl-defined boolean
+        // semantics.
+        if value > 1 {
             Err(E::invalid_value(Unexpected::Unsigned(value), &self))
         } else {
             Ok(value as u8)
@@ -131,5 +136,13 @@ mod tests {
     fn test_deserialize_bool_as_u8_with_u64(#[case] json_str: &str, #[case] expected: u8) {
         let test_struct: TestStruct = serde_json::from_str(json_str).unwrap();
         assert_eq!(test_struct.value, expected);
+    }
+
+    #[rstest]
+    fn test_deserialize_bool_as_u8_with_invalid_integer() {
+        // Any integer other than 0/1 is invalid and should error
+        let json = r#"{"value": 2}"#;
+        let result: Result<TestStruct, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 }

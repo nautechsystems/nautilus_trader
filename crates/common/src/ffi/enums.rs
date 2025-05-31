@@ -28,7 +28,11 @@ pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_cha
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
     let value = unsafe { cstr_as_str(ptr) };
@@ -45,7 +49,11 @@ pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
     let value = unsafe { cstr_as_str(ptr) };
@@ -62,7 +70,11 @@ pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
     let value = unsafe { cstr_as_str(ptr) };
@@ -79,7 +91,11 @@ pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the input C string does not match a valid enum variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn log_color_from_cstr(ptr: *const c_char) -> LogColor {
     let value = unsafe { cstr_as_str(ptr) };

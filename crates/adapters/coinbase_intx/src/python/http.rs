@@ -66,12 +66,18 @@ impl CoinbaseIntxHttpClient {
         self.get_cached_symbols()
     }
 
+    /// # Errors
+    ///
+    /// Returns a Python exception if adding the instrument to the cache fails.
     #[pyo3(name = "add_instrument")]
     pub fn py_add_instrument(&mut self, py: Python<'_>, instrument: PyObject) -> PyResult<()> {
         self.add_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
     }
 
+    /// # Errors
+    ///
+    /// Returns a Python exception if retrieving or serializing portfolios fails.
     #[pyo3(name = "list_portfolios")]
     pub fn py_list_portfolios<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();

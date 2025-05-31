@@ -10,11 +10,42 @@ The test suite is divided into broad categories of tests including:
 
 The performance tests exist to aid development of performance-critical components.
 
-Tests can be run using [Pytest](https://docs.pytest.org).
+Tests can be run using [pytest](https://docs.pytest.org), which is our primary test runner. We recommend using parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid repetitive code and improve clarity.
 
-If you’re using PyCharm then tests should run directly by right clicking on the respective folder (or top-level tests folder) and clicking ‘Run pytest’.
+## Running Tests
 
-Alternatively you can use the `pytest` command from the root level tests directory, or the other subdirectories.
+### Python Tests
+
+From the repository root:
+
+```bash
+make pytest
+# or
+uv run --active --no-sync pytest --new-first --failed-first
+# or simply
+pytest
+```
+
+For performance tests:
+
+```bash
+make test-performance
+# or
+uv run --active --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+```
+
+### Rust Tests
+
+```bash
+make cargo-test
+# or
+cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+```
+
+### IDE Integration
+
+- **PyCharm**: Right-click on tests folder or file → "Run pytest"
+- **VS Code**: Use the Python Test Explorer extension
 
 ## Mocks
 

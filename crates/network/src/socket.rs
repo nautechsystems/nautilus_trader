@@ -29,6 +29,7 @@
 //! - Controller task manages lifecycle
 
 use std::{
+    fmt::Debug,
     path::Path,
     sync::{
         Arc,
@@ -52,7 +53,9 @@ use tokio_tungstenite::{
 
 use crate::{
     backoff::ExponentialBackoff,
+    error::SendError,
     fix::process_fix_buffer,
+    logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::ConnectionMode,
     tls::{Connector, create_tls_config_from_certs_dir, tcp_tls},
 };
@@ -102,7 +105,7 @@ pub enum WriterCommand {
     Send(Bytes),
 }
 
-/// Creates a TcpStream with the server.
+/// Creates a `TcpStream` with the server.
 ///
 /// The stream can be encrypted with TLS or Plain. The stream is split into
 /// read and write ends:
@@ -197,7 +200,7 @@ impl SocketClientInner {
             reconnect_backoff_factor.unwrap_or(1.5),
             reconnect_jitter_ms.unwrap_or(100),
             true, // immediate-first
-        );
+        )?;
 
         Ok(Self {
             config,
@@ -243,6 +246,11 @@ impl SocketClientInner {
     async fn reconnect(&mut self) -> Result<(), Error> {
         tracing::debug!("Reconnecting");
 
+        if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+            tracing::debug!("Reconnect aborted due to disconnect state");
+            return Ok(());
+        }
+
         tokio::time::timeout(self.reconnect_timeout, async {
             let SocketConfig {
                 url,
@@ -260,7 +268,13 @@ impl SocketClientInner {
             } = &self.config;
             // Create a fresh connection
             let connector = self.connector.clone();
+            // Attempt to connect; abort early if a disconnect was requested
             let (reader, new_writer) = Self::tls_connect_with_server(url, *mode, connector).await?;
+
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after connect)");
+                return Ok(());
+            }
             tracing::debug!("Connected");
 
             if let Err(e) = self.writer_tx.send(WriterCommand::Update(new_writer)) {
@@ -270,11 +284,23 @@ impl SocketClientInner {
             // Delay before closing connection
             tokio::time::sleep(Duration::from_millis(100)).await;
 
-            if !self.read_task.is_finished() {
-                self.read_task.abort();
-                tracing::debug!("Aborted task 'read'");
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (after delay)");
+                return Ok(());
             }
 
+            if !self.read_task.is_finished() {
+                self.read_task.abort();
+                log_task_aborted("read");
+            }
+
+            // If a disconnect was requested during reconnect, do not proceed to reactivate
+            if ConnectionMode::from_atomic(&self.connection_mode).is_disconnect() {
+                tracing::debug!("Reconnect aborted mid-flight (before spawn read)");
+                return Ok(());
+            }
+
+            // Mark as active only if not disconnecting
             self.connection_mode
                 .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
 
@@ -323,7 +349,7 @@ impl SocketClientInner {
         #[cfg(feature = "python")] py_handler: Option<Arc<PyObject>>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'read'");
+        log_task_started("read");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -384,7 +410,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'read'");
+            log_task_stopped("read");
         })
     }
 
@@ -394,7 +420,7 @@ impl SocketClientInner {
         mut writer_rx: tokio::sync::mpsc::UnboundedReceiver<WriterCommand>,
         suffix: Vec<u8>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'write'");
+        log_task_started("write");
 
         // Interval between checking the connection mode
         let check_interval = Duration::from_millis(10);
@@ -467,7 +493,7 @@ impl SocketClientInner {
             // we ignore any error as the writer may already be closed.
             _ = active_writer.shutdown().await;
 
-            tracing::debug!("Completed task 'write'");
+            log_task_stopped("write");
         })
     }
 
@@ -476,7 +502,7 @@ impl SocketClientInner {
         heartbeat: (u64, Vec<u8>),
         writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     ) -> tokio::task::JoinHandle<()> {
-        tracing::debug!("Started task 'heartbeat'");
+        log_task_started("heartbeat");
         let (interval_secs, message) = heartbeat;
 
         tokio::task::spawn(async move {
@@ -501,7 +527,7 @@ impl SocketClientInner {
                 }
             }
 
-            tracing::debug!("Completed task 'heartbeat'");
+            log_task_stopped("heartbeat");
         })
     }
 }
@@ -510,18 +536,18 @@ impl Drop for SocketClientInner {
     fn drop(&mut self) {
         if !self.read_task.is_finished() {
             self.read_task.abort();
-            tracing::debug!("Aborted task 'read'");
+            log_task_aborted("read");
         }
 
         if !self.write_task.is_finished() {
             self.write_task.abort();
-            tracing::debug!("Aborted task 'write'");
+            log_task_aborted("write");
         }
 
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
-                tracing::debug!("Aborted task 'heartbeat'");
+                log_task_aborted("heartbeat");
             }
         }
     }
@@ -535,6 +561,12 @@ pub struct SocketClient {
     pub(crate) controller_task: tokio::task::JoinHandle<()>,
     pub(crate) connection_mode: Arc<AtomicU8>,
     pub writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
+}
+
+impl Debug for SocketClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(SocketClient)).finish()
+    }
 }
 
 impl SocketClient {
@@ -639,13 +671,13 @@ impl SocketClient {
 
             if !self.controller_task.is_finished() {
                 self.controller_task.abort();
-                tracing::debug!("Aborted controller task");
+                log_task_aborted("controller");
             }
         })
         .await
         {
             Ok(()) => {
-                tracing::debug!("Controller task finished");
+                log_task_stopped("controller");
             }
             Err(_) => {
                 tracing::error!("Timeout waiting for controller task to finish");
@@ -657,59 +689,41 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns any I/O error.
-    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), std::io::Error> {
+    /// Returns an error if sending fails.
+    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         if self.is_closed() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
-                "Not connected",
-            ));
+            return Err(SendError::Closed);
         }
 
         let timeout = Duration::from_secs(2);
         let check_interval = Duration::from_millis(1);
 
         if !self.is_active() {
-            tracing::debug!("Waiting for client to become ACTIVE before sending (2s)...");
-            match tokio::time::timeout(timeout, async {
-                while !self.is_active() {
+            tracing::debug!("Waiting for client to become ACTIVE before sending...");
+
+            let inner = tokio::time::timeout(timeout, async {
+                loop {
+                    if self.is_active() {
+                        return Ok(());
+                    }
                     if matches!(
                         self.connection_mode(),
                         ConnectionMode::Disconnect | ConnectionMode::Closed
                     ) {
-                        return Err("Client disconnected waiting to send");
+                        return Err(());
                     }
-
                     tokio::time::sleep(check_interval).await;
                 }
-
-                Ok(())
             })
             .await
-            {
-                Ok(Ok(())) => tracing::debug!("Client now active"),
-                Ok(Err(e)) => {
-                    tracing::error!(
-                        "Failed to send data ({}): {e}",
-                        String::from_utf8_lossy(&data)
-                    );
-                    return Ok(());
-                }
-                Err(_) => {
-                    tracing::error!(
-                        "Failed to send data ({}): timeout waiting to become ACTIVE",
-                        String::from_utf8_lossy(&data)
-                    );
-                    return Ok(());
-                }
-            }
+            .map_err(|_| SendError::Timeout)?;
+            inner.map_err(|()| SendError::Closed)?;
         }
 
         let msg = WriterCommand::Send(data.into());
-        if let Err(e) = self.writer_tx.send(msg) {
-            tracing::error!("{e}");
-        }
-        Ok(())
+        self.writer_tx
+            .send(msg)
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))
     }
 
     fn spawn_controller_task(
@@ -719,7 +733,7 @@ impl SocketClient {
         #[cfg(feature = "python")] post_disconnection: Option<PyObject>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::task::spawn(async move {
-            tracing::debug!("Started task 'controller'");
+            log_task_started("controller");
 
             let check_interval = Duration::from_millis(10);
 
@@ -737,13 +751,13 @@ impl SocketClient {
 
                         if !inner.read_task.is_finished() {
                             inner.read_task.abort();
-                            tracing::debug!("Aborted task 'read'");
+                            log_task_aborted("read");
                         }
 
                         if let Some(task) = &inner.heartbeat_task {
                             if !task.is_finished() {
                                 task.abort();
-                                tracing::debug!("Aborted task 'heartbeat'");
+                                log_task_aborted("heartbeat");
                             }
                         }
                     })
@@ -772,17 +786,25 @@ impl SocketClient {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
                             inner.backoff.reset();
-
+                            // Only invoke Python reconnect handler if still active
                             #[cfg(feature = "python")]
-                            if let Some(ref handler) = post_reconnection {
-                                Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => {
-                                        tracing::debug!("Called `post_reconnection` handler");
+                            {
+                                if ConnectionMode::from_atomic(&connection_mode).is_active() {
+                                    if let Some(ref handler) = post_reconnection {
+                                        Python::with_gil(|py| match handler.call0(py) {
+                                            Ok(_) => tracing::debug!(
+                                                "Called `post_reconnection` handler"
+                                            ),
+                                            Err(e) => tracing::error!(
+                                                "Error calling `post_reconnection` handler: {e}"
+                                            ),
+                                        });
                                     }
-                                    Err(e) => tracing::error!(
-                                        "Error calling `post_reconnection` handler: {e}"
-                                    ),
-                                });
+                                } else {
+                                    tracing::debug!(
+                                        "Skipping post_reconnection handlers due to disconnect state"
+                                    );
+                                }
                             }
                         }
                         Err(e) => {
@@ -800,8 +822,18 @@ impl SocketClient {
                 .connection_mode
                 .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
 
-            tracing::debug!("Completed task 'controller'");
+            log_task_stopped("controller");
         })
+    }
+}
+
+// Abort controller task on drop to clean up background tasks
+impl Drop for SocketClient {
+    fn drop(&mut self) {
+        if !self.controller_task.is_finished() {
+            self.controller_task.abort();
+            log_task_aborted("controller");
+        }
     }
 }
 
@@ -1194,5 +1226,70 @@ def handler(bytes_data):
 
         client.close().await;
         server_task.abort();
+    }
+}
+
+#[cfg(test)]
+mod rust_tests {
+    use tokio::{
+        net::TcpListener,
+        task,
+        time::{Duration, sleep},
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_reconnect_then_close() {
+        // Bind an ephemeral port
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        // Server task: accept one connection and then drop it
+        let server = task::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let _ = sock.shutdown();
+            }
+            // Keep listener alive briefly to avoid premature exit
+            sleep(Duration::from_secs(1)).await;
+        });
+
+        // Configure client with a short reconnect backoff
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{port}"),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            #[cfg(feature = "python")]
+            py_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(100),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            certs_dir: None,
+        };
+
+        // Connect client (handler=None)
+        let client = {
+            #[cfg(feature = "python")]
+            {
+                SocketClient::connect(config.clone(), None, None, None, None)
+                    .await
+                    .unwrap()
+            }
+            #[cfg(not(feature = "python"))]
+            {
+                SocketClient::connect(config.clone(), None).await.unwrap()
+            }
+        };
+
+        // Allow server to drop connection and client to notice
+        sleep(Duration::from_millis(100)).await;
+
+        // Now close the client
+        client.close().await;
+        assert!(client.is_closed());
+        server.abort();
     }
 }

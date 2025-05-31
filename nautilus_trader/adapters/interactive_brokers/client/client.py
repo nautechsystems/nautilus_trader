@@ -180,11 +180,13 @@ class InteractiveBrokersClient(
                     self._log.error("Max connection attempts reached, connection failed")
                     self._stop()
                     break
+
                 if self._connection_attempts > 1:
                     self._log.info(
                         f"Attempt {self._connection_attempts}: attempting to reconnect in {self._reconnect_delay} seconds...",
                     )
                     await asyncio.sleep(self._reconnect_delay)
+
                 await self._connect()
                 self._start_tws_incoming_msg_reader()
                 self._start_internal_msg_queue_processor()
@@ -199,6 +201,7 @@ class InteractiveBrokersClient(
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
+
         self._is_client_ready.set()
         self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
         self._connection_attempts = 0
@@ -209,6 +212,7 @@ class InteractiveBrokersClient(
         """
         if self._tws_incoming_msg_reader_task:
             self._tws_incoming_msg_reader_task.cancel()
+
         self._tws_incoming_msg_reader_task = self._create_task(
             self._run_tws_incoming_msg_reader(),
         )
@@ -219,11 +223,14 @@ class InteractiveBrokersClient(
         """
         if self._internal_msg_queue_processor_task:
             self._internal_msg_queue_processor_task.cancel()
+
         self._internal_msg_queue_processor_task = self._create_task(
             self._run_internal_msg_queue_processor(),
         )
+
         if self._msg_handler_processor_task:
             self._msg_handler_processor_task.cancel()
+
         self._msg_handler_processor_task = self._create_task(
             self._run_msg_handler_processor(),
         )
@@ -234,6 +241,7 @@ class InteractiveBrokersClient(
         """
         if self._connection_watchdog_task:
             self._connection_watchdog_task.cancel()
+
         self._connection_watchdog_task = self._create_task(
             self._run_connection_watchdog(),
         )
@@ -315,6 +323,7 @@ class InteractiveBrokersClient(
 
         for subscription in self._subscriptions.get_all():
             self._log.info(f"Resubscribing to {subscription.name} subscription...")
+
             try:
                 if iscoroutinefunction(subscription.handle):
                     await subscription.handle()
@@ -351,6 +360,7 @@ class InteractiveBrokersClient(
         try:
             while True:
                 await asyncio.sleep(1)
+
                 if not self._is_ib_connected.is_set() or not self._eclient.isConnected():
                     self._log.error(
                         "Connection watchdog detects connection lost.",
@@ -365,9 +375,11 @@ class InteractiveBrokersClient(
         """
         if self.is_running:
             self._degrade()
+
         if self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
             self._is_ib_connected.clear()
+
         await asyncio.sleep(5)
         await self._handle_reconnect()
 
@@ -506,10 +518,12 @@ class InteractiveBrokersClient(
             msg = f"Request timed out for {request}. Ending request."
             self._log.debug(msg) if supress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
+
             return default_value
         except ConnectionError as e:
             self._log.error(f"Connection error during {request}. Ending request.")
             self._end_request(request.req_id, success=False, exception=e)
+
             return default_value
 
     def _end_request(
@@ -541,6 +555,7 @@ class InteractiveBrokersClient(
                 request.cancel()
                 if exception:
                     request.future.set_exception(exception)
+
         self._requests.remove(req_id=req_id)
 
     async def _run_tws_incoming_msg_reader(self) -> None:
@@ -550,13 +565,16 @@ class InteractiveBrokersClient(
         """
         self._log.debug("Client TWS incoming message reader started.")
         buf = b""
+
         try:
             while self._eclient.conn and self._eclient.conn.isConnected():
                 data = await asyncio.to_thread(self._eclient.conn.recvMsg)
                 buf += data
+
                 while buf:
                     _, msg, buf = comm.read_msg(buf)
                     self._log.debug(f"Msg buffer received: {buf!s}")
+
                     if msg:
                         # Place msg in the internal queue for processing
                         self._loop.call_soon_threadsafe(self._internal_msg_queue.put_nowait, msg)
@@ -574,6 +592,7 @@ class InteractiveBrokersClient(
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
+
             self._log.debug("Client TWS incoming message reader stopped.")
 
     async def _run_internal_msg_queue_processor(self) -> None:
@@ -588,8 +607,10 @@ class InteractiveBrokersClient(
                 self._eclient.conn and self._eclient.conn.isConnected()
             ) or not self._internal_msg_queue.empty():
                 msg = await self._internal_msg_queue.get()
+
                 if not await self._process_message(msg):
                     break
+
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Internal message queue processing was cancelled. (qsize={self._internal_msg_queue.qsize()})."
@@ -623,7 +644,9 @@ class InteractiveBrokersClient(
                 error_code=BAD_LENGTH.code(),
                 error_string=f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
             )
+
             return False
+
         fields: tuple[bytes] = comm.read_fields(msg)
         self._log.debug(f"Msg received: {msg}")
         self._log.debug(f"Msg received fields: {fields}")
@@ -633,6 +656,7 @@ class InteractiveBrokersClient(
         # method from the EWrapper. Many of those methods are overridden in the client
         # manager and handler classes to support custom processing required for Nautilus.
         await asyncio.to_thread(self._eclient.decoder.interpret, fields)
+
         return True
 
     async def _run_msg_handler_processor(self):
@@ -694,6 +718,7 @@ class InteractiveBrokersClient(
         """
         new_id = self._request_id_seq
         self._request_id_seq += 1
+
         return new_id
 
     # -- EClient overrides ------------------------------------------------------------------------
@@ -715,4 +740,5 @@ class InteractiveBrokersClient(
             del prms["self"]
         else:
             prms = fnParams
+
         self._log.debug(f"TWS API prepared request: function={fnName} data={prms}")

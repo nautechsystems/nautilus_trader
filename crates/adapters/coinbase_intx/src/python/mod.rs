@@ -21,8 +21,11 @@ pub mod websocket;
 
 use pyo3::prelude::*;
 
-/// Loaded as nautilus_pyo3.coinbase
+/// Loaded as `nautilus_pyo3.coinbase`
 #[pymodule]
+/// # Errors
+///
+/// Returns a Python exception if module initialization fails.
 pub fn coinbase_intx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::http::CoinbaseIntxHttpClient>()?;
     m.add_class::<super::websocket::CoinbaseIntxWebSocketClient>()?;

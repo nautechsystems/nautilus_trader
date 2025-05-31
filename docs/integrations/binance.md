@@ -7,35 +7,44 @@ execution with Binance.
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `binance` dependencies using pip:
+To install NautilusTrader with Binance support:
 
-```
-pip install -U "nautilus_trader[binance]"
+```bash
+pip install --upgrade "nautilus_trader[binance]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Binance):
 
-```
-uv sync --extra binance
+```bash
+uv sync --all-extras
 ```
 
 ## Examples
 
-You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/binance/).
 
 ## Overview
 
-The Binance integration supports the following product types:
+The Binance adapter supports the following product types:
 
 - Spot markets (including Binance US)
-- USDT-Margined Futures
+- USDT-Margined Futures (perpetual and delivery)
 - Coin-Margined Futures
 
 :::note
-Margin accounts are not fully supported at this time due to limited developer testing.
-Contributions via [GitHub issue](https://github.com/nautechsystems/nautilus_trader/issues) reports
-or pull requests to enhance margin account functionality are encouraged.
+Margin trading (cross & isolated) is not implemented at this time.
+Contributions via [GitHub issue #2631](https://github.com/nautechsystems/nautilus_trader/issues/#2631)
+or pull requests to add margin trading functionality are welcome.
 :::
+
+### Product Support Matrix
+
+| Product Type                             | Supported | Notes                               |
+|------------------------------------------|-----------|-------------------------------------|
+| Spot Markets (incl. Binance US)          | ✓         |                                     |
+| Margin Accounts (Cross & Isolated)       | ✗         | Margin trading not implemented      |
+| USDT-Margined Futures (PERP & Delivery)  | ✓         |                                     |
+| Coin-Margined Futures                    | ✓         |                                     |
 
 This guide assumes a trader is setting up for both live market data feeds, and trade execution.
 The Binance adapter includes multiple components, which can be used together or separately depending
@@ -75,34 +84,88 @@ pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for *bot
 Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
 E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
 
-## Order types
+## Capability Matrix
 
-|                        | Spot                            | Margin                          | Futures           |
-|------------------------|---------------------------------|---------------------------------|-------------------|
-| `MARKET`               | ✓                               | ✓                               | ✓                 |
-| `LIMIT`                | ✓                               | ✓                               | ✓                 |
-| `STOP_MARKET`          | Not supported                   | ✓                               | ✓                 |
-| `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
-| `MARKET_IF_TOUCHED`    | Not supported                   | Not supported                   | ✓                 |
-| `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
-| `TRAILING_STOP_MARKET` | Not supported                   | Not supported                   | ✓                 |
+The following tables detail the order types, execution instructions, and time-in-force options supported across different Binance account types:
+
+### Order Types
+
+| Order Type             | Spot | Margin | USDT Futures | Coin Futures | Notes                   |
+|------------------------|------|--------|--------------|--------------|-------------------------|
+| `MARKET`               | ✓    | ✓      | ✓            | ✓            |                         |
+| `LIMIT`                | ✓    | ✓      | ✓            | ✓            |                         |
+| `STOP_MARKET`          | -    | ✓      | ✓            | ✓            | Not supported for Spot. |
+| `STOP_LIMIT`           | ✓    | ✓      | ✓            | ✓            |                         |
+| `MARKET_IF_TOUCHED`    | -    | -      | ✓            | ✓            | Futures only.           |
+| `LIMIT_IF_TOUCHED`     | ✓    | ✓      | ✓            | ✓            |                         |
+| `TRAILING_STOP_MARKET` | -    | -      | ✓            | ✓            | Futures only.           |
+
+### Execution Instructions
+
+| Instruction   | Spot | Margin | USDT Futures | Coin Futures | Notes                                 |
+|---------------|------|--------|--------------|--------------|---------------------------------------|
+| `post_only`   | ✓    | ✓      | ✓            | ✓            | See restrictions below.               |
+| `reduce_only` | -    | -      | ✓            | ✓            | Futures only; disabled in Hedge Mode. |
+
+#### Post-Only Restrictions
+
+Only *limit* order types support `post_only`.
+
+| Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                                      |
+|--------------------------|------|--------|--------------|--------------|------------------------------------------------------------|
+| `LIMIT`                  | ✓    | ✓      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot/Margin, `GTX` TIF for Futures. |
+| `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Not supported for Spot/Margin.                             |
+
+### Time-in-Force Options
+
+| Time-in-Force | Spot | Margin | USDT Futures | Coin Futures | Notes                                           |
+|---------------|------|--------|--------------|--------------|-------------------------------------------------|
+| `GTC`         | ✓    | ✓      | ✓            | ✓            | Good Till Canceled.                             |
+| `GTD`         | ✓*   | ✓*     | ✓            | ✓            | *Converted to GTC for Spot/Margin with warning. |
+| `FOK`         | ✓    | ✓      | ✓            | ✓            | Fill or Kill.                                   |
+| `IOC`         | ✓    | ✓      | ✓            | ✓            | Immediate or Cancel.                            |
+
+### Advanced order features
+
+| Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+|--------------------|------|--------|--------------|--------------|----------------------------------------------|
+| Order Modification | ✓    | ✓      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
+| Bracket/OCO Orders | ✓    | ✓      | ✓            | ✓            | One-Cancels-Other for stop loss/take profit. |
+| Iceberg Orders     | ✓    | ✓      | ✓            | ✓            | Large orders split into visible portions.    |
+
+### Configuration options
+
+The following execution client configuration options affect order behavior:
+
+| Option                       | Default | Description                                          |
+|------------------------------|---------|------------------------------------------------------|
+| `use_gtd`                    | `True`  | If `True`, uses Binance GTD TIF; if `False`, remaps GTD to GTC for local management. |
+| `use_reduce_only`            | `True`  | If `True`, sends `reduce_only` instruction to exchange; if `False`, always sends `False`. |
+| `use_position_ids`           | `True`  | If `True`, uses Binance Futures hedging position IDs; if `False`, enables virtual positions. |
+| `treat_expired_as_canceled`  | `False` | If `True`, treats `EXPIRED` execution type as `CANCELED` for consistent handling. |
+| `futures_leverages`          | `None`  | Dict to set initial leverage per symbol for Futures accounts. |
+| `futures_margin_types`       | `None`  | Dict to set margin type (isolated/cross) per symbol for Futures accounts. |
 
 ### Trailing stops
 
 Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en/support/faq/what-is-a-trailing-stop-order-360042299292).
-This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price can optionally be set using the `trigger_price` value.
+This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price should be set using the `activation_price` parameter.
 
 Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
-The activated price is simply the price at which the order will begin trailing based on the callback rate.
+The activation price is simply the price at which the order will begin trailing based on the callback rate.
+
+:::warning
+For Binance trailing stop orders, you must use `activation_price` instead of `trigger_price`. Using `trigger_price` will result in an order rejection.
+:::
 
 When submitting trailing stop orders from your strategy, you have two options:
 
-1. Use the `trigger_price` to manually set the activation price.
-2. Leave the `trigger_price` as `None`, activating the trailing mechanism immediately.
+1. Use the `activation_price` to manually set the activation price.
+2. Leave the `activation_price` as `None`, activating the trailing mechanism immediately.
 
 You must also have at least *one* of the following:
 
-- The `trigger_price` for the order is set (this will act as the Binance *activation_price*).
+- The `activation_price` for the order is set.
 - (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
 - (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
@@ -113,12 +176,13 @@ data and execution clients. To achieve this, add a `BINANCE` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.live.node import TradingNode
 
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -128,7 +192,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_API_KEY",
             "api_secret": "YOUR_BINANCE_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future, coin_future}
@@ -143,16 +207,17 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
-from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.adapters.binance import BINANCE
+from nautilus_trader.adapters.binance import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance import BinanceLiveExecClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
 # Register the client factories with the node
-node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
-node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
+node.add_data_client_factory(BINANCE, BinanceLiveDataClientFactory)
+node.add_exec_client_factory(BINANCE, BinanceLiveExecClientFactory)
 
 # Finally build the node
 node.build()
@@ -220,10 +285,12 @@ It's also possible to configure one or both clients to connect to the Binance te
 Simply set the `testnet` option to `True` (this is `False` by default):
 
 ```python
+from nautilus_trader.adapters.binance import BINANCE
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -231,7 +298,7 @@ config = TradingNodeConfig(
         },
     },
     exec_clients={
-        "BINANCE": {
+        BINANCE: {
             "api_key": "YOUR_BINANCE_TESTNET_API_KEY",
             "api_secret": "YOUR_BINANCE_TESTNET_API_SECRET",
             "account_type": "spot",  # {spot, margin, usdt_future}
@@ -281,10 +348,12 @@ To use Binance Future Hedge mode, you need to follow the three items below:
 - 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
 
     ```python
+    from nautilus_trader.adapters.binance import BINANCE
+
     config = TradingNodeConfig(
         ...,  # Omitted
         data_clients={
-            "BINANCE": BinanceDataClientConfig(
+            BINANCE: BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -293,7 +362,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
             ),
         },
         exec_clients={
-            "BINANCE": BinanceExecClientConfig(
+            BINANCE: BinanceExecClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var
                 api_secret=None,  # 'BINANCE_API_SECRET' env var
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -394,7 +463,7 @@ You can subscribe to `BinanceFuturesMarkPriceUpdate` (including funding rating i
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
-from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.adapters.binance import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.model import DataType
 from nautilus_trader.model import ClientId
 

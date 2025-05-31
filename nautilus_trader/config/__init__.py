@@ -23,7 +23,18 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.config import FeeModelFactory
+from nautilus_trader.backtest.config import FillModelConfig
+from nautilus_trader.backtest.config import FillModelFactory
+from nautilus_trader.backtest.config import FixedFeeModelConfig
 from nautilus_trader.backtest.config import FXRolloverInterestConfig
+from nautilus_trader.backtest.config import ImportableFeeModelConfig
+from nautilus_trader.backtest.config import ImportableFillModelConfig
+from nautilus_trader.backtest.config import ImportableLatencyModelConfig
+from nautilus_trader.backtest.config import LatencyModelConfig
+from nautilus_trader.backtest.config import LatencyModelFactory
+from nautilus_trader.backtest.config import MakerTakerFeeModelConfig
+from nautilus_trader.backtest.config import PerContractFeeModelConfig
 from nautilus_trader.backtest.config import SimulationModuleConfig
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import ActorConfig
@@ -90,25 +101,36 @@ __all__ = [
     "ExecAlgorithmFactory",
     "ExecEngineConfig",
     "FXRolloverInterestConfig",
+    "FeeModelFactory",
+    "FillModelConfig",
+    "FillModelFactory",
+    "FixedFeeModelConfig",
     "ImportableActorConfig",
     "ImportableConfig",
     "ImportableControllerConfig",
     "ImportableExecAlgorithmConfig",
+    "ImportableFeeModelConfig",
+    "ImportableFillModelConfig",
+    "ImportableLatencyModelConfig",
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
     "InvalidConfiguration",
+    "LatencyModelConfig",
+    "LatencyModelFactory",
     "LiveDataClientConfig",
     "LiveDataEngineConfig",
     "LiveExecClientConfig",
     "LiveExecEngineConfig",
     "LiveRiskEngineConfig",
     "LoggingConfig",
+    "MakerTakerFeeModelConfig",
     "MessageBusConfig",
     "NautilusConfig",
     "NautilusKernelConfig",
     "NonNegativeFloat",
     "NonNegativeInt",
     "OrderEmulatorConfig",
+    "PerContractFeeModelConfig",
     "PortfolioConfig",
     "PositiveFloat",
     "PositiveInt",

@@ -82,8 +82,8 @@ class BinanceFuturesMarginType(Enum):
     Represents a Binance Futures margin type.
     """
 
-    ISOLATED = "isolated"
-    CROSS = "cross"
+    ISOLATED = "ISOLATED"
+    CROSS = "CROSSED"
 
 
 @unique
@@ -123,6 +123,9 @@ class BinanceFuturesEventType(Enum):
     ORDER_TRADE_UPDATE = "ORDER_TRADE_UPDATE"
     ACCOUNT_CONFIG_UPDATE = "ACCOUNT_CONFIG_UPDATE"
     TRADE_LITE = "TRADE_LITE"
+    STRATEGY_UPDATE = "STRATEGY_UPDATE"
+    GRID_UPDATE = "GRID_UPDATE"
+    CONDITIONAL_ORDER_TRIGGER_REJECT = "CONDITIONAL_ORDER_TRIGGER_REJECT"
 
 
 class BinanceFuturesEnumParser(BinanceEnumParser):

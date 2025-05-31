@@ -150,6 +150,10 @@ impl<T, F> Throttler<T, F> {
     /// Typically used to register callbacks:
     /// - to process buffered messages
     /// - to stop buffering
+    ///
+    /// # Panics
+    ///
+    /// Panics if setting the time alert on the internal clock fails.
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
@@ -221,7 +225,7 @@ where
         // Register process endpoint
         let process_handler = ThrottlerProcess::<T, F>::new(self.actor_id);
         msgbus::register(
-            process_handler.id().as_str(),
+            process_handler.id().as_str().into(),
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
         );
 
@@ -304,9 +308,9 @@ impl<T, F> ThrottlerProcess<T, F> {
     }
 
     pub fn get_timer_callback(&self) -> TimeEventCallback {
-        let endpoint_clone = self.endpoint;
+        let endpoint = self.endpoint.into(); // TODO: Optimize this
         let process_callback = Rc::new(move |_event: TimeEvent| {
-            msgbus::send(&endpoint_clone, &());
+            msgbus::send(endpoint, &());
         });
         TimeEventCallback::Rust(process_callback)
     }
@@ -332,10 +336,11 @@ where
             if !throttler.buffer.is_empty() && throttler.delta_next() > 0 {
                 throttler.is_limiting = true;
 
-                let endpoint_clone = self.endpoint;
+                let endpoint = self.endpoint.into(); // TODO: Optimize this
+
                 // Send message to throttler process endpoint to resume
                 let process_callback = Rc::new(move |_event: TimeEvent| {
-                    msgbus::send(&endpoint_clone, &());
+                    msgbus::send(endpoint, &());
                 });
                 throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
                 return;
@@ -393,6 +398,7 @@ mod tests {
         interval: u64,
     }
 
+    #[allow(unsafe_code)]
     impl TestThrottler {
         #[allow(clippy::mut_from_ref)]
         pub fn get_throttler(&self) -> &mut Throttler<u64, Box<dyn Fn(u64)>> {
@@ -807,6 +813,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(unsafe_code)]
     fn prop_test() {
         let test_throttler = test_throttler_buffered();
 

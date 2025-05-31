@@ -168,7 +168,7 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Records a trade's `PnL`.
+    /// Records a trade's PnL.
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
@@ -183,7 +183,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
-    /// Retrieves realized `PnLs` for a specific currency.
+    /// Retrieves realized PnLs for a specific currency.
     #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
@@ -193,7 +193,14 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
-    /// Calculates total `PnL` including unrealized `PnL` if provided.
+    /// Calculates total PnL including unrealized PnL if provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -228,7 +235,14 @@ impl PortfolioAnalyzer {
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
-    /// Calculates total `PnL` as a percentage of starting balance.
+    /// Calculates total PnL as a percentage of starting balance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -272,6 +286,14 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets all PnL-related performance statistics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL calculations fail, for example due to:
+    ///
+    /// - No currency specified for a multi-currency portfolio.
+    /// - Unrealized PnL currency not matching the specified currency.
+    /// - Specified currency not found in account balances.
     pub fn get_performance_stats_pnls(
         &self,
         currency: Option<&Currency>,
@@ -337,7 +359,11 @@ impl PortfolioAnalyzer {
         self.statistics.keys().map(String::len).max().unwrap_or(0)
     }
 
-    /// Gets formatted `PnL` statistics as strings.
+    /// Gets formatted PnL statistics as strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL statistics calculation fails.
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,
@@ -579,6 +605,10 @@ mod tests {
 
         fn balance(&self, _: Option<Currency>) -> Option<&AccountBalance> {
             todo!()
+        }
+
+        fn purge_account_events(&mut self, _: UnixNanos, _: u64) {
+            // MockAccount doesn't need purging
         }
     }
 

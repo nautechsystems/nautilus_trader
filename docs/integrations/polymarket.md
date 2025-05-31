@@ -13,21 +13,21 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `polymarket` dependencies using pip:
+To install NautilusTrader with Polymarket support:
 
-```
-pip install -U "nautilus_trader[polymarket]"
+```bash
+pip install --upgrade "nautilus_trader[polymarket]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including Polymarket):
 
-```
-uv sync --extra polymarket
+```bash
+uv sync --all-extras
 ```
 
 ## Examples
 
-You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
 
 ## Binary options
 
@@ -99,7 +99,7 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 
-- Install the web3 Python package: `pip install -U web3==5.28`
+- Install the web3 Python package: `pip install --upgrade web3==5.28`
 - Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
   - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
@@ -183,18 +183,56 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 We recommend using environment variables to manage your credentials.
 :::
 
-## Orders
+## Capability Matrix
 
-The following order types are supported on Polymarket:
+Polymarket operates as a prediction market with limited order complexity compared to traditional exchanges.
 
-- `MARKET` (executed as a marketable limit order)
-- `LIMIT`
+### Order Types
 
-The following time in force options are available:
+| Order Type             | Binary Options | Notes                               |
+|------------------------|----------------|-------------------------------------|
+| `MARKET`               | ✓              | Executed as marketable limit order. |
+| `LIMIT`                | ✓              |                                     |
+| `STOP_MARKET`          | -              | *Not supported*.                    |
+| `STOP_LIMIT`           | -              | *Not supported*.                    |
+| `MARKET_IF_TOUCHED`    | -              | *Not supported*.                    |
+| `LIMIT_IF_TOUCHED`     | -              | *Not supported*.                    |
+| `TRAILING_STOP_MARKET` | -              | *Not supported*.                    |
 
-- `GTC`: Good Till Cancel
-- `GTD`: Good Till Date (second granularity based on UNIX time)
-- `FOK`: Fill or Kill
+### Execution Instructions
+
+| Instruction   | Binary Options | Notes                                     |
+|---------------|----------------|-------------------------------------------|
+| `post_only`   | -              | *Not supported*.                          |
+| `reduce_only` | -              | *Not supported*.                          |
+
+### Time-in-Force Options
+
+| Time-in-Force | Binary Options | Notes                                     |
+|---------------|----------------|-------------------------------------------|
+| `GTC`         | ✓              | Good Till Canceled.                       |
+| `GTD`         | ✓              | Good Till Date.                           |
+| `FOK`         | ✓              | Fill or Kill.                             |
+| `IOC`         | ✓              | Immediate or Cancel (maps to FAK).        |
+
+### Advanced order features
+
+| Feature            | Binary Options | Notes                                |
+|--------------------|----------------|--------------------------------------|
+| Order Modification | -              | Cancellation functionality only.     |
+| Bracket/OCO Orders | -              | *Not supported*.                     |
+| Iceberg Orders     | -              | *Not supported*.                     |
+
+### Configuration options
+
+The following execution client configuration options are available:
+
+| Option                               | Default | Description                      |
+|--------------------------------------|---------|----------------------------------|
+| `signature_type`                     | `0`     | Polymarket signature type (EOA). |
+| `funder`                             | `None`  | Wallet address for funding USDC transactions. |
+| `generate_order_history_from_trades` | `False` | Experimental feature to generate order reports from trade history (*not recommended*). |
+| `log_raw_ws_messages`                | `False` | If `True`, logs raw WebSocket messages (performance penalty from pretty JSON formatting). |
 
 ## Trades
 

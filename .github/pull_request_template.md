@@ -1,16 +1,38 @@
 # Pull Request
 
-Include a summary of the changes.
+**NautilusTrader prioritizes correctness and reliability, please follow existing patterns for validation and testing.**
+
+## Summary
+
+<!-- Provide a brief description of *what* changed, *why* it was changed, and the impact on the system or users (2–3 sentences). -->
+
+## Related Issues/PRs
+
+<!-- List any related GitHub issues or PRs (e.g., `Closes #123`, `Related to #456`). -->
 
 ## Type of change
 
-Delete options that are not relevant.
+<!-- Select all that apply. -->
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+- [ ] Bug fix (non-breaking)
+- [ ] New feature (non-breaking)
+- [ ] Breaking change (impacts existing behavior)
+- [ ] Documentation update
+- [ ] Maintenance / chore
 
-## How has this change been tested?
+## Breaking change details (if applicable)
 
-Describe how this code was/is tested.
+<!-- If this is a breaking change, describe the impact and any migration steps required for users or developers. -->
+
+## Release notes
+
+- [ ] I added a concise entry to `RELEASES.md` that follows the existing conventions (when applicable)
+
+## Testing
+
+**Ensure new or changed logic is covered by tests.**
+
+- [ ] Affected code paths are already covered by the test suite
+- [ ] I added/updated tests to cover new or changed logic
+
+<!-- Briefly describe how the changes were tested (e.g., unit tests in `tests/unit/test_file.py`, or *additional* manual testing). -->

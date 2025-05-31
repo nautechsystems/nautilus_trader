@@ -37,6 +37,33 @@ repos:
         args: ["-L", "ACN,crate,ot,socio-economic,zar"]
 
   ##############################################################################
+  #  Custom hooks
+  ##############################################################################
+  - repo: local
+    hooks:
+      - id: check-hidden-chars
+        name: check hidden unicode/control chars
+        description: Fail on hidden control or zero-width unicode characters in source
+        entry: .pre-commit-hooks/check_hidden_chars.sh
+        language: script
+        files: '\\.(rs|py|pyx|toml|md)$'
+
+      - id: check-toml-codegen
+        name: check toml-codegen
+        description: Ensures TOML files don't contain the 'codegen-backend' keyword
+        entry: .pre-commit-hooks/check_toml_codegen.sh
+        language: script
+        files: \.toml$
+
+      - id: check-todo-exclamation
+        name: check todo! markers
+        description: Prevents committing TODO! markers that indicate incomplete work
+        entry: .pre-commit-hooks/check_todo_exclamation.sh
+        language: script
+        types: [text]
+        pass_filenames: false
+
+  ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
   - repo: local
@@ -47,27 +74,35 @@ repos:
         entry: cargo fmt
         language: system
         args: ["--all", "--", "--check"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
+
       - id: cargo-clippy
         name: cargo clippy
         description: Run the Clippy linter on the package.
         entry: cargo clippy
         language: system
-        args: ["--all-features", "--", "-D", "warnings"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--", "-D", "warnings"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
+
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors.
         entry: cargo doc
         language: system
-        args: ["--all-features", "--no-deps", "--workspace"]
+        args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
+        files: '\.(rs|toml)$'
+        types: [file]
         pass_filenames: false
 
   ##############################################################################
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.1.0
+    rev: v3.2.0
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
@@ -82,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.7
+    rev: v0.11.12
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -97,7 +132,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
-    rev: 06907d0267368b49b9180eed423fae5697c1e909
+    rev: v1.7.7
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]
@@ -111,7 +146,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+    rev: v1.16.0
     hooks:
       - id: mypy
         args: [
@@ -128,7 +163,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.0  # uv version
+    rev: 0.7.9  # uv version
     hooks:
       - id: uv-lock
 
@@ -138,7 +173,7 @@ repos:
       - id: nbstripout
 
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.17.2
+    rev: v0.17.2  # Pin v0.17.2 to depend on default node version for GitHub actions runners
     hooks:
       - id: markdownlint-cli2
         name: markdownlint

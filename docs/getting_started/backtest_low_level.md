@@ -1,3 +1,3 @@
 # Backtest (low-level API)
 
-**Placeholder replaced at docs build time with markdown generated from a Jupyter notebook.**
+This guide is generated from the Jupyter notebook [backtest_low_level.ipynb](backtest_low_level.ipynb).

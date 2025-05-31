@@ -27,6 +27,9 @@ use crate::csv::{
     load_trade_ticks,
 };
 
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_deltas")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_deltas(
@@ -46,6 +49,9 @@ pub fn py_load_tardis_deltas(
     .map_err(to_pyvalue_err)
 }
 
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5(
@@ -65,6 +71,9 @@ pub fn py_load_tardis_depth10_from_snapshot5(
     .map_err(to_pyvalue_err)
 }
 
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot25(
@@ -84,6 +93,9 @@ pub fn py_load_tardis_depth10_from_snapshot25(
     .map_err(to_pyvalue_err)
 }
 
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_quotes")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes(
@@ -103,6 +115,9 @@ pub fn py_load_tardis_quotes(
     .map_err(to_pyvalue_err)
 }
 
+/// # Errors
+///
+/// Returns a Python error if loading or parsing the CSV file fails.
 #[pyfunction(name = "load_tardis_trades")]
 #[pyo3(signature = (filepath, price_precision=None, size_precision=None, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades(

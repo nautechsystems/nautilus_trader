@@ -17,7 +17,9 @@ use nautilus_core::{
     ffi::cvec::CVec,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err},
 };
-use nautilus_model::data::{Bar, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick};
+use nautilus_model::data::{
+    Bar, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
+};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
@@ -32,6 +34,7 @@ pub enum NautilusDataType {
     QuoteTick = 3,
     TradeTick = 4,
     Bar = 5,
+    MarkPriceUpdate = 6,
 }
 
 #[pymethods]
@@ -45,15 +48,15 @@ impl DataBackendSession {
     /// Query a file for its records. the caller must specify `T` to indicate
     /// the kind of data expected from this query.
     ///
-    /// table_name: Logical table_name assigned to this file. Queries to this file should address the
+    /// `table_name`: Logical `table_name` assigned to this file. Queries to this file should address the
     /// file by its table name.
-    /// file_path: Path to file
-    /// sql_query: A custom sql query to retrieve records from file. If no query is provided a default
-    /// query "SELECT * FROM <table_name>" is run.
+    /// `file_path`: Path to file
+    /// `sql_query`: A custom sql query to retrieve records from file. If no query is provided a default
+    /// query "SELECT * FROM <`table_name`>" is run.
     ///
     /// # Safety
     ///
-    /// The file data must be ordered by the ts_init in ascending order for this
+    /// The file data must be ordered by the `ts_init` in ascending order for this
     /// to work correctly.
     #[pyo3(name = "add_file")]
     #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
@@ -81,6 +84,9 @@ impl DataBackendSession {
                 .map_err(to_pyruntime_err),
             NautilusDataType::Bar => slf
                 .add_file::<Bar>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::MarkPriceUpdate => slf
+                .add_file::<MarkPriceUpdate>(table_name, file_path, sql_query)
                 .map_err(to_pyruntime_err),
         }
     }

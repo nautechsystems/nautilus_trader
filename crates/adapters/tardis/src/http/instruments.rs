@@ -28,9 +28,10 @@ use crate::parse::parse_option_kind;
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
 pub(crate) fn get_currency(code: &str) -> Currency {
+    // SAFETY: Mutex should not be poisoned in normal operation
     CURRENCY_MAP
         .lock()
-        .unwrap()
+        .expect("Failed to acquire CURRENCY_MAP lock")
         .get(code)
         .copied()
         .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
@@ -173,6 +174,11 @@ pub fn create_crypto_future(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Create a crypto option instrument definition.
+///
+/// # Panics
+///
+/// Panics if the `option_type` field of `InstrumentInfo` is `None`.
 #[must_use]
 pub fn create_crypto_option(
     info: &InstrumentInfo,

@@ -18,7 +18,10 @@ import pkgutil
 import msgspec
 import pytest
 
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
+from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookLevel
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTickSizeChange
@@ -339,3 +342,81 @@ def test_parse_tick_size_change() -> None:
     # Assert
     assert isinstance(msg, PolymarketTickSizeChange)
     assert msg.new_tick_size == "0.001"
+
+
+def test_parse_book_snapshot_to_quote_empty_bids() -> None:
+    """
+    Test parsing book snapshot to quote when bids are empty (one-sided market).
+    """
+    # Arrange
+    book_snapshot = PolymarketBookSnapshot(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+        bids=[],  # Empty bids
+        asks=[
+            PolymarketBookLevel(price="0.50", size="100.0"),
+            PolymarketBookLevel(price="0.60", size="200.0"),
+        ],
+        timestamp="1728799418260",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+
+    # Assert
+    assert quote.bid_price == instrument.make_price(0.001)  # POLYMARKET_MIN_PRICE
+    assert quote.bid_size == instrument.make_qty(0.0)
+    assert quote.ask_price == instrument.make_price(0.60)
+    assert quote.ask_size == instrument.make_qty(200.0)
+
+
+def test_parse_book_snapshot_to_quote_empty_asks() -> None:
+    """
+    Test parsing book snapshot to quote when asks are empty (one-sided market).
+    """
+    # Arrange
+    book_snapshot = PolymarketBookSnapshot(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+        bids=[
+            PolymarketBookLevel(price="0.40", size="150.0"),
+            PolymarketBookLevel(price="0.50", size="250.0"),
+        ],
+        asks=[],  # Empty asks
+        timestamp="1728799418260",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+
+    # Assert
+    assert quote.bid_price == instrument.make_price(0.50)
+    assert quote.bid_size == instrument.make_qty(250.0)
+    assert quote.ask_price == instrument.make_price(POLYMARKET_MAX_PRICE)
+    assert quote.ask_size == instrument.make_qty(0.0)
+
+
+def test_parse_book_snapshot_to_quote_both_empty() -> None:
+    """
+    Test parsing book snapshot to quote when both bids and asks are empty.
+    """
+    # Arrange
+    book_snapshot = PolymarketBookSnapshot(
+        market="0x1a4f04c2e6c000d9fc524eb12e7333217411a226c34745af140f195c0227cd5f",
+        asset_id="23360939988679364027624185518382759743328544433592111535569478055890815567848",
+        bids=[],  # Empty bids
+        asks=[],  # Empty asks
+        timestamp="1728799418260",
+    )
+    instrument = TestInstrumentProvider.binary_option()
+
+    # Act
+    quote = book_snapshot.parse_to_quote(instrument=instrument, ts_init=1728799418260000001)
+
+    # Assert
+    assert quote.bid_price == instrument.make_price(POLYMARKET_MIN_PRICE)
+    assert quote.bid_size == instrument.make_qty(0.0)
+    assert quote.ask_price == instrument.make_price(POLYMARKET_MAX_PRICE)
+    assert quote.ask_size == instrument.make_qty(0.0)

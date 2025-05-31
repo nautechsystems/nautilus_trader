@@ -14,8 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Bar aggregation machinery.
+//!
+//! Defines the `BarAggregator` trait and core aggregation types (tick, volume, value, time),
+//! along with the `BarBuilder` and `BarAggregatorCore` helpers for constructing bars.
 
-use std::{cell::RefCell, ops::Add, rc::Rc};
+use std::{any::Any, cell::RefCell, fmt::Debug, ops::Add, rc::Rc};
 
 use chrono::TimeDelta;
 use nautilus_common::{
@@ -36,13 +39,18 @@ use nautilus_model::{
     types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
 
-pub trait BarAggregator {
+/// Trait for aggregating incoming price and trade events into time-, tick-, volume-, or value-based bars.
+///
+/// Implementors receive updates and produce completed bars via handlers, with support for partial and batch updates.
+pub trait BarAggregator: Any + Debug {
     /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
     /// If the aggregator is running and will receive data from the message bus.
     fn is_running(&self) -> bool;
     fn set_await_partial(&mut self, value: bool);
+    /// Enables or disables awaiting a partial bar before full aggregation.
     fn set_is_running(&mut self, value: bool);
+    /// Sets the running state of the aggregator (receiving updates when `true`).
     /// Updates the aggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
     /// Updates the aggregator with the given quote.
@@ -69,13 +77,32 @@ pub trait BarAggregator {
         }
     }
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos);
+    /// Incorporates an existing bar and its volume into aggregation at the given init timestamp.
     fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>, time_ns: UnixNanos);
+    /// Starts batch mode, sending bars to the supplied handler for the given time context.
     fn stop_batch_update(&mut self);
+    /// Stops batch mode and restores the standard bar handler.
     fn await_partial(&self) -> bool;
+    /// Returns `true` if awaiting a partial bar before processing updates.
+    /// Sets the initial values for a partially completed bar.
     fn set_partial(&mut self, partial_bar: Bar);
+    /// Stop the aggregator, e.g., cancel timers. Default is no-op.
+    fn stop(&mut self) {}
+}
+
+impl dyn BarAggregator {
+    /// Returns a reference to this aggregator as `Any` for downcasting.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+    /// Returns a mutable reference to this aggregator as `Any` for downcasting.
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 /// Provides a generic bar builder for aggregation.
+#[derive(Debug)]
 pub struct BarBuilder {
     bar_type: BarType,
     price_precision: u8,
@@ -97,9 +124,9 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[must_use]
     pub fn new(bar_type: BarType, price_precision: u8, size_precision: u8) -> Self {
         correctness::check_equal(
@@ -128,6 +155,10 @@ impl BarBuilder {
     }
 
     /// Set the initial values for a partially completed bar.
+    ///
+    /// # Panics
+    ///
+    /// Panics if internal values for `high` or `low` are unexpectedly missing.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         if self.partial_set {
             return; // Already updated
@@ -157,7 +188,11 @@ impl BarBuilder {
         self.initialized = true;
     }
 
-    /// Update the bar builder.
+    /// Updates the builder state with the given price, size, and event timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         if ts_event < self.ts_last {
             return; // Not applicable
@@ -183,6 +218,11 @@ impl BarBuilder {
         self.ts_last = ts_event;
     }
 
+    /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `high` or `low` values are unexpectedly `None` when updating.
     pub fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         if ts_init < self.ts_last {
             return; // Not applicable
@@ -224,7 +264,11 @@ impl BarBuilder {
         self.build(self.ts_last, self.ts_last)
     }
 
-    /// Return the aggregated bar with the given closing timestamp, and reset.
+    /// Returns the aggregated bar for the given timestamps, then resets the builder.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `open`, `high`, `low`, or `close` values are `None` when building the bar.
     pub fn build(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) -> Bar {
         if self.open.is_none() {
             self.open = self.last_close;
@@ -278,6 +322,18 @@ where
     batch_mode: bool,
 }
 
+impl<H: FnMut(Bar)> Debug for BarAggregatorCore<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BarAggregatorCore))
+            .field("bar_type", &self.bar_type)
+            .field("builder", &self.builder)
+            .field("await_partial", &self.await_partial)
+            .field("is_running", &self.is_running)
+            .field("batch_mode", &self.batch_mode)
+            .finish()
+    }
+}
+
 impl<H> BarAggregatorCore<H>
 where
     H: FnMut(Bar),
@@ -286,9 +342,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -308,19 +364,22 @@ where
         }
     }
 
+    /// Sets whether to await a partial bar before processing new updates.
     pub const fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
     }
 
+    /// Sets the running state of the aggregator (receives updates when `true`).
     pub const fn set_is_running(&mut self, value: bool) {
         self.is_running = value;
     }
 
+    /// Returns `true` if the aggregator is awaiting a partial bar to complete before aggregation.
     pub const fn await_partial(&self) -> bool {
         self.await_partial
     }
 
-    /// Set the initial values for a partially completed bar.
+    /// Initializes builder state with a partially completed bar.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         self.builder.set_partial(partial_bar);
     }
@@ -346,11 +405,13 @@ where
         }
     }
 
+    /// Enables batch update mode, sending bars to the provided handler instead of immediate dispatch.
     pub fn start_batch_update(&mut self, handler: Box<dyn FnMut(Bar)>) {
         self.batch_mode = true;
         self.batch_handler = Some(handler);
     }
 
+    /// Disables batch update mode and restores the original bar handler.
     pub fn stop_batch_update(&mut self) {
         self.batch_mode = false;
 
@@ -372,6 +433,15 @@ where
     cum_value: f64,
 }
 
+impl<H: FnMut(Bar)> Debug for TickBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TickBarAggregator))
+            .field("core", &self.core)
+            .field("cum_value", &self.cum_value)
+            .finish()
+    }
+}
+
 impl<H> TickBarAggregator<H>
 where
     H: FnMut(Bar),
@@ -380,9 +450,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -405,7 +475,7 @@ where
 
 impl<H> BarAggregator for TickBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -490,6 +560,14 @@ where
     core: BarAggregatorCore<H>,
 }
 
+impl<H: FnMut(Bar)> Debug for VolumeBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(VolumeBarAggregator))
+            .field("core", &self.core)
+            .finish()
+    }
+}
+
 impl<H> VolumeBarAggregator<H>
 where
     H: FnMut(Bar),
@@ -498,9 +576,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -522,7 +600,7 @@ where
 
 impl<H> BarAggregator for VolumeBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -624,6 +702,15 @@ where
     cum_value: f64,
 }
 
+impl<H: FnMut(Bar)> Debug for ValueBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ValueBarAggregator))
+            .field("core", &self.core)
+            .field("cum_value", &self.cum_value)
+            .finish()
+    }
+}
+
 impl<H> ValueBarAggregator<H>
 where
     H: FnMut(Bar),
@@ -632,9 +719,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         bar_type: BarType,
         price_precision: u8,
@@ -663,7 +750,7 @@ where
 
 impl<H> BarAggregator for ValueBarAggregator<H>
 where
-    H: FnMut(Bar),
+    H: FnMut(Bar) + 'static,
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -781,12 +868,29 @@ where
     skip_first_non_full_bar: bool,
 }
 
-#[derive(Clone)]
+impl<H: FnMut(Bar)> Debug for TimeBarAggregator<H> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TimeBarAggregator))
+            .field("core", &self.core)
+            .field("build_with_no_updates", &self.build_with_no_updates)
+            .field("timestamp_on_close", &self.timestamp_on_close)
+            .field("is_left_open", &self.is_left_open)
+            .field("timer_name", &self.timer_name)
+            .field("interval_ns", &self.interval_ns)
+            .field("composite_bar_build_delay", &self.composite_bar_build_delay)
+            .field("skip_first_non_full_bar", &self.skip_first_non_full_bar)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct NewBarCallback<H: FnMut(Bar)> {
     aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
 }
 
 impl<H: FnMut(Bar)> NewBarCallback<H> {
+    /// Creates a new callback that invokes the time bar aggregator on timer events.
+    #[must_use]
     pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<H>>>) -> Self {
         Self { aggregator }
     }
@@ -808,9 +912,9 @@ where
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// This function panics if:
+    /// - `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
@@ -863,7 +967,15 @@ where
         }
     }
 
-    /// Starts the time bar aggregator.
+    /// Starts the time bar aggregator, scheduling periodic bar builds on the clock.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if setting up the underlying clock timer fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the underlying clock timer registration fails.
     pub fn start(&mut self, callback: NewBarCallback<H>) -> anyhow::Result<()> {
         let now = self.clock.borrow().utc_now();
         let mut start_time = get_time_bar_start(now, &self.bar_type(), self.time_bars_origin);
@@ -881,7 +993,7 @@ where
 
         if spec.aggregation == BarAggregation::Month {
             let step = spec.step.get() as u32;
-            let alert_time_ns = add_n_months_nanos(start_time_ns, step);
+            let alert_time_ns = add_n_months_nanos(start_time_ns, step).expect(FAILED);
 
             self.clock
                 .borrow_mut()
@@ -910,6 +1022,11 @@ where
         self.clock.borrow_mut().cancel_timer(&self.timer_name);
     }
 
+    /// Starts batch time for bar aggregation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if month arithmetic operations fail for monthly aggregation intervals.
     pub fn start_batch_time(&mut self, time_ns: UnixNanos) {
         let spec = self.bar_type().spec();
         self.core.batch_mode = true;
@@ -922,10 +1039,11 @@ where
             let step = spec.step.get() as u32;
 
             if self.batch_open_ns == time_ns {
-                self.batch_open_ns = subtract_n_months_nanos(self.batch_open_ns, step);
+                self.batch_open_ns =
+                    subtract_n_months_nanos(self.batch_open_ns, step).expect(FAILED);
             }
 
-            self.batch_next_close_ns = add_n_months_nanos(self.batch_open_ns, step);
+            self.batch_next_close_ns = add_n_months_nanos(self.batch_open_ns, step).expect(FAILED);
         } else {
             if self.batch_open_ns == time_ns {
                 self.batch_open_ns -= self.interval_ns;
@@ -980,10 +1098,12 @@ where
             // Ensure batch times are coherent with last builder update
             if self.bar_type().spec().aggregation == BarAggregation::Month {
                 while self.batch_next_close_ns < time_ns {
-                    self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
+                    self.batch_next_close_ns =
+                        add_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
                 }
 
-                self.batch_open_ns = subtract_n_months_nanos(self.batch_next_close_ns, step);
+                self.batch_open_ns =
+                    subtract_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
             } else {
                 while self.batch_next_close_ns < time_ns {
                     self.batch_next_close_ns += self.interval_ns;
@@ -999,7 +1119,8 @@ where
             self.batch_open_ns = self.batch_next_close_ns;
 
             if self.bar_type().spec().aggregation == BarAggregation::Month {
-                self.batch_next_close_ns = add_n_months_nanos(self.batch_next_close_ns, step);
+                self.batch_next_close_ns =
+                    add_n_months_nanos(self.batch_next_close_ns, step).expect(FAILED);
             } else {
                 self.batch_next_close_ns += self.interval_ns;
             }
@@ -1030,7 +1151,7 @@ where
 
         if self.bar_type().spec().aggregation == BarAggregation::Month {
             let step = self.bar_type().spec().step.get() as u32;
-            let next_alert_ns = add_n_months_nanos(ts_init, step);
+            let next_alert_ns = add_n_months_nanos(ts_init, step).expect(FAILED);
 
             self.clock
                 .borrow_mut()
@@ -1039,7 +1160,11 @@ where
 
             self.next_close_ns = next_alert_ns;
         } else {
-            self.next_close_ns = self.clock.borrow().next_time_ns(&self.timer_name);
+            self.next_close_ns = self
+                .clock
+                .borrow()
+                .next_time_ns(&self.timer_name)
+                .unwrap_or_default();
         }
     }
 }
@@ -1066,6 +1191,10 @@ where
 
     fn await_partial(&self) -> bool {
         self.core.await_partial()
+    }
+    /// Stop time-based aggregator by cancelling its timer.
+    fn stop(&mut self) {
+        Self::stop(self);
     }
 
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {

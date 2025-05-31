@@ -408,7 +408,7 @@ The platform ensures consistency by flowing data through the same pathways acros
 and then distributed to subscribed or registered handlers.
 
 For users who need more flexibility, the platform also supports the creation of custom data types.
-For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
+For details on how to implement user-defined data types, see the [Custom Data](#custom-data) section below.
 
 ## Loading data
 
@@ -591,6 +591,7 @@ Any stored data can then be read back into memory:
 ```python
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 import pandas as pd
+import pytz
 
 
 start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz=pytz.utc))
@@ -663,7 +664,7 @@ Converts JSON back to Parquet format:
 ### Migration Process
 
 The following migration examples both use trades data (you can also migrate the other data types in the same way).
-All commands should be run from the root of the `nautilus_core/persistence/` crate directory.
+All commands should be run from the root of the `persistence` crate directory.
 
 #### Migrating from standard-precision (64-bit) to high-precision (128-bit)
 

@@ -63,6 +63,11 @@ impl CashAccount {
         false
     }
 
+    /// Recalculates the account balance for the specified currency based on current margins.
+    ///
+    /// # Panics
+    ///
+    /// Panics if conversion from `Decimal` to `f64` fails during balance update.
     pub fn recalculate_balance(&mut self, currency: Currency) {
         let current_balance = match self.balances.get(&currency) {
             Some(balance) => *balance,
@@ -173,6 +178,10 @@ impl Account for CashAccount {
 
     fn apply(&mut self, event: AccountState) {
         self.base_apply(event);
+    }
+
+    fn purge_account_events(&mut self, ts_now: nautilus_core::UnixNanos, lookback_secs: u64) {
+        self.base.base_purge_account_events(ts_now, lookback_secs);
     }
 
     fn calculate_balance_locked(

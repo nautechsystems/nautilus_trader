@@ -23,8 +23,13 @@ use ustr::Ustr;
 
 use crate::sql::models::enums::CurrencyTypeModel;
 
+#[derive(Debug)]
 pub struct CurrencyModel(pub Currency);
+
+#[derive(Debug)]
 pub struct SignalModel(pub Signal);
+
+#[derive(Debug)]
 pub struct CustomDataModel(pub CustomData);
 
 impl<'r> FromRow<'r, PgRow> for CurrencyModel {

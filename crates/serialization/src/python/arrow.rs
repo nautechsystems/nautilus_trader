@@ -64,6 +64,11 @@ fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<
     Ok(pybytes.into())
 }
 
+/// Returns a mapping from field names to Arrow data types for the given Rust data class.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the class name is not recognized or schema extraction fails.
 #[pyfunction]
 pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyAny>> {
     let cls_str: String = cls.getattr("__name__")?.extract()?;
@@ -85,8 +90,18 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
     result_map.into_py_any(py)
 }
 
-/// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
+/// Returns Python `bytes` from the given list of legacy data objects, which can be passed
 /// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The input list is empty: `PyErr`.
+/// - An unsupported data type is encountered or conversion fails: `PyErr`.
+///
+/// # Panics
+///
+/// Panics if `data.first()` returns `None` (should not occur due to emptiness check).
 #[pyfunction]
 pub fn pyobjects_to_arrow_record_batch_bytes(
     py: Python,
@@ -139,6 +154,11 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `OrderBookDelta` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
 pub fn py_book_deltas_to_arrow_record_batch_bytes(
     py: Python,
@@ -150,6 +170,11 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `OrderBookDepth10` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
 pub fn py_book_depth10_to_arrow_record_batch_bytes(
     py: Python,
@@ -161,6 +186,11 @@ pub fn py_book_depth10_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `QuoteTick` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
 pub fn py_quotes_to_arrow_record_batch_bytes(
     py: Python,
@@ -172,6 +202,11 @@ pub fn py_quotes_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `TradeTick` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
 pub fn py_trades_to_arrow_record_batch_bytes(
     py: Python,
@@ -183,6 +218,11 @@ pub fn py_trades_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `Bar` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "bars_to_arrow_record_batch_bytes")]
 pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
     match bars_to_arrow_record_batch_bytes(data) {
@@ -191,6 +231,11 @@ pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResu
     }
 }
 
+/// Converts a list of `MarkPriceUpdate` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
 pub fn py_mark_prices_to_arrow_record_batch_bytes(
     py: Python,
@@ -202,6 +247,11 @@ pub fn py_mark_prices_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `IndexPriceUpdate` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
 pub fn py_index_prices_to_arrow_record_batch_bytes(
     py: Python,
@@ -213,6 +263,11 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
     }
 }
 
+/// Converts a list of `InstrumentClose` into Arrow IPC bytes for Python.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if encoding fails.
 #[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
 pub fn py_instrument_closes_to_arrow_record_batch_bytes(
     py: Python,

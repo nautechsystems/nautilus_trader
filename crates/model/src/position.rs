@@ -21,7 +21,10 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{
+    UnixNanos,
+    correctness::{FAILED, check_equal, check_predicate_true},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -83,8 +86,21 @@ pub struct Position {
 
 impl Position {
     /// Creates a new [`Position`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - The `instrument.id()` does not match the `fill.instrument_id`.
+    /// - The `fill.order_side` is `NoOrderSide`.
+    /// - The `fill.position_id` is `None`.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
-        assert_eq!(instrument.id(), fill.instrument_id);
+        check_equal(
+            &instrument.id(),
+            &fill.instrument_id,
+            "instrument.id()",
+            "fill.instrument_id",
+        )
+        .expect(FAILED);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
 
         let position_id = fill.position_id.expect("No position ID to open `Position`");
@@ -145,11 +161,19 @@ impl Position {
         self.trade_ids = filtered_trade_ids;
     }
 
+    /// Applies an `OrderFilled` event to this position.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `fill.trade_id` is already present in the position’s `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
-        assert!(
+        check_predicate_true(
             !self.trade_ids.contains(&fill.trade_id),
-            "`fill.trade_id` already contained in `trade_ids"
-        );
+            "`fill.trade_id` already contained in `trade_ids",
+        )
+        .expect(FAILED);
+        check_predicate_true(fill.ts_event >= self.ts_opened, "fill.ts_event < ts_opened")
+            .expect(FAILED);
 
         if self.side == PositionSide::Flat {
             // Reset position
@@ -460,6 +484,11 @@ impl Position {
         result
     }
 
+    /// Calculates the notional value based on the last price.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.base_currency` is `None`.
     #[must_use]
     pub fn notional_value(&self, last: Price) -> Money {
         if self.is_inverse {
@@ -475,12 +504,10 @@ impl Position {
         }
     }
 
+    /// Returns the last `OrderFilled` event for the position (if any after purging).
     #[must_use]
-    pub fn last_event(&self) -> OrderFilled {
-        *self
-            .events
-            .last()
-            .expect("Position invariant guarantees at least one event")
+    pub fn last_event(&self) -> Option<OrderFilled> {
+        self.events.last().copied()
     }
 
     #[must_use]
@@ -2021,5 +2048,45 @@ mod tests {
         assert_eq!(position.trade_ids.len(), 1);
         assert_eq!(position.events[0].client_order_id, order2.client_order_id());
         assert_eq!(position.trade_ids[0], TradeId::new("2"));
+    }
+
+    #[rstest]
+    fn test_purge_all_events_returns_none_for_last_event_and_trade_id() {
+        let audusd_sim = audusd_sim();
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-1"))
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+
+        let position_id = PositionId::new("P-123456");
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &audusd_sim,
+            Some(TradeId::new("1")),
+            Some(position_id),
+            Some(Price::from("1.00050")),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut position = Position::new(&audusd_sim, fill.into());
+
+        assert_eq!(position.events.len(), 1);
+        assert!(position.last_event().is_some());
+        assert!(position.last_trade_id().is_some());
+
+        position.purge_events_for_order(order.client_order_id());
+
+        assert_eq!(position.events.len(), 0);
+        assert_eq!(position.trade_ids.len(), 0);
+        assert!(position.last_event().is_none());
+        assert!(position.last_trade_id().is_none());
     }
 }

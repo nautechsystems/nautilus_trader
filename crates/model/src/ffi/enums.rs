@@ -34,7 +34,11 @@ pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AccountType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn account_type_from_cstr(ptr: *const c_char) -> AccountType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -51,7 +55,11 @@ pub extern "C" fn aggregation_source_to_cstr(value: AggregationSource) -> *const
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AggressorSide` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aggregation_source_from_cstr(ptr: *const c_char) -> AggregationSource {
     let value = unsafe { cstr_as_str(ptr) };
@@ -68,7 +76,11 @@ pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char 
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AggregationSource` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn aggressor_side_from_cstr(ptr: *const c_char) -> AggressorSide {
     let value = unsafe { cstr_as_str(ptr) };
@@ -85,7 +97,11 @@ pub extern "C" fn asset_class_to_cstr(value: AssetClass) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `AssetClass` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass {
     let value = unsafe { cstr_as_str(ptr) };
@@ -102,7 +118,11 @@ pub extern "C" fn instrument_class_to_cstr(value: InstrumentClass) -> *const c_c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `InstrumentClass` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_class_from_cstr(ptr: *const c_char) -> InstrumentClass {
     let value = unsafe { cstr_as_str(ptr) };
@@ -119,7 +139,11 @@ pub extern "C" fn bar_aggregation_to_cstr(value: BarAggregation) -> *const c_cha
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `BarAggregation` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn bar_aggregation_from_cstr(ptr: *const c_char) -> BarAggregation {
     let value = unsafe { cstr_as_str(ptr) };
@@ -136,7 +160,11 @@ pub extern "C" fn book_action_to_cstr(value: BookAction) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `BookAction` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn book_action_from_cstr(ptr: *const c_char) -> BookAction {
     let value = unsafe { cstr_as_str(ptr) };
@@ -153,7 +181,11 @@ pub extern "C" fn book_type_to_cstr(value: BookType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `BookType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn book_type_from_cstr(ptr: *const c_char) -> BookType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -170,7 +202,11 @@ pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_c
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `ContingencyType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> ContingencyType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -187,7 +223,11 @@ pub extern "C" fn currency_type_to_cstr(value: CurrencyType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `CurrencyType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> CurrencyType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -199,7 +239,11 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `InstrumentCloseType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_close_type_from_cstr(
     ptr: *const c_char,
@@ -224,7 +268,11 @@ pub extern "C" fn liquidity_side_to_cstr(value: LiquiditySide) -> *const c_char 
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `LiquiditySide` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> LiquiditySide {
     let value = unsafe { cstr_as_str(ptr) };
@@ -241,7 +289,11 @@ pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `MarketStatus` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketStatus {
     let value = unsafe { cstr_as_str(ptr) };
@@ -258,7 +310,11 @@ pub extern "C" fn market_status_action_to_cstr(value: MarketStatusAction) -> *co
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `MarketStatusAction` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn market_status_action_from_cstr(ptr: *const c_char) -> MarketStatusAction {
     let value = unsafe { cstr_as_str(ptr) };
@@ -275,7 +331,11 @@ pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OmsType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn oms_type_from_cstr(ptr: *const c_char) -> OmsType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -292,7 +352,11 @@ pub extern "C" fn option_kind_to_cstr(value: OptionKind) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OptionKind` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn option_kind_from_cstr(ptr: *const c_char) -> OptionKind {
     let value = unsafe { cstr_as_str(ptr) };
@@ -309,7 +373,11 @@ pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OrderSide` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSide {
     let value = unsafe { cstr_as_str(ptr) };
@@ -326,7 +394,11 @@ pub extern "C" fn order_status_to_cstr(value: OrderStatus) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OrderStatus` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_status_from_cstr(ptr: *const c_char) -> OrderStatus {
     let value = unsafe { cstr_as_str(ptr) };
@@ -343,7 +415,11 @@ pub extern "C" fn order_type_to_cstr(value: OrderType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `OrderType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn order_type_from_cstr(ptr: *const c_char) -> OrderType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -360,7 +436,11 @@ pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `PositionSide` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> PositionSide {
     let value = unsafe { cstr_as_str(ptr) };
@@ -377,7 +457,11 @@ pub extern "C" fn price_type_to_cstr(value: PriceType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `PriceType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn price_type_from_cstr(ptr: *const c_char) -> PriceType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -394,7 +478,11 @@ pub extern "C" fn record_flag_to_cstr(value: RecordFlag) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `RecordFlag` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn record_flag_from_cstr(ptr: *const c_char) -> RecordFlag {
     let value = unsafe { cstr_as_str(ptr) };
@@ -411,7 +499,11 @@ pub extern "C" fn time_in_force_to_cstr(value: TimeInForce) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `TimeInForce` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn time_in_force_from_cstr(ptr: *const c_char) -> TimeInForce {
     let value = unsafe { cstr_as_str(ptr) };
@@ -428,7 +520,11 @@ pub extern "C" fn trading_state_to_cstr(value: TradingState) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `TradingState` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn trading_state_from_cstr(ptr: *const c_char) -> TradingState {
     let value = unsafe { cstr_as_str(ptr) };
@@ -445,7 +541,11 @@ pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *co
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn trailing_offset_type_from_cstr(ptr: *const c_char) -> TrailingOffsetType {
     let value = unsafe { cstr_as_str(ptr) };
@@ -462,7 +562,11 @@ pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// Panics if the C string does not correspond to a valid `TriggerType` variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerType {
     let value = unsafe { cstr_as_str(ptr) };

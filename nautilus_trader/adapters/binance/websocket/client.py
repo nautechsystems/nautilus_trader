@@ -225,7 +225,7 @@ class BinanceWebSocketClient:
             msg = self._create_subscribe_msg(streams=streams[1:])
             await self._send(client_id, msg)
             self._log.debug(
-                f"Client {client_id}: Subscribed to additional {len(streams)-1} streams",
+                f"Client {client_id}: Subscribed to additional {len(streams) - 1} streams",
             )
 
     def _handle_ping(self, client_id: int, raw: bytes) -> None:
@@ -557,12 +557,17 @@ class BinanceWebSocketClient:
         """
         Subscribe to aggregate mark price stream.
         """
-        if speed not in (1000, 3000):
+        if speed and speed not in (1000, 3000):
             raise ValueError(f"`speed` options are 1000ms or 3000ms only, was {speed}")
+
         if symbol is None:
             stream = "!markPrice@arr"
         else:
-            stream = f"{BinanceSymbol(symbol).lower()}@markPrice@{int(speed / 1000)}s"
+            stream = f"{BinanceSymbol(symbol).lower()}@markPrice"
+
+        if speed:
+            stream += f"@{int(speed / 1000)}s"
+
         await self._subscribe(stream)
 
     async def unsubscribe_mark_price(

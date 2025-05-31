@@ -28,6 +28,11 @@ use ustr::Ustr;
 use super::enums::{Exchange, InstrumentType};
 use crate::parse::normalize_symbol_str;
 
+/// Normalize a symbol string for Tardis, returning a suffix-modified symbol.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if the `exchange` or `instrument_type` cannot be parsed.
 #[pyfunction(name = "tardis_normalize_symbol_str")]
 #[pyo3(signature = (symbol, exchange, instrument_type, is_inverse=None))]
 pub fn py_tardis_normalize_symbol_str(
@@ -44,7 +49,7 @@ pub fn py_tardis_normalize_symbol_str(
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
 }
 
-/// Loaded as nautilus_pyo3.tardis
+/// Loaded as `nautilus_pyo3.tardis`
 ///
 /// # Errors
 ///

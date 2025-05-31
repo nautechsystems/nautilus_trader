@@ -85,6 +85,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         if order_cancel is None:
             order_cancel = IBOrderCancel()
+
         self._eclient.cancelOrder(order_id, order_cancel)
 
     def cancel_all_orders(self) -> None:
@@ -113,17 +114,21 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
+
         if not (request := self._requests.get(name=name)):
             request = self._requests.add(
                 req_id=self._next_req_id(),
                 name=name,
                 handle=self._eclient.reqOpenOrders,
             )
+
             if not request:
                 return []
+
             request.handle()
 
         all_orders: list[IBOrder] | None = await self._await_request(request, 30)
+
         if all_orders:
             orders: list[IBOrder] = [order for order in all_orders if order.account == account_id]
         else:
@@ -143,6 +148,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         order_id: int = self._next_valid_order_id
         self._next_valid_order_id += 1
         self._eclient.reqIds(-1)
+
         return order_id
 
     async def process_next_valid_id(self, *, order_id: int) -> None:
@@ -155,6 +161,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         """
         self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
+
         if self.accounts() and not self._is_ib_connected.is_set():
             self._log.debug("`_is_ib_connected` set by `nextValidId`.", LogColor.BLUE)
             self._is_ib_connected.set()
@@ -177,6 +184,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             request.result.append(order)
+
             # Validate and add reverse mapping, if not exists
             if order_ref := self._order_id_to_order_ref.get(order.orderId):
                 if not (
@@ -195,6 +203,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         # Handle event based response
         name = f"openOrder-{order.account}"
+
         if handler := self._event_subscriptions.get(name, None):
             handler(
                 order_ref=order.orderRef.rsplit(":", 1)[0],
@@ -231,8 +240,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         """
         order_ref = self._order_id_to_order_ref.get(order_id, None)
+
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
+
             if handler := self._event_subscriptions.get(name, None):
                 handler(
                     order_ref=self._order_id_to_order_ref[order_id].order_id,
@@ -252,10 +263,11 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         if not (cache := self._exec_id_details.get(execution.execId, None)):
             self._exec_id_details[execution.execId] = {}
             cache = self._exec_id_details[execution.execId]
+
         cache["execution"] = execution
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
-
         name = f"execDetails-{execution.acctNumber}"
+
         if (handler := self._event_subscriptions.get(name, None)) and cache.get(
             "commission_report",
         ):
@@ -277,10 +289,12 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}
             cache = self._exec_id_details[commission_report.execId]
+
         cache["commission_report"] = commission_report
 
         if cache.get("execution") and (account := getattr(cache["execution"], "acctNumber", None)):
             name = f"execDetails-{account}"
+
             if handler := self._event_subscriptions.get(name, None):
                 handler(
                     order_ref=cache["order_ref"],

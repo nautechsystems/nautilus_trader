@@ -19,8 +19,9 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
+from nautilus_trader.adapters.betfair import BETFAIR_CLIENT_ID
+from nautilus_trader.adapters.betfair import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -29,7 +30,6 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     raw = list(BetfairDataProvider.market_updates())
     parser = BetfairParser(currency=GBP.code)
     updates = [upd for update in raw for upd in parser.parse(update)]
-    engine.add_data(updates, client_id=ClientId("BETFAIR"))
+    engine.add_data(updates, client_id=BETFAIR_CLIENT_ID)
 
     # Configure your strategy
     strategies = [

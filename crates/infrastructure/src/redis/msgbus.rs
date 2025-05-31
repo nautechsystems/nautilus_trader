@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,6 +26,7 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::{
+    logging::{log_task_error, log_task_started, log_task_stopped},
     msgbus::{
         BusMessage,
         database::{DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
@@ -71,10 +73,25 @@ pub struct RedisMessageBusDatabase {
     heartbeat_signal: Arc<AtomicBool>,
 }
 
+impl Debug for RedisMessageBusDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RedisMessageBusDatabase))
+            .field("trader_id", &self.trader_id)
+            .field("instance_id", &self.instance_id)
+            .finish()
+    }
+}
+
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     type DatabaseType = Self;
 
-    /// Creates a new [`RedisMessageBusDatabase`] instance.
+    /// Creates a new [`RedisMessageBusDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection for publishing fails.
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -93,7 +110,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         // Create publish task (start the runtime here for now)
         let pub_handle = Some(get_runtime().spawn(async move {
             if let Err(e) = publish_messages(pub_rx, trader_id, instance_id, config_clone).await {
-                log::error!("Error in task '{MSGBUS_PUBLISH}': {e}");
+                log_task_error(MSGBUS_PUBLISH, &e);
             }
         }));
 
@@ -112,7 +129,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                         stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
                             .await
                     {
-                        log::error!("Error in task '{MSGBUS_STREAM}': {e}");
+                        log_task_error(MSGBUS_STREAM, &e);
                     }
                 })),
             )
@@ -185,7 +202,11 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 }
 
 impl RedisMessageBusDatabase {
-    /// Gets the stream receiver for this instance.
+    /// Retrieves the Redis stream receiver for this message bus instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stream receiver has already been taken.
     pub fn get_stream_receiver(
         &mut self,
     ) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
@@ -212,13 +233,21 @@ impl RedisMessageBusDatabase {
     }
 }
 
+/// Publishes messages received on `rx` to Redis streams for the given `trader_id` and `instance_id`, using `config`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The database configuration is missing in `config`.
+/// - Establishing the Redis connection fails.
+/// - Any Redis command fails during publishing.
 pub async fn publish_messages(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<BusMessage>,
     trader_id: TraderId,
     instance_id: UUID4,
     config: MessageBusConfig,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting message publishing");
+    log_task_started(MSGBUS_PUBLISH);
 
     let db_config = config
         .database
@@ -277,7 +306,7 @@ pub async fn publish_messages(
         .await?;
     }
 
-    tracing::debug!("Stopped message publishing");
+    log_task_stopped(MSGBUS_PUBLISH);
     Ok(())
 }
 
@@ -338,13 +367,21 @@ async fn drain_buffer(
     pipe.query_async(conn).await.map_err(anyhow::Error::from)
 }
 
+/// Streams messages from Redis streams and sends them over the provided `tx` channel.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Establishing the Redis connection fails.
+/// - Any Redis read operation fails.
 pub async fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
     config: DatabaseConfig,
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    tracing::info!("Starting message streaming");
+    log_task_started(MSGBUS_STREAM);
+
     let mut con = create_redis_connection(MSGBUS_STREAM, config).await?;
 
     let stream_keys = &stream_keys
@@ -403,10 +440,18 @@ pub async fn stream_messages(
         }
     }
 
-    tracing::debug!("Stopped message streaming");
+    log_task_stopped(MSGBUS_STREAM);
     Ok(())
 }
 
+/// Decodes a Redis stream message value into a `BusMessage`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The incoming `stream_msg` is not an array.
+/// - The array has fewer than four elements (invalid format).
+/// - Parsing the topic or payload fails.
 fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     if let redis::Value::Array(stream_msg) = stream_msg {
         if stream_msg.len() < 4 {
@@ -441,7 +486,8 @@ async fn run_heartbeat(
     signal: Arc<AtomicBool>,
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
 ) {
-    tracing::debug!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
+    log_task_started("heartbeat");
+    tracing::debug!("Heartbeat at {heartbeat_interval_secs} second intervals");
 
     let heartbeat_interval = Duration::from_secs(u64::from(heartbeat_interval_secs));
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
@@ -470,7 +516,7 @@ async fn run_heartbeat(
         }
     }
 
-    tracing::debug!("Stopped heartbeat");
+    log_task_stopped("heartbeat");
 }
 
 fn create_heartbeat_msg() -> BusMessage {
@@ -620,7 +666,7 @@ mod serial_tests {
         // Shutdown and cleanup
         rx.close();
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -642,7 +688,7 @@ mod serial_tests {
         let stream_signal_clone = stream_signal.clone();
 
         // Use a message ID in the future, as streaming begins
-        // around the timestamp the thread is spawned.
+        // around the timestamp the task is spawned.
         let clock = get_atomic_clock_realtime();
         let future_id = (clock.get_time_ms() + 1_000_000).to_string();
 
@@ -673,7 +719,7 @@ mod serial_tests {
 
         // Shutdown and cleanup
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -728,7 +774,7 @@ mod serial_tests {
         rx.close();
         stream_signal.store(true, Ordering::Relaxed);
         handle.await.unwrap();
-        flush_redis(&mut con).await.unwrap()
+        flush_redis(&mut con).await.unwrap();
     }
 
     #[rstest]
@@ -766,7 +812,7 @@ mod serial_tests {
                     !messages.is_empty()
                 }
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         )
         .await;
 

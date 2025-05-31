@@ -2,9 +2,7 @@
 
 Welcome to the developer guide for NautilusTrader!
 
-Here you will find information related to developing and extending the NautilusTrader codebase.
-These guides will assist you in both adding functionality for your own trading operation, and/or
-acting as a guide to assist with valuable contributions.
+Here you'll find guidance on developing and extending NautilusTrader to meet your trading needs or to contribute improvements back to the project.
 
 We believe in using the right tool for the job. The overall design philosophy is to fully utilize
 the high level power of Python, with its rich eco-system of frameworks and libraries, whilst
@@ -15,9 +13,7 @@ One of the advantages of Cython is that allocation and freeing of memory is hand
 generator during the ‘cythonization’ step of the build (unless you’re specifically utilizing some of
 its lower level features).
 
-So we get the best of both worlds - with Pythons clean straight forward syntax, and a lot of
-potential to extract several orders of magnitude greater runtime performance through compiled C
-dynamic libraries.
+This approach combines Python’s simplicity with near-native C performance via compiled extensions.
 
 The main development and runtime environment we are working in is of course Python. With the
 introduction of Cython syntax throughout the production codebase in `.pyx` and `.pxd` files - it’s
@@ -37,6 +33,7 @@ types and how these map to their corresponding `PyObject` types.
 - [Coding Standards](coding_standards.md)
 - [Cython](cython.md)
 - [Rust](rust.md)
+- [Docs](docs.md)
 - [Testing](testing.md)
 - [Adapters](adapters.md)
 - [Packaged Data](packaged_data.md)

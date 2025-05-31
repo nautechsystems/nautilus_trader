@@ -33,5 +33,5 @@ def test_instrument_status():
     )
 
     # Act, Assert
-    assert InstrumentStatus.from_dict(InstrumentStatus.as_dict(update)) == update
+    assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(update)) == update
     assert repr(update) == "InstrumentStatus(MSFT.XNAS,TRADING,0,0)"  # TODO: Improve repr from Rust

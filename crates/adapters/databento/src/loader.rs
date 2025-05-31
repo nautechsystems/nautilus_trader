@@ -14,11 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
     env, fs,
     path::{Path, PathBuf},
 };
 
+use ahash::AHashMap;
+use anyhow::Context;
 use databento::dbn;
 use dbn::{
     Publisher,
@@ -47,21 +48,21 @@ use crate::symbology::MetadataCache;
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
 /// # Supported schemas:
-///  - MBO -> `OrderBookDelta`
-///  - MBP_1 -> `(QuoteTick, Option<TradeTick>)`
-///  - MBP_10 -> `OrderBookDepth10`
-///  - BBO_1S -> `QuoteTick`
-///  - BBO_1M -> `QuoteTick`
-///  - TBBO -> `(QuoteTick, TradeTick)`
-///  - TRADES -> `TradeTick`
-///  - OHLCV_1S -> `Bar`
-///  - OHLCV_1M -> `Bar`
-///  - OHLCV_1H -> `Bar`
-///  - OHLCV_1D -> `Bar`
-///  - DEFINITION -> `Instrument`
-///  - IMBALANCE -> `DatabentoImbalance`
-///  - STATISTICS -> `DatabentoStatistics`
-///  - STATUS -> `InstrumentStatus`
+///  - `MBO` -> `OrderBookDelta`
+///  - `MBP_1` -> `(QuoteTick, Option<TradeTick>)`
+///  - `MBP_10` -> `OrderBookDepth10`
+///  - `BBO_1S` -> `QuoteTick`
+///  - `BBO_1M` -> `QuoteTick`
+///  - `TBBO` -> `(QuoteTick, TradeTick)`
+///  - `TRADES` -> `TradeTick`
+///  - `OHLCV_1S` -> `Bar`
+///  - `OHLCV_1M` -> `Bar`
+///  - `OHLCV_1H` -> `Bar`
+///  - `OHLCV_1D` -> `Bar`
+///  - `DEFINITION` -> `Instrument`
+///  - `IMBALANCE` -> `DatabentoImbalance`
+///  - `STATISTICS` -> `DatabentoStatistics`
+///  - `STATUS` -> `InstrumentStatus`
 ///
 /// # References
 ///
@@ -75,17 +76,21 @@ pub struct DatabentoDataLoader {
     publishers_map: IndexMap<PublisherId, DatabentoPublisher>,
     venue_dataset_map: IndexMap<Venue, Dataset>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    symbol_venue_map: HashMap<Symbol, Venue>,
+    symbol_venue_map: AHashMap<Symbol, Venue>,
 }
 
 impl DatabentoDataLoader {
     /// Creates a new [`DatabentoDataLoader`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if locating or loading publishers data fails.
     pub fn new(publishers_filepath: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
             publisher_venue_map: IndexMap::new(),
-            symbol_venue_map: HashMap::new(),
+            symbol_venue_map: AHashMap::new(),
         };
 
         // Load publishers
@@ -101,12 +106,16 @@ impl DatabentoDataLoader {
 
         loader
             .load_publishers(publishers_filepath)
-            .unwrap_or_else(|e| panic!("Error loading publishers.json: {e}"));
+            .context("Error loading publishers.json")?;
 
         Ok(loader)
     }
 
     /// Load the publishers data from the file at the given `filepath`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed as JSON.
     pub fn load_publishers(&mut self, filepath: PathBuf) -> anyhow::Result<()> {
         let file_content = fs::read_to_string(filepath)?;
         let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
@@ -171,12 +180,19 @@ impl DatabentoDataLoader {
     }
 
     /// Returns the schema for the given `filepath`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be decoded or metadata retrieval fails.
     pub fn schema_from_file(&self, filepath: &Path) -> anyhow::Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata();
         Ok(metadata.schema.map(|schema| schema.to_string()))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if decoding the definition records fails.
     pub fn read_definition_records(
         &mut self,
         filepath: &Path,
@@ -187,57 +203,82 @@ impl DatabentoDataLoader {
         // Setting the policy to decode v1 data in its original format,
         // rather than upgrading to v2 for now (decoding tests fail on `UpgradeToV2`).
         let upgrade_policy = dbn::VersionUpgradePolicy::AsIs;
-        decoder.set_upgrade_policy(upgrade_policy);
+        decoder.set_upgrade_policy(upgrade_policy)?;
 
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
         Ok(std::iter::from_fn(move || {
-            if let Err(e) = dbn_stream.advance() {
-                return Some(Err(e.into()));
-            }
-            match dbn_stream.get() {
-                Some(rec) => {
-                    let record = dbn::RecordRef::from(rec);
-                    let msg = record.get::<InstrumentDefMsgV1>().unwrap();
+            let result: anyhow::Result<Option<InstrumentAny>> = (|| {
+                dbn_stream
+                    .advance()
+                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
 
-                    let raw_symbol = rec.raw_symbol().expect("Error decoding `raw_symbol`");
+                if let Some(rec) = dbn_stream.get() {
+                    let record = dbn::RecordRef::from(rec);
+                    let msg = record
+                        .get::<InstrumentDefMsgV1>()
+                        .ok_or_else(|| anyhow::anyhow!("Failed to decode InstrumentDefMsgV1"))?;
+
+                    // Symbol and venue resolution
+                    let raw_symbol = rec
+                        .raw_symbol()
+                        .map_err(|e| anyhow::anyhow!("Error decoding `raw_symbol`: {e}"))?;
                     let symbol = Symbol::from(raw_symbol);
 
-                    let publisher = rec.hd.publisher().expect("Invalid `publisher` for record");
+                    let publisher = rec
+                        .hd
+                        .publisher()
+                        .map_err(|e| anyhow::anyhow!("Invalid `publisher` for record: {e}"))?;
                     let venue = match publisher {
                         Publisher::GlbxMdp3Glbx if use_exchange_as_venue => {
-                            // SAFETY: GLBX instruments have a valid `exchange` field
-                            let exchange = rec.exchange().unwrap();
-                            let venue = Venue::from_code(exchange).unwrap_or_else(|_| {
-                                panic!("`Venue` not found for exchange {exchange}")
-                            });
+                            let exchange = rec.exchange().map_err(|e| {
+                                anyhow::anyhow!("Missing `exchange` for record: {e}")
+                            })?;
+                            let venue = Venue::from_code(exchange).map_err(|e| {
+                                anyhow::anyhow!("Venue not found for exchange {exchange}: {e}")
+                            })?;
                             self.symbol_venue_map.insert(symbol, venue);
                             venue
                         }
                         _ => *self
                             .publisher_venue_map
                             .get(&msg.hd.publisher_id)
-                            .expect("`Venue` not found `publisher_id`"),
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "Venue not found for publisher_id {}",
+                                    msg.hd.publisher_id
+                                )
+                            })?,
                     };
                     let instrument_id = InstrumentId::new(symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    match decode_instrument_def_msg_v1(rec, instrument_id, Some(ts_init)) {
-                        Ok(data) => Some(Ok(data)),
-                        Err(e) => Some(Err(e)),
-                    }
+                    let data = decode_instrument_def_msg_v1(rec, instrument_id, Some(ts_init))?;
+                    Ok(Some(data))
+                } else {
+                    // No more records
+                    Ok(None)
                 }
-                None => None,
+            })();
+
+            match result {
+                Ok(Some(item)) => Some(Ok(item)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             }
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading records fails.
     pub fn read_records<T>(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
         include_trades: bool,
+        bars_timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
@@ -250,39 +291,47 @@ impl DatabentoDataLoader {
         let price_precision = price_precision.unwrap_or(Currency::USD().precision);
 
         Ok(std::iter::from_fn(move || {
-            if let Err(e) = dbn_stream.advance() {
-                return Some(Err(e.into()));
-            }
-            match dbn_stream.get() {
-                Some(rec) => {
+            let result: anyhow::Result<Option<(Option<Data>, Option<Data>)>> = (|| {
+                dbn_stream
+                    .advance()
+                    .map_err(|e| anyhow::anyhow!("Stream advance error: {e}"))?;
+                if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
-                    let instrument_id = match &instrument_id {
-                        Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                    let instrument_id = if let Some(id) = &instrument_id {
+                        *id
+                    } else {
+                        decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
                         )
-                        .expect("Failed to decode record"),
+                        .context("Failed to decode instrument id")?
                     };
-
-                    match decode_record(
+                    let (item1, item2) = decode_record(
                         &record,
                         instrument_id,
                         price_precision,
                         None,
                         include_trades,
-                    ) {
-                        Ok(data) => Some(Ok(data)),
-                        Err(e) => Some(Err(e)),
-                    }
+                        bars_timestamp_on_close.unwrap_or(true),
+                    )?;
+                    Ok(Some((item1, item2)))
+                } else {
+                    Ok(None)
                 }
-                None => None,
+            })();
+            match result {
+                Ok(Some(v)) => Some(Ok(v)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
             }
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading instruments fails.
     pub fn load_instruments(
         &mut self,
         filepath: &Path,
@@ -293,13 +342,16 @@ impl DatabentoDataLoader {
     }
 
     // Cannot include trades
+    /// # Errors
+    ///
+    /// Returns an error if loading order book deltas fails.
     pub fn load_order_book_deltas(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        self.read_records::<dbn::MboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::MboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Delta(delta) = item1 {
@@ -314,13 +366,16 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading order book depth10 fails.
     pub fn load_order_book_depth10(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDepth10>> {
-        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Depth10(depth) = item1 {
@@ -335,13 +390,16 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading quotes fails.
     pub fn load_quotes(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -356,13 +414,16 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading BBO quotes fails.
     pub fn load_bbo_quotes(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::BboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::BboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -377,13 +438,16 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading TBBO trades fails.
     pub fn load_tbbo_trades(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -397,13 +461,16 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading trades fails.
     pub fn load_trades(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, price_precision, false)?
+        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, price_precision, false, None)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Trade(trade) = item1 {
@@ -418,27 +485,40 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading bars fails.
     pub fn load_bars(
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
+        timestamp_on_close: Option<bool>,
     ) -> anyhow::Result<Vec<Bar>> {
-        self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, price_precision, false)?
-            .filter_map(|result| match result {
-                Ok((Some(item1), _)) => {
-                    if let Data::Bar(bar) = item1 {
-                        Some(Ok(bar))
-                    } else {
-                        None
-                    }
+        self.read_records::<dbn::OhlcvMsg>(
+            filepath,
+            instrument_id,
+            price_precision,
+            false,
+            timestamp_on_close,
+        )?
+        .filter_map(|result| match result {
+            Ok((Some(item1), _)) => {
+                if let Data::Bar(bar) = item1 {
+                    Some(Ok(bar))
+                } else {
+                    None
                 }
-                Ok((None, _)) => None,
-                Err(e) => Some(Err(e)),
-            })
-            .collect()
+            }
+            Ok((None, _)) => None,
+            Err(e) => Some(Err(e)),
+        })
+        .collect()
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if loading status records fails.
     pub fn load_status_records<T>(
         &self,
         filepath: &Path,
@@ -461,16 +541,21 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
 
-                    let msg = record.get::<dbn::StatusMsg>().expect("Invalid `StatusMsg`");
+                    let msg = match record.get::<dbn::StatusMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `StatusMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_status_msg(msg, instrument_id, Some(ts_init)) {
@@ -483,6 +568,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading imbalance records fails.
     pub fn read_imbalance_records<T>(
         &self,
         filepath: &Path,
@@ -508,18 +596,21 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
 
-                    let msg = record
-                        .get::<dbn::ImbalanceMsg>()
-                        .expect("Invalid `ImbalanceMsg`");
+                    let msg = match record.get::<dbn::ImbalanceMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `ImbalanceMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_imbalance_msg(msg, instrument_id, price_precision, Some(ts_init)) {
@@ -532,6 +623,9 @@ impl DatabentoDataLoader {
         }))
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if reading statistics records fails.
     pub fn read_statistics_records<T>(
         &self,
         filepath: &Path,
@@ -557,15 +651,20 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let instrument_id = match &instrument_id {
                         Some(id) => *id, // Copy
-                        None => decode_nautilus_instrument_id(
+                        None => match decode_nautilus_instrument_id(
                             &record,
                             &mut metadata_cache,
                             &self.publisher_venue_map,
                             &self.symbol_venue_map,
-                        )
-                        .expect("Failed to decode record"),
+                        ) {
+                            Ok(id) => id,
+                            Err(e) => return Some(Err(e)),
+                        },
                     };
-                    let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
+                    let msg = match record.get::<dbn::StatMsg>() {
+                        Some(m) => m,
+                        None => return Some(Err(anyhow::anyhow!("Invalid `StatMsg`"))),
+                    };
                     let ts_init = msg.ts_recv.into();
 
                     match decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
@@ -702,8 +801,97 @@ mod tests {
     #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
     fn test_load_bars(loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bars = loader.load_bars(&path, Some(instrument_id), None).unwrap();
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, None)
+            .unwrap();
 
         assert_eq!(bars.len(), 2);
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
+    fn test_load_bars_timestamp_on_close_true(loader: DatabentoDataLoader, #[case] path: PathBuf) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, Some(true))
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+
+        // When bars_timestamp_on_close is true, both ts_event and ts_init should be equal (close time)
+        for bar in &bars {
+            assert_eq!(
+                bar.ts_event, bar.ts_init,
+                "ts_event and ts_init should be equal when bars_timestamp_on_close=true"
+            );
+            // For 1-second bars, ts_event should be 1 second after the open time
+            // This confirms the bar is timestamped at close
+        }
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
+    fn test_load_bars_timestamp_on_close_false(loader: DatabentoDataLoader, #[case] path: PathBuf) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bars = loader
+            .load_bars(&path, Some(instrument_id), None, Some(false))
+            .unwrap();
+
+        assert_eq!(bars.len(), 2);
+
+        // When bars_timestamp_on_close is false, both ts_event and ts_init should be equal (open time)
+        for bar in &bars {
+            assert_eq!(
+                bar.ts_event, bar.ts_init,
+                "ts_event and ts_init should be equal when bars_timestamp_on_close=false"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"), 0)]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"), 1)]
+    fn test_load_bars_timestamp_comparison(
+        loader: DatabentoDataLoader,
+        #[case] path: PathBuf,
+        #[case] bar_index: usize,
+    ) {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let bars_close = loader
+            .load_bars(&path, Some(instrument_id), None, Some(true))
+            .unwrap();
+
+        let bars_open = loader
+            .load_bars(&path, Some(instrument_id), None, Some(false))
+            .unwrap();
+
+        assert_eq!(bars_close.len(), bars_open.len());
+        assert_eq!(bars_close.len(), 2);
+
+        let bar_close = &bars_close[bar_index];
+        let bar_open = &bars_open[bar_index];
+
+        // Bars should have the same OHLCV data
+        assert_eq!(bar_close.open, bar_open.open);
+        assert_eq!(bar_close.high, bar_open.high);
+        assert_eq!(bar_close.low, bar_open.low);
+        assert_eq!(bar_close.close, bar_open.close);
+        assert_eq!(bar_close.volume, bar_open.volume);
+
+        // The close-timestamped bar should have later timestamp than open-timestamped bar
+        // For 1-second bars, this should be exactly 1 second difference
+        assert!(
+            bar_close.ts_event > bar_open.ts_event,
+            "Close-timestamped bar should have later timestamp than open-timestamped bar"
+        );
+
+        // The difference should be exactly 1 second (1_000_000_000 nanoseconds) for 1s bars
+        const ONE_SECOND_NS: u64 = 1_000_000_000;
+        assert_eq!(
+            bar_close.ts_event.as_u64() - bar_open.ts_event.as_u64(),
+            ONE_SECOND_NS,
+            "Timestamp difference should be exactly 1 second for 1s bars"
+        );
     }
 }

@@ -25,8 +25,13 @@ use crate::sql::models::enums::{
     AggregationSourceModel, AggressorSideModel, BarAggregationModel, PriceTypeModel,
 };
 
+#[derive(Debug)]
 pub struct QuoteTickModel(pub QuoteTick);
+
+#[derive(Debug)]
 pub struct TradeTickModel(pub TradeTick);
+
+#[derive(Debug)]
 pub struct BarModel(pub Bar);
 
 impl<'r> FromRow<'r, PgRow> for QuoteTickModel {

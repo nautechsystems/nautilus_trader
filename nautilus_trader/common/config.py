@@ -19,6 +19,7 @@ import hashlib
 import importlib
 from collections.abc import Callable
 from decimal import Decimal
+from io import StringIO
 from typing import Annotated, Any
 
 import msgspec
@@ -57,7 +58,7 @@ CUSTOM_ENCODINGS: dict[type, Callable] = {
 
 
 CUSTOM_DECODINGS: dict[type, Callable] = {
-    pd.DataFrame: lambda x: pd.read_json(x),
+    pd.DataFrame: lambda x: pd.read_json(StringIO(x)),
 }
 
 

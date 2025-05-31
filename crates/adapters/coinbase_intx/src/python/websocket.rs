@@ -46,7 +46,7 @@ impl CoinbaseIntxWebSocketClient {
     #[getter]
     #[pyo3(name = "url")]
     #[must_use]
-    pub fn py_url(&self) -> &str {
+    pub const fn py_url(&self) -> &str {
         self.url()
     }
 

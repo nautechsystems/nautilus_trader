@@ -22,6 +22,8 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceAllMsg
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceData
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesTradeMsg
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
@@ -111,10 +113,14 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
 
         # Register additional futures websocket handlers
         self._ws_handlers["@markPrice"] = self._handle_mark_price
+        self._ws_handlers["!markPrice@arr"] = self._handle_mark_price_all
 
         # Websocket msgspec decoders
         self._decoder_futures_trade_msg = msgspec.json.Decoder(BinanceFuturesTradeMsg)
         self._decoder_futures_mark_price_msg = msgspec.json.Decoder(BinanceFuturesMarkPriceMsg)
+        self._decoder_futures_mark_price_all_msg = msgspec.json.Decoder(
+            BinanceFuturesMarkPriceAllMsg,
+        )
 
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
@@ -139,16 +145,19 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         # NOTE @trade is an undocumented endpoint for Futures exchanges
         msg = self._decoder_futures_trade_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        trade_tick: TradeTick = msg.data.parse_to_trade_tick(
-            instrument_id=instrument_id,
-            ts_init=self._clock.timestamp_ns(),
-        )
-        self._handle_data(trade_tick)
+        try:
+            trade_tick: TradeTick = msg.data.parse_to_trade_tick(
+                instrument_id=instrument_id,
+                ts_init=self._clock.timestamp_ns(),
+            )
+        except ValueError as e:
+            self._log.debug(f"Error handling trade tick message {raw!r}, {e}")
+        else:
+            self._handle_data(trade_tick)
 
-    def _handle_mark_price(self, raw: bytes) -> None:
-        msg = self._decoder_futures_mark_price_msg.decode(raw)
-        instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        data = msg.data.parse_to_binance_futures_mark_price_update(
+    def _handle_mark_price_data(self, data: BinanceFuturesMarkPriceData) -> None:
+        instrument_id: InstrumentId = self._get_cached_instrument_id(data.s)
+        data = data.parse_to_binance_futures_mark_price_update(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
@@ -157,6 +166,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             metadata={"instrument_id": instrument_id},
         )
         generic = CustomData(data_type=data_type, data=data)
+
         self._handle_data(generic)
         self._handle_data(
             MarkPriceUpdate(
@@ -166,3 +176,12 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                 data.ts_init,
             ),
         )
+
+    def _handle_mark_price(self, raw: bytes) -> None:
+        msg = self._decoder_futures_mark_price_msg.decode(raw)
+        self._handle_mark_price_data(msg.data)
+
+    def _handle_mark_price_all(self, raw: bytes) -> None:
+        msg = self._decoder_futures_mark_price_all_msg.decode(raw)
+        for data in msg.data:
+            self._handle_mark_price_data(data)

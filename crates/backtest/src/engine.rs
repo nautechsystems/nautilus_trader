@@ -23,6 +23,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -36,9 +37,8 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Currency, Money},
 };
-use nautilus_system::kernel::NautilusKernel;
+use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use rust_decimal::Decimal;
-use ustr::Ustr;
 
 use crate::{
     accumulator::TimeEventAccumulator, config::BacktestEngineConfig,
@@ -65,11 +65,26 @@ pub struct BacktestEngine {
     backtest_end: Option<UnixNanos>,
 }
 
+impl Debug for BacktestEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BacktestEngine))
+            .field("instance_id", &self.instance_id)
+            .field("run_config_id", &self.run_config_id)
+            .field("run_id", &self.run_id)
+            .finish()
+    }
+}
+
 impl BacktestEngine {
-    #[must_use]
-    pub fn new(config: BacktestEngineConfig) -> Self {
-        let kernel = NautilusKernel::new(Ustr::from("BacktestEngine"), config.kernel.clone());
-        Self {
+    /// Create a new [`BacktestEngine`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the core `NautilusKernel` fails to initialize.
+    pub fn new(config: BacktestEngineConfig) -> anyhow::Result<Self> {
+        let kernel = NautilusKernel::new("BacktestEngine".to_string(), config.clone())?;
+
+        Ok(Self {
             instance_id: kernel.instance_id,
             config,
             accumulator: TimeEventAccumulator::new(),
@@ -86,9 +101,12 @@ impl BacktestEngine {
             run_finished: None,
             backtest_start: None,
             backtest_end: None,
-        }
+        })
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if initializing the simulated exchange for the venue fails.
     #[allow(clippy::too_many_arguments)]
     pub fn add_venue(
         &mut self,
@@ -116,7 +134,7 @@ impl BacktestEngine {
         bar_execution: Option<bool>,
         bar_adaptive_high_low_ordering: Option<bool>,
         trade_execution: Option<bool>,
-    ) {
+    ) -> anyhow::Result<()> {
         let default_leverage: Decimal = default_leverage.unwrap_or_else(|| {
             if account_type == AccountType::Margin {
                 Decimal::from(10)
@@ -149,14 +167,13 @@ impl BacktestEngine {
             use_random_ids,
             use_reduce_only,
             use_message_queue,
-        )
-        .unwrap();
+        )?;
         let exchange = Rc::new(RefCell::new(exchange));
         self.venues.insert(venue, exchange.clone());
 
         let account_id = AccountId::from(format!("{venue}-001").as_str());
         let exec_client = BacktestExecutionClient::new(
-            self.kernel.config.trader_id,
+            self.config.trader_id(),
             account_id,
             exchange.clone(),
             self.kernel.cache.clone(),
@@ -167,17 +184,28 @@ impl BacktestEngine {
         let exec_client = Rc::new(exec_client);
 
         exchange.borrow_mut().register_client(exec_client.clone());
-        self.kernel
-            .exec_engine
-            .register_client(exec_client)
-            .unwrap();
+        self.kernel.exec_engine.register_client(exec_client)?;
+
         log::info!("Adding exchange {venue} to engine");
+
+        Ok(())
     }
 
     pub fn change_fill_model(&mut self, venue: Venue, fill_model: FillModel) {
         todo!("implement change_fill_model")
     }
 
+    /// Adds an instrument to the backtest engine for the specified venue.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument's associated venue has not been added via `add_venue`.
+    /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
+    ///
+    /// # Panics
+    ///
+    /// Panics if adding the instrument to the simulated exchange fails.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get_mut(&instrument.id().venue) {
@@ -308,6 +336,7 @@ impl BacktestEngine {
         todo!("implement add_data_client_if_not_exists")
     }
 
+    // TODO: We might want venue to be optional for multi-venue clients
     pub fn add_market_data_client_if_not_exists(&mut self, venue: Venue) {
         let client_id = ClientId::from(venue.as_str());
         if !self
@@ -320,11 +349,10 @@ impl BacktestEngine {
                 BacktestDataClient::new(client_id, venue, self.kernel.cache.clone());
             let data_client_adapter = DataClientAdapter::new(
                 client_id,
-                venue,
+                Some(venue), // TBD
                 false,
                 false,
                 Box::new(backtest_client),
-                self.kernel.clock.clone(),
             );
             self.kernel
                 .data_engine
@@ -350,40 +378,45 @@ mod tests {
 
     use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
 
+    #[allow(clippy::missing_panics_doc)] // OK for testing
     fn get_backtest_engine(config: Option<BacktestEngineConfig>) -> BacktestEngine {
-        let config = config.unwrap_or(BacktestEngineConfig::default());
-        let mut engine = BacktestEngine::new(config);
-        engine.add_venue(
-            Venue::from("BINANCE"),
-            OmsType::Netting,
-            AccountType::Margin,
-            BookType::L2_MBP,
-            vec![Money::from("1000000 USD")],
-            None,
-            None,
-            HashMap::new(),
-            vec![],
-            FillModel::default(),
-            FeeModelAny::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let config = config.unwrap_or_default();
+        let mut engine = BacktestEngine::new(config).unwrap();
+        engine
+            .add_venue(
+                Venue::from("BINANCE"),
+                OmsType::Netting,
+                AccountType::Margin,
+                BookType::L2_MBP,
+                vec![Money::from("1_000_000 USD")],
+                None,
+                None,
+                HashMap::new(),
+                vec![],
+                FillModel::default(),
+                FeeModelAny::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
         engine
     }
 
     #[rstest]
     fn test_engine_venue_and_instrument_initialization(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        pyo3::prepare_freethreaded_python();
+
         let venue = Venue::from("BINANCE");
         let client_id = ClientId::from(venue.as_str());
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -410,6 +443,6 @@ mod tests {
                 .data_engine
                 .registered_clients()
                 .contains(&client_id)
-        )
+        );
     }
 }

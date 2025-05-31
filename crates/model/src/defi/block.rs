@@ -24,31 +24,31 @@ use crate::defi::{
     hex::{deserialize_hex_number, deserialize_hex_timestamp},
 };
 
-/// Represent Ethereum-compatible compatible blockchain block with essential metadata.
+/// Represents an Ethereum-compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Block {
     /// The unique identifier hash of the block.
-    hash: String,
+    pub hash: String,
     /// The block height/number in the blockchain.
     #[serde(deserialize_with = "deserialize_hex_number")]
-    number: u64,
+    pub number: u64,
     /// Hash of the parent block.
     #[serde(rename = "parentHash")]
-    parent_hash: String,
+    pub parent_hash: String,
     /// Address of the miner or validator who produced this block.
-    miner: Ustr,
+    pub miner: Ustr,
     /// Maximum amount of gas allowed in this block.
     #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_number")]
-    gas_limit: u64,
+    pub gas_limit: u64,
     /// Total gas actually used by all transactions in this block.
     #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_number")]
-    gas_used: u64,
+    pub gas_used: u64,
     /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]
-    timestamp: UnixNanos,
+    pub timestamp: UnixNanos,
     /// The blockchain that this block is part of.
     #[serde(skip)]
-    chain: Option<Chain>,
+    pub chain: Option<Chain>,
 }
 
 impl Block {

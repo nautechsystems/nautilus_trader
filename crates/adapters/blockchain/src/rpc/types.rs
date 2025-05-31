@@ -17,16 +17,16 @@ use nautilus_model::defi::block::Block;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
-/// Represents normalized blockchain RPC messages which was processed from the node.
+/// Represents normalized blockchain messages.
 #[derive(Debug, Clone)]
-pub enum BlockchainRpcMessage {
+pub enum BlockchainMessage {
     Block(Block),
 }
 
 /// Represents the types of events that can be subscribed to via the blockchain RPC interface.
 ///
 /// This enum defines the various event types that the application can subscribe to using
-/// the WebSocket-based RPC subscription
+/// the WebSocket-based RPC subscription.
 #[derive(
     Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Display, EnumString, Serialize, Deserialize,
 )]

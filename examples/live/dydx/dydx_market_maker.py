@@ -16,10 +16,10 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.dydx.config import DYDXDataClientConfig
-from nautilus_trader.adapters.dydx.config import DYDXExecClientConfig
-from nautilus_trader.adapters.dydx.factories import DYDXLiveDataClientFactory
-from nautilus_trader.adapters.dydx.factories import DYDXLiveExecClientFactory
+from nautilus_trader.adapters.dydx import DYDXDataClientConfig
+from nautilus_trader.adapters.dydx import DYDXExecClientConfig
+from nautilus_trader.adapters.dydx import DYDXLiveDataClientFactory
+from nautilus_trader.adapters.dydx import DYDXLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -35,9 +35,6 @@ from nautilus_trader.model.identifiers import TraderId
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Perpetual
 symbol = "ETH-USD-PERP"

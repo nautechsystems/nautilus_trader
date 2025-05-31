@@ -13,16 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{num::NonZero, str::FromStr};
+use std::str::FromStr;
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
-    data::BarSpecification,
-    enums::{
-        AggressorSide, BarAggregation, CurrencyType, LiquiditySide, OrderSide, PositionSide,
-        PriceType,
+    data::{
+        BarSpecification,
+        bar::{
+            BAR_SPEC_1_DAY_LAST, BAR_SPEC_1_MINUTE_LAST, BAR_SPEC_2_HOUR_LAST,
+            BAR_SPEC_5_MINUTE_LAST, BAR_SPEC_30_MINUTE_LAST,
+        },
     },
+    enums::{AggressorSide, CurrencyType, LiquiditySide, OrderSide, PositionSide},
     identifiers::{InstrumentId, Symbol},
     types::{Currency, Money, Price, Quantity},
 };
@@ -37,33 +40,11 @@ use crate::{
     websocket::enums::CoinbaseIntxWsChannel,
 };
 
-pub const BAR_SPEC_1_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_5_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(5).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_30_MINUTE: BarSpecification = BarSpecification {
-    step: NonZero::new(30).unwrap(),
-    aggregation: BarAggregation::Minute,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_2_HOUR: BarSpecification = BarSpecification {
-    step: NonZero::new(2).unwrap(),
-    aggregation: BarAggregation::Hour,
-    price_type: PriceType::Last,
-};
-pub const BAR_SPEC_1_DAY: BarSpecification = BarSpecification {
-    step: NonZero::new(1).unwrap(),
-    aggregation: BarAggregation::Day,
-    price_type: PriceType::Last,
-};
-
 /// Custom deserializer for strings to u64.
+///
+/// # Errors
+///
+/// Returns a deserialization error if the JSON string is invalid or cannot be parsed to u64.
 pub fn deserialize_optional_string_to_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
@@ -77,6 +58,11 @@ where
 }
 
 /// Returns the currency either from the internal currency map or creates a default crypto.
+/// Returns the currency either from the internal currency map or creates a default crypto.
+///
+/// # Panics
+///
+/// Panics if the internal currency map lock is poisoned.
 pub fn get_currency(code: &str) -> Currency {
     CURRENCY_MAP
         .lock()
@@ -92,24 +78,52 @@ pub fn parse_instrument_id(symbol: Ustr) -> InstrumentId {
     InstrumentId::new(Symbol::from_ustr_unchecked(symbol), *COINBASE_INTX_VENUE)
 }
 
+/// Parses a timestamp in milliseconds since epoch into `UnixNanos`.
+///
+/// # Errors
+///
+/// Returns an error if the input string is not a valid unsigned integer.
 pub fn parse_millisecond_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let millis: u64 = timestamp.parse()?;
     Ok(UnixNanos::from(millis * NANOSECONDS_IN_MILLISECOND))
 }
 
+/// Parses an RFC3339 timestamp string into `UnixNanos`.
+///
+/// # Errors
+///
+/// Returns an error if the input string is not a valid RFC3339 timestamp or is out of range.
 pub fn parse_rfc3339_timestamp(timestamp: &str) -> anyhow::Result<UnixNanos> {
     let dt = chrono::DateTime::parse_from_rfc3339(timestamp)?;
-    Ok(UnixNanos::from(dt.timestamp_nanos_opt().unwrap() as u64))
+    let nanos = dt
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("RFC3339 timestamp out of range: {timestamp}"))?;
+    Ok(UnixNanos::from(nanos as u64))
 }
 
+/// Parses a string into a `Price`.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_price(value: &str) -> anyhow::Result<Price> {
     Price::from_str(value).map_err(|e| anyhow::anyhow!(e))
 }
 
+/// Parses a string into a `Quantity` with the given precision.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     Quantity::new_checked(value.parse::<f64>()?, precision)
 }
 
+/// Parses a notional string into `Money`, returning `None` if the value is zero.
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed into a floating point value.
 pub fn parse_notional(value: &str, currency: Currency) -> anyhow::Result<Option<Money>> {
     let parsed = value.trim().parse::<f64>()?;
     Ok(if parsed == 0.0 {
@@ -155,30 +169,39 @@ pub const fn parse_order_side(order_side: &Option<CoinbaseIntxSide>) -> OrderSid
     }
 }
 
+/// Converts a `BarSpecification` into the corresponding Coinbase WebSocket channel.
+///
+/// # Errors
+///
+/// Returns an error if the specification is not one of the supported candle intervals.
 pub fn bar_spec_as_coinbase_channel(
     bar_spec: BarSpecification,
 ) -> anyhow::Result<CoinbaseIntxWsChannel> {
     let channel = match bar_spec {
-        BAR_SPEC_1_MINUTE => CoinbaseIntxWsChannel::CandlesOneMinute,
-        BAR_SPEC_5_MINUTE => CoinbaseIntxWsChannel::CandlesFiveMinute,
-        BAR_SPEC_30_MINUTE => CoinbaseIntxWsChannel::CandlesThirtyMinute,
-        BAR_SPEC_2_HOUR => CoinbaseIntxWsChannel::CandlesTwoHour,
-        BAR_SPEC_1_DAY => CoinbaseIntxWsChannel::CandlesOneDay,
+        BAR_SPEC_1_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesOneMinute,
+        BAR_SPEC_5_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesFiveMinute,
+        BAR_SPEC_30_MINUTE_LAST => CoinbaseIntxWsChannel::CandlesThirtyMinute,
+        BAR_SPEC_2_HOUR_LAST => CoinbaseIntxWsChannel::CandlesTwoHour,
+        BAR_SPEC_1_DAY_LAST => CoinbaseIntxWsChannel::CandlesOneDay,
         _ => anyhow::bail!("Invalid `BarSpecification` for channel, was {bar_spec}"),
     };
     Ok(channel)
 }
 
+/// Converts a Coinbase WebSocket channel into the corresponding `BarSpecification`.
+///
+/// # Errors
+///
+/// Returns an error if the channel is not one of the supported candle channels.
 pub fn coinbase_channel_as_bar_spec(
     channel: &CoinbaseIntxWsChannel,
 ) -> anyhow::Result<BarSpecification> {
     let bar_spec = match channel {
-        CoinbaseIntxWsChannel::CandlesOneMinute => BAR_SPEC_1_MINUTE,
-        CoinbaseIntxWsChannel::CandlesFiveMinute => BAR_SPEC_5_MINUTE,
-        CoinbaseIntxWsChannel::CandlesThirtyMinute => BAR_SPEC_30_MINUTE,
-        CoinbaseIntxWsChannel::CandlesTwoHour => BAR_SPEC_2_HOUR,
-        CoinbaseIntxWsChannel::CandlesOneDay => BAR_SPEC_1_DAY,
-        // TODO: Complete remainder
+        CoinbaseIntxWsChannel::CandlesOneMinute => BAR_SPEC_1_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesFiveMinute => BAR_SPEC_5_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesThirtyMinute => BAR_SPEC_30_MINUTE_LAST,
+        CoinbaseIntxWsChannel::CandlesTwoHour => BAR_SPEC_2_HOUR_LAST,
+        CoinbaseIntxWsChannel::CandlesOneDay => BAR_SPEC_1_DAY_LAST,
         _ => anyhow::bail!("Invalid channel for `BarSpecification`, was {channel}"),
     };
     Ok(bar_spec)

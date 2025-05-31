@@ -20,6 +20,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Debug,
     rc::Rc,
 };
 
@@ -44,7 +45,6 @@ use nautilus_model::{
     types::{Currency, Money, Price},
 };
 use rust_decimal::{Decimal, prelude::FromPrimitive};
-use ustr::Ustr;
 
 use crate::{config::PortfolioConfig, manager::AccountsManager};
 
@@ -89,6 +89,12 @@ pub struct Portfolio {
     pub(crate) cache: Rc<RefCell<Cache>>,
     inner: Rc<RefCell<PortfolioState>>,
     config: PortfolioConfig,
+}
+
+impl Debug for Portfolio {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(Portfolio)).finish()
+    }
 }
 
 impl Portfolio {
@@ -175,15 +181,22 @@ impl Portfolio {
             )))
         };
 
-        msgbus::register("Portfolio.update_account", update_account_handler.clone());
+        msgbus::register(
+            "Portfolio.update_account".into(),
+            update_account_handler.clone(),
+        );
 
-        msgbus::subscribe("data.quotes.*", update_quote_handler, Some(10));
+        msgbus::subscribe("data.quotes.*".into(), update_quote_handler, Some(10));
         if bar_updates {
-            msgbus::subscribe("data.quotes.*EXTERNAL", update_bar_handler, Some(10));
+            msgbus::subscribe("data.quotes.*EXTERNAL".into(), update_bar_handler, Some(10));
         }
-        msgbus::subscribe("events.order.*", update_order_handler, Some(10));
-        msgbus::subscribe("events.position.*", update_position_handler, Some(10));
-        msgbus::subscribe("events.account.*", update_account_handler, Some(10));
+        msgbus::subscribe("events.order.*".into(), update_order_handler, Some(10));
+        msgbus::subscribe(
+            "events.position.*".into(),
+            update_position_handler,
+            Some(10),
+        );
+        msgbus::subscribe("events.account.*".into(), update_account_handler, Some(10));
     }
 
     pub fn reset(&mut self) {
@@ -552,6 +565,11 @@ impl Portfolio {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    /// Initializes account margin based on existing open orders.
+    ///
+    /// # Panics
+    ///
+    /// Panics if updating the cache with a mutated account fails.
     pub fn initialize_orders(&mut self) {
         let mut initialized = true;
         let orders_and_instruments = {
@@ -628,6 +646,11 @@ impl Portfolio {
         self.inner.borrow_mut().initialized = initialized;
     }
 
+    /// Initializes account margin based on existing open positions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if calculation of PnL or updating the cache with a mutated account fails.
     pub fn initialize_positions(&mut self) {
         self.inner.borrow_mut().unrealized_pnls.clear();
         self.inner.borrow_mut().realized_pnls.clear();
@@ -1234,7 +1257,7 @@ fn update_order(
 
     if let Some(account_state) = account_state {
         msgbus::publish(
-            &Ustr::from(&format!("events.account.{}", account.id())),
+            format!("events.account.{}", account.id()).into(),
             &account_state,
         );
     } else {

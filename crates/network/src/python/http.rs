@@ -89,7 +89,7 @@ impl HttpResponse {
 
 #[pymethods]
 impl HttpClient {
-    /// Creates a new HttpClient.
+    /// Creates a new `HttpClient`.
     ///
     /// `default_headers`: The default headers to be used with every request.
     /// `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
@@ -100,7 +100,7 @@ impl HttpClient {
     /// Rate limiting can be configured on a per-endpoint basis by passing
     /// key-value pairs of endpoint URLs and their respective quotas.
     ///
-    /// For /foo -> 10 reqs/sec configure limit with ("foo", Quota.rate_per_second(10))
+    /// For /foo -> 10 reqs/sec configure limit with ("foo", `Quota.rate_per_second(10)`)
     ///
     /// Hierarchical rate limiting can be achieved by configuring the quotas for
     /// each level.

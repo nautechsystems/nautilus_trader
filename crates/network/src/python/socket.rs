@@ -213,8 +213,9 @@ impl SocketClient {
                     "Cannot send data ({}): socket closed",
                     String::from_utf8_lossy(&data)
                 );
-                log::error!("{msg}");
-                return Ok(());
+
+                let io_err = std::io::Error::new(std::io::ErrorKind::NotConnected, msg);
+                return Err(to_pyruntime_err(io_err));
             }
 
             let timeout = Duration::from_secs(2);
@@ -240,27 +241,28 @@ impl SocketClient {
                 {
                     Ok(Ok(())) => tracing::debug!("Client now active"),
                     Ok(Err(e)) => {
-                        tracing::error!(
+                        let err_msg = format!(
                             "Failed sending data ({}): {e}",
                             String::from_utf8_lossy(&data)
                         );
-                        return Ok(());
+
+                        let io_err = std::io::Error::new(std::io::ErrorKind::NotConnected, err_msg);
+                        return Err(to_pyruntime_err(io_err));
                     }
                     Err(_) => {
-                        tracing::error!(
+                        let err_msg = format!(
                             "Failed sending data ({}): timeout waiting to become ACTIVE",
                             String::from_utf8_lossy(&data)
                         );
-                        return Ok(());
+
+                        let io_err = std::io::Error::new(std::io::ErrorKind::TimedOut, err_msg);
+                        return Err(to_pyruntime_err(io_err));
                     }
                 }
             }
 
             let msg = WriterCommand::Send(data.into());
-            if let Err(e) = writer_tx.send(msg) {
-                tracing::error!("{e}");
-            }
-            Ok(())
+            writer_tx.send(msg).map_err(to_pyruntime_err)
         })
     }
 }

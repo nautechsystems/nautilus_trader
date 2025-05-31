@@ -12,16 +12,16 @@ The standalone TWS and IB Gateway applications require manually inputting userna
 
 ## Installation
 
-To install the latest `nautilus_trader` package along with the `ibapi` and optional `docker` dependencies using pip:
+To install NautilusTrader with Interactive Brokers (and Docker) support:
 
-```
-pip install -U "nautilus_trader[ib,docker]"
+```bash
+pip install --upgrade "nautilus_trader[ib,docker]"
 ```
 
-To install from source using uv:
+To build from source with all extras (including IB and Docker):
 
-```
-uv sync --extra ib --extra docker
+```bash
+uv sync --all-extras
 ```
 
 :::note
@@ -30,7 +30,7 @@ Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](http
 
 ## Examples
 
-You can find functional live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
+You can find live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers/).
 
 ## Getting Started
 
@@ -340,6 +340,7 @@ Finally, the node is built and run.
 You can find additional examples here: <https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers>
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.common import IB
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
@@ -355,8 +356,8 @@ from nautilus_trader.live.node import TradingNode
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(log_level="INFO"),
-    data_clients={"IB": data_client_config},
-    exec_clients={"IB": exec_client_config},
+    data_clients={IB: data_client_config},
+    exec_clients={IB: exec_client_config},
     data_engine=LiveDataEngineConfig(
         time_bars_timestamp_on_close=False,  # Use opening time as `ts_event`, as per IB standard
         validate_data_sequence=True,         # Discards bars received out of sequence
@@ -364,8 +365,8 @@ config_node = TradingNodeConfig(
 )
 
 node = TradingNode(config=config_node)
-node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+node.add_data_client_factory(IB, InteractiveBrokersLiveDataClientFactory)
+node.add_exec_client_factory(IB, InteractiveBrokersLiveExecClientFactory)
 node.build()
 node.portfolio.set_specific_venue(IB_VENUE)
 

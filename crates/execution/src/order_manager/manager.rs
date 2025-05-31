@@ -13,13 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
     logging::{CMD, EVT, SEND},
-    msgbus::{self},
+    messages::execution::{SubmitOrder, TradingCommand},
+    msgbus,
 };
 use nautilus_core::UUID4;
 use nautilus_model::{
@@ -31,23 +36,23 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Quantity,
 };
-use ustr::Ustr;
-
-use crate::messages::{
-    SubmitOrder, TradingCommand,
-    cancel::{CancelOrderHandler, CancelOrderHandlerAny},
-    modify::{ModifyOrderHandler, ModifyOrderHandlerAny},
-    submit::{SubmitOrderHandler, SubmitOrderHandlerAny},
-};
 
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     active_local: bool,
-    submit_order_handler: Option<SubmitOrderHandlerAny>,
-    cancel_order_handler: Option<CancelOrderHandlerAny>,
-    modify_order_handler: Option<ModifyOrderHandlerAny>,
+    // submit_order_handler: Option<SubmitOrderHandlerAny>,
+    // cancel_order_handler: Option<CancelOrderHandlerAny>,
+    // modify_order_handler: Option<ModifyOrderHandlerAny>,
     submit_order_commands: HashMap<ClientOrderId, SubmitOrder>,
+}
+
+impl Debug for OrderManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OrderManager))
+            .field("pending_commands", &self.submit_order_commands.len())
+            .finish()
+    }
 }
 
 impl OrderManager {
@@ -55,32 +60,32 @@ impl OrderManager {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         active_local: bool,
-        submit_order_handler: Option<SubmitOrderHandlerAny>,
-        cancel_order_handler: Option<CancelOrderHandlerAny>,
-        modify_order_handler: Option<ModifyOrderHandlerAny>,
+        // submit_order_handler: Option<SubmitOrderHandlerAny>,
+        // cancel_order_handler: Option<CancelOrderHandlerAny>,
+        // modify_order_handler: Option<ModifyOrderHandlerAny>,
     ) -> Self {
         Self {
             clock,
             cache,
             active_local,
-            submit_order_handler,
-            cancel_order_handler,
-            modify_order_handler,
+            // submit_order_handler,
+            // cancel_order_handler,
+            // modify_order_handler,
             submit_order_commands: HashMap::new(),
         }
     }
 
-    pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
-        self.submit_order_handler = Some(handler);
-    }
-
-    pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
-        self.cancel_order_handler = Some(handler);
-    }
-
-    pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
-        self.modify_order_handler = Some(handler);
-    }
+    // pub fn set_submit_order_handler(&mut self, handler: SubmitOrderHandlerAny) {
+    //     self.submit_order_handler = Some(handler);
+    // }
+    //
+    // pub fn set_cancel_order_handler(&mut self, handler: CancelOrderHandlerAny) {
+    //     self.cancel_order_handler = Some(handler);
+    // }
+    //
+    // pub fn set_modify_order_handler(&mut self, handler: ModifyOrderHandlerAny) {
+    //     self.modify_order_handler = Some(handler);
+    // }
 
     #[must_use]
     pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
@@ -119,17 +124,20 @@ impl OrderManager {
 
         self.submit_order_commands.remove(&order.client_order_id());
 
-        if let Some(handler) = &self.cancel_order_handler {
-            handler.handle_cancel_order(order);
-        }
+        // if let Some(handler) = &self.cancel_order_handler {
+        //     handler.handle_cancel_order(order);
+        // }
     }
 
-    pub fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
-        if let Some(handler) = &self.modify_order_handler {
-            handler.handle_modify_order(order, new_quantity);
-        }
+    pub const fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
+        // if let Some(handler) = &self.modify_order_handler {
+        //     handler.handle_modify_order(order, new_quantity);
+        // }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if creating a new submit order fails.
     pub fn create_new_submit_order(
         &mut self,
         order: &OrderAny,
@@ -164,9 +172,9 @@ impl OrderManager {
                 }
                 None => self.send_risk_command(TradingCommand::SubmitOrder(submit)),
             }
-        } else if let Some(handler) = &self.submit_order_handler {
-            handler.handle_submit_order(submit);
-        }
+        } // else if let Some(handler) = &self.submit_order_handler {
+        //     handler.handle_submit_order(submit);
+        // }
 
         Ok(())
     }
@@ -256,6 +264,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the OTO child order cannot be found for the given client order ID.
     pub fn handle_order_filled(&mut self, filled: OrderFilled) {
         let order = if let Some(order) = self.cache.borrow().order(&filled.client_order_id).cloned()
         {
@@ -327,9 +338,9 @@ impl OrderManager {
                         self.modify_order_quantity(&mut child_order, parent_filled_qty);
                     }
 
-                    if self.submit_order_handler.is_none() {
-                        return;
-                    }
+                    // if self.submit_order_handler.is_none() {
+                    //     return;
+                    // }
 
                     if !self
                         .submit_order_commands
@@ -377,6 +388,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if a contingent order cannot be found for the given client order ID.
     pub fn handle_contingencies(&mut self, order: OrderAny) {
         let (filled_qty, leaves_qty, is_spawn_active) =
             if let Some(exec_spawn_id) = order.exec_spawn_id() {
@@ -454,6 +468,9 @@ impl OrderManager {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if an OCO contingent order cannot be found for the given client order ID.
     pub fn handle_contingencies_update(&mut self, order: OrderAny) {
         let quantity = match order.exec_spawn_id() {
             Some(exec_spawn_id) => {
@@ -517,36 +534,33 @@ impl OrderManager {
     pub fn send_emulator_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
 
-        msgbus::send(&Ustr::from("OrderEmulator.execute"), &command);
+        msgbus::send("OrderEmulator.execute".into(), &command);
     }
 
     pub fn send_algo_command(&self, command: SubmitOrder, exec_algorithm_id: ExecAlgorithmId) {
         log::info!("{CMD}{SEND} {command}");
 
         let endpoint = format!("{exec_algorithm_id}.execute");
-        msgbus::send(
-            &Ustr::from(&endpoint),
-            &TradingCommand::SubmitOrder(command),
-        );
+        msgbus::send(endpoint.into(), &TradingCommand::SubmitOrder(command));
     }
 
     pub fn send_risk_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
-        msgbus::send(&Ustr::from("RiskEngine.execute"), &command);
+        msgbus::send("RiskEngine.execute".into(), &command);
     }
 
     pub fn send_exec_command(&self, command: TradingCommand) {
         log::info!("{CMD}{SEND} {command}");
-        msgbus::send(&Ustr::from("ExecEngine.execute"), &command);
+        msgbus::send("ExecEngine.execute".into(), &command);
     }
 
     pub fn send_risk_event(&self, event: OrderEventAny) {
         log::info!("{EVT}{SEND} {event}");
-        msgbus::send(&Ustr::from("RiskEngine.process"), &event);
+        msgbus::send("RiskEngine.process".into(), &event);
     }
 
     pub fn send_exec_event(&self, event: OrderEventAny) {
         log::info!("{EVT}{SEND} {event}");
-        msgbus::send(&Ustr::from("ExecEngine.process"), &event);
+        msgbus::send("ExecEngine.process".into(), &event);
     }
 }

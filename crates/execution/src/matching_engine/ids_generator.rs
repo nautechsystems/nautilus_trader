@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::cache::Cache;
 use nautilus_model::{
@@ -33,6 +33,15 @@ pub struct IdsGenerator {
     position_count: usize,
     order_count: usize,
     execution_count: usize,
+}
+
+impl Debug for IdsGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(IdsGenerator))
+            .field("venue", &self.venue)
+            .field("raw_id", &self.raw_id)
+            .finish()
+    }
 }
 
 impl IdsGenerator {
@@ -63,6 +72,11 @@ impl IdsGenerator {
         self.execution_count = 0;
     }
 
+    /// Retrieves or generates a unique venue order ID for the given order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if ID generation fails.
     pub fn get_venue_order_id(&mut self, order: &OrderAny) -> anyhow::Result<VenueOrderId> {
         // check existing on order
         if let Some(venue_order_id) = order.venue_order_id() {
@@ -83,6 +97,11 @@ impl IdsGenerator {
         Ok(venue_order_id)
     }
 
+    /// Retrieves or generates a position ID for the given order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `generate` is `Some(true)` but no cached position ID is available.
     pub fn get_position_id(
         &mut self,
         order: &OrderAny,

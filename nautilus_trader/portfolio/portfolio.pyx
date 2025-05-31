@@ -53,6 +53,7 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -75,6 +76,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef tuple[OrderEvent] _UPDATE_ORDER_EVENTS = (
     OrderAccepted,
     OrderCanceled,
+    OrderExpired,
     OrderRejected,
     OrderUpdated,
     OrderFilled,
@@ -167,10 +169,12 @@ cdef class Portfolio(PortfolioFacade):
 
         # Register endpoints
         self._msgbus.register(endpoint="Portfolio.update_account", handler=self.update_account)
+        self._msgbus.register(endpoint="Portfolio.update_order", handler=self.update_order)
+        self._msgbus.register(endpoint="Portfolio.update_position", handler=self.update_position)
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="events.order.*", handler=self.update_order, priority=10)
-        self._msgbus.subscribe(topic="events.account.*", handler=self.update_account, priority=10)
+        self._msgbus.subscribe(topic="events.order.*", handler=self.on_order_event, priority=10)
+        self._msgbus.subscribe(topic="events.position.*", handler=self.on_position_event, priority=10)
 
         if config.use_mark_prices:
             self._msgbus.subscribe(topic="data.mark_prices.*", handler=self.update_mark_price, priority=10)
@@ -240,7 +244,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             Order o
             list orders_open
-            AccountState result
+            bint result
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
             if instrument is None:
@@ -271,7 +275,7 @@ cdef class Portfolio(PortfolioFacade):
                 orders_open=[o for o in orders_open if o.is_passive_c()],
                 ts_event=account.last_event_c().ts_event,
             )
-            if result is None:
+            if not result:
                 initialized = False
 
         cdef int open_count = len(all_orders_open)
@@ -307,7 +311,7 @@ cdef class Portfolio(PortfolioFacade):
             Instrument instrument
             list positions_open
             Account account
-            AccountState result
+            bint result
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -482,8 +486,6 @@ cdef class Portfolio(PortfolioFacade):
         if self._debug:
             self._log.debug(f"Updating with {order!r}", LogColor.MAGENTA)
 
-        cdef list[Position] positions_open
-        cdef AccountState account_state = None
         if isinstance(event, OrderFilled):
             self._accounts.update_balances(
                 account=account,
@@ -521,28 +523,21 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef:
             Order o
-        account_state = self._accounts.update_orders(
+        cdef bint result = self._accounts.update_orders(
             account=account,
             instrument=instrument,
             orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=event.ts_event,
         )
 
-        if isinstance(event, OrderFilled):
-            maybe_account_state = self._update_position(event.instrument_id, event.account_id, event.ts_event)
-            if maybe_account_state is not None:
-                account_state = maybe_account_state
-
-        if account_state is None:
+        if not result:
             self._log.debug(f"Added pending calculation for {instrument.id}")
             self._pending_calcs.add(instrument.id)
-        else:
-            self._msgbus.publish_c(
-                topic=f"events.account.{account.id}",
-                msg=account_state,
-            )
+        elif account.is_cash_account or not isinstance(event, OrderFilled):
+            # Only update account state for other than fill events (these will be updated on position update)
+            self.update_account(self._accounts.generate_account_state(account, event.ts_event))
 
-        self._log.debug(f"Updated {event}")
+        self._log.debug(f"Updated from {event}")
 
     cpdef void update_position(self, PositionEvent event):
         """
@@ -554,49 +549,110 @@ cdef class Portfolio(PortfolioFacade):
             The event to update with.
 
         """
-        self._update_position(event.instrument_id, event.account_id, event.ts_event)
+        Condition.not_none(event, "event")
 
-    cdef AccountState _update_position(self, InstrumentId instrument_id, AccountId account_id, uint64_t ts_event):
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
         )
         self._update_net_position(
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
             positions_open=positions_open,
         )
 
-        self._realized_pnls[instrument_id] = self._calculate_realized_pnl(
-            instrument_id=instrument_id,
+        self._realized_pnls[event.instrument_id] = self._calculate_realized_pnl(
+            instrument_id=event.instrument_id,
         )
-        self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(
-            instrument_id=instrument_id,
+        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
+            instrument_id=event.instrument_id,
         )
 
-        cdef Account account = self._cache.account(account_id)
+        cdef Account account = self._cache.account(event.account_id)
         if account is None:
             self._log.error(
                 f"Cannot update position: "
-                f"no account registered for {account_id}",
+                f"no account registered for {event.account_id}",
             )
             return  # No account registered
 
         if account.type != AccountType.MARGIN or not account.calculate_account_state:
             return  # Nothing to calculate
 
-        cdef Instrument instrument = self._cache.instrument(instrument_id)
+        cdef Instrument instrument = self._cache.instrument(event.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot update position: "
-                f"no instrument found for {instrument_id}",
+                f"no instrument found for {event.instrument_id}",
             )
             return  # No instrument found
 
-        return self._accounts.update_positions(
+        cdef bint result = self._accounts.update_positions(
             account=account,
             instrument=instrument,
             positions_open=positions_open,
-            ts_event=ts_event,
+            ts_event=event.ts_event,
+        )
+
+        if result:
+            account_state = self._accounts.generate_account_state(account, event.ts_event)
+            self.update_account(account_state)
+
+    cpdef void on_order_event(self, OrderEvent event):
+        """
+        Actions to be performed on receiving an order event.
+
+        Parameters
+        ----------
+        event : OrderEvent
+            The event received.
+
+        """
+        Condition.not_none(event, "event")
+
+        if event.account_id is None:
+            return  # No account assigned for event
+
+        if not isinstance(event, _UPDATE_ORDER_EVENTS):
+            return  # No change to account state
+
+        if isinstance(event, OrderFilled):
+            return  # Will publish account event when position event is received
+
+        cdef Account account = self._cache.account(event.account_id)
+        if account is None:
+            return  # No account registered
+
+        cdef AccountState account_state = account.last_event_c()
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id}",
+            msg=account_state,
+        )
+
+    cpdef void on_position_event(self, PositionEvent event):
+        """
+        Actions to be performed on receiving a position event.
+
+        Parameters
+        ----------
+        event : PositionEvent
+            The event received.
+
+        """
+        Condition.not_none(event, "event")
+
+        if event.account_id is None:
+            return  # No account assigned for event
+
+        cdef Account account = self._cache.account(event.account_id)
+        if account is None:
+            return  # No account registered
+
+        cdef AccountState account_state = account.last_event_c()
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id}",
+            msg=account_state,
         )
 
     def _reset(self) -> None:
@@ -1303,14 +1359,14 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             Order o
         # Initialize initial (order) margin
-        cdef AccountState result_init = self._accounts.update_orders(
+        cdef bint result_init = self._accounts.update_orders(
             account=account,
             instrument=instrument,
             orders_open=[o for o in orders_open if o.is_passive_c()],
             ts_event=account.last_event_c().ts_event,
         )
 
-        result_maint = None
+        cdef bint result_maint = False
         if account.is_margin_account:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -1329,7 +1385,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(instrument_id)
 
         # Check portfolio initialization
-        if result_init is not None and (account.is_cash_account or (result_maint is not None and result_unrealized_pnl)):
+        if result_init and (account.is_cash_account or (result_maint and result_unrealized_pnl is not None)):
             self._pending_calcs.discard(instrument_id)
             if not self._pending_calcs:
                 self.initialized = True

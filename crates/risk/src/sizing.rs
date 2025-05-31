@@ -23,6 +23,12 @@ use rust_decimal::{
     prelude::{FromPrimitive, ToPrimitive},
 };
 
+/// Calculates the position size based on fixed risk parameters.
+///
+/// # Panics
+///
+/// Panics if converting `units` to a decimal fails,
+/// or if converting the final size to `f64` fails.
 #[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_fixed_risk_position_size(

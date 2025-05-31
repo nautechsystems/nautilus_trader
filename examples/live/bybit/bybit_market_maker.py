@@ -16,12 +16,12 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
-from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
-from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
-from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
-from nautilus_trader.cache.config import CacheConfig
+from nautilus_trader.adapters.bybit import BYBIT
+from nautilus_trader.adapters.bybit import BybitDataClientConfig
+from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitLiveDataClientFactory
+from nautilus_trader.adapters.bybit import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -36,9 +36,6 @@ from nautilus_trader.model.identifiers import TraderId
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
-
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # SPOT/LINEAR
 product_type = BybitProductType.LINEAR
@@ -75,11 +72,11 @@ config_node = TradingNodeConfig(
         purge_account_events_interval_mins=15,  # Example of purging account events for HFT
         purge_account_events_lookback_mins=60,  # Purge account events occurring more than an hour ago
     ),
-    cache=CacheConfig(
-        # database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        buffer_interval_ms=100,
-    ),
+    # cache=CacheConfig(
+    #     # database=DatabaseConfig(),
+    #     timestamps_as_iso8601=True,
+    #     buffer_interval_ms=100,
+    # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     timestamps_as_iso8601=True,
@@ -94,7 +91,7 @@ config_node = TradingNodeConfig(
     #     heartbeat_interval_secs=1,
     # ),
     data_clients={
-        "BYBIT": BybitDataClientConfig(
+        BYBIT: BybitDataClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
@@ -106,7 +103,7 @@ config_node = TradingNodeConfig(
         ),
     },
     exec_clients={
-        "BYBIT": BybitExecClientConfig(
+        BYBIT: BybitExecClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
@@ -148,8 +145,8 @@ strategy = VolatilityMarketMaker(config=strat_config)
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user-defined factories)
-node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
-node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
+node.add_data_client_factory(BYBIT, BybitLiveDataClientFactory)
+node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
 node.build()
 
 

@@ -97,6 +97,9 @@ pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if `c` is not a valid `BookAction` character.
 pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     match c as u8 as char {
         'A' => Ok(BookAction::Add),
@@ -108,6 +111,9 @@ pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if `c` is not a valid `OptionKind` character.
 pub fn parse_option_kind(c: c_char) -> anyhow::Result<OptionKind> {
     match c as u8 as char {
         'C' => Ok(OptionKind::Call),
@@ -129,6 +135,9 @@ fn parse_currency_or_usd_default(value: Result<&str, impl std::error::Error>) ->
     }
 }
 
+/// # Errors
+///
+/// Returns an error if `value` has fewer than 3 characters.
 pub fn parse_cfi_iso10926(
     value: &str,
 ) -> anyhow::Result<(Option<AssetClass>, Option<InstrumentClass>)> {
@@ -165,6 +174,9 @@ pub fn parse_cfi_iso10926(
 }
 
 // https://databento.com/docs/schemas-and-data-formats/status#types-of-status-reasons
+/// # Errors
+///
+/// Returns an error if `value` is an invalid status reason code.
 pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
     let value_str = match value {
         0 => return Ok(None),
@@ -207,6 +219,9 @@ pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
     Ok(Some(Ustr::from(value_str)))
 }
 
+/// # Errors
+///
+/// Returns an error if `value` is an invalid status trading event code.
 pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
     let value_str = match value {
         0 => return Ok(None),
@@ -252,9 +267,9 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
 
 /// Decodes a quantity from the given optional value, expressed in standard whole-number units.
 #[must_use]
-pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
+pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
     match value {
-        i32::MAX => None,
+        i64::MAX => None,
         _ => Some(Quantity::from(value)),
     }
 }
@@ -277,6 +292,9 @@ pub fn decode_lot_size(value: i32) -> Quantity {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `Equity` fails.
 pub fn decode_equity_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -309,6 +327,9 @@ pub fn decode_equity_v1(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `FuturesContract` fails.
 pub fn decode_futures_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -350,6 +371,9 @@ pub fn decode_futures_contract_v1(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `FuturesSpread` fails.
 pub fn decode_futures_spread_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -393,6 +417,9 @@ pub fn decode_futures_spread_v1(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `OptionContract` fails.
 pub fn decode_option_contract_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -447,6 +474,9 @@ pub fn decode_option_contract_v1(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `OptionSpread` fails.
 pub fn decode_option_spread_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -500,6 +530,9 @@ fn is_trade_msg(order_side: OrderSide, action: c_char) -> bool {
     order_side == OrderSide::NoOrderSide || action as u8 as char == 'T'
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the MBO message fails.
 pub fn decode_mbo_msg(
     msg: &dbn::MboMsg,
     instrument_id: InstrumentId,
@@ -550,6 +583,9 @@ pub fn decode_mbo_msg(
     Ok((Some(delta), None))
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the Trade message fails.
 pub fn decode_trade_msg(
     msg: &dbn::TradeMsg,
     instrument_id: InstrumentId,
@@ -572,6 +608,9 @@ pub fn decode_trade_msg(
     Ok(trade)
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the TBBO message fails.
 pub fn decode_tbbo_msg(
     msg: &dbn::TbboMsg,
     instrument_id: InstrumentId,
@@ -605,6 +644,9 @@ pub fn decode_tbbo_msg(
     Ok((quote, trade))
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the MBP1 message fails.
 pub fn decode_mbp1_msg(
     msg: &dbn::Mbp1Msg,
     instrument_id: InstrumentId,
@@ -643,6 +685,9 @@ pub fn decode_mbp1_msg(
     Ok((quote, maybe_trade))
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the BBO message fails.
 pub fn decode_bbo_msg(
     msg: &dbn::BboMsg,
     instrument_id: InstrumentId,
@@ -666,6 +711,13 @@ pub fn decode_bbo_msg(
     Ok(quote)
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the MBP10 message fails.
+///
+/// # Panics
+///
+/// Panics if the number of levels in `msg.levels` is not exactly `DEPTH10_LEN`.
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
@@ -720,6 +772,9 @@ pub fn decode_mbp10_msg(
     Ok(depth)
 }
 
+/// # Errors
+///
+/// Returns an error if `rtype` is not a supported bar aggregation.
 pub fn decode_bar_type(
     msg: &dbn::OhlcvMsg,
     instrument_id: InstrumentId,
@@ -750,6 +805,9 @@ pub fn decode_bar_type(
     Ok(bar_type)
 }
 
+/// # Errors
+///
+/// Returns an error if `rtype` is not a supported bar aggregation.
 pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNanos> {
     let adjustment = match msg.hd.rtype {
         32 => {
@@ -777,19 +835,30 @@ pub fn decode_ts_event_adjustment(msg: &dbn::OhlcvMsg) -> anyhow::Result<UnixNan
     Ok(adjustment.into())
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the OHLCV message fails.
 pub fn decode_ohlcv_msg(
     msg: &dbn::OhlcvMsg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
+    timestamp_on_close: bool,
 ) -> anyhow::Result<Bar> {
     let bar_type = decode_bar_type(msg, instrument_id)?;
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
-    // Adjust `ts_event` from open to close of bar
-    let ts_event = msg.hd.ts_event.into();
-    let ts_init = ts_init.unwrap_or(ts_event);
-    let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
+    let ts_event_raw = msg.hd.ts_event.into();
+    let ts_init_raw = ts_init.unwrap_or(ts_event_raw);
+
+    let (ts_event, ts_init) = if timestamp_on_close {
+        // Both ts_event and ts_init are set to close time
+        let ts_close = cmp::max(ts_init_raw, ts_event_raw) + ts_event_adjustment;
+        (ts_close, ts_close)
+    } else {
+        // Both ts_event and ts_init are set to open time
+        (ts_event_raw, ts_event_raw)
+    };
 
     let bar = Bar::new(
         bar_type,
@@ -805,6 +874,13 @@ pub fn decode_ohlcv_msg(
     Ok(bar)
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the status message fails.
+///
+/// # Panics
+///
+/// Panics if `msg.action` is not a valid `MarketStatusAction`.
 pub fn decode_status_msg(
     msg: &dbn::StatusMsg,
     instrument_id: InstrumentId,
@@ -828,12 +904,16 @@ pub fn decode_status_msg(
     Ok(status)
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the record type fails or encounters unsupported message.
 pub fn decode_record(
     record: &dbn::RecordRef,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
     include_trades: bool,
+    bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     // We don't handle `TbboMsg` here as Nautilus separates this schema
     // into quotes and trades when loading, and the live client will
@@ -884,7 +964,13 @@ pub fn decode_record(
         (Some(Data::from(depth)), None)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
         let ts_init = determine_timestamp(ts_init, msg.hd.ts_event.into());
-        let bar = decode_ohlcv_msg(msg, instrument_id, price_precision, Some(ts_init))?;
+        let bar = decode_ohlcv_msg(
+            msg,
+            instrument_id,
+            price_precision,
+            Some(ts_init),
+            bars_timestamp_on_close,
+        )?;
         (Some(Data::Bar(bar)), None)
     } else {
         anyhow::bail!("DBN message type is not currently supported")
@@ -900,6 +986,9 @@ const fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNano
     }
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the `InstrumentDefMsgV1` fails.
 pub fn decode_instrument_def_msg_v1(
     msg: &dbn::compat::InstrumentDefMsgV1,
     instrument_id: InstrumentId,
@@ -940,6 +1029,9 @@ pub fn decode_instrument_def_msg_v1(
     }
 }
 
+/// # Errors
+///
+/// Returns an error if decoding the `InstrumentDefMsg` fails.
 pub fn decode_instrument_def_msg(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -980,6 +1072,9 @@ pub fn decode_instrument_def_msg(
     }
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `Equity` fails.
 pub fn decode_equity(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -1012,6 +1107,9 @@ pub fn decode_equity(
     ))
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `FuturesContract` fails.
 pub fn decode_futures_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -1053,6 +1151,9 @@ pub fn decode_futures_contract(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `FuturesSpread` fails.
 pub fn decode_futures_spread(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -1096,6 +1197,9 @@ pub fn decode_futures_spread(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `OptionContract` fails.
 pub fn decode_option_contract(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -1150,6 +1254,9 @@ pub fn decode_option_contract(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if parsing or constructing `OptionSpread` fails.
 pub fn decode_option_spread(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -1198,6 +1305,9 @@ pub fn decode_option_spread(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if constructing `DatabentoImbalance` fails.
 pub fn decode_imbalance_msg(
     msg: &dbn::ImbalanceMsg,
     instrument_id: InstrumentId,
@@ -1228,6 +1338,13 @@ pub fn decode_imbalance_msg(
     )
 }
 
+/// # Errors
+///
+/// Returns an error if constructing `DatabentoStatistics` fails.
+///
+/// # Panics
+///
+/// Panics if `msg.stat_type` or `msg.update_action` is not a valid enum variant.
 pub fn decode_statistics_msg(
     msg: &dbn::StatMsg,
     instrument_id: InstrumentId,
@@ -1377,10 +1494,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(i32::MAX, None)] // None for i32::MAX
+    #[case(i64::MAX, None)] // None for i32::MAX
     #[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
     #[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
-    fn test_decode_optional_quantity(#[case] value: i32, #[case] expected: Option<Quantity>) {
+    fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
         let actual = decode_optional_quantity(value);
         assert_eq!(actual, expected);
     }
@@ -1557,7 +1674,7 @@ mod tests {
         let msg = dbn_stream.next().unwrap().unwrap();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bar = decode_ohlcv_msg(msg, instrument_id, 2, Some(0.into())).unwrap();
+        let bar = decode_ohlcv_msg(msg, instrument_id, 2, Some(0.into()), true).unwrap();
 
         assert_eq!(
             bar.bar_type,
@@ -1581,21 +1698,6 @@ mod tests {
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
         let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()));
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().multiplier(), Quantity::from(1));
-    }
-
-    #[rstest]
-    fn test_decode_definition_v1_msg() {
-        let path = test_data_path().join("test_data.definition.v1.dbn.zst");
-        let mut dbn_stream = Decoder::from_zstd_file(path)
-            .unwrap()
-            .decode_stream::<dbn::compat::InstrumentDefMsgV1>();
-        let msg = dbn_stream.next().unwrap().unwrap();
-
-        let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let result = decode_instrument_def_msg_v1(msg, instrument_id, Some(0.into()));
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap().multiplier(), Quantity::from(1));

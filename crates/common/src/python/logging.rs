@@ -35,6 +35,11 @@ use crate::{
 
 #[pymethods]
 impl LoggerConfig {
+    /// Creates a [`LoggerConfig`] from a spec string.
+    ///
+    /// # Errors
+    ///
+    /// Returns a Python exception if the spec string is invalid.
     #[staticmethod]
     #[pyo3(name = "from_spec")]
     pub fn py_from_spec(spec: String) -> PyResult<Self> {
@@ -88,6 +93,11 @@ pub fn py_init_tracing() -> PyResult<()> {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+/// Initializes logging via Python interface.
+///
+/// # Errors
+///
+/// Returns a Python exception if logger initialization fails.
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]

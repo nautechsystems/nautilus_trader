@@ -289,6 +289,9 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
     )
 }
 
+/// # Panics
+///
+/// Panics if `symbol` does not contain a '/' delimiter.
 #[must_use]
 pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let target_venue = venue.unwrap_or(Venue::from("SIM"));
@@ -368,6 +371,10 @@ pub fn equity_aapl() -> Equity {
 // FuturesContract
 ////////////////////////////////////////////////////////////////////////////////
 
+/// # Panics
+///
+/// Panics if constructing the activation or expiration timestamp fails,
+/// e.g., if the provided dates are invalid or timestamp conversion returns `None`.
 pub fn futures_contract_es(
     activation: Option<UnixNanos>,
     expiration: Option<UnixNanos>,

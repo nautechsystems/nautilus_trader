@@ -1,9 +1,4 @@
 # Backtesting
-
-:::info
-We are currently working on this concept guide.
-:::
-
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
 including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
@@ -193,13 +188,22 @@ Nautilus supports two modes of bar processing:
    - [Research](https://gist.github.com/stefansimik/d387e1d9ff784a8973feca0cde51e363) shows this approach achieves ~75-85% accuracy in predicting correct High/Low sequence (compared to statistical ~50% accuracy with fixed ordering).
    - This is particularly important when both take-profit and stop-loss levels occur within the same bar - as the sequence determines which order is filled first.
 
-Here's how to configure adaptive bar ordering for a venue:
+Here's how to configure adaptive bar ordering for a venue, including account setup:
 
 ```python
-# Configure venue with adaptive bar ordering
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency
+
+# Initialize the backtest engine
+engine = BacktestEngine()
+
+# Add a venue with adaptive bar ordering and required account settings
 engine.add_venue(
-    venue=venue,
+    venue=venue,  # Your Venue identifier, e.g., Venue("BINANCE")
     oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, Currency.from_str("USDT"))],
     bar_adaptive_high_low_ordering=True,  # Enable adaptive ordering of High/Low bar prices
 )
 ```
@@ -214,7 +218,7 @@ For L2 (market-by-price) or L3 (market-by-order) data, slippage is simulated wit
 - Matching available size at each price level sequentially.
 - Maintaining realistic order book depth impact (per order fill).
 
-For L1 data types (e.g., L1 orderbook, trades, quotes, bars), slippage is handled through:
+For L1 data types (e.g., L1 order book, trades, quotes, bars), slippage is handled through:
 
 **Initial fill slippage** (`prob_slippage`):
 
@@ -250,9 +254,9 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 
 # Create a custom fill model with your desired probabilities
 fill_model = FillModel(
-    prob_fill_on_limit=0.2,    # Chance a limit order fills when price matches (applied to bars/trades/quotes + L1/L2/L3 orderbook)
+    prob_fill_on_limit=0.2,    # Chance a limit order fills when price matches (applied to bars/trades/quotes + L1/L2/L3 order book)
     prob_fill_on_stop=0.95,    # [DEPRECATED] Will be removed in a future version, use `prob_slippage` instead
-    prob_slippage=0.5,         # Chance of 1-tick slippage (applied to bars/trades/quotes + L1 orderbook only)
+    prob_slippage=0.5,         # Chance of 1-tick slippage (applied to bars/trades/quotes + L1 order book only)
     random_seed=None,          # Optional: Set for reproducible results
 )
 
@@ -271,7 +275,7 @@ engine = BacktestEngine(
   - Simulates the probability of a limit order getting filled when its price level is reached in the market.
 - Details:
   - Simulates your position in the order queue at a given price level.
-  - Applies to all data types (e.g., L3/L2/L1 orderbook, quotes, trades, bars).
+  - Applies to all data types (e.g., L1/L2/L3 order book, quotes, trades, bars).
   - New random probability check occurs each time market price touches your order price (but does not move through it).
   - On successful probability check, fills entire remaining order quantity.
 
@@ -373,16 +377,24 @@ When you attach a venue to the engine—either for live trading or a back‑test
 | Margin                 | Derivatives or any product that allows leverage          | Initial margin for each order plus maintenance margin for open positions.                                          |
 | Betting                | Sports betting, book‑making                              | Stake required by the venue; no leverage.                                                                          |
 
-Example of adding a `CASH` account for trading on Binance Spot with assets directly:
+Example of adding a `CASH` account for a backtest venue:
 
 ```python
-from nautilus_trader.model.enums import AccountType
+from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model import Money, Currency
 
+# Initialize the backtest engine
+engine = BacktestEngine()
 
+# Add a CASH account for the venue
 engine.add_venue(
-    venue_code="BINANCE",
-    account_type=AccountType.CASH,   #  CASH | MARGIN | BETTING
-    ...
+    venue=BINANCE_VENUE,  # Create or reference a Venue identifier
+    oms_type=OmsType.NETTING,
+    account_type=AccountType.CASH,
+    starting_balances=[Money(10_000, USDT)],
 )
 ```
 

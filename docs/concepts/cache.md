@@ -1,7 +1,7 @@
 # Cache
 
 The `Cache` is a central in-memory database that automatically stores and manages all trading-related data.
-Think of it as your trading systems memory – storing everything from market data to order history to custom calculations.
+Think of it as your trading system’s memory – storing everything from market data to order history to custom calculations.
 
 The Cache serves multiple key purposes:
 
@@ -14,7 +14,7 @@ The Cache serves multiple key purposes:
    - Tracks all `Position`s and `Account` information.
    - Stores `Instrument` definitions and `Currency` information.
 
-3. **Store custom data**:
+3. **Stores custom data**:
    - Any user-defined objects or data can be stored in the `Cache` for later use.
    - Enables data sharing between different strategies.
 
@@ -67,7 +67,7 @@ def on_bar(self, bar: Bar) -> None:
 ## Configuration
 
 The `Cache`’s behavior and capacity can be configured through the `CacheConfig` class.
-You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](/concepts/architecture.md#environment-contexts).
+You can provide this configuration either to a `BacktestEngine` or a `TradingNode`, depending on your [environment context](architecture.md#environment-contexts).
 
 Here's a basic example of configuring the `Cache`:
 
@@ -223,6 +223,8 @@ price = self.cache.price(
 #### Bar types
 
 ```python
+from nautilus_trader.core.rust.model import PriceType, AggregationSource
+
 # Get all available bar types for an instrument; Returns List[BarType].
 bar_types = self.cache.bar_types(
     instrument_id=instrument_id,

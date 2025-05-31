@@ -78,6 +78,10 @@ impl UUID4 {
     }
 
     /// Converts the [`UUID4`] to a C string reference.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal byte array is not a valid C string (does not end with a null terminator).
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
         // SAFETY: We always store valid C strings
@@ -117,7 +121,7 @@ impl FromStr for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics if the `value` is not a valid UUID version 4 RFC 4122.
+    /// Panics if the `value` is not a valid UUID version 4 RFC 4122.
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(value)?;
         Self::validate_v4(&uuid);
@@ -130,7 +134,7 @@ impl From<&str> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics if the `value` string is not a valid UUID version 4 RFC 4122.
+    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: &str) -> Self {
         value
             .parse()
@@ -143,7 +147,7 @@ impl From<String> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics if the `value` string is not a valid UUID version 4 RFC 4122.
+    /// Panics if the `value` string is not a valid UUID version 4 RFC 4122.
     fn from(value: String) -> Self {
         Self::from(value.as_str())
     }
@@ -154,7 +158,7 @@ impl From<uuid::Uuid> for UUID4 {
     ///
     /// # Panics
     ///
-    /// This function panics if the `value` is not a valid UUID version 4 RFC 4122.
+    /// Panics if the `value` is not a valid UUID version 4 RFC 4122.
     fn from(value: uuid::Uuid) -> Self {
         Self::validate_v4(&value);
         Self::from_validated_uuid(&value)
@@ -192,11 +196,11 @@ impl Serialize for UUID4 {
 }
 
 impl<'de> Deserialize<'de> for UUID4 {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let uuid4_str: &str = Deserialize::deserialize(_deserializer)?;
+        let uuid4_str: &str = Deserialize::deserialize(deserializer)?;
         let uuid4: Self = uuid4_str.into();
         Ok(uuid4)
     }

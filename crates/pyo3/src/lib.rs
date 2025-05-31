@@ -31,8 +31,10 @@
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
-#![deny(rustdoc::broken_intra_doc_links)]
+#![deny(missing_debug_implementations)]
 #![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use pyo3::prelude::*;
 
@@ -40,7 +42,7 @@ use pyo3::prelude::*;
 /// import supermodule.submodule
 ///
 /// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`
-/// refer: https://github.com/PyO3/pyo3/issues/2644
+/// refer: <https://github.com/PyO3/pyo3/issues/2644>
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;
@@ -65,12 +67,6 @@ fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     let n = "cryptography";
     let submodule = pyo3::wrap_pymodule!(nautilus_cryptography::python::cryptography);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-    re_export_module_attributes(m, n)?;
-
-    let n = "execution";
-    let submodule = pyo3::wrap_pymodule!(nautilus_execution::python::execution);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;

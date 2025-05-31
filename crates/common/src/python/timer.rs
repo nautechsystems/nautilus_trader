@@ -50,6 +50,10 @@ pub struct TimeEventHandler_Py {
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
+    /// # Panics
+    ///
+    /// Panics if the provided `TimeEventHandlerV2` contains a Rust callback,
+    /// since only Python callbacks are supported by this handler.
     fn from(value: TimeEventHandlerV2) -> Self {
         Self {
             event: value.event,
@@ -189,7 +193,7 @@ mod tests {
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
-    use ustr::Ustr;
+    use ustr::Ustr; // Import required
 
     use crate::{
         testing::wait_until,

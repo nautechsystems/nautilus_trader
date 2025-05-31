@@ -17,7 +17,10 @@ use std::{net::SocketAddr, pin::Pin, sync::Arc};
 
 use futures::{Stream, StreamExt};
 use nautilus_common::{
-    messages::data::{self, CustomDataResponse, DataResponse, RequestData},
+    messages::data::{
+        CustomDataResponse, DataResponse, RequestCustomData, SubscribeCustomData,
+        UnsubscribeCustomData,
+    },
     runtime,
 };
 use nautilus_core::UnixNanos;
@@ -102,7 +105,7 @@ impl MockDataClient {
         )
     }
 
-    fn get_request(&self, req: &RequestData) {
+    fn get_request(&self, req: &RequestCustomData) {
         let req = req.clone();
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
@@ -125,12 +128,13 @@ impl MockDataClient {
                 .parse::<i32>()
                 .unwrap();
             println!("Received positive value: {value}");
+
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));
@@ -138,7 +142,7 @@ impl MockDataClient {
         });
     }
 
-    fn skip_request(&self, req: &RequestData) {
+    fn skip_request(&self, req: &RequestCustomData) {
         let req = req.clone();
         let http_client = self.http_client.clone();
         let http_tx = self.http_tx.clone();
@@ -165,9 +169,9 @@ impl MockDataClient {
             let response = DataResponse::Data(CustomDataResponse::new(
                 req.request_id,
                 req.client_id,
-                Venue::new("http positive stream"),
+                Some(Venue::new("http positive stream")),
                 DataType::new("positive_stream", None),
-                value,
+                Arc::new(value),
                 UnixNanos::new(0),
                 None,
             ));
@@ -176,37 +180,42 @@ impl MockDataClient {
     }
 }
 
+#[async_trait::async_trait]
 impl DataClient for MockDataClient {
     fn client_id(&self) -> nautilus_model::identifiers::ClientId {
         ClientId::new("mock_data_client")
     }
 
-    fn request_data(&self, request: RequestData) -> anyhow::Result<()> {
+    fn request_data(&self, request: &RequestCustomData) -> anyhow::Result<()> {
         if request.data_type.type_name() == "get" {
             println!("Received get data request");
-            self.get_request(&request);
+            self.get_request(request);
         } else if request.data_type.type_name() == "skip" {
             println!("Received skip data request");
-            self.skip_request(&request);
+            self.skip_request(request);
         }
 
         Ok(())
     }
 
-    fn subscribe(&mut self, _cmd: data::SubscribeData) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
         println!("Received subscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
-            websocket_client.send_text("SKIP".to_string(), None).await;
+            if let Err(err) = websocket_client.send_text("SKIP".to_string(), None).await {
+                tracing::error!("Error sending SKIP message: {err:?}");
+            }
         });
         Ok(())
     }
 
-    fn unsubscribe(&mut self, _cmd: data::UnsubscribeData) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         println!("Received unsubscribe command");
         let websocket_client = self.websocket_client.clone();
         runtime::get_runtime().spawn(async move {
-            websocket_client.send_text("STOP".to_string(), None).await;
+            if let Err(err) = websocket_client.send_text("STOP".to_string(), None).await {
+                tracing::error!("Error sending STOP message: {err:?}");
+            }
         });
         Ok(())
     }
@@ -215,13 +224,29 @@ impl DataClient for MockDataClient {
         None
     }
 
-    fn start(&self) {}
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn stop(&self) {}
+    fn stop(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn reset(&self) {}
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn dispose(&self) {}
+    fn dispose(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn connect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn is_connected(&self) -> bool {
         true

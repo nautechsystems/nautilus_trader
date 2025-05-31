@@ -99,9 +99,8 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the capsule cannot be downcast to a `PyCapsule`, indicating a type mismatch
-/// or improper capsule handling.
+/// Panics if the capsule cannot be downcast to a `PyCapsule`, indicating a type
+/// mismatch or improper capsule handling.
 ///
 /// # Safety
 ///
@@ -109,6 +108,7 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// management. The caller must ensure the `PyCapsule` contains a valid `CVec` pointer.
 /// Incorrect usage can lead to memory corruption or undefined behavior.
 #[pyfunction]
+#[allow(unsafe_code)]
 #[cfg(feature = "ffi")]
 pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
     let capsule: &Bound<'_, PyCapsule> = capsule
@@ -122,11 +122,21 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
 
 #[pyfunction]
 #[cfg(not(feature = "ffi"))]
+/// Drops a Python `PyCapsule` containing a `CVec` when the `ffi` feature is not enabled.
+///
+/// # Panics
+///
+/// Always panics with the message "`ffi` feature is not enabled" to indicate that
+/// FFI functionality is unavailable.
 pub fn drop_cvec_pycapsule(_capsule: &Bound<'_, PyAny>) {
     panic!("`ffi` feature is not enabled");
 }
 
-/// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
+/// Transforms the given Python objects into a vector of [`OrderBookDelta`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<OrderBookDelta>> {
     let deltas: Vec<OrderBookDelta> = data
         .into_iter()
@@ -141,7 +151,11 @@ pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Ord
     Ok(deltas)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`QuoteTick`] objects.
+/// Transforms the given Python objects into a vector of [`QuoteTick`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTick>> {
     let quotes: Vec<QuoteTick> = data
         .into_iter()
@@ -156,7 +170,11 @@ pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTic
     Ok(quotes)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`TradeTick`] objects.
+/// Transforms the given Python objects into a vector of [`TradeTick`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTick>> {
     let trades: Vec<TradeTick> = data
         .into_iter()
@@ -171,7 +189,11 @@ pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTic
     Ok(trades)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`Bar`] objects.
+/// Transforms the given Python objects into a vector of [`Bar`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
     let bars: Vec<Bar> = data
         .into_iter()
@@ -186,7 +208,11 @@ pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
     Ok(bars)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`MarkPriceUpdate`] objects.
+/// Transforms the given Python objects into a vector of [`MarkPriceUpdate`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<MarkPriceUpdate>> {
     let mark_prices: Vec<MarkPriceUpdate> = data
         .into_iter()
@@ -201,7 +227,11 @@ pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Mar
     Ok(mark_prices)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`IndexPriceUpdate`] objects.
+/// Transforms the given Python objects into a vector of [`IndexPriceUpdate`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<IndexPriceUpdate>> {
     let index_prices: Vec<IndexPriceUpdate> = data
         .into_iter()
@@ -216,7 +246,11 @@ pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<In
     Ok(index_prices)
 }
 
-/// Transforms the given `data` Python objects into a vector of [`InstrumentClose`] objects.
+/// Transforms the given Python objects into a vector of [`InstrumentClose`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_closes(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentClose>> {

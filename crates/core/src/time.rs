@@ -77,6 +77,8 @@ pub fn get_atomic_clock_static() -> &'static AtomicTime {
 
 /// Returns the duration since the UNIX epoch based on [`SystemTime::now()`].
 ///
+/// # Panics
+///
 /// Panics if the system time is set before the UNIX epoch.
 #[inline(always)]
 #[must_use]
@@ -87,10 +89,19 @@ pub fn duration_since_unix_epoch() -> Duration {
 }
 
 /// Returns the current UNIX time in nanoseconds, based on [`SystemTime::now()`].
+///
+/// # Panics
+///
+/// Panics if the duration in nanoseconds exceeds `u64::MAX`.
 #[inline(always)]
 #[must_use]
 pub fn nanos_since_unix_epoch() -> u64 {
-    duration_since_unix_epoch().as_nanos() as u64
+    let ns = duration_since_unix_epoch().as_nanos();
+    assert!(
+        (ns <= u128::from(u64::MAX)),
+        "System time overflow: value exceeds u64::MAX nanoseconds"
+    );
+    ns as u64
 }
 
 /// Represents an atomic timekeeping structure.
@@ -159,20 +170,21 @@ impl AtomicTime {
         }
     }
 
-    /// Return the current time as microseconds.
+    /// Returns the current time as microseconds.
     #[must_use]
     pub fn get_time_us(&self) -> u64 {
         self.get_time_ns().as_u64() / NANOSECONDS_IN_MICROSECOND
     }
 
-    /// Return the current time as milliseconds.
+    /// Returns the current time as milliseconds.
     #[must_use]
     pub fn get_time_ms(&self) -> u64 {
         self.get_time_ns().as_u64() / NANOSECONDS_IN_MILLISECOND
     }
 
-    /// Return the current time as seconds.
+    /// Returns the current time as seconds.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn get_time(&self) -> f64 {
         self.get_time_ns().as_f64() / (NANOSECONDS_IN_SECOND as f64)
     }
@@ -186,21 +198,35 @@ impl AtomicTime {
     ///
     /// Typically used in single-threaded scenarios or coordinated concurrency in **static mode**,
     /// since there’s no global ordering across threads.
+    ///
+    /// # Panics
+    ///
+    /// Panics if invoked when in real-time mode.
     pub fn set_time(&self, time: UnixNanos) {
+        assert!(
+            !self.realtime.load(Ordering::Acquire),
+            "Cannot set time while clock is in realtime mode"
+        );
+
         self.store(time.into(), Ordering::Release);
     }
 
-    /// Increments the current time by `delta` nanoseconds and returns the *updated* value
-    /// (only meaningful in **static mode**).
+    /// Increments the current (static-mode) time by `delta` nanoseconds and returns the updated value.
     ///
-    /// Uses `fetch_add` with [`Ordering::AcqRel`], ensuring that:
-    /// - The increment is atomic (no lost updates if multiple threads do increments).
-    /// - Other threads reading with [`Ordering::Acquire`] will see the incremented result.
+    /// Internally this uses `fetch_add` with [`Ordering::AcqRel`] to ensure the increment is
+    /// atomic and visible to readers using `Acquire` loads.
     ///
-    /// Typically used in single-threaded scenarios or coordinated concurrency in **static mode**,
-    /// since there’s no global ordering across threads.
+    /// # Panics
+    ///
+    /// Panics if called while the clock is in real-time mode.
     pub fn increment_time(&self, delta: u64) -> UnixNanos {
-        UnixNanos::from(self.fetch_add(delta, Ordering::AcqRel) + delta)
+        assert!(
+            !self.realtime.load(Ordering::Acquire),
+            "Cannot increment time while clock is in realtime mode"
+        );
+
+        let prev = self.fetch_add(delta, Ordering::AcqRel);
+        UnixNanos::from(prev + delta)
     }
 
     /// Retrieves and updates the current “real-time” clock, returning a strictly increasing
@@ -222,6 +248,12 @@ impl AtomicTime {
     /// Note that under heavy contention (many threads calling this in tight loops), the CAS loop
     /// may increase latency. If you need extremely high-frequency, concurrent updates, consider
     /// using a more specialized approach or relaxing some ordering requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal counter has reached `u64::MAX`, which would indicate the process has
+    /// been running for longer than the representable range (~584 years) *or* the clock was
+    /// manually corrupted.
     pub fn time_since_epoch(&self) -> UnixNanos {
         // This method guarantees strict consistency but may incur a performance cost under
         // high contention due to retries in the `compare_exchange` loop.
@@ -229,7 +261,11 @@ impl AtomicTime {
         loop {
             // Acquire to observe the latest stored value
             let last = self.load(Ordering::Acquire);
-            let next = now.max(last + 1);
+            // Ensure we never wrap past u64::MAX – treat that as a fatal error
+            let incremented = last
+                .checked_add(1)
+                .expect("AtomicTime overflow: reached u64::MAX");
+            let next = now.max(incremented);
             // AcqRel on success ensures this new value is published,
             // Acquire on failure reloads if we lost a CAS race.
             if self
@@ -302,6 +338,35 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(expected = "Cannot set time while clock is in realtime mode")]
+    fn test_set_time_panics_in_realtime_mode() {
+        let clock = AtomicTime::new(true, UnixNanos::default());
+        clock.set_time(UnixNanos::from(123));
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Cannot increment time while clock is in realtime mode")]
+    fn test_increment_time_panics_in_realtime_mode() {
+        let clock = AtomicTime::new(true, UnixNanos::default());
+        let _ = clock.increment_time(1);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "AtomicTime overflow")]
+    fn test_time_since_epoch_overflow_panics() {
+        use std::sync::atomic::{AtomicBool, AtomicU64};
+
+        // Manually construct a clock with the counter already at u64::MAX
+        let clock = AtomicTime {
+            realtime: AtomicBool::new(true),
+            timestamp_ns: AtomicU64::new(u64::MAX),
+        };
+
+        // This call will attempt to add 1 and must panic
+        let _ = clock.time_since_epoch();
+    }
+
+    #[rstest]
     fn test_mode_switching_concurrent() {
         let clock = Arc::new(AtomicTime::new(true, UnixNanos::default()));
         let num_threads = 4;
@@ -357,6 +422,7 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
         let system_ns = duration_since_unix_epoch().as_nanos() as u64;

@@ -26,9 +26,14 @@ POLYMARKET_CLIENT_ID: Final[ClientId] = ClientId(POLYMARKET)
 
 POLYMARKET_MAX_PRICE: Final[float] = 0.999
 POLYMARKET_MIN_PRICE: Final[float] = 0.001
+POLYMARKET_MAX_PRECISION_TAKER: Final[int] = 2
+POLYMARKET_MAX_PRECISION_MAKER: Final[int] = 5
 
 VALID_POLYMARKET_TIME_IN_FORCE: Final[set[TimeInForce]] = {
     TimeInForce.GTC,
     TimeInForce.GTD,
     TimeInForce.FOK,
+    TimeInForce.IOC,
 }
+
+POLYMARKET_INVALID_API_KEY: Final[str] = "Unauthorized/Invalid api key"

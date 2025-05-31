@@ -16,12 +16,12 @@
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET
-from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
-from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
-from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfig
-from nautilus_trader.adapters.polymarket.factories import PolymarketLiveDataClientFactory
-from nautilus_trader.adapters.polymarket.factories import PolymarketLiveExecClientFactory
+from nautilus_trader.adapters.polymarket import POLYMARKET
+from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketLiveDataClientFactory
+from nautilus_trader.adapters.polymarket import PolymarketLiveExecClientFactory
+from nautilus_trader.adapters.polymarket import get_polymarket_instrument_id
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
@@ -44,16 +44,21 @@ from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
+# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
+# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
-# Bundesliga Winner: will-bayern-munich-win-the-bundesliga
-# https://polymarket.com/event/bundesliga-winner/will-bayern-munich-win-the-bundesliga?tid=1737609778712
-condition_id = "0x40ee70f4ac20bac0565f5a0455e5a06d54856f0dcc7960a1b9033d9939ee5966"
-token_id = "91187039365329005211165725984783762943673232863186175327958364347484511288345"
+# World Series Champion 2025
+# https://polymarket.com/event/world-series-champion-2025/will-the-new-york-mets-win-the-2025-world-series
+# condition_id = "0xf4472853ab134236dbfe4cd5f83fcbc60f62767b2a474a1c0b0ed3190d813084"
+# token_id = "25143473975747606484038304917293813549571262015788668262095587119656373441253"
+
+# will-the-new-york-knicks-win-the-2025-nba-finals
+# https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
+condition_id = "0xb3af306795f672a0bcaf4bd529ffa8343e88949bc74b098ccd2a0238ce676cd3"
+token_id = "3642309182816755995211647069086230404892359515361325090555875625429003317932"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),
@@ -74,10 +79,13 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        # inflight_check_interval_ms=0,  # Uncomment to turn off in-flight order checks
+        # open_check_interval_secs=0,  # Uncomment to turn off open order checks
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
     ),
+    # risk_engine=LiveRiskEngineConfig(bypass=True),
     cache=CacheConfig(
         # database=DatabaseConfig(),  # <-- Recommend Redis cache backing for Polymarket
         encoding="msgpack",
@@ -114,6 +122,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
+            log_raw_ws_messages=False,
         ),
     },
     timeout_connection=60.0,
@@ -147,6 +156,8 @@ class TOBQuoterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     trade_size: Decimal
+    enable_buys: bool = True
+    enable_sells: bool = True
     dry_run: bool = False
 
 
@@ -166,6 +177,7 @@ class TOBQuoter(Strategy):
     def __init__(self, config: TOBQuoterConfig) -> None:
         super().__init__(config)
 
+        self.min_size: Decimal = Decimal(5)
         self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
@@ -282,32 +294,35 @@ class TOBQuoter(Strategy):
         if self.config.dry_run:
             return
 
-        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.buy_order)
-            pass
+        # Maintain BUY orders
+        if self.config.enable_buys:
+            if not self.buy_order or self.buy_order.is_closed:
+                self.create_buy_order(best_bid)
+            elif self.buy_order.price != best_bid:
+                self.cancel_order(self.buy_order)
+                self.create_buy_order(best_bid)
 
-        if not self.buy_order or self.buy_order.is_closed:
-            self.create_buy_order(best_bid)
-
-        # Maintain sell orders
-        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.sell_order)
-            pass
-
-        if not self.sell_order or self.sell_order.is_closed:
-            self.create_sell_order(best_ask)
+        # Maintain SELL orders
+        if self.config.enable_sells:
+            if not self.sell_order or self.sell_order.is_closed:
+                self.create_sell_order(best_ask)
+            elif self.sell_order.price != best_ask:
+                self.cancel_order(self.sell_order)
+                self.create_sell_order(best_ask)
 
     def create_buy_order(self, price: Price) -> None:
         if not self.instrument:
             self.log.error("No instrument loaded")
             return
 
+        if not self.config.enable_buys:
+            self.log.warning("BUY orders not enabled, skipping")
+            return
+
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.config.trade_size),
+            quantity=self.instrument.make_qty(max(self.min_size, self.config.trade_size)),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
@@ -322,10 +337,14 @@ class TOBQuoter(Strategy):
             self.log.error("No instrument loaded")
             return
 
+        if not self.config.enable_sells:
+            self.log.warning("SELL orders not enabled, skipping")
+            return
+
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.config.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=self.instrument.make_qty(self.config.trade_size),
+            quantity=self.instrument.make_qty(max(self.min_size, self.config.trade_size)),
             price=price,
             # time_in_force=TimeInForce.GTD,
             # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
@@ -361,7 +380,9 @@ strat_config1 = TOBQuoterConfig(
     instrument_id=instrument_id1,
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
-    dry_run=True,  # This event has now ended and should not be traded
+    enable_buys=True,
+    enable_sells=False,  # <-- Change this to True if holding a position
+    dry_run=False,
 )
 # strat_config2 = TOBQuoterConfig(
 #     instrument_id=instrument_id2,

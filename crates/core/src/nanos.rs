@@ -28,6 +28,12 @@
 //! - Flexible parsing and serialization.
 //!
 //! # Parsing and Serialization
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_wrap
+)]
 //!
 //! `UnixNanos` can be created from and serialized to various formats:
 //!
@@ -78,6 +84,12 @@ impl UnixNanos {
         Self(u64::MAX)
     }
 
+    /// Returns `true` if the value of this instance is zero.
+    #[must_use]
+    pub const fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+
     /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
@@ -85,8 +97,16 @@ impl UnixNanos {
     }
 
     /// Returns the underlying value as `i64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value exceeds `i64::MAX` (approximately year 2262).
     #[must_use]
     pub const fn as_i64(&self) -> i64 {
+        assert!(
+            (self.0 <= i64::MAX as u64),
+            "UnixNanos value exceeds i64::MAX"
+        );
         self.0 as i64
     }
 
@@ -123,12 +143,36 @@ impl UnixNanos {
             return Ok(Self(int_value));
         }
 
+        // If the string is composed solely of digits but didn't fit in a u64 we
+        // treat that as an overflow error rather than attempting to interpret
+        // it as seconds in floating-point form. This avoids the surprising
+        // situation where a caller provides nanoseconds but gets an out-of-
+        // range float interpretation instead.
+        if s.chars().all(|c| c.is_ascii_digit()) {
+            return Err("Unix timestamp is out of range".into());
+        }
+
         // Try parsing as a floating point number (seconds)
         if let Ok(float_value) = s.parse::<f64>() {
+            if !float_value.is_finite() {
+                return Err("Unix timestamp must be finite".into());
+            }
+
             if float_value < 0.0 {
                 return Err("Unix timestamp cannot be negative".into());
             }
-            let nanos = (float_value * 1_000_000_000.0).round() as u64;
+
+            // Convert seconds to nanoseconds while checking for overflow
+            // We perform the multiplication in `f64`, then validate the
+            // result fits inside `u64` *before* rounding / casting.
+            const MAX_NS_F64: f64 = u64::MAX as f64;
+            let nanos_f64 = float_value * 1_000_000_000.0;
+
+            if nanos_f64 > MAX_NS_F64 {
+                return Err("Unix timestamp is out of range".into());
+            }
+
+            let nanos = nanos_f64.round() as u64;
             return Ok(Self(nanos));
         }
 
@@ -137,9 +181,12 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
+
             if nanos < 0 {
                 return Err("Unix timestamp cannot be negative".into());
             }
+
+            // SAFETY: Checked that nanos >= 0, so cast to u64 is safe
             return Ok(Self(nanos as u64));
         }
 
@@ -151,10 +198,35 @@ impl UnixNanos {
             let nanos = datetime
                 .timestamp_nanos_opt()
                 .ok_or_else(|| "Timestamp out of range".to_string())?;
+            // SAFETY: timestamp_nanos_opt() returns >= 0 for valid dates
             return Ok(Self(nanos as u64));
         }
 
         Err(format!("Invalid format: {s}"))
+    }
+
+    /// Returns `Some(self + rhs)` or `None` if the addition would overflow
+    #[must_use]
+    pub fn checked_add<T: Into<u64>>(self, rhs: T) -> Option<Self> {
+        self.0.checked_add(rhs.into()).map(Self)
+    }
+
+    /// Returns `Some(self - rhs)` or `None` if the subtraction would underflow
+    #[must_use]
+    pub fn checked_sub<T: Into<u64>>(self, rhs: T) -> Option<Self> {
+        self.0.checked_sub(rhs.into()).map(Self)
+    }
+
+    /// Saturating addition – if overflow occurs the value is clamped to `u64::MAX`.
+    #[must_use]
+    pub fn saturating_add_ns<T: Into<u64>>(self, rhs: T) -> Self {
+        Self(self.0.saturating_add(rhs.into()))
+    }
+
+    /// Saturating subtraction – if underflow occurs the value is clamped to `0`.
+    #[must_use]
+    pub fn saturating_sub_ns<T: Into<u64>>(self, rhs: T) -> Self {
+        Self(self.0.saturating_sub(rhs.into()))
     }
 }
 
@@ -405,6 +477,12 @@ mod tests {
     }
 
     #[rstest]
+    fn test_is_zero() {
+        assert!(UnixNanos::default().is_zero());
+        assert!(!UnixNanos::max().is_zero());
+    }
+
+    #[rstest]
     fn test_from_u64() {
         let nanos = UnixNanos::from(123);
         assert_eq!(nanos.as_u64(), 123);
@@ -643,9 +721,9 @@ mod tests {
     #[rstest]
     #[case("123", 123)] // Integer string
     #[case("1234.567", 1_234_567_000_000)] // Float string (seconds to nanos)
-    #[case("2024-02-10", 1707523200000000000)] // Simple date (midnight UTC)
-    #[case("2024-02-10T14:58:43Z", 1707577123000000000)] // RFC3339 without fractions
-    #[case("2024-02-10T14:58:43.456789Z", 1707577123456789000)] // RFC3339 with fractions
+    #[case("2024-02-10", 1_707_523_200_000_000_000)] // Simple date (midnight UTC)
+    #[case("2024-02-10T14:58:43Z", 1_707_577_123_000_000_000)] // RFC3339 without fractions
+    #[case("2024-02-10T14:58:43.456789Z", 1_707_577_123_456_789_000)] // RFC3339 with fractions
     fn test_from_str_formats(#[case] input: &str, #[case] expected: u64) {
         let parsed: UnixNanos = input.parse().unwrap();
         assert_eq!(parsed.as_u64(), expected);
@@ -661,17 +739,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_from_str_integer_overflow() {
+        // One more digit than u64::MAX (20 digits) so definitely overflows
+        let input = "184467440737095516160";
+        let result = input.parse::<UnixNanos>();
+        assert!(result.is_err());
+    }
+
+    // ---------- checked / saturating arithmetic ----------
+
+    #[rstest]
+    fn test_checked_add_overflow_returns_none() {
+        let max = UnixNanos::from(u64::MAX);
+        assert_eq!(max.checked_add(1_u64), None);
+    }
+
+    #[rstest]
+    fn test_checked_sub_underflow_returns_none() {
+        let zero = UnixNanos::default();
+        assert_eq!(zero.checked_sub(1_u64), None);
+    }
+
+    #[rstest]
+    fn test_saturating_add_overflow() {
+        let max = UnixNanos::from(u64::MAX);
+        let result = max.saturating_add_ns(1_u64);
+        assert_eq!(result, UnixNanos::from(u64::MAX));
+    }
+
+    #[rstest]
+    fn test_saturating_sub_underflow() {
+        let zero = UnixNanos::default();
+        let result = zero.saturating_sub_ns(1_u64);
+        assert_eq!(result, UnixNanos::default());
+    }
+
+    #[rstest]
+    fn test_from_str_float_overflow() {
+        // Use scientific notation so we take the floating-point parsing path.
+        let input = "2e10"; // 20 billion seconds ~ 634 years (> u64::MAX nanoseconds)
+        let result = input.parse::<UnixNanos>();
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_deserialize_u64() {
         let json = "123456789";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.as_u64(), 123456789);
+        assert_eq!(deserialized.as_u64(), 123_456_789);
     }
 
     #[rstest]
     fn test_deserialize_string_with_int() {
         let json = "\"123456789\"";
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
-        assert_eq!(deserialized.as_u64(), 123456789);
+        assert_eq!(deserialized.as_u64(), 123_456_789);
     }
 
     #[rstest]
@@ -689,8 +811,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case("\"2024-02-10T14:58:43.456789Z\"", 1707577123456789000)]
-    #[case("\"2024-02-10T14:58:43Z\"", 1707577123000000000)]
+    #[case("\"2024-02-10T14:58:43.456789Z\"", 1_707_577_123_456_789_000)]
+    #[case("\"2024-02-10T14:58:43Z\"", 1_707_577_123_000_000_000)]
     fn test_deserialize_timestamp_strings(#[case] input: &str, #[case] expected: u64) {
         let deserialized: UnixNanos = serde_json::from_str(input).unwrap();
         assert_eq!(deserialized.as_u64(), expected);
@@ -728,5 +850,12 @@ mod tests {
         let json = "18446744073709551615"; // u64::MAX
         let deserialized: UnixNanos = serde_json::from_str(json).unwrap();
         assert_eq!(deserialized.as_u64(), u64::MAX);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "UnixNanos value exceeds i64::MAX")]
+    fn test_as_i64_overflow_panics() {
+        let nanos = UnixNanos::from(u64::MAX);
+        let _ = nanos.as_i64(); // Should panic
     }
 }

@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
-use ahash::{HashSet, HashSetExt};
+use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
     dbn::{self, PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
     live::Subscription,
@@ -73,22 +70,25 @@ pub struct DatabentoFeedHandler {
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
     msg_tx: tokio::sync::mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
-    symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+    symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
     replay: bool,
     use_exchange_as_venue: bool,
+    bars_timestamp_on_close: bool,
 }
 
 impl DatabentoFeedHandler {
     /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         key: String,
         dataset: String,
         rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
         tx: tokio::sync::mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
-        symbol_venue_map: Arc<RwLock<HashMap<Symbol, Venue>>>,
+        symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
         use_exchange_as_venue: bool,
+        bars_timestamp_on_close: bool,
     ) -> Self {
         Self {
             key,
@@ -99,18 +99,28 @@ impl DatabentoFeedHandler {
             symbol_venue_map,
             replay: false,
             use_exchange_as_venue,
+            bars_timestamp_on_close,
         }
     }
 
     /// Run the feed handler to begin listening for commands and processing messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any client operation or message handling fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an MBO message does not decode into a delta variant (via `expect`).
+    #[allow(clippy::blocks_in_conditions)]
     pub async fn run(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Running feed handler");
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
-        let mut instrument_id_map: HashMap<u32, InstrumentId> = HashMap::new();
+        let mut instrument_id_map: AHashMap<u32, InstrumentId> = AHashMap::new();
 
         let mut buffering_start = None;
-        let mut buffered_deltas: HashMap<InstrumentId, Vec<OrderBookDelta>> = HashMap::new();
+        let mut buffered_deltas: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
         let mut deltas_count = 0_u64;
         let timeout = Duration::from_secs(5); // Hard-coded timeout for now
 
@@ -215,7 +225,9 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
-                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map);
+
+                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)
+                    .map_err(|e| anyhow::anyhow!("Error updating symbol map: {e}"))?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
                 if self.use_exchange_as_venue {
                     update_instrument_id_map_with_exchange(
@@ -224,61 +236,93 @@ impl DatabentoFeedHandler {
                         &mut instrument_id_map,
                         msg.hd.instrument_id,
                         msg.exchange()?,
-                    );
+                    )?;
                 }
-                let data = handle_instrument_def_msg(
-                    msg,
-                    &record,
-                    &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
-                    &mut instrument_id_map,
-                    ts_init,
-                )?;
+                let data = {
+                    let sym_map = self
+                        .symbol_venue_map
+                        .read()
+                        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+                    handle_instrument_def_msg(
+                        msg,
+                        &record,
+                        &symbol_map,
+                        &self.publisher_venue_map,
+                        &sym_map,
+                        &mut instrument_id_map,
+                        ts_init,
+                    )?
+                };
                 self.send_msg(LiveMessage::Instrument(data)).await;
             } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
-                let data = handle_status_msg(
-                    msg,
-                    &record,
-                    &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
-                    &mut instrument_id_map,
-                    ts_init,
-                )?;
+                let data = {
+                    let sym_map = self
+                        .symbol_venue_map
+                        .read()
+                        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+                    handle_status_msg(
+                        msg,
+                        &record,
+                        &symbol_map,
+                        &self.publisher_venue_map,
+                        &sym_map,
+                        &mut instrument_id_map,
+                        ts_init,
+                    )?
+                };
                 self.send_msg(LiveMessage::Status(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
-                let data = handle_imbalance_msg(
-                    msg,
-                    &record,
-                    &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
-                    &mut instrument_id_map,
-                    ts_init,
-                )?;
+                let data = {
+                    let sym_map = self
+                        .symbol_venue_map
+                        .read()
+                        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+                    handle_imbalance_msg(
+                        msg,
+                        &record,
+                        &symbol_map,
+                        &self.publisher_venue_map,
+                        &sym_map,
+                        &mut instrument_id_map,
+                        ts_init,
+                    )?
+                };
                 self.send_msg(LiveMessage::Imbalance(data)).await;
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
-                let data = handle_statistics_msg(
-                    msg,
-                    &record,
-                    &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
-                    &mut instrument_id_map,
-                    ts_init,
-                )?;
+                let data = {
+                    let sym_map = self
+                        .symbol_venue_map
+                        .read()
+                        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+                    handle_statistics_msg(
+                        msg,
+                        &record,
+                        &symbol_map,
+                        &self.publisher_venue_map,
+                        &sym_map,
+                        &mut instrument_id_map,
+                        ts_init,
+                    )?
+                };
                 self.send_msg(LiveMessage::Statistics(data)).await;
             } else {
-                let (mut data1, data2) = match handle_record(
-                    record,
-                    &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map.read().unwrap(),
-                    &mut instrument_id_map,
-                    ts_init,
-                    &initialized_books,
-                ) {
+                // Decode a generic record with possible errors
+                let (mut data1, data2) = match {
+                    let sym_map = self
+                        .symbol_venue_map
+                        .read()
+                        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+                    handle_record(
+                        record,
+                        &symbol_map,
+                        &self.publisher_venue_map,
+                        &sym_map,
+                        &mut instrument_id_map,
+                        ts_init,
+                        &initialized_books,
+                        self.bars_timestamp_on_close,
+                    )
+                } {
                     Ok(decoded) => decoded,
                     Err(e) => {
                         tracing::error!("Error decoding record: {e}");
@@ -324,7 +368,15 @@ impl DatabentoFeedHandler {
                         }
 
                         // SAFETY: We can guarantee a deltas vec exists
-                        let buffer = buffered_deltas.remove(&delta.instrument_id).unwrap();
+                        let buffer =
+                            buffered_deltas
+                                .remove(&delta.instrument_id)
+                                .ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "Internal error: no buffered deltas for instrument {id}",
+                                        id = delta.instrument_id
+                                    )
+                                })?;
                         let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
                         let deltas = OrderBookDeltas_API::new(deltas);
                         data1 = Some(Data::Deltas(deltas));
@@ -367,45 +419,42 @@ fn handle_system_msg(msg: &dbn::SystemMsg) {
 fn handle_symbol_mapping_msg(
     msg: &dbn::SymbolMappingMsg,
     symbol_map: &mut PitSymbolMap,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
-) {
-    // Update the symbol map
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+) -> anyhow::Result<()> {
     symbol_map
         .on_symbol_mapping(msg)
-        .unwrap_or_else(|_| panic!("Error updating `symbol_map` with {msg:?}"));
-
-    // Remove current entry for instrument
+        .map_err(|e| anyhow::anyhow!("on_symbol_mapping failed for {msg:?}: {e}"))?;
     instrument_id_map.remove(&msg.header().instrument_id);
+    Ok(())
 }
 
 fn update_instrument_id_map_with_exchange(
     symbol_map: &PitSymbolMap,
-    symbol_venue_map: &RwLock<HashMap<Symbol, Venue>>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &RwLock<AHashMap<Symbol, Venue>>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     raw_instrument_id: u32,
     exchange: &str,
-) -> InstrumentId {
-    let raw_symbol = symbol_map
-        .get(raw_instrument_id)
-        .expect("Cannot resolve `raw_symbol` from `symbol_map`");
+) -> anyhow::Result<InstrumentId> {
+    let raw_symbol = symbol_map.get(raw_instrument_id).ok_or_else(|| {
+        anyhow::anyhow!("Cannot resolve raw_symbol for instrument_id {raw_instrument_id}")
+    })?;
     let symbol = Symbol::from(raw_symbol.as_str());
     let venue = Venue::from(exchange);
     let instrument_id = InstrumentId::new(symbol, venue);
-    symbol_venue_map
+    let mut map = symbol_venue_map
         .write()
-        .unwrap()
-        .entry(symbol)
-        .or_insert(venue);
+        .map_err(|e| anyhow::anyhow!("symbol_venue_map lock poisoned: {e}"))?;
+    map.entry(symbol).or_insert(venue);
     instrument_id_map.insert(raw_instrument_id, instrument_id);
-    instrument_id
+    Ok(instrument_id)
 }
 
 fn update_instrument_id_map(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
 ) -> InstrumentId {
     let header = record.header();
 
@@ -438,8 +487,8 @@ fn handle_instrument_def_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let instrument_id = update_instrument_id_map(
@@ -458,8 +507,8 @@ fn handle_status_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentStatus> {
     let instrument_id = update_instrument_id_map(
@@ -478,8 +527,8 @@ fn handle_imbalance_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoImbalance> {
     let instrument_id = update_instrument_id_map(
@@ -500,8 +549,8 @@ fn handle_statistics_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<DatabentoStatistics> {
     let instrument_id = update_instrument_id_map(
@@ -517,14 +566,16 @@ fn handle_statistics_msg(
     decode_statistics_msg(msg, instrument_id, price_precision, Some(ts_init))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &HashMap<Symbol, Venue>,
-    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
     initialized_books: &HashSet<InstrumentId>,
+    bars_timestamp_on_close: bool,
 ) -> anyhow::Result<(Option<Data>, Option<Data>)> {
     let instrument_id = update_instrument_id_map(
         &record,
@@ -543,5 +594,6 @@ fn handle_record(
         price_precision,
         Some(ts_init),
         include_trades,
+        bars_timestamp_on_close,
     )
 }

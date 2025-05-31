@@ -165,7 +165,7 @@ mod tests {
         let instrument_close =
             InstrumentClose::new(instrument_id, close_price, close_type, ts_event, ts_init);
 
-        let serialized = instrument_close.as_json_bytes().unwrap();
+        let serialized = instrument_close.to_json_bytes().unwrap();
         let deserialized = InstrumentClose::from_json_bytes(serialized.as_ref()).unwrap();
 
         assert_eq!(deserialized, instrument_close);
@@ -182,7 +182,7 @@ mod tests {
         let instrument_close =
             InstrumentClose::new(instrument_id, close_price, close_type, ts_event, ts_init);
 
-        let serialized = instrument_close.as_msgpack_bytes().unwrap();
+        let serialized = instrument_close.to_msgpack_bytes().unwrap();
         let deserialized = InstrumentClose::from_msgpack_bytes(serialized.as_ref()).unwrap();
 
         assert_eq!(deserialized, instrument_close);

@@ -69,9 +69,28 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_line(c, &format!("machine_id: {machine_id}"));
     header_line(c, &format!("instance_id: {instance_id}"));
     header_line(c, &format!("PID: {pid}"));
+
     header_sepr(c, "=================================================================");
     header_sepr(c, " VERSIONING");
     header_sepr(c, "=================================================================");
+
+    #[cfg(not(feature = "python"))]
+    log_rust_versioning(c);
+
+    #[cfg(feature = "python")]
+    log_python_versioning(c);
+}
+
+#[cfg(not(feature = "python"))]
+#[rustfmt::skip]
+fn log_rust_versioning(c: Ustr) {
+    use nautilus_core::consts::NAUTILUS_VERSION;
+    header_line(c, &format!("nautilus_trader: {NAUTILUS_VERSION}"));
+}
+
+#[cfg(feature = "python")]
+#[rustfmt::skip]
+fn log_python_versioning(c: Ustr) {
     let package = "nautilus_trader";
     header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_line(c, &format!("python: {}", python_version()));
@@ -140,6 +159,9 @@ fn python_package_version(package: &str) -> String {
 }
 
 #[cfg(not(feature = "python"))]
+/// # Panics
+///
+/// Panics if the `python` feature is not enabled.
 fn python_package_version(_package: &str) -> &str {
     panic!("`python` feature is not enabled");
 }
@@ -152,6 +174,9 @@ fn python_version() -> String {
 }
 
 #[cfg(not(feature = "python"))]
+/// # Panics
+///
+/// Panics if the `python` feature is not enabled.
 fn python_version() -> String {
     panic!("`python` feature is not enabled");
 }

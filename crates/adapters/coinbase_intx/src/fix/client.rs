@@ -31,7 +31,10 @@ use std::{
 };
 
 use base64::prelude::*;
-use nautilus_core::{python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime};
+use nautilus_common::logging::{log_task_started, log_task_stopped};
+use nautilus_core::{
+    env::get_env_var, python::IntoPyObjectNautilusExt, time::get_atomic_clock_realtime,
+};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 use pyo3::prelude::*;
@@ -44,7 +47,7 @@ use super::{
     parse::convert_to_order_status_report,
 };
 use crate::{
-    common::{consts::COINBASE_INTX, credential::get_env_var},
+    common::consts::COINBASE_INTX,
     fix::{
         messages::{fix_exec_type, fix_message_type, fix_tag},
         parse::convert_to_fill_report,
@@ -52,7 +55,7 @@ use crate::{
 };
 
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoinbaseIntxFixClient {
     endpoint: String,
     api_key: String,
@@ -73,6 +76,10 @@ pub struct CoinbaseIntxFixClient {
 
 impl CoinbaseIntxFixClient {
     /// Creates a new [`CoinbaseIntxFixClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables or parameters are missing.
     pub fn new(
         endpoint: Option<String>,
         api_key: Option<String>,
@@ -109,37 +116,41 @@ impl CoinbaseIntxFixClient {
 
     /// Creates a new authenticated [`CoinbaseIntxFixClient`] instance using
     /// environment variables and the default Coinbase International FIX drop copy endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are not set.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::new(None, None, None, None, None)
     }
 
     /// Returns the FIX endpoint being used by the client.
     #[must_use]
-    pub fn endpoint(&self) -> &str {
+    pub const fn endpoint(&self) -> &str {
         self.endpoint.as_str()
     }
 
     /// Returns the public API key being used by the client.
     #[must_use]
-    pub fn api_key(&self) -> &str {
+    pub const fn api_key(&self) -> &str {
         self.api_key.as_str()
     }
 
     /// Returns the Coinbase International portfolio ID being used by the client.
     #[must_use]
-    pub fn portfolio_id(&self) -> &str {
+    pub const fn portfolio_id(&self) -> &str {
         self.portfolio_id.as_str()
     }
 
     /// Returns the sender company ID being used by the client.
     #[must_use]
-    pub fn sender_comp_id(&self) -> &str {
+    pub const fn sender_comp_id(&self) -> &str {
         self.sender_comp_id.as_str()
     }
 
     /// Returns the target company ID being used by the client.
     #[must_use]
-    pub fn target_comp_id(&self) -> &str {
+    pub const fn target_comp_id(&self) -> &str {
         self.target_comp_id.as_str()
     }
 
@@ -156,6 +167,14 @@ impl CoinbaseIntxFixClient {
     }
 
     /// Connects to the Coinbase International FIX Drop Copy endpoint.
+    ///
+    /// # Panics
+    ///
+    /// Panics if time calculation or unwrap logic inside fails during logon retry setup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if network connection or FIX logon fails.
     pub async fn connect(&mut self, handler: PyObject) -> anyhow::Result<()> {
         let config = SocketConfig {
             url: self.endpoint.clone(),
@@ -285,7 +304,7 @@ impl CoinbaseIntxFixClient {
         let client_clone = self.clone();
 
         self.processing_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'maintain FIX connection'");
+            log_task_started("maintain-fix-connection");
 
             let mut last_logon_attempt = std::time::Instant::now()
                 .checked_sub(Duration::from_secs(10))
@@ -315,7 +334,9 @@ impl CoinbaseIntxFixClient {
         let target_comp_id = self.target_comp_id.clone();
 
         self.heartbeat_task = Some(Arc::new(tokio::spawn(async move {
-            tracing::debug!("Started task 'FIX heartbeat' at {heartbeat_secs}s intervals");
+            log_task_started("heartbeat");
+            tracing::debug!("Heartbeat at {heartbeat_secs}s intervals");
+
             let interval = Duration::from_secs(heartbeat_secs);
 
             loop {
@@ -341,13 +362,17 @@ impl CoinbaseIntxFixClient {
                 tokio::time::sleep(interval).await;
             }
 
-            tracing::debug!("Stopped task 'FIX heartbeat'");
+            log_task_stopped("heartbeat");
         })));
 
         Ok(())
     }
 
     /// Closes the connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if logout or socket closure fails.
     pub async fn close(&mut self) -> anyhow::Result<()> {
         // Send logout message if connected
         if self.is_logged_on() {

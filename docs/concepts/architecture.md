@@ -46,10 +46,69 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 ## System architecture
 
 The NautilusTrader codebase is actually both a framework for composing trading
-systems, and a set of default system implementations which can operate in various
-[environment contexts](/concepts/architecture.md#environment-contexts).
+ systems, and a set of default system implementations which can operate in various
+[environment contexts](#environment-contexts).
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/assets/architecture-overview.png?raw=true "architecture")
+
+### Core Components
+
+The platform is built around several key components that work together to provide a comprehensive trading system:
+
+#### NautilusKernel
+
+The central orchestration component responsible for:
+
+- Initializing and managing all system components.
+- Configuring the messaging infrastructure.
+- Maintaining environment-specific behaviors.
+- Coordinating shared resources and lifecycle management.
+- Providing a unified entry point for system operations.
+
+#### MessageBus
+
+The backbone of inter-component communication, implementing:
+
+- **Publish/Subscribe patterns**: For broadcasting events and data to multiple consumers.
+- **Request/Response communication**: For operations requiring acknowledgment.
+- **Command/Event messaging**: For triggering actions and notifying state changes.
+- **Optional state persistence**: Using Redis for durability and restart capabilities.
+
+#### Cache
+
+High-performance in-memory storage system that:
+
+- Stores instruments, accounts, orders, positions, and more.
+- Provides performant fetching capabilities for trading components.
+- Maintains consist state across the system.
+- Supports both read and write operations with optimized access patterns.
+
+#### DataEngine
+
+Processes and routes market data throughout the system:
+
+- Handles multiple data types (quotes, trades, bars, order books, custom data, and more).
+- Routes data to appropriate consumers based on subscriptions.
+- Manages data flow from external sources to internal components.
+
+#### ExecutionEngine
+
+Manages order lifecycle and execution:
+
+- Routes trading commands to the appropriate adapter clients.
+- Tracks order and position states.
+- Coordinates with risk management systems.
+- Handles execution reports and fills from venues.
+- Handles reconciliation of external execution state.
+
+#### RiskEngine
+
+Provides comprehensive risk management:
+
+- Pre-trade risk checks and validation.
+- Position and exposure monitoring.
+- Real-time risk calculations.
+- Configurable risk rules and limits.
 
 ### Environment contexts
 
@@ -70,6 +129,40 @@ providing a common core system 'kernel'.
 
 The *ports and adapters* architectural style enables modular components to be integrated into the
 core system, providing various hooks for user-defined or custom component implementations.
+
+### Data and Execution Flow Patterns
+
+Understanding how data and execution flow through the system is crucial for effective use of the platform:
+
+#### Data Flow Pattern
+
+1. **External Data Ingestion**: Market data enters via venue-specific `DataClient` adapters where it is normalized.
+2. **Data Processing**: The `DataEngine` handles data processing for internal components.
+3. **Caching**: Processed data is stored in the high-performance `Cache` for fast access.
+4. **Event Publishing**: Data events are published to the `MessageBus`.
+5. **Consumer Delivery**: Subscribed components (Actors, Strategies) receive relevant data events.
+
+#### Execution Flow Pattern
+
+1. **Command Generation**: User strategies create trading commands.
+2. **Command Publishing**: Commands are sent through the `MessageBus`.
+3. **Risk Validation**: The `RiskEngine` validates trading commands against configured risk rules.
+4. **Execution Routing**: The `ExecutionEngine` routes commands to appropriate venues.
+5. **External Submission**: The `ExecutionClient` submits orders to external trading venues.
+6. **Event Flow Back**: Order events (fills, cancellations) flow back through the system.
+7. **State Updates**: Portfolio and position states are updated based on execution events.
+
+#### Component State Management
+
+All components follow a finite state machine pattern with well-defined states:
+
+- **PRE_INITIALIZED**: Component is created but not yet wired up to the system.
+- **READY**: Component is configured and wired up, but not yet running.
+- **RUNNING**: Component is actively processing messages and performing operations.
+- **STOPPED**: Component has been gracefully stopped and is no longer processing.
+- **DEGRADED**: Component is running but with reduced functionality due to errors.
+- **FAULTED**: Component has encountered a critical error and cannot continue.
+- **DISPOSED**: Component has been cleaned up and resources have been released.
 
 ### Messaging
 
@@ -111,7 +204,6 @@ for each of these subpackages from the left nav menu.
 - `data`: The data stack and data tooling for the platform.
 - `execution`: The execution stack for the platform.
 - `indicators`: A set of efficient indicators and analyzers.
-- `msgbus`: A universal message bus for connecting system components.
 - `persistence`: Data storage, cataloging and retrieval, mainly to support backtesting.
 - `portfolio`: Portfolio management functionality.
 - `risk`: Risk specific components and tooling.
@@ -121,11 +213,11 @@ for each of these subpackages from the left nav menu.
 
 - `backtest`: Backtesting componentry as well as a backtest engine and node implementations.
 - `live`: Live engine and client implementations as well as a node for live trading.
-- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts).
+- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](#environment-contexts).
 
 ## Code structure
 
-The foundation of the codebase is the `nautilus_core` directory, containing a collection of core Rust crates including a C foreign function interface (FFI) generated by `cbindgen`.
+The foundation of the codebase is the `crates` directory, containing a collection of core Rust crates including a C foreign function interface (FFI) generated by `cbindgen`.
 
 The bulk of the production code resides in the `nautilus_trader` directory, which contains a collection of Python/Cython subpackages and modules.
 

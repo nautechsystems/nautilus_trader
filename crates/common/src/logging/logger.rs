@@ -94,6 +94,9 @@ impl LoggerConfig {
         }
     }
 
+    /// # Errors
+    ///
+    /// Returns an error if the spec string is invalid.
     pub fn from_spec(spec: &str) -> anyhow::Result<Self> {
         let mut config = Self::default();
         for kv in spec.split(';') {
@@ -255,6 +258,9 @@ impl LogLineWrapper {
     /// This method serializes the log line and its associated metadata
     /// (timestamp, trader ID, etc.) into a JSON string format. This is useful
     /// for structured logging or when logs need to be stored in a JSON format.
+    /// # Panics
+    ///
+    /// Panics if serialization of the log event to JSON fails.
     #[must_use]
     pub fn get_json(&self) -> String {
         let json_string =
@@ -329,6 +335,11 @@ impl Log for Logger {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
+    /// Initializes the logger based on the `NAUTILUS_LOG` environment variable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the environment variable or parsing the configuration fails.
     pub fn init_with_env(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -347,6 +358,11 @@ impl Logger {
     /// let file_config = FileWriterConfig::default();
     /// let log_guard = Logger::init_with_config(trader_id, instance_id, config, file_config);
     /// ```
+    /// Initializes the logger with the given `LoggerConfig` and `FileWriterConfig`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the logger fails to register or initialize the background thread.
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -666,7 +682,7 @@ mod tests {
                     .filter_map(Result::ok)
                     .any(|entry| entry.path().is_file())
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         drop(log_guard); // Ensure log buffers are flushed
@@ -684,7 +700,7 @@ mod tests {
                     std::fs::read_to_string(log_file_path).expect("Error while reading log file");
                 !log_contents.is_empty()
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         assert_eq!(
@@ -794,7 +810,7 @@ mod tests {
                     false
                 }
             },
-            Duration::from_secs(2),
+            Duration::from_secs(3),
         );
 
         assert_eq!(

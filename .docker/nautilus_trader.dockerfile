@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DEFAULT_TIMEOUT=100 \
     PYO3_PYTHON="/usr/local/bin/python3" \
     PYSETUP_PATH="/opt/pysetup" \
-    RUST_TOOLCHAIN="stable" \
+    RUSTUP_TOOLCHAIN="stable" \
     BUILD_MODE="release" \
     CC="clang"
 ENV PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
@@ -16,7 +16,7 @@ FROM base AS builder
 
 # Install build deps
 RUN apt-get update && \
-    apt-get install -y curl clang git libssl-dev make pkg-config && \
+    apt-get install -y curl clang git libssl-dev make pkg-config capnproto libcapnp-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

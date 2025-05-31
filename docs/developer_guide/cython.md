@@ -5,13 +5,7 @@ More information on Cython syntax and conventions can be found by reading the [C
 
 ## What is Cython?
 
-[Cython](https://cython.org) is a compiled programming language that aims to be a superset of the Python programming
-language, designed to give C-like performance with code that is written mostly in Python with
-optional additional C-inspired syntax.
-
-The project heavily utilizes Cython to provide static type safety and increased performance
-for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
-written in Cython, however the libraries can be accessed from both Python and Cython.
+Cython is a superset of Python that compiles to C extension modules, enabling optional static typing and optimized performance. NautilusTrader relies on Cython for its Python bindings and performance-critical components.
 
 ## Function and method signatures
 

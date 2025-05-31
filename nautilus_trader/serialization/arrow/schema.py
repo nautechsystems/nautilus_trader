@@ -16,7 +16,6 @@
 import msgspec
 import pyarrow as pa
 
-from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import ShutdownSystem
 from nautilus_trader.common.messages import TradingStateChanged
@@ -425,23 +424,6 @@ NAUTILUS_ARROW_SCHEMA = {
             "ts_init": pa.uint64(),
             "info": pa.binary(),
             "reconciliation": pa.bool_(),
-        },
-    ),
-    BinanceBar: pa.schema(
-        {
-            "bar_type": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "open": pa.string(),
-            "high": pa.string(),
-            "low": pa.string(),
-            "close": pa.string(),
-            "volume": pa.string(),
-            "quote_volume": pa.string(),
-            "count": pa.uint64(),
-            "taker_buy_base_volume": pa.string(),
-            "taker_buy_quote_volume": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
         },
     ),
 }

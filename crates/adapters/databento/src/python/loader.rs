@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for the Databento data loader.
+
 use std::{collections::HashMap, path::PathBuf};
 
 use databento::dbn;
@@ -99,9 +101,9 @@ impl DatabentoDataLoader {
             data.push(py_object);
         }
 
-        Ok(PyList::new(py, &data)
-            .expect("Invalid `ExactSizeIterator`")
-            .into())
+        let list = PyList::new(py, &data).expect("Invalid `ExactSizeIterator`");
+
+        Ok(list.into_py_any_unwrap(py))
     }
 
     // Cannot include trades
@@ -133,6 +135,7 @@ impl DatabentoDataLoader {
                 instrument_id,
                 price_precision,
                 include_trades.unwrap_or(false),
+                None,
             )
             .map_err(to_pyvalue_err)?;
 
@@ -161,7 +164,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false)
+            .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -195,6 +198,7 @@ impl DatabentoDataLoader {
                 instrument_id,
                 price_precision,
                 include_trades.unwrap_or(false),
+                None,
             )
             .map_err(to_pyvalue_err)?;
 
@@ -223,7 +227,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false)
+            .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -251,7 +255,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false)
+            .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -279,35 +283,48 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false)
+            .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, timestamp_on_close=true))]
     fn py_load_bars(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
+        timestamp_on_close: bool,
     ) -> PyResult<Vec<Bar>> {
-        self.load_bars(&filepath, instrument_id, price_precision)
-            .map_err(to_pyvalue_err)
+        self.load_bars(
+            &filepath,
+            instrument_id,
+            price_precision,
+            Some(timestamp_on_close),
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, timestamp_on_close=true))]
     fn py_load_bars_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
+        timestamp_on_close: bool,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::OhlcvMsg>(&filepath, instrument_id, price_precision, false)
+            .read_records::<dbn::OhlcvMsg>(
+                &filepath,
+                instrument_id,
+                price_precision,
+                false,
+                Some(timestamp_on_close),
+            )
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)

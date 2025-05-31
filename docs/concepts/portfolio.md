@@ -31,6 +31,8 @@ base class, and implementing any of the `calculate_` methods.
 For example, the following is the implementation for the built-in `WinRate` statistic:
 
 ```python
+import pandas as pd
+from typing import Any
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
@@ -56,7 +58,12 @@ These statistics can then be registered with a traders `PortfolioAnalyzer`.
 ```python
 stat = WinRate()
 
+# Register with the portfolio analyzer
 engine.portfolio.analyzer.register_statistic(stat)
+
+:::info
+See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md#class-portfolioanalyzer) for details on available methods.
+:::
 ```
 
 :::tip
@@ -67,7 +74,7 @@ The expectation is that you would then return ``None``, NaN or a reasonable defa
 
 ## Backtest Analysis
 
-Following a backtest run a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
+Following a backtest run, a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered
 statistic in turn, calculating their values (with a default configuration). Any output is then displayed in the tear sheet
 under the `Portfolio Performance` heading, grouped as.
 

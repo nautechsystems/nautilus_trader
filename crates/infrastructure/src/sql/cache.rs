@@ -22,6 +22,7 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::database::{CacheDatabaseAdapter, CacheMap},
     custom::CustomData,
+    logging::{log_task_awaiting, log_task_started, log_task_stopped},
     runtime::get_runtime,
     signal::Signal,
 };
@@ -48,6 +49,9 @@ use crate::sql::{
     pg::{connect_pg, get_postgres_connect_options},
     queries::DatabaseQueries,
 };
+
+// Task and connection names
+const CACHE_PROCESS: &str = "cache-process";
 
 #[derive(Debug)]
 #[cfg_attr(
@@ -80,6 +84,15 @@ pub enum DatabaseQuery {
 }
 
 impl PostgresCacheDatabase {
+    /// Connects to the Postgres cache database using the provided connection parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if establishing the database connection fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal Postgres pool connection attempt (`connect_pg`) unwraps on error.
     pub async fn connect(
         host: Option<String>,
         port: Option<u16>,
@@ -103,7 +116,7 @@ impl PostgresCacheDatabase {
         mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseQuery>,
         pg_connect_options: PgConnectOptions,
     ) {
-        tracing::debug!("Starting cache processing");
+        log_task_started(CACHE_PROCESS);
 
         let pool = connect_pg(pg_connect_options).await.unwrap();
 
@@ -136,10 +149,15 @@ impl PostgresCacheDatabase {
             drain_buffer(&pool, &mut buffer).await;
         }
 
-        tracing::debug!("Stopped cache processing");
+        log_task_stopped(CACHE_PROCESS);
     }
 }
 
+/// Retrieves a `PostgresCacheDatabase` using default connection options.
+///
+/// # Errors
+///
+/// Returns an error if connecting to the database or initializing the cache adapter fails.
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
     let connect_options = get_postgres_connect_options(None, None, None, None, None);
     Ok(PostgresCacheDatabase::connect(
@@ -161,6 +179,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let (tx, rx) = std::sync::mpsc::channel();
 
         log::debug!("Closing connection pool");
+
         tokio::task::block_in_place(|| {
             get_runtime().block_on(async {
                 pool.close().await;
@@ -175,7 +194,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             log::error!("Error sending close: {e:?}");
         }
 
-        log::debug!("Awaiting task 'cache-write'"); // Naming tasks will soon be stablized
+        log_task_awaiting("cache-write");
+
         tokio::task::block_in_place(|| {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
                 log::error!("Error awaiting task 'cache-write': {e:?}");

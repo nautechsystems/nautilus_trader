@@ -22,19 +22,20 @@
 
 use std::{
     collections::HashMap,
+    num::NonZeroU32,
     sync::{Arc, LazyLock, Mutex},
 };
 
 use chrono::{DateTime, Utc};
-use nautilus_core::{UnixNanos, consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
-use nautilus_execution::reports::{
-    fill::FillReport, order::OrderStatusReport, position::PositionStatusReport,
+use nautilus_core::{
+    UnixNanos, consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Price, Quantity},
 };
 use nautilus_network::{http::HttpClient, ratelimiter::quota::Quota};
@@ -63,7 +64,7 @@ use super::{
 use crate::{
     common::{
         consts::COINBASE_INTX_REST_URL,
-        credential::{Credential, get_env_var},
+        credential::Credential,
         enums::{CoinbaseIntxOrderType, CoinbaseIntxSide, CoinbaseIntxTimeInForce},
     },
     http::{
@@ -85,14 +86,14 @@ pub struct CoinbaseIntxResponse<T> {
 
 // https://docs.cdp.coinbase.com/intx/docs/rate-limits#rest-api-rate-limits
 pub static COINBASE_INTX_REST_QUOTA: LazyLock<Quota> =
-    LazyLock::new(|| Quota::rate_per_second(40).unwrap());
+    LazyLock::new(|| Quota::per_second(NonZeroU32::new(40).unwrap()));
 
 /// Provides a lower-level HTTP client for connecting to the [Coinbase International](https://coinbase.com) REST API.
 ///
 /// This client wraps the underlying `HttpClient` to handle functionality
 /// specific to Coinbase, such as request signing (for authenticated endpoints),
 /// forming request URLs, and deserializing responses into specific data models.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CoinbaseIntxHttpInnerClient {
     base_url: String,
     client: HttpClient,
@@ -262,6 +263,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Requests a list of all supported assets.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getassets>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_assets(&self) -> Result<Vec<CoinbaseIntxAsset>, CoinbaseIntxHttpError> {
         let path = "/api/v1/assets";
         self.send_request(Method::GET, path, None, false).await
@@ -270,6 +274,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Requests information for a specific asset.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getasset>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_asset_details(
         &self,
         asset: &str,
@@ -281,6 +288,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Requests all instruments available for trading.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getinstruments>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_instruments(
         &self,
     ) -> Result<Vec<CoinbaseIntxInstrument>, CoinbaseIntxHttpError> {
@@ -291,6 +301,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieve a list of instruments with open contracts.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getinstrument>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_instrument_details(
         &self,
         symbol: &str,
@@ -302,6 +315,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Return all the fee rate tiers.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getassets>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_fee_rate_tiers(
         &self,
     ) -> Result<Vec<CoinbaseIntxFeeTier>, CoinbaseIntxHttpError> {
@@ -312,6 +328,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// List all user portfolios.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfolios>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_portfolios(
         &self,
     ) -> Result<Vec<CoinbaseIntxPortfolio>, CoinbaseIntxHttpError> {
@@ -322,6 +341,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Returns the user's specified portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfolio>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_portfolio(
         &self,
         portfolio_id: &str,
@@ -333,6 +355,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves the summary, positions, and balances of a portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliodetail>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_portfolio_details(
         &self,
         portfolio_id: &str,
@@ -344,6 +369,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves the high level overview of a portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliosummary>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_portfolio_summary(
         &self,
         portfolio_id: &str,
@@ -355,6 +383,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Returns all balances for a given portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliobalances>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_portfolio_balances(
         &self,
         portfolio_id: &str,
@@ -366,6 +397,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves the balance for a given portfolio and asset.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliobalance>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_portfolio_balance(
         &self,
         portfolio_id: &str,
@@ -378,12 +412,16 @@ impl CoinbaseIntxHttpInnerClient {
     /// Returns all fills for a given portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliofills>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_portfolio_fills(
         &self,
         portfolio_id: &str,
         params: GetPortfolioFillsParams,
     ) -> Result<CoinbaseIntxFillList, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/portfolios/{portfolio_id}/fills?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -391,6 +429,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Returns all positions for a given portfolio.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliopositions>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_portfolio_positions(
         &self,
         portfolio_id: &str,
@@ -402,6 +443,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves the position for a given portfolio and symbol.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfolioposition>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_portfolio_position(
         &self,
         portfolio_id: &str,
@@ -414,6 +458,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves the Perpetual Future and Spot fee rate tiers for the user.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getportfoliosfeerates>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_portfolio_fee_rates(
         &self,
     ) -> Result<Vec<CoinbaseIntxPortfolioFeeRates>, CoinbaseIntxHttpError> {
@@ -422,12 +469,16 @@ impl CoinbaseIntxHttpInnerClient {
     }
 
     /// Create a new order.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_create_order(
         &self,
         params: CreateOrderParams,
     ) -> Result<CoinbaseIntxOrder, CoinbaseIntxHttpError> {
         let path = "/api/v1/orders";
-        let body = serde_json::to_vec(&params).expect("Failed to serialize params");
+        let body = serde_json::to_vec(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         self.send_request(Method::POST, path, Some(body), true)
             .await
     }
@@ -435,6 +486,9 @@ impl CoinbaseIntxHttpInnerClient {
     /// Retrieves a single order. The order retrieved can be either active or inactive.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getorder>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_get_order(
         &self,
         venue_order_id: &str,
@@ -443,7 +497,8 @@ impl CoinbaseIntxHttpInnerClient {
         let params = GetOrderParams {
             portfolio: portfolio_id.to_string(),
         };
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders/{venue_order_id}?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
@@ -452,16 +507,23 @@ impl CoinbaseIntxHttpInnerClient {
     /// Does not return any rejected, cancelled, or fully filled orders as they are not active.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/getorders>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_list_open_orders(
         &self,
         params: GetOrdersParams,
     ) -> Result<CoinbaseIntxOrderList, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::GET, &path, None, true).await
     }
 
     /// Cancels a single open order.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_cancel_order(
         &self,
         client_order_id: &str,
@@ -470,17 +532,22 @@ impl CoinbaseIntxHttpInnerClient {
         let params = CancelOrderParams {
             portfolio: portfolio_id.to_string(),
         };
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders/{client_order_id}?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
 
     /// Cancel user orders.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_cancel_orders(
         &self,
         params: CancelOrdersParams,
     ) -> Result<Vec<CoinbaseIntxOrder>, CoinbaseIntxHttpError> {
-        let query = serde_urlencoded::to_string(&params).expect("Failed to serialize params");
+        let query = serde_urlencoded::to_string(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         let path = format!("/api/v1/orders?{query}");
         self.send_request(Method::DELETE, &path, None, true).await
     }
@@ -488,13 +555,17 @@ impl CoinbaseIntxHttpInnerClient {
     /// Modify an open order.
     ///
     /// See <https://docs.cdp.coinbase.com/intx/reference/modifyorder>.
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn http_modify_order(
         &self,
         order_id: &str,
         params: ModifyOrderParams,
     ) -> Result<CoinbaseIntxOrder, CoinbaseIntxHttpError> {
         let path = format!("/api/v1/orders/{order_id}");
-        let body = serde_json::to_vec(&params).expect("Failed to serialize params");
+        let body = serde_json::to_vec(&params)
+            .map_err(|e| CoinbaseIntxHttpError::JsonError(e.to_string()))?;
         self.send_request(Method::PUT, &path, Some(body), true)
             .await
     }
@@ -504,7 +575,7 @@ impl CoinbaseIntxHttpInnerClient {
 ///
 /// This client wraps the underlying `CoinbaseIntxHttpInnerClient` to handle conversions
 /// into the Nautilus domain model.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
@@ -538,12 +609,20 @@ impl CoinbaseIntxHttpClient {
 
     /// Creates a new authenticated [`CoinbaseIntxHttpClient`] using environment variables and
     /// the default Coinbase International HTTP base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::with_credentials(None, None, None, None, None)
     }
 
     /// Creates a new [`CoinbaseIntxHttpClient`] configured with credentials
     /// for authenticated requests, optionally using a custom base url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or invalid.
     pub fn with_credentials(
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -600,6 +679,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Returns the cached instrument symbols.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument cache mutex is poisoned.
     #[must_use]
     pub fn get_cached_symbols(&self) -> Vec<String> {
         self.instruments_cache
@@ -611,6 +694,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Adds the given instruments into the clients instrument cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the instrument cache mutex is poisoned.
     ///
     /// Any existing instruments will be replaced.
     pub fn add_instruments(&mut self, instruments: Vec<InstrumentAny>) {
@@ -625,6 +712,10 @@ impl CoinbaseIntxHttpClient {
 
     /// Adds the given instrument into the clients instrument cache.
     ///
+    /// # Panics
+    ///
+    /// Panics if the instrument cache mutex is poisoned.
+    ///
     /// Any existing instrument will be replaced.
     pub fn add_instrument(&mut self, instrument: InstrumentAny) {
         self.instruments_cache
@@ -635,6 +726,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Requests a list of portfolio details from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn list_portfolios(&self) -> anyhow::Result<Vec<CoinbaseIntxPortfolio>> {
         let resp = self
             .inner
@@ -646,6 +741,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Requests the account state for the given account ID from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,
@@ -663,6 +762,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Requests all instruments from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
         let resp = self
             .inner
@@ -684,6 +787,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Requests the instrument for the given symbol from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the instrument cannot be parsed.
     pub async fn request_instrument(&self, symbol: &Symbol) -> anyhow::Result<InstrumentAny> {
         let resp = self
             .inner
@@ -699,7 +806,11 @@ impl CoinbaseIntxHttpClient {
         }
     }
 
-    /// Requests an order status reports for the given venue order ID from Coinbase International.
+    /// Requests an order status report for the given venue order ID from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_order_status_report(
         &self,
         account_id: AccountId,
@@ -722,11 +833,15 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
     /// Requests order status reports for all **open** orders from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_order_status_reports(
         &self,
         account_id: AccountId,
@@ -750,20 +865,24 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<OrderStatusReport> = Vec::new();
         for order in resp.results {
             let instrument = self.get_instrument_from_cache(order.symbol)?;
-
-            reports.push(parse_order_status_report(
+            let report = parse_order_status_report(
                 order,
                 account_id,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            ));
+            )?;
+            reports.push(report);
         }
 
         Ok(reports)
     }
 
     /// Requests all fill reports from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -792,14 +911,13 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<FillReport> = Vec::new();
         for fill in resp.results {
             let instrument = self.get_instrument_from_cache(fill.symbol)?;
-
             let report = parse_fill_report(
                 fill,
                 account_id,
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 
@@ -807,6 +925,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Requests a position status report from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_position_status_report(
         &self,
         account_id: AccountId,
@@ -824,12 +946,15 @@ impl CoinbaseIntxHttpClient {
         let ts_init = get_atomic_clock_realtime().get_time_ns();
 
         let report =
-            parse_position_status_report(resp, account_id, instrument.size_precision(), ts_init);
-
+            parse_position_status_report(resp, account_id, instrument.size_precision(), ts_init)?;
         Ok(report)
     }
 
     /// Requests all position status reports from Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn request_position_status_reports(
         &self,
         account_id: AccountId,
@@ -847,14 +972,12 @@ impl CoinbaseIntxHttpClient {
         let mut reports: Vec<PositionStatusReport> = Vec::new();
         for position in resp {
             let instrument = self.get_instrument_from_cache(position.symbol)?;
-
             let report = parse_position_status_report(
                 position,
                 account_id,
                 instrument.size_precision(),
                 ts_init,
-            );
-
+            )?;
             reports.push(report);
         }
 
@@ -862,6 +985,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Submits a new order to Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     #[allow(clippy::too_many_arguments)]
     pub async fn submit_order(
         &self,
@@ -918,11 +1045,15 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
     /// Cancels a currently open order on Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn cancel_order(
         &self,
         account_id: AccountId,
@@ -945,11 +1076,15 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
+        )?;
         Ok(report)
     }
 
     /// Cancels all orders for the given account ID and filter params on Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     pub async fn cancel_orders(
         &self,
         account_id: AccountId,
@@ -979,7 +1114,7 @@ impl CoinbaseIntxHttpClient {
                 instrument.price_precision(),
                 instrument.size_precision(),
                 ts_init,
-            );
+            )?;
             reports.push(report);
         }
 
@@ -987,6 +1122,10 @@ impl CoinbaseIntxHttpClient {
     }
 
     /// Modifies a currently open order on Coinbase International.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
     #[allow(clippy::too_many_arguments)]
     pub async fn modify_order(
         &self,
@@ -1025,8 +1164,7 @@ impl CoinbaseIntxHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        );
-
+        )?;
         Ok(report)
     }
 }

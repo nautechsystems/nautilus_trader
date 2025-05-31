@@ -177,6 +177,19 @@ class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> TradeTick:
+        """
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The trade instrument ID.
+        ts_init : uint64_t
+            UNIX timestamp (nanoseconds) when the data object was initialized.
+
+        Raises
+        ------
+        ValueError
+            If trade tick data are incorrect
+        """
         return TradeTick(
             instrument_id=instrument_id,
             price=Price.from_str(self.p),
@@ -235,3 +248,12 @@ class BinanceFuturesMarkPriceMsg(msgspec.Struct, frozen=True):
 
     stream: str
     data: BinanceFuturesMarkPriceData
+
+
+class BinanceFuturesMarkPriceAllMsg(msgspec.Struct, frozen=True):
+    """
+    WebSocket message from Binance Futures All Mark Price Update events.
+    """
+
+    stream: str
+    data: list[BinanceFuturesMarkPriceData]

@@ -381,6 +381,10 @@ impl BetSide {
 
 impl From<OrderSide> for BetSide {
     /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `side` is [`OrderSide::NoOrderSide`].
     fn from(side: OrderSide) -> Self {
         match side {
             OrderSide::Buy => BetSide::Back,
@@ -847,6 +851,11 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
+    /// Returns the specified [`OrderSideSpecified`] (BUY or SELL) for this side.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` is [`OrderSide::NoOrderSide`].
     #[must_use]
     pub fn as_specified(&self) -> OrderSideSpecified {
         match &self {
@@ -1332,6 +1341,7 @@ enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
+enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionSide);

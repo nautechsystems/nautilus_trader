@@ -33,7 +33,7 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *const c_char {
     let value = unsafe { cstr_as_str(ptr) };
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *con
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn instrument_id_from_cstr(ptr: *const c_char) -> InstrumentId {
     let value = unsafe { cstr_as_str(ptr) };

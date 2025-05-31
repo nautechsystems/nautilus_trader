@@ -176,10 +176,9 @@ demonstrates how to initialize and register a TWAP execution algorithm directly 
 `BacktestEngine` (assuming an engine is already initialized):
 
 ```python
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 
-# Instantiate and add your execution algorithm
+# `engine` is an initialized BacktestEngine instance
 exec_algorithm = TWAPExecAlgorithm()
 engine.add_exec_algorithm(exec_algorithm)
 ```
@@ -194,18 +193,23 @@ the `interval_secs` parameter sets the time between individual order executions.
 determine how a primary order is split into a series of spawned orders.
 
 ```python
+from decimal import Decimal
+from nautilus_trader.model.data import BarType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
+
 # Configure your strategy
 config = EMACrossTWAPConfig(
-    instrument_id=ETHUSDT_BINANCE.id,
+    instrument_id=TestInstrumentProvider.ethusdt_binance().id,
     bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
     trade_size=Decimal("0.05"),
     fast_ema_period=10,
     slow_ema_period=20,
-    twap_horizon_secs=10.0,  # <-- execution algorithm param
-    twap_interval_secs=2.5,  # <-- execution algorithm param
+    twap_horizon_secs=10.0,   # execution algorithm parameter (total horizon in seconds)
+    twap_interval_secs=2.5,    # execution algorithm parameter (seconds between orders)
 )
 
-# Instantiate and add your strategy
+# Instantiate your strategy
 strategy = EMACrossTWAP(config=config)
 ```
 

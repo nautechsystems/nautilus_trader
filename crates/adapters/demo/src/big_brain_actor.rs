@@ -18,8 +18,8 @@ use std::{any::Any, rc::Rc};
 use nautilus_common::{
     actor::{Actor, registry::get_actor_unchecked},
     messages::data::{
-        DataCommand, RequestCommand, RequestData, SubscribeCommand, SubscribeData,
-        UnsubscribeCommand, UnsubscribeData,
+        DataCommand, RequestCommand, RequestCustomData, SubscribeCommand, SubscribeCustomData,
+        UnsubscribeCommand, UnsubscribeCustomData,
     },
     msgbus::{
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
@@ -66,7 +66,8 @@ impl BigBrainActor {
     pub fn register_message_handlers() {
         let handler = TypedMessageHandler::from(negative_handler);
         let handler = ShareableMessageHandler::from(Rc::new(handler) as Rc<dyn MessageHandler>);
-        register("negative_stream", handler);
+        let endpoint = "negative_stream".into();
+        register(endpoint, handler);
     }
 }
 
@@ -107,7 +108,7 @@ pub fn negative_handler(msg: &i32) {
         DataType::new("get", None)
     };
 
-    let request = RequestData {
+    let request = RequestCustomData {
         client_id: ClientId::new("mock_data_client"),
         data_type,
         request_id: correlation_id,
@@ -116,7 +117,7 @@ pub fn negative_handler(msg: &i32) {
     };
     let cmd = DataCommand::Request(RequestCommand::Data(request));
 
-    send(&Ustr::from("data_engine"), &cmd);
+    send("data_engine".into(), &cmd);
 }
 
 /// Positive integer stream handler
@@ -134,7 +135,7 @@ pub fn positive_handler(msg: &i32) {
     let data_type = DataType::new("blah", None);
 
     if big_brain_actor.pos_val == 3 {
-        let data = SubscribeData::new(
+        let data = SubscribeCustomData::new(
             Some(ClientId::new("mock_data_client")),
             None,
             data_type.clone(),
@@ -143,11 +144,11 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Subscribe(SubscribeCommand::Data(data));
-        send(&Ustr::from("data_engine"), &cmd);
+        send("data_engine".into(), &cmd);
     }
 
     if big_brain_actor.pos_val > 8 {
-        let data = UnsubscribeData::new(
+        let data = UnsubscribeCustomData::new(
             Some(ClientId::new("mock_data_client")),
             None,
             data_type,
@@ -156,6 +157,6 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Data(data));
-        send(&Ustr::from("data_engine"), &cmd);
+        send("data_engine".into(), &cmd);
     }
 }

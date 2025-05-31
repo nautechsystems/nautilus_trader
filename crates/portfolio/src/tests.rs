@@ -496,9 +496,9 @@ fn test_exceed_free_balance_single_currency_raises_account_balance_negative_exce
 
     portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
-    let order_filled = fill_order(&order);
-    order.apply(OrderEventAny::Filled(order_filled)).unwrap();
-    portfolio.update_order(&OrderEventAny::Filled(order_filled));
+    let fill = fill_order(&order);
+    order.apply(OrderEventAny::Filled(fill)).unwrap();
+    portfolio.update_order(&OrderEventAny::Filled(fill));
 }
 
 // TODO: It should return an error
@@ -530,11 +530,9 @@ fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_excep
         .add_order(order.clone(), None, None, false)
         .unwrap();
 
-    let order_submitted = submit_order(&order);
-    order
-        .apply(OrderEventAny::Submitted(order_submitted))
-        .unwrap();
-    portfolio.update_order(&OrderEventAny::Submitted(order_submitted));
+    let submitted = submit_order(&order);
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
     // Assert
     assert_eq!(
@@ -565,18 +563,14 @@ fn test_update_orders_open_cash_account(
         .add_order(order.clone(), None, None, false)
         .unwrap();
 
-    let order_submitted = submit_order(&order);
-    order
-        .apply(OrderEventAny::Submitted(order_submitted))
-        .unwrap();
-    portfolio.update_order(&OrderEventAny::Submitted(order_submitted));
+    let submitted = submit_order(&order);
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+    portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
     // ACCEPTED
-    let order_accepted = accept_order(&order);
-    order
-        .apply(OrderEventAny::Accepted(order_accepted))
-        .unwrap();
-    portfolio.update_order(&OrderEventAny::Accepted(order_accepted));
+    let accepted = accept_order(&order);
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+    portfolio.update_order(&OrderEventAny::Accepted(accepted));
 
     assert_eq!(
         portfolio
@@ -625,17 +619,13 @@ fn test_update_orders_open_margin_account(
         .add_order(order2, None, None, true)
         .unwrap();
 
-    let order_submitted = submit_order(&order1);
-    order1
-        .apply(OrderEventAny::Submitted(order_submitted))
-        .unwrap();
+    let submitted = submit_order(&order1);
+    order1.apply(OrderEventAny::Submitted(submitted)).unwrap();
     portfolio.cache.borrow_mut().update_order(&order1).unwrap();
 
     // Push status to Accepted
-    let order_accepted = accept_order(&order1);
-    order1
-        .apply(OrderEventAny::Accepted(order_accepted))
-        .unwrap();
+    let accepted = accept_order(&order1);
+    order1.apply(OrderEventAny::Accepted(accepted)).unwrap();
     portfolio.cache.borrow_mut().update_order(&order1).unwrap();
 
     // TODO: Replace with Execution Engine once implemented.
@@ -645,8 +635,8 @@ fn test_update_orders_open_margin_account(
         .add_order(order1.clone(), None, None, true)
         .unwrap();
 
-    let order_filled1 = fill_order(&order1);
-    order1.apply(OrderEventAny::Filled(order_filled1)).unwrap();
+    let fill1 = fill_order(&order1);
+    order1.apply(OrderEventAny::Filled(fill1)).unwrap();
 
     // Act
     let last = get_quote_tick(&instrument_btcusdt, 25001.0, 25002.0, 15.0, 12.0);
@@ -687,16 +677,12 @@ fn test_order_accept_updates_margin_init(
         .add_order(order.clone(), None, None, true)
         .unwrap();
 
-    let order_submitted = submit_order(&order);
-    order
-        .apply(OrderEventAny::Submitted(order_submitted))
-        .unwrap();
+    let submitted = submit_order(&order);
+    order.apply(OrderEventAny::Submitted(submitted)).unwrap();
     portfolio.cache.borrow_mut().update_order(&order).unwrap();
 
-    let order_accepted = accept_order(&order);
-    order
-        .apply(OrderEventAny::Accepted(order_accepted))
-        .unwrap();
+    let accepted = accept_order(&order);
+    order.apply(OrderEventAny::Accepted(accepted)).unwrap();
     portfolio.cache.borrow_mut().update_order(&order).unwrap();
 
     // TODO: Replace with Execution Engine once implemented.
@@ -756,11 +742,9 @@ fn test_update_positions(mut portfolio: Portfolio, instrument_audusd: Instrument
     portfolio.update_order(&OrderEventAny::Submitted(order1_submitted));
 
     // ACCEPTED
-    let order1_accepted = accept_order(&order1);
-    order1
-        .apply(OrderEventAny::Accepted(order1_accepted))
-        .unwrap();
-    portfolio.update_order(&OrderEventAny::Accepted(order1_accepted));
+    let accepted1 = accept_order(&order1);
+    order1.apply(OrderEventAny::Accepted(accepted1)).unwrap();
+    portfolio.update_order(&OrderEventAny::Accepted(accepted1));
 
     let mut fill1 = fill_order(&order1);
     fill1.position_id = Some(PositionId::new("SSD"));

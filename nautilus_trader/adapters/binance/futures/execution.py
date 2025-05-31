@@ -145,6 +145,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             self._log.info("TRADE_LITE events will be used", LogColor.BLUE)
 
         self._leverages = config.futures_leverages
+        self._margin_types = config.futures_margin_types
 
         # WebSocket futures schema decoders
         self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
@@ -178,13 +179,26 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
         if self._leverages:
             async with TaskGroup() as tg:
-                tasks = [
+                leverage_tasks = [
                     tg.create_task(self._futures_http_account.set_leverage(symbol, leverage))
                     for symbol, leverage in self._leverages.items()
                 ]
-            for task in tasks:
+            for task in leverage_tasks:
                 res: BinanceFuturesLeverage = task.result()
                 self._log.info(f"Set default leverage {res.symbol} {res.leverage}X")
+
+        if self._margin_types:
+            async with TaskGroup() as tg:
+                margin_tasks = [
+                    (
+                        tg.create_task(self._futures_http_account.set_margin_type(symbol, type_)),
+                        symbol,
+                        type_,
+                    )
+                    for symbol, type_ in self._margin_types.items()
+                ]
+            for _, symbol, type_ in margin_tasks:
+                self._log.info(f"Set {symbol} margin type to {type_.value}")
 
         account: MarginAccount = self.get_account()
         position_risks = await self._futures_http_account.query_futures_position_risk()

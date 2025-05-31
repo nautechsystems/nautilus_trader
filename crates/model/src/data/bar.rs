@@ -19,7 +19,7 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
-    num::NonZeroUsize,
+    num::{NonZero, NonZeroUsize},
     str::FromStr,
 };
 
@@ -41,12 +41,112 @@ use crate::{
     types::{Price, Quantity, fixed::FIXED_SIZE_BINARY},
 };
 
+pub const BAR_SPEC_1_SECOND_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Second,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_5_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(5).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_15_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(15).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_30_MINUTE_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(30).unwrap(),
+    aggregation: BarAggregation::Minute,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_2_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(2).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_4_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(4).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_6_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(6).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_12_HOUR_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(12).unwrap(),
+    aggregation: BarAggregation::Hour,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_2_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(2).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_5_DAY_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(5).unwrap(),
+    aggregation: BarAggregation::Day,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_WEEK_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Week,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_1_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(1).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_3_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(3).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_6_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(6).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+pub const BAR_SPEC_12_MONTH_LAST: BarSpecification = BarSpecification {
+    step: NonZero::new(12).unwrap(),
+    aggregation: BarAggregation::Month,
+    price_type: PriceType::Last,
+};
+
 /// Returns the bar interval as a `TimeDelta`.
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
 
@@ -66,8 +166,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 ///
 /// # Panics
 ///
-/// This function panics:
-/// - If the aggregation method of the given `bar_type` is not time based.
+/// Panics if the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)
         .num_nanoseconds()
@@ -76,7 +175,11 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
 }
 
 /// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
-/// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
+///
+/// # Panics
+///
+/// Panics if computing the base `NaiveDate` or `DateTime` from `now` fails,
+/// or if the aggregation type is unsupported.
 pub fn get_time_bar_start(
     now: DateTime<Utc>,
     bar_type: &BarType,
@@ -191,15 +294,18 @@ pub fn get_time_bar_start(
             start_time += origin_offset;
 
             if now < start_time {
-                start_time = subtract_n_months(start_time, 12);
+                start_time =
+                    subtract_n_months(start_time, 12).expect("Failed to subtract 12 months");
             }
 
             let months_step = step as u32;
             while start_time <= now {
-                start_time = add_n_months(start_time, months_step);
+                start_time =
+                    add_n_months(start_time, months_step).expect("Failed to add months in loop");
             }
 
-            start_time = subtract_n_months(start_time, months_step);
+            start_time =
+                subtract_n_months(start_time, months_step).expect("Failed to subtract months_step");
             start_time
         }
         _ => panic!(
@@ -233,8 +339,7 @@ impl BarSpecification {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `step` is not positive (> 0).
+    /// Returns an error if `step` is not positive (> 0).
     ///
     /// # Notes
     ///
@@ -257,13 +362,17 @@ impl BarSpecification {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `step` is not positive (> 0).
+    /// Panics if `step` is not positive (> 0).
     #[must_use]
     pub fn new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
         Self::new_checked(step, aggregation, price_type).expect(FAILED)
     }
 
+    /// Returns the `TimeDelta` interval for this bar specification.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the aggregation method is not supported for time duration.
     pub fn timedelta(&self) -> TimeDelta {
         match self.aggregation {
             BarAggregation::Millisecond => Duration::milliseconds(self.step.get() as i64),
@@ -681,10 +790,10 @@ impl Bar {
     ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `high` is not >= `low`.
-    /// - If `high` is not >= `close`.
-    /// - If `low` is not <= `close.
+    /// Returns an error if:
+    /// - `high` is not >= `low`.
+    /// - `high` is not >= `close`.
+    /// - `low` is not <= `close.
     ///
     /// # Notes
     ///
@@ -722,10 +831,10 @@ impl Bar {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If `high` is not >= `low`.
-    /// - If `high` is not >= `close`.
-    /// - If `low` is not <= `close.
+    /// This function panics if:
+    /// - `high` is not >= `low`.
+    /// - `high` is not >= `close`.
+    /// - `low` is not <= `close.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
@@ -1309,7 +1418,7 @@ mod tests {
     #[rstest]
     fn test_json_serialization() {
         let bar = Bar::default();
-        let serialized = bar.as_json_bytes().unwrap();
+        let serialized = bar.to_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, bar);
     }
@@ -1317,7 +1426,7 @@ mod tests {
     #[rstest]
     fn test_msgpack_serialization() {
         let bar = Bar::default();
-        let serialized = bar.as_msgpack_bytes().unwrap();
+        let serialized = bar.to_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, bar);
     }

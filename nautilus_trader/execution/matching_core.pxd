@@ -75,6 +75,8 @@ cdef class MatchingCore:
     cpdef void match_stop_limit_order(self, Order order, bint initial)
     cpdef void match_market_if_touched_order(self, Order order)
     cpdef void match_limit_if_touched_order(self, Order order, bint initial)
+    cpdef void match_trailing_stop_market_order(self, Order order)
+    cpdef void match_trailing_stop_limit_order(self, Order order, bint initial)
     cpdef bint is_limit_matched(self, OrderSide side, Price price)
     cpdef bint is_stop_triggered(self, OrderSide side, Price trigger_price)
     cpdef bint is_touch_triggered(self, OrderSide side, Price trigger_price)

@@ -24,8 +24,10 @@ use std::{
 
 use chrono::Utc;
 use futures_util::{Stream, StreamExt};
-use nautilus_common::runtime::get_runtime;
-use nautilus_core::{consts::NAUTILUS_USER_AGENT, time::get_atomic_clock_realtime};
+use nautilus_common::{logging::log_task_stopped, runtime::get_runtime};
+use nautilus_core::{
+    consts::NAUTILUS_USER_AGENT, env::get_env_var, time::get_atomic_clock_realtime,
+};
 use nautilus_model::{
     data::{BarType, Data, OrderBookDeltas_API},
     identifiers::InstrumentId,
@@ -48,15 +50,13 @@ use super::{
 };
 use crate::{
     common::{
-        consts::COINBASE_INTX_WS_URL,
-        credential::{Credential, get_env_var},
-        parse::bar_spec_as_coinbase_channel,
+        consts::COINBASE_INTX_WS_URL, credential::Credential, parse::bar_spec_as_coinbase_channel,
     },
     websocket::parse::{parse_instrument_any, parse_trade_msg},
 };
 
 /// Provides a WebSocket client for connecting to [Coinbase International](https://www.coinbase.com/en/international-exchange).
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
@@ -80,6 +80,10 @@ impl Default for CoinbaseIntxWebSocketClient {
 
 impl CoinbaseIntxWebSocketClient {
     /// Creates a new [`CoinbaseIntxWebSocketClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or invalid.
     pub fn new(
         url: Option<String>,
         api_key: Option<String>,
@@ -110,13 +114,17 @@ impl CoinbaseIntxWebSocketClient {
 
     /// Creates a new authenticated [`CoinbaseIntxWebSocketClient`] using environment variables and
     /// the default Coinbase International production websocket url.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if required environment variables are missing or invalid.
     pub fn from_env() -> anyhow::Result<Self> {
         Self::new(None, None, None, None, None)
     }
 
     /// Returns the websocket url being used by the client.
     #[must_use]
-    pub fn url(&self) -> &str {
+    pub const fn url(&self) -> &str {
         self.url.as_str()
     }
 
@@ -145,6 +153,10 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Connects the client to the server and caches the given instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket connection or initial subscription fails.
     pub async fn connect(&mut self, instruments: Vec<InstrumentAny>) -> anyhow::Result<()> {
         let client = self.clone();
         let post_reconnect = Arc::new(move || {
@@ -196,8 +208,8 @@ impl CoinbaseIntxWebSocketClient {
     ///
     /// # Panics
     ///
-    /// This function panics:
-    /// - If the websocket is not connected.
+    /// This function panics if:
+    /// - The websocket is not connected.
     /// - If `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = NautilusWsMessage> + 'static {
         let rx = self
@@ -213,6 +225,10 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Closes the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket fails to close properly.
     pub async fn close(&mut self) -> Result<(), Error> {
         tracing::debug!("Closing");
         self.signal.store(true, Ordering::Relaxed);
@@ -240,6 +256,10 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to the given channels and product IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription message cannot be sent.
     async fn subscribe(
         &self,
         channels: Vec<CoinbaseIntxWsChannel>,
@@ -275,7 +295,9 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = &self.inner {
-            inner.send_text(json_txt, None).await;
+            if let Err(err) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {err:?}");
+            }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
                 "Cannot send message: not connected".to_string(),
@@ -325,7 +347,9 @@ impl CoinbaseIntxWebSocketClient {
             .map_err(|e| CoinbaseIntxWsError::JsonError(e.to_string()))?;
 
         if let Some(inner) = &self.inner {
-            inner.send_text(json_txt, None).await;
+            if let Err(err) = inner.send_text(json_txt, None).await {
+                tracing::error!("Error sending message: {err:?}");
+            }
         } else {
             return Err(CoinbaseIntxWsError::ClientError(
                 "Cannot send message: not connected".to_string(),
@@ -353,6 +377,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to instrument definition updates for the given instrument IDs.
+    /// Subscribes to instrument updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_instruments(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -363,6 +392,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to funding message streams for the given instrument IDs.
+    /// Subscribes to funding rate updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_funding(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -373,6 +407,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to risk message streams for the given instrument IDs.
+    /// Subscribes to risk updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_risk(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -383,6 +422,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to order book (level 2) streams for the given instrument IDs.
+    /// Subscribes to order book snapshots and updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_order_book(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -393,6 +437,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to quote (level 1) streams for the given instrument IDs.
+    /// Subscribes to top-of-book quote updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_quotes(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -403,6 +452,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to trade (match) streams for the given instrument IDs.
+    /// Subscribes to trade updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_trades(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -413,6 +467,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to risk streams (for mark prices) for the given instrument IDs.
+    /// Subscribes to mark price updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_mark_prices(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -423,6 +482,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to risk streams (for index prices) for the given instrument IDs.
+    /// Subscribes to index price updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_index_prices(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -433,6 +497,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Subscribes to bar (candle) streams for the given instrument IDs.
+    /// Subscribes to candlestick bar updates for the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription fails.
     pub async fn subscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
             .map_err(|e| CoinbaseIntxWsError::ClientError(e.to_string()))?;
@@ -441,6 +510,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from instrument definition streams for the given instrument IDs.
+    /// Unsubscribes from instrument updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_instruments(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -451,6 +525,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from risk message streams for the given instrument IDs.
+    /// Unsubscribes from risk updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_risk(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -461,6 +540,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from funding message streams for the given instrument IDs.
+    /// Unsubscribes from funding updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_funding(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -471,6 +555,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from order book (level 2) streams for the given instrument IDs.
+    /// Unsubscribes from order book updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_order_book(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -481,6 +570,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from quote (level 1) streams for the given instrument IDs.
+    /// Unsubscribes from quote updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_quotes(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -491,6 +585,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from trade (match) streams for the given instrument IDs.
+    /// Unsubscribes from trade updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_trades(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -501,6 +600,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from risk streams (for mark prices) for the given instrument IDs.
+    /// Unsubscribes from mark price updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_mark_prices(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -511,6 +615,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from risk streams (for index prices) for the given instrument IDs.
+    /// Unsubscribes from index price updates for the specified instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_index_prices(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -521,6 +630,11 @@ impl CoinbaseIntxWebSocketClient {
     }
 
     /// Unsubscribes from bar (candle) streams for the given instrument IDs.
+    /// Unsubscribes from bar updates for the specified bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription fails.
     pub async fn unsubscribe_bars(&self, bar_type: BarType) -> Result<(), CoinbaseIntxWsError> {
         let channel = bar_spec_as_coinbase_channel(bar_type.spec())
             .map_err(|e| CoinbaseIntxWsError::ClientError(e.to_string()))?;
@@ -613,7 +727,7 @@ impl CoinbaseIntxFeedHandler {
             }
         }
 
-        tracing::debug!("Stopped message streaming");
+        log_task_stopped("message-streaming");
         None
     }
 }

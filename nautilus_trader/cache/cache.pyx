@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
 import pickle
 import time
 import uuid
@@ -2056,11 +2055,11 @@ cdef class Cache(CacheFacade):
 
         """
         cdef PositionId position_id = position.id
-        cdef list snapshots = self._position_snapshots.get(position_id)
+        cdef list[bytes] snapshots = self._position_snapshots.get(position_id)
 
-        # Reassign position ID
-        cdef Position copied_position = copy.deepcopy(position)
-        copied_position.id = PositionId(f"{position.id.to_str()}-{uuid.uuid4()}")
+        # Create snapshot with modified position ID
+        cdef Position copied_position = pickle.loads(pickle.dumps(position))
+        copied_position.id = PositionId(f"{position_id.to_str()}-{uuid.uuid4()}")
         cdef bytes position_pickled = pickle.dumps(copied_position)
 
         if snapshots is not None:

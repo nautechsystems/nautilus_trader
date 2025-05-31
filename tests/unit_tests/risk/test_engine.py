@@ -285,6 +285,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -320,6 +324,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -354,6 +362,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -437,6 +449,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -500,6 +516,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -536,6 +556,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _GBPUSD_SIM.id,  # <-- Not in the cache
             OrderSide.BUY,
@@ -570,6 +594,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
@@ -607,6 +635,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -642,6 +674,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.stop_limit(
             _AUDUSD_SIM.id,
@@ -680,6 +716,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -716,6 +756,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -751,6 +795,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
@@ -789,6 +837,8 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Intentionally no market (no quote added to cache)
 
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -847,6 +897,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.market(
             _XBTUSD_BITMEX.id,
@@ -907,6 +961,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _XBTUSD_BITMEX.id,
             order_side,
@@ -947,6 +1005,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -997,6 +1059,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.SELL,
@@ -1035,6 +1101,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1072,6 +1142,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -1122,6 +1196,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.SELL,
@@ -1154,6 +1232,101 @@ class TestRiskEngineWithCashAccount:
         assert order1.status == OrderStatus.DENIED
         assert order2.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
+    def test_submit_order_when_quote_quantity_buy_within_balance_then_allows(self):
+        # Arrange - Setup crypto instrument for quote quantity orders
+        self.cache.add_instrument(_ETHUSDT_BINANCE)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=_ETHUSDT_BINANCE,
+            bid_price=2000.0,
+            ask_price=2010.0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity=True
+        # Account has 1M USD, order for 400 USDT (quote currency)
+        # At price 2010, this equals ~0.199 ETH (base currency)
+        order = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(400),  # 400 USDT quote quantity
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be allowed since 400 USDT is within balance
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1
+
+    def test_submit_order_when_quote_quantity_buy_over_balance_then_denies(self):
+        # Arrange - Setup crypto instrument for quote quantity orders
+        self.cache.add_instrument(_ETHUSDT_BINANCE)
+
+        quote = TestDataStubs.quote_tick(
+            instrument=_ETHUSDT_BINANCE,
+            bid_price=2000.0,
+            ask_price=2010.0,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Create order with quote_quantity=True that exceeds balance
+        # Account has 1M USD, order for 2M USDT (quote currency) - exceeds balance
+        order = strategy.order_factory.market(
+            _ETHUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(2_000_000),  # 2M USDT quote quantity - exceeds 1M USD balance
+            quote_quantity=True,
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert - Order should be denied since 2M USDT exceeds 1M USD balance
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0
 
     def test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional(
         self,
@@ -1189,6 +1362,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -1241,6 +1418,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -1307,6 +1488,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order1 = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.SELL,
@@ -1366,6 +1551,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1403,6 +1592,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         # Act
         order = None
@@ -1444,6 +1637,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         entry = strategy.order_factory.market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1452,14 +1649,14 @@ class TestRiskEngineWithCashAccount:
 
         stop_loss = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
-            OrderSide.BUY,
+            OrderSide.SELL,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
-            OrderSide.BUY,
+            OrderSide.SELL,
             Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
@@ -1502,6 +1699,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         # Push portfolio LONG
         long = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -1532,14 +1733,14 @@ class TestRiskEngineWithCashAccount:
 
         stop_loss = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
-            OrderSide.BUY,
+            OrderSide.SELL,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
-            OrderSide.BUY,
+            OrderSide.SELL,
             Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
@@ -1582,6 +1783,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         # Push portfolio SHORT
         short = strategy.order_factory.market(
             _AUDUSD_SIM.id,
@@ -1612,14 +1817,14 @@ class TestRiskEngineWithCashAccount:
 
         stop_loss = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
-            OrderSide.SELL,
+            OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
 
         take_profit = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
-            OrderSide.SELL,
+            OrderSide.BUY,
             Quantity.from_int(100_000),
             Price.from_str("1.10000"),
         )
@@ -1664,6 +1869,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         bracket = strategy.order_factory.bracket(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1699,6 +1908,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         bracket = strategy.order_factory.bracket(
             _AUDUSD_SIM.id,
@@ -1739,6 +1952,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         bracket = strategy.order_factory.bracket(
             _GBPUSD_SIM.id,
             OrderSide.BUY,
@@ -1775,6 +1992,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.limit(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1803,6 +2024,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         modify = ModifyOrder(
             self.trader_id,
@@ -1837,6 +2062,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
@@ -1881,6 +2110,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         order = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
@@ -1934,6 +2167,10 @@ class TestRiskEngineWithCashAccount:
             clock=self.clock,
         )
 
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
         order = strategy.order_factory.stop_market(
             _AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -1970,6 +2207,10 @@ class TestRiskEngineWithCashAccount:
             cache=self.cache,
             clock=self.clock,
         )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
 
         self.clock.set_time(2_000)  # <-- Set clock to 2,000 nanos past epoch
 

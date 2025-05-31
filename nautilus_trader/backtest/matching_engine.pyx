@@ -571,6 +571,12 @@ cdef class OrderMatchingEngine:
                 self._core.set_bid_raw(price_raw)
                 if price_raw > self._core.ask_raw:
                     self._core.set_ask_raw(price_raw)
+            elif aggressor_side == AggressorSide.NO_AGGRESSOR:
+                # Update both bid and ask when no specific aggressor
+                if price_raw <= self._core.bid_raw:
+                    self._core.set_bid_raw(price_raw)
+                if price_raw >= self._core.ask_raw:
+                    self._core.set_ask_raw(price_raw)
             else:
                 aggressor_side_str = aggressor_side_to_str(aggressor_side)
                 raise RuntimeError(  # pragma: no cover (design-time error)
@@ -684,7 +690,7 @@ cdef class OrderMatchingEngine:
         if (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.TRADING):
             self.market_status = MarketStatus.OPEN
         elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.PRE_OPEN):
-            # Nothing to do on pre-market open.
+            # Do nothing on pre-market open.
             self.market_status = MarketStatus.OPEN
         # elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatusAction.PAUSE):
         #     # Opening auction period, run auction match on pre-open auction orderbook
@@ -935,7 +941,7 @@ cdef class OrderMatchingEngine:
 
             if order.linked_order_ids is not None:
                 # Check contingent orders are still open
-                for client_order_id in order.linked_order_ids:
+                for client_order_id in order.linked_order_ids or []:
                     contingent_order = self.cache.order(client_order_id)
                     if contingent_order is None:
                         raise RuntimeError(f"Cannot find contingent order for {client_order_id!r}")  # pragma: no cover
@@ -976,6 +982,19 @@ cdef class OrderMatchingEngine:
                     order,
                     f"Invalid trigger price precision for order {order.client_order_id}, "
                     f"was {trigger_price.precision} "
+                    f"when {self.instrument.id} price precision is {self.instrument.price_precision}"
+                )
+                return  # Invalid order
+
+        cdef Price activation_price
+        if order.has_activation_price_c():
+            # Check order activation price precision
+            activation_price = order.activation_price
+            if activation_price._mem.precision != self.instrument.price_precision:
+                self._generate_order_rejected(
+                    order,
+                    f"Invalid activation price precision for order {order.client_order_id}, "
+                    f"was {activation_price.precision} "
                     f"when {self.instrument.id} price precision is {self.instrument.price_precision}"
                 )
                 return  # Invalid order
@@ -1029,10 +1048,11 @@ cdef class OrderMatchingEngine:
             self._process_market_if_touched_order(order)
         elif order.order_type == OrderType.LIMIT_IF_TOUCHED:
             self._process_limit_if_touched_order(order)
-        elif order.order_type == OrderType.TRAILING_STOP_MARKET:
-            self._process_trailing_stop_market_order(order)
-        elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
-            self._process_trailing_stop_limit_order(order)
+        elif (
+            order.order_type == OrderType.TRAILING_STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        ):
+            self._process_trailing_stop_order(order)
         else:
             raise RuntimeError(  # pragma: no cover (design-time error)
                 f"{order_type_to_str(order.order_type)} "  # pragma: no cover
@@ -1233,30 +1253,50 @@ cdef class OrderMatchingEngine:
         # Order is valid and accepted
         self.accept_order(order)
 
-    cdef void _process_trailing_stop_market_order(self, TrailingStopMarketOrder order):
-        if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_rejected(
-                order,
-                f"{order.type_string_c()} {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self._core.bid}, "
-                f"ask={self._core.ask}",
-            )
-            return  # Invalid price
+    cdef void _process_trailing_stop_order(self, Order order):
+        assert order.order_type == OrderType.TRAILING_STOP_MARKET \
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
 
-        # Order is valid and accepted
-        self.accept_order(order)
+        cdef Price market_price = None
+        if order.activation_price is None:
+            # If activation price is not given,
+            # set the activation price to the last price, and activate order
+            market_price = self._core.ask if order.side == OrderSide.BUY else self._core.bid
+            if market_price is None:
+                # If there is no market price, we cannot process the order
+                raise RuntimeError(  # pragma: no cover (design-time error)
+                    f"cannot process trailing stop, "
+                    f"no BID or ASK price for {order.instrument_id} "
+                    f"(add quotes or use bars)",
+                )
+            order.set_activated_c(market_price)
+        else:
+            # If activation price is given,
+            # the activation price should not be in the market, like if_touched orders.
+            if self._core.is_touch_triggered(order.side, order.activation_price):
+                # NOTE: need to apply 'reject_stop_orders' to activation price?
+                if self._reject_stop_orders:
+                    self._generate_order_rejected(
+                        order,
+                        f"{order.type_string_c()} {order.side_string_c()} order "
+                        f"activation px of {order.activation_price} was in the market: "
+                        f"bid={self._core.bid}, "
+                        f"ask={self._core.ask}",
+                    )
+                    return  # Invalid price
+                # if we cannot reject the order, we activate it
+                order.set_activated_c(None)
 
-    cdef void _process_trailing_stop_limit_order(self, TrailingStopLimitOrder order):
-        if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
-            self._generate_order_rejected(
-                order,
-                f"{order.type_string_c()} {order.side_string_c()} order "
-                f"trigger stop px of {order.trigger_price} was in the market: "
-                f"bid={self._core.bid}, "
-                f"ask={self._core.ask}",
-            )
-            return  # Invalid price
+        if order.is_activated:
+            if order.has_trigger_price_c() and self._core.is_stop_triggered(order.side, order.trigger_price):
+                self._generate_order_rejected(
+                    order,
+                    f"{order.type_string_c()} {order.side_string_c()} order "
+                    f"trigger stop px of {order.trigger_price} was in the market: "
+                    f"bid={self._core.bid}, "
+                    f"ask={self._core.ask}",
+                )
+                return  # Invalid price
 
         # Order is valid and accepted
         self.accept_order(order)
@@ -1322,7 +1362,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_market_order(
         self,
-        StopMarketOrder order,
+        Order order,
         Quantity qty,
         Price trigger_price,
     ):
@@ -1345,7 +1385,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_stop_limit_order(
         self,
-        StopLimitOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger_price,
@@ -1462,7 +1502,59 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_updated(order, qty, price, trigger_price or order.trigger_price)
 
-    cdef void _update_trailing_stop_order(self, Order order):
+    cdef void _update_trailing_stop_market_order(
+        self,
+        Order order,
+        Quantity qty,
+        Price trigger_price,
+    ):
+        if order.is_activated:
+            # Activated trailing-stop may not yet have a trigger_price;
+            # await next market update to calculate it
+            if trigger_price is None:
+                return
+            self._update_stop_market_order(order, qty, trigger_price)
+        elif qty or trigger_price:
+            self._generate_order_updated(order, qty, None, trigger_price)
+
+    cdef void _update_trailing_stop_limit_order(
+        self,
+        Order order,
+        Quantity qty,
+        Price price,
+        Price trigger_price,
+    ):
+        if order.is_activated:
+            # Activated trailing-stop may not yet have a trigger_price;
+            # await next market update to calculate it
+            if trigger_price is None:
+                return
+            self._update_stop_limit_order(order, qty, price, trigger_price)
+        elif qty or trigger_price:
+            self._generate_order_updated(order, qty, price, trigger_price)
+
+    cdef void _trail_stop_order(self, Order order):
+        cdef Price market_price = None
+
+        if not order.is_activated:
+            if order.activation_price is None:
+                # NOTE
+                # The activation price should have been set in OrderMatchingEngine._process_trailing_stop_order()
+                # However, the implementation of the emulator bypass this step, and directly call this method through match_order().
+                market_price = self.ask if order.side == OrderSide.BUY else self.bid
+                if market_price is None:
+                    # If there is no market price, we cannot process the order
+                    raise RuntimeError(  # pragma: no cover (design-time error)
+                        f"cannot process trailing stop, "
+                        f"no BID or ASK price for {order.instrument_id} "
+                        f"(add quotes or use bars)",
+                    )
+                order.set_activated_c(market_price)
+            elif self._core.is_touch_triggered(order.side, order.activation_price):
+                order.set_activated_c(None)
+            else:
+                return  # Do nothing
+
         cdef tuple output = TrailingStopCalculator.calculate(
             price_increment=self.instrument.price_increment,
             order=order,
@@ -1529,7 +1621,7 @@ cdef class OrderMatchingEngine:
 
             # Manage trailing stop
             if order.order_type == OrderType.TRAILING_STOP_MARKET or order.order_type == OrderType.TRAILING_STOP_LIMIT:
-                self._update_trailing_stop_order(order)
+                self._trail_stop_order(order)
 
             # Move market back to targets
             if self._has_targets:
@@ -1999,6 +2091,7 @@ cdef class OrderMatchingEngine:
             self.cancel_order(order)
             return
 
+        # Check MARKET order on exhausted book volume
         if (
             order.is_open_c()
             and self.book_type == BookType.L1_MBP
@@ -2006,6 +2099,7 @@ cdef class OrderMatchingEngine:
             order.order_type == OrderType.MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED
             or order.order_type == OrderType.STOP_MARKET
+            or order.order_type == OrderType.TRAILING_STOP_MARKET
         )
         ):
             # Exhausted simulated book volume (continue aggressive filling into next level)
@@ -2029,6 +2123,45 @@ cdef class OrderMatchingEngine:
                 position=position,
             )
 
+        # Check LIMIT order on exhausted book volume
+        if (
+            order.is_open_c()
+            and self.book_type == BookType.L1_MBP
+            and (
+            order.order_type == OrderType.LIMIT
+            or order.order_type == OrderType.LIMIT_IF_TOUCHED
+            or order.order_type == OrderType.MARKET_TO_LIMIT
+            or order.order_type == OrderType.STOP_LIMIT
+            or order.order_type == OrderType.TRAILING_STOP_LIMIT
+        )
+        ):
+            if not self._has_targets and ((order.side == OrderSide.BUY and order.price == self._core.ask) or (order.side == OrderSide.SELL and order.price == self._core.bid)):
+                return  # Limit price is equal to top-of-book, no further fills
+
+            if order.liquidity_side == LiquiditySide.MAKER:
+                # Market moved through limit price, assumption is there was enough liquidity to fill entire order
+                fill_px = order.price
+            else:  # Marketable limit order
+                # Exhausted simulated book volume (continue aggressive filling into next level)
+                # This is a very basic implementation of slipping by a single tick, in the future
+                # we will implement more detailed fill modeling.
+                if order.side == OrderSide.BUY:
+                    fill_px = last_fill_px.add(self.instrument.price_increment)
+                elif order.side == OrderSide.SELL:
+                    fill_px = last_fill_px.sub(self.instrument.price_increment)
+                else:
+                    raise ValueError(  # pragma: no cover (design-time error)
+                        f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
+                    )
+
+            self.fill_order(
+                order=order,
+                last_px=fill_px,
+                last_qty=order.leaves_qty,
+                liquidity_side=order.liquidity_side,
+                venue_position_id=venue_position_id,
+                position=position,
+            )
 
     cpdef void fill_order(
         self,
@@ -2115,7 +2248,7 @@ cdef class OrderMatchingEngine:
         cdef ClientOrderId client_order_id
         cdef Order child_order
         if order.contingency_type == ContingencyType.OTO:
-            for client_order_id in order.linked_order_ids:
+            for client_order_id in order.linked_order_ids or []:
                 child_order = self.cache.order(client_order_id)
                 assert child_order is not None, "OTO child order not found"
                 if child_order.is_closed_c():
@@ -2139,7 +2272,7 @@ cdef class OrderMatchingEngine:
                         account_id=order.account_id or self._account_ids[order.trader_id],
                     )
         elif order.contingency_type == ContingencyType.OCO:
-            for client_order_id in order.linked_order_ids:
+            for client_order_id in order.linked_order_ids or []:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
                 if oco_order.is_closed_c():
@@ -2148,7 +2281,7 @@ cdef class OrderMatchingEngine:
                     continue  # Order is not on the exchange yet
                 self.cancel_order(oco_order)
         elif order.contingency_type == ContingencyType.OUO:
-            for client_order_id in order.linked_order_ids:
+            for client_order_id in order.linked_order_ids or []:
                 ouo_order = self.cache.order(client_order_id)
                 assert ouo_order is not None, "OUO order not found"
                 if ouo_order.is_active_local_c():
@@ -2266,7 +2399,7 @@ cdef class OrderMatchingEngine:
                 or order.order_type == OrderType.TRAILING_STOP_LIMIT
             ):
                 if order.trigger_price is None:
-                    self._update_trailing_stop_order(order)
+                    self._trail_stop_order(order)
 
         self._core.add_order(order)
 
@@ -2329,13 +2462,13 @@ cdef class OrderMatchingEngine:
         elif order.order_type == OrderType.TRAILING_STOP_MARKET:
             if trigger_price is None:
                 trigger_price = order.trigger_price
-            self._update_market_if_touched_order(order, qty, trigger_price)
+            self._update_trailing_stop_market_order(order, qty, trigger_price)
         elif order.order_type == OrderType.TRAILING_STOP_LIMIT:
             if price is None:
                 price = order.price
             if trigger_price is None:
                 trigger_price = order.trigger_price
-            self._update_limit_if_touched_order(order, qty, price, trigger_price)
+            self._update_trailing_stop_limit_order(order, qty, price, trigger_price)
         else:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
@@ -2356,7 +2489,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_triggered(order)
 
-        # Check for immediate fill
+        # Check for immediate fill (which would fill passively as a maker)
         if order.side == OrderSide.BUY and trigger_price._mem.raw > price._mem.raw > self._core.ask_raw:
             order.liquidity_side = LiquiditySide.MAKER
             self.fill_limit_order(order)
@@ -2386,7 +2519,7 @@ cdef class OrderMatchingEngine:
         self._log.debug(f"Updating OUO orders from {order.client_order_id}", LogColor.MAGENTA)
         cdef ClientOrderId client_order_id
         cdef Order ouo_order
-        for client_order_id in order.linked_order_ids:
+        for client_order_id in order.linked_order_ids or []:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
             if ouo_order.is_active_local_c():
@@ -2408,7 +2541,7 @@ cdef class OrderMatchingEngine:
         # Iterate all contingent orders and cancel if active
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
-        for client_order_id in order.linked_order_ids:
+        for client_order_id in order.linked_order_ids or []:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
             if contingent_order.is_active_local_c():

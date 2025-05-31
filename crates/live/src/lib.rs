@@ -13,6 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Live node handling execution and data streaming for Nautilus systems.
+//!
+//! This crate provides high-level abstractions and infrastructure for running live trading
+//! systems, including data streaming, execution management, and system lifecycle handling.
+//! It builds on top of the system kernel to provide simplified interfaces for live deployment.
+//!
+//! The main components include:
+//! - [`LiveNode`] - High-level abstraction for live system nodes
+//! - [`LiveNodeConfig`] - Configuration for live node deployment
+//! - Data streaming and execution management for live environments
+//! - Async runners for managing system lifecycle
+//!
+//! [`LiveNode`]: node::LiveNode
+//! [`LiveNodeConfig`]: config::LiveNodeConfig
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
@@ -29,4 +44,15 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 
+#![warn(rustc::all)]
+#![deny(unsafe_code)]
+#![deny(nonstandard_style)]
+#![deny(missing_debug_implementations)]
+#![deny(clippy::missing_errors_doc)]
+#![deny(clippy::missing_panics_doc)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+pub mod config;
+pub mod data;
+pub mod node;
 pub mod runner;

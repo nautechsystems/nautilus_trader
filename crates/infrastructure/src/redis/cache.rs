@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt::Debug,
     time::{Duration, Instant},
 };
 
@@ -26,6 +27,7 @@ use nautilus_common::{
     },
     custom::CustomData,
     enums::SerializationEncoding,
+    logging::{log_task_awaiting, log_task_started, log_task_stopped},
     runtime::get_runtime,
     signal::Signal,
 };
@@ -55,6 +57,7 @@ use crate::redis::{create_redis_connection, queries::DatabaseQueries};
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
 const CACHE_WRITE: &str = "cache-write";
+const CACHE_PROCESS: &str = "cache-process";
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
@@ -141,9 +144,24 @@ pub struct RedisCacheDatabase {
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
 }
 
+impl Debug for RedisCacheDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(RedisCacheDatabase))
+            .field("trader_id", &self.trader_id)
+            .field("encoding", &self.encoding)
+            .finish()
+    }
+}
+
 impl RedisCacheDatabase {
-    /// Creates a new [`RedisCacheDatabase`] instance.
-    // need to remove async from here
+    /// Creates a new [`RedisCacheDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection fails.
+    /// - The command processing task cannot be spawned.
     pub async fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -163,7 +181,7 @@ impl RedisCacheDatabase {
         let encoding = config.encoding;
         let handle = get_runtime().spawn(async move {
             if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
-                log::error!("Error in task '{CACHE_WRITE}': {e}");
+                log::error!("Error in task '{CACHE_PROCESS}': {e}");
             }
         });
 
@@ -194,10 +212,11 @@ impl RedisCacheDatabase {
             log::debug!("Error sending close command: {e:?}");
         }
 
-        log::debug!("Awaiting task '{CACHE_WRITE}'");
+        log_task_awaiting(CACHE_PROCESS);
+
         tokio::task::block_in_place(|| {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
-                log::error!("Error awaiting task '{CACHE_WRITE}': {e:?}");
+                log::error!("Error awaiting task '{CACHE_PROCESS}': {e:?}");
             }
         });
 
@@ -213,16 +232,31 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Retrieves all keys matching the given `pattern` from Redis for this trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis scan operation fails.
     pub async fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
         DatabaseQueries::scan_keys(&mut self.con, pattern).await
     }
 
+    /// Reads the value(s) associated with `key` for this trader from Redis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying Redis read operation fails.
     pub async fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         DatabaseQueries::read(&self.con, &self.trader_key, key).await
     }
 
+    /// Sends an insert command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
@@ -231,6 +265,11 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Sends an update command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn update(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
@@ -239,6 +278,11 @@ impl RedisCacheDatabase {
         }
     }
 
+    /// Sends a delete command for `key` with optional `payload` to Redis via the background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the command cannot be sent to the background task channel.
     pub fn delete(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
@@ -253,7 +297,7 @@ async fn process_commands(
     trader_key: String,
     config: CacheConfig,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting cache processing");
+    log_task_started(CACHE_PROCESS);
 
     let db_config = config
         .database
@@ -272,7 +316,8 @@ async fn process_commands(
             drain_buffer(&mut con, &trader_key, &mut buffer).await;
             last_drain = Instant::now();
         } else if let Some(cmd) = rx.recv().await {
-            tracing::debug!("Received {cmd:?}");
+            tracing::trace!("Received {cmd:?}");
+
             if matches!(cmd.op_type, DatabaseOperation::Close) {
                 break;
             }
@@ -288,7 +333,7 @@ async fn process_commands(
         drain_buffer(&mut con, &trader_key, &mut buffer).await;
     }
 
-    tracing::debug!("Stopped cache processing");
+    log_task_stopped(CACHE_PROCESS);
     Ok(())
 }
 
@@ -600,6 +645,7 @@ fn get_index_key(key: &str) -> anyhow::Result<&str> {
 }
 
 #[allow(dead_code)] // Under development
+#[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
     pub encoding: SerializationEncoding,
     database: RedisCacheDatabase,

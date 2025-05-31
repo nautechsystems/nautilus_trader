@@ -23,7 +23,7 @@ use crate::identifiers::component_id::ComponentId;
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// Assumes `ptr` is a valid C string pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
     let value = unsafe { cstr_as_str(ptr) };

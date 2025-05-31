@@ -1,3 +1,17 @@
 cognitive-complexity-threshold = 10
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
+doc-valid-idents = [
+  "BaseSwap",
+  "BaseX",
+  "DeFi",
+  "HyperSync",
+  "NautilusTrader",
+  "PancakeSwap",
+  "PascalCase",
+  "PnL",
+  "PnLs",
+  "PostgreSQL",
+  "SushiSwap",
+  "..",
+]
