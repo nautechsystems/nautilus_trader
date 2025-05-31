@@ -728,6 +728,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._time_bars_origin_offset = time_bars_origin_offset
         self._skip_first_non_full_bar = skip_first_non_full_bar
+        self._skip_first_non_full_bar_original = skip_first_non_full_bar
         self._timestamp_on_close = timestamp_on_close
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
@@ -778,7 +779,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             # Days of February in common year
             # To prevent "quasi-chaotic" indicator behavior
-            validate(pd.Timedelta(days=28, nanoseconds=1)) #
+            validate(pd.Timedelta(days=28)) #
 
 
     def __str__(self):
@@ -945,11 +946,11 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
     cpdef void _invalidate_skip_first_non_full_bar_on_exact_start(self, datetime now, datetime start_time):
-        # TODO: Make tests for this behavior
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH and start_time - self.interval == now:
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH and start_time + self.interval == now:
             self._skip_first_non_full_bar = False
+        # TODO: Make tests for this behavior
         # TODO: Bug in Pandas break this. Use inequality instead
-        elif self.bar_type.spec.aggregation == BarAggregation.MONTH and start_time - pd.DateOffset(months=step) == now:
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH and start_time + pd.DateOffset(months=self.bar_type.spec.step) == now:
             self._skip_first_non_full_bar = False
 
 
@@ -998,9 +999,6 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
-    def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
-        super().start_batch_update(handler, time_ns)
-
 
     def _start_batch_time(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step
@@ -1008,7 +1006,10 @@ cdef class TimeBarAggregator(BarAggregator):
 
         cdef datetime given_start_time = unix_nanos_to_dt(time_ns)
         cdef datetime start_time = self.get_start_time(given_start_time)
+
         #TODO: Test this behavior
+        #TODO: Bug here: what if the first bar is empty
+        self._skip_first_non_full_bar = self._skip_first_non_full_bar_original
         self._invalidate_skip_first_non_full_bar_on_exact_start(given_start_time, start_time)
 
         self._batch_open_ns = dt_to_unix_nanos(start_time)
@@ -1074,6 +1075,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         # Delay to reset of _batch_next_close_ns to allow the creation of a last histo bar
         # when transitioning to regular bars
+        # TODO: Refactor this, it is needless now (the comment above doesn't apply)
         if not self._batch_mode:
             self._batch_next_close_ns = 0
 

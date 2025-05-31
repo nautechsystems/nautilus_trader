@@ -104,6 +104,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef bint _is_left_open
     cdef bint _timestamp_on_close
     cdef bint _skip_first_non_full_bar
+    cdef bint _skip_first_non_full_bar_original
     cdef bint _build_with_no_updates
     cdef int _bar_build_delay
     cdef bint _add_delay
