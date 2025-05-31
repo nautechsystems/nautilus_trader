@@ -586,7 +586,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         maker_address=self._wallet_address,
                         ts_init=self._clock.timestamp_ns(),
                     )
-                    assert report.trade_id not in trade_ids, "trade IDs should be unique"
+                    if report.trade_id in trade_ids:
+                        raise AssertionError("trade IDs should be unique")
                     trade_ids.add(report.trade_id)
                     reports.append(report)
         finally:

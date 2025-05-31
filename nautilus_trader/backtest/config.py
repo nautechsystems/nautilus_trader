@@ -56,7 +56,8 @@ def parse_filters_expr(s: str | None):
     """
     from pyarrow.dataset import field
 
-    assert field  # Required for eval
+    if not field:  # Required for eval
+        raise AssertionError
 
     if not s:
         return None
@@ -246,8 +247,10 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             used_bar_types = []
 
             if self.bar_types is None and self.instrument_ids is None:
-                assert self.instrument_id, "No `instrument_id` for Bar data config"
-                assert self.bar_spec, "No `bar_spec` for Bar data config"
+                if not self.instrument_id:
+                    raise AssertionError("No `instrument_id` for Bar data config")
+                if not self.bar_spec:
+                    raise AssertionError("No `bar_spec` for Bar data config")
 
             if self.instrument_id is not None and self.bar_spec is not None:
                 bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
@@ -285,6 +288,8 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             "start": self.start_time,
             "end": self.end_time,
             "filter_expr": parse_filters_expr(filter_expr),
+            "metadata": self.metadata,
+        }
             "metadata": self.metadata,
         }
 

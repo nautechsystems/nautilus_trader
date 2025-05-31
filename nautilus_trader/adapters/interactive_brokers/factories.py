@@ -275,9 +275,8 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
 
         # Set account ID
         ib_account = config.account_id or os.environ.get("TWS_ACCOUNT")
-        assert (
-            ib_account
-        ), f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var."
+        if not ib_account:
+            raise AssertionError(f"Must pass `{config.__class__.__name__}.account_id` or set `TWS_ACCOUNT` env var.")
 
         account_id = AccountId(f"{name or IB_VENUE.value}-{ib_account}")
 

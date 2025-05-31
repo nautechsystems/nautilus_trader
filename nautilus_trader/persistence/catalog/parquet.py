@@ -639,7 +639,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         session: DataBackendSession | None = None,
         **kwargs: Any,
     ) -> DataBackendSession:
-        assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
+        if self.fs_protocol != "file":
+            raise AssertionError("Only file:// protocol is supported for Rust queries")
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
 
         if session is None:
@@ -657,7 +658,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 print(dir)
 
         for idx, path in enumerate(paths):
-            assert self.fs.exists(path)
+            if not self.fs.exists(path):
+                raise AssertionError
             # Parse the parent directory which *should* be the instrument ID,
             # this prevents us matching all instrument ID substrings.
             dir = path.split("/")[-2]
@@ -689,6 +691,8 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         return session
 
+        return session
+
     @staticmethod
     def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
         if data_cls in (OrderBookDelta, OrderBookDeltas):
@@ -712,23 +716,24 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
-    ) -> str:
-        # Build datafusion SQL query
-        query = f"SELECT * FROM {table}"  # noqa (possible SQL injection)
-        conditions: list[str] = [] + ([where] if where else [])
-
+    ):
+        params: list[object] = []
+        query = f"SELECT * FROM {table}"
+        conditions: list[str] = []
+        if where:
+            conditions.append(where)
         if start:
             start_ts = dt_to_unix_nanos(start)
-            conditions.append(f"ts_init >= {start_ts}")
+            conditions.append("ts_init >= %s")
+            params.append(start_ts)
         if end:
             end_ts = dt_to_unix_nanos(end)
-            conditions.append(f"ts_init <= {end_ts}")
+            conditions.append("ts_init <= %s")
+            params.append(end_ts)
         if conditions:
             query += f" WHERE {' AND '.join(conditions)}"
-
         query += " ORDER BY ts_init"
-
-        return query
+        return query, tuple(params)
 
     def query_pyarrow(
         self,
@@ -752,9 +757,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         if table is None:
             return []
 
-        assert (
-            table.num_rows
-        ), f"No rows found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        if not table.num_rows:
+            raise AssertionError(f"No rows found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}")
 
         return self._handle_table_nautilus(table, data_cls=data_cls)
 

@@ -284,7 +284,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 self._log.error(str(e))
                 return
         elif isinstance(instrument_id, IBContract):
-            assert self.config.symbology_method != SymbologyMethod.DATABENTO
+            if self.config.symbology_method == SymbologyMethod.DATABENTO:
+                raise AssertionError
             contract = instrument_id
         else:
             self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")

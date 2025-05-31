@@ -389,8 +389,10 @@ class BacktestNode:
 
             if config.data_type == Bar:
                 if config.bar_types is None and config.instrument_ids is None:
-                    assert config.instrument_id, "No `instrument_id` for Bar data config"
-                    assert config.bar_spec, "No `bar_spec` for Bar data config"
+                    if not config.instrument_id:
+                        raise AssertionError("No `instrument_id` for Bar data config")
+                    if not config.bar_spec:
+                        raise AssertionError("No `bar_spec` for Bar data config")
 
                 if config.instrument_id is not None and config.bar_spec is not None:
                     bar_type = f"{config.instrument_id}-{config.bar_spec}-EXTERNAL"
@@ -424,6 +426,8 @@ class BacktestNode:
                 streaming=True,
             )
             engine.clear_data()
+
+        engine.end()
 
         engine.end()
 
