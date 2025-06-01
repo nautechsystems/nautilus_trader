@@ -122,6 +122,7 @@ class HistoricInteractiveBrokersClient:
             raise ValueError(
                 "Either instrument_provider_config or ib_contracts/instrument_ids should be provided, not both.",
             )
+
         if instrument_provider_config is None:
             instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
                 load_contracts=frozenset(contracts) if contracts else None,

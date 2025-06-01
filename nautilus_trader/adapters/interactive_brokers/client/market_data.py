@@ -438,6 +438,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if isinstance(start_date_time, pd.Timestamp):
             start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+
         if isinstance(end_date_time, pd.Timestamp):
             end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
 

@@ -519,6 +519,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
+
         try:
             ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
             ib_order.orderId = self._client.next_order_id()
