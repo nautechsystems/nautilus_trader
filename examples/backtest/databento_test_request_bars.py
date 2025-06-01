@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.0
+#       jupytext_version: 1.16.6
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -268,9 +268,12 @@ catalogs = [
 ]
 
 data_engine = DataEngineConfig(
-    time_bars_origins={
+    time_bars_origin_offset={
         BarAggregation.MINUTE: pd.Timedelta(seconds=0),
     },
+    bar_build_delay=20,
+    # default is 15 when using composite bars aggregating internal bars
+    # also useful in live context to account for network delay
 )
 
 engine_config = BacktestEngineConfig(
@@ -332,3 +335,5 @@ node = BacktestNode(configs=configs)
 
 # %%
 results = node.run()
+
+# %%
