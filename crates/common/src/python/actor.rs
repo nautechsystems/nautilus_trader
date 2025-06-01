@@ -99,7 +99,8 @@ impl DataActor for PyDataActorInner {
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
     name = "DataActor",
-    unsendable
+    unsendable,
+    subclass
 )]
 #[derive(Debug)]
 pub struct PyDataActor {
