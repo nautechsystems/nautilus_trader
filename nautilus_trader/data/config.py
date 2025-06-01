@@ -36,8 +36,12 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If time bar aggregators will skip emitting a bar if the aggregation starts mid-interval.
     time_bars_build_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
-    time_bars_origins : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
+    time_bars_origin_offset : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
         A dictionary mapping time bar aggregations to their origin time offsets.
+    bar_build_delay : int, default 0
+        The time delay (microseconds) before building and emitting a composite bar type.
+        15 microseconds can be useful in a backtest context, when aggregating internal bars
+        from internal bars several times so all messages are processed before a timer triggers.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
@@ -54,7 +58,8 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_timestamp_on_close: bool = True
     time_bars_skip_first_non_full_bar: bool = False
     time_bars_build_with_no_updates: bool = True
-    time_bars_origins: dict | None = None
+    time_bars_origin_offset: dict | None = None
+    bar_build_delay: int = 0
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
     external_clients: list[ClientId] | None = None
