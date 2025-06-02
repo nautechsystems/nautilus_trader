@@ -964,7 +964,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 price=str(command.price) if command.price else str(order.price),
             )
             if not retry_manager.result:
-                self.generate_order_modify_reject(
+                self.generate_order_modify_rejected(
                     command.strategy_id,
                     command.instrument_id,
                     command.client_order_id,
