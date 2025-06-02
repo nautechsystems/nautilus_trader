@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
 
 ### Breaking Changes
 None

@@ -185,7 +185,7 @@ cdef class DataEngine(Component):
         self._time_bars_skip_first_non_full_bar = config.time_bars_skip_first_non_full_bar
         self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
         self._time_bars_origin_offset = config.time_bars_origin_offset or {}
-        self._bar_build_delay = config.bar_build_delay
+        self._time_bars_build_delay = config.time_bars_build_delay
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
 
@@ -2253,7 +2253,7 @@ cdef class DataEngine(Component):
     cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
         if bar_type.spec.is_time_aggregated():
             # Use configured bar_build_delay, with special handling for composite bars
-            bar_build_delay = self._bar_build_delay
+            bar_build_delay = self._time_bars_build_delay
 
             if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
                 bar_build_delay = 15  # Default for composite bars when config is 0

@@ -271,7 +271,7 @@ data_engine = DataEngineConfig(
     time_bars_origin_offset={
         BarAggregation.MINUTE: pd.Timedelta(seconds=0),
     },
-    bar_build_delay=20,
+    time_bars_build_delay=20,
     # default is 15 when using composite bars aggregating internal bars
     # also useful in live context to account for network delay
 )
