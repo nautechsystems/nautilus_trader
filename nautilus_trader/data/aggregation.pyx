@@ -742,7 +742,12 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Invalid interval_type: {interval_type}. Must be BarIntervalType.LEFT_OPEN or BarIntervalType.RIGHT_OPEN.",
             )
 
-        self._validate_input_values()
+        self.interval = self._get_interval()
+        self.interval_ns = self._get_interval_ns()
+
+        if self._time_bars_origin is None:
+            self._time_bars_origin = pd.Timedelta(0)
+        self._validate_time_bars_origin()
 
         self._timer_name = None
         self._build_on_next_tick = False
@@ -759,27 +764,50 @@ cdef class TimeBarAggregator(BarAggregator):
         self._stored_close_ns = 0
 
 
-    def _validate_input_values(self):
+    def _validate_time_bars_origin(self):
+        # TODO: Tests for DateOffset time_bars_origin validation
+        # TODO: Better documentation in the code, of which values are allowed
+
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
 
-        if self._time_bars_origin is not None and self._time_bars_origin < pd.Timedelta(seconds=0):
-            raise ValueError("Invalid time_bars_origin: It must be positive.")
+        if type(self._time_bars_origin) is not pd.Timedelta and type(self._time_bars_origin) is not pd.DateOffset:
+            raise TypeError("Invalid time_bars_origin: Must have type pd.Timedelta or pd.DateOffset.")
 
-        def validate(sup_time_bars_origin: pd.Timedelta):
-            if self._time_bars_origin is not None:
-                if self._time_bars_origin >= sup_time_bars_origin:
+        def validate(sup_time_bars_origin: pd.Timedelta, allow_negative: bool):
+            if self._time_bars_origin >= sup_time_bars_origin:
+                raise ValueError(
+                    f"Invalid time_bars_origin: "
+                    f"{self._time_bars_origin} for aggregation={self.bar_type}. "
+                    f"Must be smaller than {sup_time_bars_origin}."
+                )
+            elif self._time_bars_origin < pd.Timedelta(0):
+                if not allow_negative:
                     raise ValueError(
                         f"Invalid time_bars_origin: "
                         f"{self._time_bars_origin} for aggregation={self.bar_type}. "
-                        f"Must be smaller than {sup_time_bars_origin}."
+                        f"Negative time_bars_origin is not supported for given aggregation type."
                     )
 
+                if -self._time_bars_origin >= sup_time_bars_origin:
+                    raise ValueError(
+                        f"Invalid time_bars_origin: "
+                        f"{self._time_bars_origin} for aggregation={self.bar_type}. "
+                        f"Must be larger than {-sup_time_bars_origin}."
+                    )
+
+
         if aggregation != BarAggregation.MONTH:
-            validate(self._get_interval())
+            validate(self.interval, True)
         else:
-            # Days of February in common year
-            # To prevent "quasi-chaotic" indicator behavior
-            validate(pd.Timedelta(days=28)) #
+            if type(self._time_bars_origin) is pd.Timedelta:
+                # Days of February in common year
+                # To prevent "quasi-chaotic" indicator behavior
+                validate(pd.Timedelta(days=28), False) #
+
+            else:
+                # TODO: DateOffset time_bars_origin validation for months
+                pass
+
 
 
     def __str__(self):
@@ -804,6 +832,8 @@ cdef class TimeBarAggregator(BarAggregator):
             if self._time_bars_origin_offset is not None:
                 start_time += self._time_bars_origin_offset
 
+            start_time = now.floor(freq="s") + self._time_bars_origin_offset
+
             if now < start_time:
                 start_time -= pd.Timedelta(seconds=1)
 
@@ -811,12 +841,8 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.Timedelta(milliseconds=step)
 
             start_time -= pd.Timedelta(milliseconds=step)
-
         elif aggregation == BarAggregation.SECOND:
-            start_time = now.floor(freq="min")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = now.floor(freq="min") + self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(minutes=1)
@@ -825,12 +851,8 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.Timedelta(seconds=step)
 
             start_time -= pd.Timedelta(seconds=step)
-
         elif aggregation == BarAggregation.MINUTE:
-            start_time = now.floor(freq="h")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = now.floor(freq="h") + self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(hours=1)
@@ -839,12 +861,8 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.Timedelta(minutes=step)
 
             start_time -= pd.Timedelta(minutes=step)
-
         elif aggregation == BarAggregation.HOUR:
-            start_time = now.floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = now.floor(freq="d") + self._time_bars_origin_offset
 
             if now < start_time:
                 start_time -= pd.Timedelta(days=1)
@@ -853,30 +871,19 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.Timedelta(hours=step)
 
             start_time -= pd.Timedelta(hours=step)
-
         elif aggregation == BarAggregation.DAY:
-            start_time = now.floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = now.floor(freq="d") + self._time_bars_origin_offset
 
             if now <= start_time:
                 start_time -= pd.Timedelta(days=1)
-
         elif aggregation == BarAggregation.WEEK:
-            start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d") + self._time_bars_origin_offset
 
             if now <= start_time:
                 start_time -= pd.Timedelta(weeks=1)
-
         elif aggregation == BarAggregation.MONTH:
-            start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
-
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
+            start_time = ((now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
+                          + self._time_bars_origin_offset)
 
             if now < start_time:
                 start_time -= pd.DateOffset(years=1)
@@ -885,7 +892,6 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time += pd.DateOffset(months=step)
 
             start_time -= pd.DateOffset(months=step)
-
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
@@ -1049,11 +1055,13 @@ cdef class TimeBarAggregator(BarAggregator):
             # We ensure that _batch_next_close_ns and _batch_open_ns are coherent with the last builder update
             if self.bar_type.spec.aggregation != BarAggregation.MONTH:
                 while self._batch_next_close_ns < time_ns:
+                    #TODO: Potential bug: No bar emitted
                     self._batch_next_close_ns += self.interval_ns
 
                 self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
             else:
                 while self._batch_next_close_ns < time_ns:
+                    #TODO: Potential bug: No bar emitted
                     self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) + pd.DateOffset(months=step))
 
                 self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_next_close_ns) - pd.DateOffset(months=step))
