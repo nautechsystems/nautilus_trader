@@ -21,6 +21,12 @@
 use nautilus_core::correctness::FAILED;
 
 /// Indicates if high_precision mode is enabled.
+///
+/// # Safety
+///
+/// This static variable is initialized at compile time and never mutated,
+/// making it safe to read from multiple threads without synchronization.
+/// The value is determined by the "high-precision" feature flag.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
 pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
@@ -75,6 +81,13 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
 }
 
 /// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
+///
+/// # Precision and Rounding
+///
+/// This function performs IEEE 754 "round half to even" rounding at the specified precision
+/// before scaling to the fixed-point representation. The rounding is intentionally applied
+/// at the user-specified precision level to ensure values are correctly represented
+/// without accumulating floating-point errors during scaling.
 ///
 /// # Panics
 ///

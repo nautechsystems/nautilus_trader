@@ -920,10 +920,10 @@ typedef int64_t PriceRaw;
  * have negative values. For example, prices for options instruments can be
  * negative under certain conditions.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- *  - `PRICE_MAX` = {PRICE_MAX}
- *  - `PRICE_MIN` = {PRICE_MIN}
+ * - [`PRICE_MAX`] - Maximum representable price value
+ * - [`PRICE_MIN`] - Minimum representable price value
  */
 typedef struct Price_t {
     /**
@@ -931,7 +931,7 @@ typedef struct Price_t {
      */
     PriceRaw raw;
     /**
-     * The number of decimal places, with a maximum of {FIXED_PRECISION}.
+     * The number of decimal places, with a maximum of [`FIXED_PRECISION`].
      */
     uint8_t precision;
 } Price_t;
@@ -951,10 +951,10 @@ typedef uint64_t QuantityRaw;
  * or 'shares' (instruments denominated in whole units) or a decimal value
  * containing decimal places for instruments denominated in fractional units.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- * - `QUANTITY_MAX` = {QUANTITY_MAX}
- * - `QUANTITY_MIN` = 0
+ * - [`QUANTITY_MAX`] - Maximum representable quantity value
+ * - [`QUANTITY_MIN`] - 0 (non-negative values only)
  */
 typedef struct Quantity_t {
     /**
@@ -962,7 +962,7 @@ typedef struct Quantity_t {
      */
     QuantityRaw raw;
     /**
-     * The number of decimal places, with a maximum of {FIXED_PRECISION}.
+     * The number of decimal places, with a maximum of [`FIXED_PRECISION`].
      */
     uint8_t precision;
 } Quantity_t;
@@ -1768,7 +1768,7 @@ typedef struct BookLevel_API {
 /**
  * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
  *
- * Handles up to {FIXED_PRECISION} decimals of precision.
+ * Handles up to [`FIXED_PRECISION`] decimals of precision.
  */
 typedef struct Currency_t {
     /**
@@ -1804,8 +1804,8 @@ typedef int64_t MoneyRaw;
 /**
  * Represents an amount of money in a specified currency denomination.
  *
- * - `MONEY_MAX` = {MONEY_MAX}
- * - `MONEY_MIN` = {MONEY_MIN}
+ * - [`MONEY_MAX`] - Maximum representable money amount
+ * - [`MONEY_MIN`] - Minimum representable money amount
  */
 typedef struct Money_t {
     /**
@@ -1836,6 +1836,12 @@ typedef struct Money_t {
 
 /**
  * Indicates if high_precision mode is enabled.
+ *
+ * # Safety
+ *
+ * This static variable is initialized at compile time and never mutated,
+ * making it safe to read from multiple threads without synchronization.
+ * The value is determined by the "high-precision" feature flag.
  */
 extern const uint8_t HIGH_PRECISION_MODE;
 
@@ -1855,11 +1861,25 @@ extern const int32_t PRECISION_BYTES;
 
 /**
  * The maximum raw price integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from PRICE_MAX * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because PRICE_MAX and FIXED_SCALAR
+ * are chosen such that their product fits within PriceRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
  */
 extern const PriceRaw PRICE_RAW_MAX;
 
 /**
  * The minimum raw price integer value.
+ *
+ * # Safety
+ *
+ * This value is computed at compile time from PRICE_MIN * FIXED_SCALAR.
+ * The multiplication is guaranteed not to overflow because PRICE_MIN and FIXED_SCALAR
+ * are chosen such that their product fits within PriceRaw's range in both
+ * high-precision (i128) and standard-precision (i64) modes.
  */
 extern const PriceRaw PRICE_RAW_MIN;
 
