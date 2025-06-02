@@ -62,14 +62,16 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 /// - The returned slice is only valid while the original C string remains allocated.
 /// - Caller must ensure the C string outlives any usage of the returned slice.
 ///
-/// # Panics
-///
-/// Panics if `ptr` is null.
-///
-/// # Note
+/// The actual lifetime is tied to the C string's allocation lifetime.
+/// This is acceptable because this function is only used for immediate
+/// consumption within FFI call boundaries where the C string remains valid.
 ///
 /// This function is designed for immediate consumption within FFI calls.
 /// Do not store the returned slice for use beyond the current function scope.
+///
+/// # Panics
+///
+/// Panics if `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> &'static [u8] {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -103,14 +105,16 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 /// - The returned slice is only valid while the original C string remains allocated.
 /// - Caller must ensure the C string outlives any usage of the returned slice.
 ///
-/// # Panics
-///
-/// Panics if `ptr` is null or contains invalid UTF-8.
-///
-/// # Note
+/// The actual lifetime is tied to the C string's allocation lifetime.
+/// This is acceptable because this function is only used for immediate
+/// consumption within FFI call boundaries where the C string remains valid.
 ///
 /// This function is designed for immediate consumption within FFI calls.
 /// Do not store the returned slice for use beyond the current function scope.
+///
+/// # Panics
+///
+/// Panics if `ptr` is null or contains invalid UTF-8.
 #[must_use]
 pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -126,14 +130,16 @@ pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
 /// - The returned slice is only valid while the original C string remains allocated.
 /// - Caller must ensure the C string outlives any usage of the returned slice.
 ///
-/// # Panics
-///
-/// Panics if `ptr` is not null but contains invalid UTF-8.
-///
-/// # Note
+/// The actual lifetime is tied to the C string's allocation lifetime.
+/// This is acceptable because this function is only used for immediate
+/// consumption within FFI call boundaries where the C string remains valid.
 ///
 /// This function is designed for immediate consumption within FFI calls.
 /// Do not store the returned slice for use beyond the current function scope.
+///
+/// # Panics
+///
+/// Panics if `ptr` is not null but contains invalid UTF-8.
 #[must_use]
 pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     if ptr.is_null() {
