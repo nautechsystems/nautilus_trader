@@ -33,7 +33,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 /// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
 ///
-/// Handles up to {FIXED_PRECISION} decimals of precision.
+/// Handles up to [`FIXED_PRECISION`] decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -61,7 +61,7 @@ impl Currency {
     /// Returns an error if:
     /// - `code` is not a valid string.
     /// - `name` is the empty string.
-    /// - `precision` is invalid outside the valid representable range [0, {FIXED_PRECISION}].
+    /// - `precision` is invalid outside the valid representable range [0, FIXED_PRECISION].
     ///
     /// # Notes
     ///

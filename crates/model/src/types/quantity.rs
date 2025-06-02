@@ -65,10 +65,10 @@ pub const QUANTITY_MIN: f64 = 0.0;
 /// or 'shares' (instruments denominated in whole units) or a decimal value
 /// containing decimal places for instruments denominated in fractional units.
 ///
-/// Handles up to {FIXED_PRECISION} decimals of precision.
+/// Handles up to [`FIXED_PRECISION`] decimals of precision.
 ///
-/// - `QUANTITY_MAX` = {QUANTITY_MAX}
-/// - `QUANTITY_MIN` = 0
+/// - [`QUANTITY_MAX`] - Maximum representable quantity value
+/// - [`QUANTITY_MIN`] - 0 (non-negative values only)
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -78,7 +78,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 pub struct Quantity {
     /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
     pub raw: QuantityRaw,
-    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
+    /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
 
@@ -88,8 +88,8 @@ impl Quantity {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// - `value` is invalid outside the representable range [0, QUANTITY_MAX].
+    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
     ///
     /// # Notes
     ///
@@ -113,8 +113,8 @@ impl Quantity {
     /// Returns an error if:
     /// - `value` is zero.
     /// - `value` becomes zero after rounding to `precision`.
-    /// - `value` is invalid outside the representable range [0, {QUANTITY_MAX}].
-    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// - `value` is invalid outside the representable range [0, QUANTITY_MAX].
+    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
     ///
     /// # Notes
     ///

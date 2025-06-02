@@ -43,11 +43,25 @@ pub type PriceRaw = i128;
 pub type PriceRaw = i64;
 
 /// The maximum raw price integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from PRICE_MAX * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because PRICE_MAX and FIXED_SCALAR
+/// are chosen such that their product fits within PriceRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
 pub static PRICE_RAW_MAX: PriceRaw = (PRICE_MAX * FIXED_SCALAR) as PriceRaw;
 
 /// The minimum raw price integer value.
+///
+/// # Safety
+///
+/// This value is computed at compile time from PRICE_MIN * FIXED_SCALAR.
+/// The multiplication is guaranteed not to overflow because PRICE_MIN and FIXED_SCALAR
+/// are chosen such that their product fits within PriceRaw's range in both
+/// high-precision (i128) and standard-precision (i64) modes.
 #[unsafe(no_mangle)]
 #[allow(unsafe_code)]
 pub static PRICE_RAW_MIN: PriceRaw = (PRICE_MIN * FIXED_SCALAR) as PriceRaw;
@@ -82,10 +96,10 @@ pub const ERROR_PRICE: Price = Price {
 /// have negative values. For example, prices for options instruments can be
 /// negative under certain conditions.
 ///
-/// Handles up to {FIXED_PRECISION} decimals of precision.
+/// Handles up to [`FIXED_PRECISION`] decimals of precision.
 ///
-///  - `PRICE_MAX` = {PRICE_MAX}
-///  - `PRICE_MIN` = {PRICE_MIN}
+/// - [`PRICE_MAX`] - Maximum representable price value
+/// - [`PRICE_MIN`] - Minimum representable price value
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -95,7 +109,7 @@ pub const ERROR_PRICE: Price = Price {
 pub struct Price {
     /// Represents the raw fixed-point value, with `precision` defining the number of decimal places.
     pub raw: PriceRaw,
-    /// The number of decimal places, with a maximum of {FIXED_PRECISION}.
+    /// The number of decimal places, with a maximum of [`FIXED_PRECISION`].
     pub precision: u8,
 }
 
@@ -105,8 +119,8 @@ impl Price {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is invalid outside the representable range [{PRICE_MIN}, {PRICE_MAX}].
-    /// - `precision` is invalid outside the representable range [0, {FIXED_PRECISION}].
+    /// - `value` is invalid outside the representable range [PRICE_MIN, PRICE_MAX].
+    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
     ///
     /// # Notes
     ///
@@ -276,6 +290,7 @@ impl From<&Price> for f64 {
 impl Hash for Price {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);
+        self.precision.hash(state);
     }
 }
 
@@ -334,6 +349,11 @@ impl Neg for Price {
 impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        // SAFETY: Current precision logic ensures only equal or higher precision operations
+        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
+        // the rhs value is effectively scaled up internally by the fixed-point representation,
+        // so no actual precision is lost in the addition. However, the result is limited
+        // to self.precision decimal places.
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
@@ -353,6 +373,11 @@ impl Add for Price {
 impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        // SAFETY: Current precision logic ensures only equal or higher precision operations
+        // are allowed to prevent silent precision loss. When self.precision >= rhs.precision,
+        // the rhs value is effectively scaled up internally by the fixed-point representation,
+        // so no actual precision is lost in the subtraction. However, the result is limited
+        // to self.precision decimal places.
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
