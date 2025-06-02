@@ -138,6 +138,7 @@ impl NautilusKernel {
             instance_id,
             config.environment(),
             clock.clone(),
+            cache.clone(),
         );
 
         let ts_created = clock.borrow().timestamp_ns();

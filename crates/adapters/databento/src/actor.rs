@@ -17,22 +17,16 @@
 
 use std::{
     any::Any,
-    cell::RefCell,
     ops::{Deref, DerefMut},
-    rc::Rc,
 };
 
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig},
-    cache::Cache,
-    clock::Clock,
-    component::Component,
-    enums::{ComponentState, ComponentTrigger},
-    timer::TimeEvent,
+    enums::ComponentState,
 };
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
-    identifiers::{ClientId, ComponentId, InstrumentId},
+    identifiers::{ActorId, ClientId, InstrumentId},
 };
 use ustr::Ustr;
 
@@ -101,53 +95,11 @@ impl Actor for DatabentoSubscriberActor {
     }
 }
 
-impl Component for DatabentoSubscriberActor {
-    fn id(&self) -> ComponentId {
-        ComponentId::from(self.core.actor_id.inner().as_str())
-    }
-
-    fn state(&self) -> ComponentState {
-        self.core.state()
-    }
-
-    fn trigger(&self) -> ComponentTrigger {
-        ComponentTrigger::Initialize
-    }
-
-    fn is_running(&self) -> bool {
-        matches!(self.core.state(), ComponentState::Running)
-    }
-
-    fn is_stopped(&self) -> bool {
-        matches!(self.core.state(), ComponentState::Stopped)
-    }
-
-    fn is_disposed(&self) -> bool {
-        matches!(self.core.state(), ComponentState::Disposed)
-    }
-
-    fn start(&mut self) -> anyhow::Result<()> {
-        self.core.start()
-    }
-
-    fn stop(&mut self) -> anyhow::Result<()> {
-        self.core.stop()
-    }
-
-    fn reset(&mut self) -> anyhow::Result<()> {
-        self.core.reset()
-    }
-
-    fn dispose(&mut self) -> anyhow::Result<()> {
-        self.core.dispose()
-    }
-
-    fn handle_event(&mut self, _event: TimeEvent) {
-        // No-op for now
-    }
-}
-
 impl DataActor for DatabentoSubscriberActor {
+    fn actor_id(&self) -> ActorId {
+        self.core.actor_id()
+    }
+
     fn state(&self) -> ComponentState {
         self.core.state()
     }
@@ -191,13 +143,9 @@ impl DataActor for DatabentoSubscriberActor {
 impl DatabentoSubscriberActor {
     /// Creates a new [`DatabentoSubscriberActor`] instance.
     #[must_use]
-    pub fn new(
-        config: DatabentoSubscriberActorConfig,
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
-    ) -> Self {
+    pub fn new(config: DatabentoSubscriberActorConfig) -> Self {
         Self {
-            core: DataActorCore::new(config.base.clone(), cache, clock),
+            core: DataActorCore::new(config.base.clone()),
             config,
             received_quotes: Vec::new(),
             received_trades: Vec::new(),
