@@ -323,11 +323,57 @@ impl Position {
         self.sell_qty += last_qty_object;
     }
 
+    /// Calculates the average price using f64 arithmetic.
+    ///
+    /// # Design Decision: f64 vs Fixed-Point Arithmetic
+    ///
+    /// This function uses f64 arithmetic which provides sufficient precision for financial
+    /// calculations in this context. While f64 can introduce precision errors, the risk
+    /// is minimal here because:
+    ///
+    /// 1. **No cumulative error**: Each calculation starts fresh from precise Price and
+    ///    Quantity objects (derived from fixed-point raw values via `as_f64()`), rather
+    ///    than carrying f64 intermediate results between calculations.
+    ///
+    /// 2. **Single operation**: This is a single weighted average calculation, not a
+    ///    chain of operations where errors would compound.
+    ///
+    /// 3. **Overflow safety**: Raw integer arithmetic (price_raw * qty_raw) would risk
+    ///    overflow even with i128 intermediates, since max values can exceed integer limits.
+    ///
+    /// 4. **f64 precision**: ~15 decimal digits is sufficient for typical financial
+    ///    calculations at this level.
+    ///
+    /// For scenarios requiring higher precision (regulatory compliance, high-frequency
+    /// micro-calculations), consider using Decimal arithmetic libraries.
     #[must_use]
     fn calculate_avg_px(&self, qty: f64, avg_pg: f64, last_px: f64, last_qty: f64) -> f64 {
+        // Invalid state: attempting to calculate average price with no quantities
+        if qty == 0.0 && last_qty == 0.0 {
+            panic!("Cannot calculate average price: both quantities are zero");
+        }
+
+        // Invalid state: fill quantity cannot be zero
+        if last_qty == 0.0 {
+            panic!("Cannot calculate average price: fill quantity is zero");
+        }
+
+        // Valid case: new position (current quantity is zero)
+        if qty == 0.0 {
+            return last_px;
+        }
+
         let start_cost = avg_pg * qty;
         let event_cost = last_px * last_qty;
-        (start_cost + event_cost) / (qty + last_qty)
+        let total_qty = qty + last_qty;
+
+        // This should be mathematically impossible given the checks above
+        debug_assert!(
+            total_qty > 0.0,
+            "Total quantity unexpectedly zero in average price calculation"
+        );
+
+        (start_cost + event_cost) / total_qty
     }
 
     #[must_use]
@@ -362,12 +408,20 @@ impl Position {
     }
 
     fn calculate_points_inverse(&self, avg_px_open: f64, avg_px_close: f64) -> f64 {
+        // Invalid state: zero prices should never occur in valid market data
+        if avg_px_open == 0.0 {
+            panic!("Cannot calculate inverse points: open price is zero");
+        }
+        if avg_px_close == 0.0 {
+            panic!("Cannot calculate inverse points: close price is zero");
+        }
+
         let inverse_open = 1.0 / avg_px_open;
         let inverse_close = 1.0 / avg_px_close;
         match self.side {
             PositionSide::Long => inverse_open - inverse_close,
             PositionSide::Short => inverse_close - inverse_open,
-            _ => 0.0, // FLAT
+            _ => 0.0, // FLAT - this is a valid case
         }
     }
 
