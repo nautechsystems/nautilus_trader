@@ -30,6 +30,8 @@ mod tests;
 // Re-exports
 pub use data_actor::{DataActor, DataActorCore};
 
+pub use crate::component::Component;
+
 pub trait Actor: Any {
     /// The unique identifier for the actor.
     fn id(&self) -> Ustr;

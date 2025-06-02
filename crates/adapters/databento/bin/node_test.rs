@@ -82,11 +82,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, client_factory, Box::new(databento_config))?
         .build()?;
 
-    // TODO: Move this into trader registration
     let actor_config = DatabentoSubscriberActorConfig::new(instrument_ids, client_id);
-    let cache = node.kernel().cache();
-    let clock = node.kernel().clock();
-    let actor = DatabentoSubscriberActor::new(actor_config, cache, clock);
+    let actor = DatabentoSubscriberActor::new(actor_config);
+
     node.add_actor(Box::new(actor))?;
 
     node.start().await?;

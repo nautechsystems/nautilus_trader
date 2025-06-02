@@ -20,7 +20,7 @@
 
 use std::{
     any::{Any, TypeId},
-    cell::{RefCell, UnsafeCell},
+    cell::{Ref, RefCell, RefMut, UnsafeCell},
     collections::HashSet,
     fmt::Debug,
     num::NonZeroUsize,
@@ -39,7 +39,7 @@ use nautilus_model::{
         OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
-    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -52,6 +52,7 @@ use super::{Actor, registry::get_actor_unchecked};
 use crate::{
     cache::Cache,
     clock::Clock,
+    component::Component,
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, REQ, SEND},
     messages::{
@@ -120,37 +121,18 @@ impl Actor for DataActorCore {
 }
 
 pub trait DataActor: Actor {
-    /// Returns the [`ComponentState`] of the actor.
+    /// Returns the actor ID for convenience.
+    fn actor_id(&self) -> ActorId;
+
+    /// Returns the current component state.
     fn state(&self) -> ComponentState;
 
-    /// Returns `true` if the actor is in a `Ready` state.
-    fn is_ready(&self) -> bool {
-        self.state() == ComponentState::Ready
-    }
-
-    /// Returns `true` if the actor is in a `Running` state.
     fn is_running(&self) -> bool {
         self.state() == ComponentState::Running
     }
 
-    /// Returns `true` if the actor is in a `Stopped` state.
-    fn is_stopped(&self) -> bool {
-        self.state() == ComponentState::Stopped
-    }
-
-    /// Returns `true` if the actor is in a `Disposed` state.
-    fn is_disposed(&self) -> bool {
-        self.state() == ComponentState::Disposed
-    }
-
-    /// Returns `true` if the actor is in a `Degraded` state.
-    fn is_degraded(&self) -> bool {
-        self.state() == ComponentState::Degraded
-    }
-
-    /// Returns `true` if the actor is in a `Faulted` state.
-    fn is_faulted(&self) -> bool {
-        self.state() == ComponentState::Faulted
+    fn not_running(&self) -> bool {
+        self.state() != ComponentState::Running
     }
 
     /// Actions to be performed when the actor state is saved.
@@ -442,7 +424,7 @@ pub trait DataActor: Actor {
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&data);
             return;
         }
@@ -456,7 +438,7 @@ pub trait DataActor: Actor {
     fn handle_signal(&mut self, signal: &Signal) {
         log_received(&signal);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&signal);
             return;
         }
@@ -470,7 +452,7 @@ pub trait DataActor: Actor {
     fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log_received(&instrument);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&instrument);
             return;
         }
@@ -484,7 +466,7 @@ pub trait DataActor: Actor {
     fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         log_received(&deltas);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&deltas);
             return;
         }
@@ -498,7 +480,7 @@ pub trait DataActor: Actor {
     fn handle_book(&mut self, book: &OrderBook) {
         log_received(&book);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&book);
             return;
         }
@@ -512,7 +494,7 @@ pub trait DataActor: Actor {
     fn handle_quote(&mut self, quote: &QuoteTick) {
         log_received(&quote);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&quote);
             return;
         }
@@ -526,7 +508,7 @@ pub trait DataActor: Actor {
     fn handle_trade(&mut self, trade: &TradeTick) {
         log_received(&trade);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&trade);
             return;
         }
@@ -540,7 +522,7 @@ pub trait DataActor: Actor {
     fn handle_bar(&mut self, bar: &Bar) {
         log_received(&bar);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&bar);
             return;
         }
@@ -554,7 +536,7 @@ pub trait DataActor: Actor {
     fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
         log_received(&mark_price);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&mark_price);
             return;
         }
@@ -568,7 +550,7 @@ pub trait DataActor: Actor {
     fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
         log_received(&index_price);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&index_price);
             return;
         }
@@ -582,7 +564,7 @@ pub trait DataActor: Actor {
     fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&status);
             return;
         }
@@ -596,7 +578,7 @@ pub trait DataActor: Actor {
     fn handle_instrument_close(&mut self, close: &InstrumentClose) {
         log_received(&close);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&close);
             return;
         }
@@ -699,18 +681,75 @@ pub trait DataActor: Actor {
     }
 }
 
+// Blanket implementation: any DataActor that can Deref to DataActorCore automatically implements Component
+impl<T> Component for T
+where
+    T: DataActor + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore> + Debug,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn id(&self) -> ComponentId {
+        Component::id(self.deref())
+    }
+
+    fn state(&self) -> ComponentState {
+        Component::state(self.deref())
+    }
+
+    fn is_running(&self) -> bool {
+        Component::is_running(self.deref())
+    }
+
+    fn is_stopped(&self) -> bool {
+        Component::is_stopped(self.deref())
+    }
+
+    fn is_disposed(&self) -> bool {
+        Component::is_disposed(self.deref())
+    }
+
+    fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        Component::register(self.deref_mut(), trader_id, clock, cache)
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Component::start(self.deref_mut())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Component::stop(self.deref_mut())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Component::reset(self.deref_mut())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Component::dispose(self.deref_mut())
+    }
+
+    fn handle_event(&mut self, event: TimeEvent) {
+        Component::handle_event(self.deref_mut(), event)
+    }
+}
+
 /// Core functionality for all actors.
 pub struct DataActorCore {
     /// The actor identifier.
     pub actor_id: ActorId,
     /// The actors configuration.
     pub config: DataActorConfig,
-    /// The actors clock.
-    pub clock: Rc<RefCell<dyn Clock>>,
-    /// The cache for the actor.
-    pub cache: Rc<RefCell<Cache>>,
-    state: ComponentState,
     trader_id: Option<TraderId>,
+    clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
+    cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
+    state: ComponentState,
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
@@ -731,6 +770,10 @@ impl Debug for DataActorCore {
 }
 
 impl DataActor for DataActorCore {
+    fn actor_id(&self) -> ActorId {
+        self.actor_id
+    }
+
     fn state(&self) -> ComponentState {
         self.state
     }
@@ -738,11 +781,7 @@ impl DataActor for DataActorCore {
 
 impl DataActorCore {
     /// Creates a new [`DataActorCore`] instance.
-    pub fn new(
-        config: DataActorConfig,
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
-    ) -> Self {
+    pub fn new(config: DataActorConfig) -> Self {
         let actor_id = config
             .actor_id
             .unwrap_or_else(|| Self::default_actor_id(&config));
@@ -750,10 +789,10 @@ impl DataActorCore {
         Self {
             actor_id,
             config,
-            clock,
-            cache,
-            state: ComponentState::default(),
             trader_id: None, // None until registered
+            clock: None,     // None until registered
+            cache: None,     // None until registered
+            state: ComponentState::default(),
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
@@ -774,7 +813,7 @@ impl DataActorCore {
         Ok(())
     }
 
-    // TODO: TBD initialization flow
+    // TODO: TBD initialization flow (potentially remove initialize())
 
     /// Initializes the actor.
     ///
@@ -790,35 +829,75 @@ impl DataActorCore {
         self.trader_id
     }
 
+    pub fn actor_id(&self) -> ActorId {
+        self.actor_id
+    }
+
     // TODO: Extract this common state logic and handling out to some component module
     pub fn state(&self) -> ComponentState {
         self.state
     }
 
+    pub fn generate_timestamp_ns(&self) -> UnixNanos {
+        self.clock_ref().timestamp_ns()
+    }
+
+    /// Returns the clock for the actor (if registered).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not been registered with a trader.
+    pub fn clock(&mut self) -> RefMut<'_, dyn Clock> {
+        self.clock
+            .as_ref()
+            .expect("DataActor must be registered before calling `clock()`")
+            .borrow_mut()
+    }
+
+    fn clock_ref(&self) -> Ref<'_, dyn Clock> {
+        self.clock
+            .as_ref()
+            .expect("DataActor must be registered before calling `clock_ref()`")
+            .borrow()
+    }
+
     // -- REGISTRATION ----------------------------------------------------------------------------
+
+    /// Register the data actor with a trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor has already been registered with a trader.
+    pub fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        if let Some(existing_trader_id) = self.trader_id {
+            anyhow::bail!("DataActor already registered with trader {existing_trader_id}");
+        }
+
+        self.trader_id = Some(trader_id);
+        self.clock = Some(clock);
+        self.cache = Some(cache);
+
+        self.transition_state(ComponentTrigger::Initialize)?;
+
+        log::info!("Registered {} with trader {trader_id}", self.actor_id);
+        Ok(())
+    }
 
     /// Register an event type for warning log levels.
     pub fn register_warning_event(&mut self, event_type: &str) {
         self.warning_events.insert(event_type.to_string());
+        log::debug!("Registered event type '{event_type}' for warning logs")
     }
 
     /// Deregister an event type from warning log levels.
     pub fn deregister_warning_event(&mut self, event_type: &str) {
         self.warning_events.remove(event_type);
-        // TODO: Log deregistration
-    }
-
-    /// Sets the trader ID for the actor.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a trader ID has already been set.
-    pub(crate) fn set_trader_id(&mut self, trader_id: TraderId) {
-        if let Some(existing_trader_id) = self.trader_id {
-            panic!("trader_id {existing_trader_id} already set");
-        }
-
-        self.trader_id = Some(trader_id)
+        log::debug!("Deregistered event type '{event_type}' from warning logs")
     }
 
     fn check_registered(&self) {
@@ -826,10 +905,6 @@ impl DataActorCore {
             self.trader_id.is_some(),
             "Actor has not been registered with a Trader"
         );
-    }
-
-    fn generate_ts_init(&self) -> UnixNanos {
-        self.clock.borrow().timestamp_ns()
     }
 
     fn send_data_cmd(&self, command: DataCommand) {
@@ -1001,7 +1076,7 @@ impl DataActorCore {
             self.actor_id.inner(),
             reason,
             UUID4::new(),
-            self.clock.borrow().timestamp_ns(),
+            self.generate_timestamp_ns(),
         );
 
         let endpoint = "command.system.shutdown".into();
@@ -1067,7 +1142,7 @@ impl DataActorCore {
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1099,7 +1174,7 @@ impl DataActorCore {
             client_id,
             venue,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1132,7 +1207,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1172,7 +1247,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             depth,
             managed,
             params,
@@ -1226,7 +1301,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             depth,
             interval_ms,
             params,
@@ -1261,7 +1336,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1294,7 +1369,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1329,7 +1404,7 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             await_partial,
             params,
         });
@@ -1366,7 +1441,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1402,7 +1477,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1438,7 +1513,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1474,7 +1549,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1504,7 +1579,7 @@ impl DataActorCore {
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1529,7 +1604,7 @@ impl DataActorCore {
             client_id,
             venue,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1555,7 +1630,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1581,7 +1656,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1610,7 +1685,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1636,7 +1711,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1662,7 +1737,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1688,7 +1763,7 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1714,7 +1789,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1740,7 +1815,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1766,7 +1841,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1792,7 +1867,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1819,7 +1894,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1827,7 +1902,7 @@ impl DataActorCore {
             client_id,
             data_type,
             request_id,
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -1864,7 +1939,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1911,7 +1986,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1963,7 +2038,7 @@ impl DataActorCore {
             depth,
             client_id,
             request_id,
-            ts_init: self.generate_ts_init(),
+            ts_init: self.generate_timestamp_ns(),
             params,
         });
 
@@ -2001,7 +2076,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2050,7 +2125,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2099,7 +2174,7 @@ impl DataActorCore {
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2148,6 +2223,61 @@ fn check_timestamps(
     }
 
     Ok(())
+}
+
+impl Component for DataActorCore {
+    fn id(&self) -> ComponentId {
+        ComponentId::new(self.actor_id.inner().as_str())
+    }
+
+    fn state(&self) -> ComponentState {
+        self.state
+    }
+
+    fn is_running(&self) -> bool {
+        self.state == ComponentState::Running
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.state == ComponentState::Stopped
+    }
+
+    fn is_disposed(&self) -> bool {
+        self.state == ComponentState::Disposed
+    }
+
+    fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        self.register(trader_id, clock, cache)
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        self.start()
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        self.stop()
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.reset()
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        self.dispose()
+    }
+
+    fn handle_event(&mut self, event: TimeEvent) {
+        self.handle_time_event(&event);
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 fn log_error(e: &anyhow::Error) {

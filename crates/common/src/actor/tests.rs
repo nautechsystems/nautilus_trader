@@ -34,7 +34,7 @@ use nautilus_model::{
         stubs::{stub_instrument_close, stub_instrument_status},
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ClientId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, TraderId, Venue},
     instruments::{
         CurrencyPair, InstrumentAny,
         stubs::{audusd_sim, gbpusd_sim},
@@ -49,7 +49,7 @@ use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::TestClock,
     enums::ComponentState,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
@@ -69,6 +69,7 @@ use crate::{
     timer::TimeEvent,
 };
 
+#[derive(Debug)]
 struct TestDataActor {
     core: DataActorCore,
     pub received_time_events: Vec<TimeEvent>,
@@ -116,6 +117,10 @@ impl Actor for TestDataActor {
 
 // Implement DataActor trait overriding handlers as required
 impl DataActor for TestDataActor {
+    fn actor_id(&self) -> ActorId {
+        self.core.actor_id()
+    }
+
     fn state(&self) -> ComponentState {
         self.core.state()
     }
@@ -211,13 +216,9 @@ impl DataActor for TestDataActor {
 
 // Custom functionality as required
 impl TestDataActor {
-    pub fn new(
-        config: DataActorConfig,
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
-    ) -> Self {
+    pub fn new(config: DataActorConfig) -> Self {
         Self {
-            core: DataActorCore::new(config, cache, clock),
+            core: DataActorCore::new(config),
             received_time_events: Vec::new(),
             received_instruments: Vec::new(),
             received_data: Vec::new(),
@@ -299,10 +300,10 @@ fn register_data_actor(
     // Ensure clean message bus state for this actor's subscriptions
     let bus = get_message_bus();
     *bus.borrow_mut() = MessageBus::default();
-    let mut actor = TestDataActor::new(config, cache, clock);
+    let mut actor = TestDataActor::new(config);
+    actor.register(trader_id, clock, cache).unwrap();
+
     let actor_id = actor.actor_id;
-    actor.set_trader_id(trader_id);
-    actor.initialize().unwrap();
 
     let actor_rc = Rc::new(UnsafeCell::new(actor));
     register_actor(actor_rc);

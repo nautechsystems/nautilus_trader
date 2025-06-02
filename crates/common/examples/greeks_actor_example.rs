@@ -31,9 +31,14 @@ use nautilus_common::{
     enums::ComponentState,
     greeks::GreeksCalculator,
 };
-use nautilus_model::{data::greeks::GreeksData, enums::PositionSide, identifiers::InstrumentId};
+use nautilus_model::{
+    data::greeks::GreeksData,
+    enums::PositionSide,
+    identifiers::{ActorId, InstrumentId, TraderId},
+};
 
 /// A custom actor that uses the `GreeksCalculator`.
+#[derive(Debug)]
 struct GreeksActor {
     core: DataActorCore,
     greeks_calculator: GreeksCalculator,
@@ -43,10 +48,10 @@ impl GreeksActor {
     /// Creates a new [`GreeksActor`] instance.
     pub fn new(
         config: DataActorConfig,
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<LiveClock>>,
+        cache: Rc<RefCell<Cache>>, // TODO: Change to standard registration pattern
+        clock: Rc<RefCell<LiveClock>>, // TODO: Change to standard registration pattern
     ) -> Self {
-        let core = DataActorCore::new(config, cache.clone(), clock.clone());
+        let core = DataActorCore::new(config);
 
         // Create the GreeksCalculator with the same clock and cache
         let greeks_calculator = GreeksCalculator::new(cache, clock);
@@ -71,7 +76,7 @@ impl GreeksActor {
         let use_cached_greeks = false;
         let cache_greeks = true;
         let publish_greeks = true;
-        let ts_event = self.core.clock.borrow().timestamp_ns();
+        let ts_event = self.core.generate_timestamp_ns();
         let position = None;
         let percent_greeks = false;
         let index_instrument_id = None;
@@ -181,6 +186,10 @@ impl DerefMut for GreeksActor {
 }
 
 impl DataActor for GreeksActor {
+    fn actor_id(&self) -> ActorId {
+        self.core.actor_id()
+    }
+
     fn state(&self) -> ComponentState {
         self.core.state()
     }
@@ -213,8 +222,11 @@ fn main() -> anyhow::Result<()> {
     // Create actor config
     let config = DataActorConfig::default();
 
+    let trader_id = TraderId::from("TRADER-001");
+
     // Create the GreeksActor
-    let mut actor = GreeksActor::new(config, cache, clock);
+    let mut actor = GreeksActor::new(config, cache.clone(), clock.clone()); // TODO: Change to registration pattern
+    actor.register(trader_id, clock, cache).unwrap();
 
     // Start the actor
     actor.start()?;
