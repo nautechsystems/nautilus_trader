@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 
 ### Documentation Updates
 None
