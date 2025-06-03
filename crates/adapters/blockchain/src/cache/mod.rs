@@ -66,11 +66,13 @@ impl BlockchainCache {
     }
 
     /// Returns the highest block number currently cached, if any.
+    #[must_use]
     pub fn last_cached_block_number(&self) -> Option<u64> {
         self.block_timestamps.last_key_value().map(|(k, _)| *k)
     }
 
     /// Returns the timestamp for the specified block number if it exists in the cache.
+    #[must_use]
     pub fn get_block_timestamp(&self, block_number: u64) -> Option<&UnixNanos> {
         self.block_timestamps.get(&block_number)
     }
@@ -89,7 +91,7 @@ impl BlockchainCache {
         }
         self.load_tokens().await?;
         if let Err(e) = self.load_blocks(from_block).await {
-            log::error!("Error loading blocks from database: {}", e);
+            log::error!("Error loading blocks from database: {e}");
         }
         Ok(())
     }
@@ -115,8 +117,8 @@ impl BlockchainCache {
 
     /// Adds a liquidity pool/pair to the cache.
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
-        let pool_address = pool.address.clone();
-        log::info!("Adding dex pool {} to the cache", pool_address.to_string());
+        let pool_address = pool.address;
+        log::info!("Adding dex pool {pool_address} to the cache");
         if let Some(database) = &self.database {
             database.add_pool(&pool).await?;
         }
@@ -158,11 +160,10 @@ impl BlockchainCache {
                 let last = block_timestamps.last().unwrap().number;
                 let expected_len = (last - first + 1) as usize;
                 if block_timestamps.len() != expected_len {
-                    return Err(anyhow::anyhow!(
-                        "Block timestamps are not consistent and sequential. Expected {} blocks but got {}",
-                        expected_len,
+                    anyhow::bail!(
+                        "Block timestamps are not consistent and sequential. Expected {expected_len} blocks but got {}",
                         block_timestamps.len()
-                    ));
+                    );
                 }
             }
 

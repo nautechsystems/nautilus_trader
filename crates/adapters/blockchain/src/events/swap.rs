@@ -40,7 +40,8 @@ pub struct SwapEvent {
 
 impl SwapEvent {
     /// Creates a new [`SwapEvent`] instance with the specified parameters.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         block_number: u64,
         sender: Address,
         receiver: Address,
