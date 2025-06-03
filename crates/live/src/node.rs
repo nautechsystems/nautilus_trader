@@ -23,6 +23,7 @@ use nautilus_common::{
     actor::DataActor, clock::LiveClock, component::Component, enums::Environment,
 };
 use nautilus_core::UUID4;
+use nautilus_data::client::DataClientAdapter;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
     config::NautilusKernelConfig,
@@ -377,26 +378,66 @@ impl LiveNodeBuilder {
     /// Build the [`LiveNode`] with the configured settings.
     ///
     /// This will:
-    /// 1. Build the underlying kernel
-    /// 2. Register all client factories
-    /// 3. Create and register all clients
+    /// 1. Build the underlying kernel.
+    /// 2. Register all client factories.
+    /// 3. Create and register all clients.
     ///
     /// # Errors
     ///
     /// Returns an error if node construction fails.
-    pub fn build(self) -> anyhow::Result<LiveNode> {
-        // TODO: Register client factories and create clients
-        // This would involve:
-        // 1. Creating clients using factories and configs
-        // 2. Registering clients with the data/execution engines
-        // 3. Setting up routing configurations
+    pub fn build(mut self) -> anyhow::Result<LiveNode> {
+        log::info!(
+            "Building LiveNode with {} data clients",
+            self.data_client_factories.len()
+        );
+
+        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        let mut kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
+        let runner = AsyncRunner::new(clock.clone());
+
+        // Create and register data clients
+        for (name, factory) in self.data_client_factories.into_iter() {
+            if let Some(config) = self.data_client_configs.remove(&name) {
+                log::info!("Creating data client '{name}'");
+
+                let client =
+                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+
+                log::info!("Registering data client '{name}' with data engine");
+
+                let client_id = client.client_id();
+                let venue = client.venue();
+                let adapter = DataClientAdapter::new(
+                    client_id, venue, true, // handles_order_book_deltas
+                    true, // handles_order_book_snapshots
+                    client,
+                );
+
+                kernel.data_engine.register_client(adapter, venue);
+                log::info!("Successfully registered data client '{name}' ({client_id})");
+            } else {
+                log::warn!("No config found for data client factory '{name}'");
+            }
+        }
+
+        // Create and register execution clients
+        for (name, factory) in self.exec_client_factories.into_iter() {
+            if let Some(config) = self.exec_client_configs.remove(&name) {
+                log::info!("Creating execution client '{name}'");
+
+                let client =
+                    factory.create(&name, config.as_ref(), kernel.cache(), kernel.clock())?;
+
+                log::info!("Registering execution client '{name}' with execution engine");
+
+                // TODO: Implement when ExecutionEngine has a register_client method
+                // kernel.exec_engine().register_client(client);
+            } else {
+                log::warn!("No config found for execution client factory '{name}'");
+            }
+        }
 
         log::info!("LiveNode built successfully");
-
-        // Create kernel directly with the config
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
-        let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
 
         Ok(LiveNode {
             clock,

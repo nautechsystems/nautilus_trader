@@ -720,19 +720,60 @@ where
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        Component::start(self.deref_mut())
+        self.deref_mut().transition_state(ComponentTrigger::Start)?; // -> Starting
+
+        if let Err(e) = DataActor::on_start(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.deref_mut()
+            .transition_state(ComponentTrigger::StartCompleted)?;
+
+        Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        Component::stop(self.deref_mut())
+        self.deref_mut().transition_state(ComponentTrigger::Stop)?; // -> Stopping
+
+        if let Err(e) = DataActor::on_stop(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.deref_mut()
+            .transition_state(ComponentTrigger::StopCompleted)?;
+
+        Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        Component::reset(self.deref_mut())
+        self.deref_mut().transition_state(ComponentTrigger::Reset)?; // -> Resetting
+
+        if let Err(e) = DataActor::on_reset(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.deref_mut()
+            .transition_state(ComponentTrigger::ResetCompleted)?;
+
+        Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        Component::dispose(self.deref_mut())
+        self.deref_mut()
+            .transition_state(ComponentTrigger::Dispose)?; // -> Disposing
+
+        if let Err(e) = DataActor::on_dispose(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.deref_mut()
+            .transition_state(ComponentTrigger::DisposeCompleted)?;
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: TimeEvent) {
@@ -2256,19 +2297,55 @@ impl Component for DataActorCore {
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        self.start()
+        self.transition_state(ComponentTrigger::Start)?; // -> Starting
+
+        if let Err(e) = DataActor::on_start(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.transition_state(ComponentTrigger::StartCompleted)?;
+
+        Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        self.stop()
+        self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
+
+        if let Err(e) = DataActor::on_stop(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.transition_state(ComponentTrigger::StopCompleted)?;
+
+        Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        self.reset()
+        self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
+
+        if let Err(e) = DataActor::on_reset(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.transition_state(ComponentTrigger::ResetCompleted)?;
+
+        Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        self.dispose()
+        self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
+
+        if let Err(e) = DataActor::on_dispose(self) {
+            log_error(&e);
+            return Err(e); // Halt state transition
+        }
+
+        self.transition_state(ComponentTrigger::DisposeCompleted)?;
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: TimeEvent) {
