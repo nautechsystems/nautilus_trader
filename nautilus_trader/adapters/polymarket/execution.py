@@ -275,7 +275,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             asset_type=AssetType.COLLATERAL,
             signature_type=self._config.signature_type,
         )
-        response = await asyncio.to_thread(
+        response: dict[str, Any] = await asyncio.to_thread(
             self._http_client.get_balance_allowance,
             params,
         )
@@ -490,17 +490,17 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(command.client_order_id) if command.client_order_id else ''} "
-            f"{repr(venue_order_id) if venue_order_id else ''}",
+            f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
         )
 
         retry_manager = await self._retry_manager_pool.acquire()
         try:
             response: JSON | None = await retry_manager.run(
                 "generate_order_status_report",
-                [command.client_order_id, venue_order_id],
+                [command.client_order_id, command.venue_order_id],
                 asyncio.to_thread,
                 self._http_client.get_order,
-                order_id=venue_order_id.value,
+                order_id=command.venue_order_id.value,
             )
             if not response:
                 return None
