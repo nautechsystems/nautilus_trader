@@ -31,7 +31,7 @@ pub mod position;
 pub mod reports;
 pub mod types;
 
-/// Loaded as nautilus_pyo3.model
+/// Loaded as `nautilus_pyo3.model`.
 ///
 /// # Errors
 ///

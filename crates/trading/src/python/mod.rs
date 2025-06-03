@@ -17,7 +17,7 @@ pub mod sessions;
 
 use pyo3::{prelude::*, pymodule};
 
-/// Loaded as `nautilus_pyo3.trading`
+/// Loaded as `nautilus_pyo3.trading`.
 ///
 /// # Errors
 ///
