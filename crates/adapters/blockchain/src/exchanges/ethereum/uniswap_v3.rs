@@ -131,12 +131,12 @@ fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
 
     let sender = match log.topics.get(1).and_then(|t| t.as_ref()) {
         Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => return Err(anyhow::anyhow!("Missing sender address in topic1")),
+        None => anyhow::bail!("Missing sender address in topic1"),
     };
 
     let recipient = match log.topics.get(2).and_then(|t| t.as_ref()) {
         Some(topic) => Address::from_slice(&topic.as_ref()[12..32]),
-        None => return Err(anyhow::anyhow!("Missing recipient address in topic2")),
+        None => anyhow::bail!("Missing recipient address in topic2"),
     };
 
     if let Some(data) = log.data {
@@ -144,13 +144,13 @@ fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
 
         // Validate if data contains 5 parameters of 32 bytes each
         if data_bytes.len() < 5 * 32 {
-            return Err(anyhow::anyhow!("Swap event data is too short"));
+            anyhow::bail!("Swap event data is too short");
         }
 
         // Decode the data using the SwapEventData struct
-        let decoded = match <SwapEventData as SolType>::abi_decode(&data_bytes) {
+        let decoded = match <SwapEventData as SolType>::abi_decode(data_bytes) {
             Ok(decoded) => decoded,
-            Err(e) => return Err(anyhow::anyhow!("Failed to decode swap event data: {}", e)),
+            Err(e) => anyhow::bail!("Failed to decode swap event data: {e}"),
         };
         decoded.amount0;
 
@@ -170,11 +170,11 @@ fn parse_swap_event(log: Log) -> anyhow::Result<SwapEvent> {
 fn convert_amount_to_f64(amount: I256, decimals: u8) -> f64 {
     let amount_str = amount.to_string();
     let amount_f64: f64 = amount_str.parse().expect("Failed to parse I256 to f64");
-    let factor = 10f64.powi(decimals as i32);
+    let factor = 10f64.powi(i32::from(decimals));
     amount_f64 / factor
 }
 
-/// https://blog.uniswap.org/uniswap-v3-math-primer
+/// <https://blog.uniswap.org/uniswap-v3-math-primer>
 fn calculate_price_from_sqrt_price(
     sqrt_price_x96: U160,
     token0_decimals: u8,
@@ -186,8 +186,8 @@ fn calculate_price_from_sqrt_price(
         .to_string()
         .parse()
         .expect("Failed to parse U256 to f64");
-    let token0_multiplier = 10u128.pow(token0_decimals as u32);
-    let token1_multiplier = 10u128.pow(token1_decimals as u32);
+    let token0_multiplier = 10u128.pow(u32::from(token0_decimals));
+    let token1_multiplier = 10u128.pow(u32::from(token1_decimals));
     let factor = token1_multiplier as f64 / token0_multiplier as f64;
     factor / price
 }

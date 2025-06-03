@@ -99,14 +99,14 @@ impl BlockchainCacheDatabase {
         from_block: u64,
     ) -> anyhow::Result<Vec<BlockTimestampRow>> {
         sqlx::query_as::<_, BlockTimestampRow>(
-            r#"
+            r"
             SELECT DISTINCT ON (block.chain_id, number)
                 number,
                 timestamp
             FROM block
             WHERE chain_id = $1 AND number >= $2
             ORDER BY number ASC
-            "#,
+            ",
         )
         .bind(chain.chain_id as i32)
         .bind(from_block as i64)

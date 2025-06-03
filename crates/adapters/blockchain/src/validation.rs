@@ -29,19 +29,16 @@ use alloy::primitives::Address;
 pub fn validate_address(address: &str) -> anyhow::Result<Address> {
     // Check if the address starts with "0x"
     if !address.starts_with("0x") {
-        return Err(anyhow::anyhow!(
-            "Ethereum address must start with '0x': {}",
-            address
-        ));
+        anyhow::bail!("Ethereum address must start with '0x': {address}");
     }
 
     // Check if the address is valid
     let parsed_address = Address::from_str(address)
-        .map_err(|err| anyhow::anyhow!("Blockchain address '{}' is incorrect: {}", address, err))?;
+        .map_err(|e| anyhow::anyhow!("Blockchain address '{address}' is incorrect: {e}"))?;
 
     // Check if checksum is valid
     Address::parse_checksummed(address, None)
-        .map_err(|_| anyhow::anyhow!("Blockchain address '{}' has incorrect checksum", address))?;
+        .map_err(|_| anyhow::anyhow!("Blockchain address '{address}' has incorrect checksum"))?;
 
     Ok(parsed_address)
 }

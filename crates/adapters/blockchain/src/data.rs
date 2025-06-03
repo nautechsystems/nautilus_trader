@@ -201,26 +201,19 @@ impl BlockchainDataClient {
         let pool_address = validate_address(&pool_address)?;
         let pool = match self.cache.get_pool(&pool_address) {
             Some(pool) => pool,
-            None => return Err(anyhow::anyhow!("Pool {} is not registered", pool_address)),
+            None => anyhow::bail!("Pool {pool_address} is not registered"),
         };
 
         if dex_extended.parse_swap_event_fn.is_none() {
-            return Err(anyhow::anyhow!(
-                "Swap event parsing function is not set for dex {}",
-                dex_id
-            ));
+            anyhow::bail!("Swap event parsing function is not set for dex {dex_id}");
         }
 
         if dex_extended.convert_to_trade_data_fn.is_none() {
-            return Err(anyhow::anyhow!(
-                "Trade data conversion function is not set for dex {}",
-                dex_id
-            ));
+            anyhow::bail!("Trade data conversion function is not set for dex {dex_id}");
         }
 
-        let from_block = from_block
-            .map(|block| max(block, pool.creation_block))
-            .unwrap_or(pool.creation_block);
+        let from_block =
+            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
         let swap_event_signature = dex_extended.swap_created_event.as_ref();
         let parse_swap_event_fn = dex_extended.parse_swap_event_fn.as_ref().unwrap();
         let convert_to_trade_data_fn = dex_extended.convert_to_trade_data_fn.as_ref().unwrap();
@@ -240,15 +233,16 @@ impl BlockchainDataClient {
         while let Some(log) = swaps_stream.next().await {
             match parse_swap_event_fn(log) {
                 Ok(swap_event) => {
-                    let timestamp = match self.cache.get_block_timestamp(swap_event.block_number) {
-                        Some(num) => num,
-                        None => {
-                            log::error!(
-                                "Missing block timestamp for block {} while processing swap event in the cache",
-                                swap_event.block_number
-                            );
-                            continue;
-                        }
+                    let timestamp = if let Some(num) =
+                        self.cache.get_block_timestamp(swap_event.block_number)
+                    {
+                        num
+                    } else {
+                        log::error!(
+                            "Missing block timestamp for block {} while processing swap event in the cache",
+                            swap_event.block_number
+                        );
+                        continue;
                     };
                     let (order_side, size, price) =
                         convert_to_trade_data_fn(&pool.token0, &pool.token1, &swap_event)
@@ -259,7 +253,7 @@ impl BlockchainDataClient {
                         dex_extended.dex.clone(),
                         pool.clone(),
                         swap_event.block_number,
-                        timestamp.clone(),
+                        *timestamp,
                         swap_event.sender,
                         order_side,
                         size,
@@ -267,7 +261,7 @@ impl BlockchainDataClient {
                     );
                     self.cache.add_swap(swap).await?;
                 }
-                Err(e) => log::error!("Error processing swap event: {}", e),
+                Err(e) => log::error!("Error processing swap event: {e}"),
             }
         }
         log::info!("Finished syncing pool swaps");
@@ -288,10 +282,7 @@ impl BlockchainDataClient {
 
         // Parsing of pool-created events should be defined in the DEX implementation.
         if dex.parse_pool_created_event_fn.is_none() {
-            return Err(anyhow::anyhow!(
-                "Pool created event parsing function not set for dex {}",
-                dex_id
-            ));
+            anyhow::bail!("Pool created event parsing function not set for dex {dex_id}");
         }
 
         let parse_pool_created_event_fn = dex.parse_pool_created_event_fn.as_ref().unwrap();
@@ -316,7 +307,7 @@ impl BlockchainDataClient {
                     self.process_token(pool.token1.to_string()).await?;
                     self.process_pool(&dex.dex, pool).await?;
                 }
-                Err(e) => log::error!("Error processing pool created event: {}", e),
+                Err(e) => log::error!("Error processing pool created event: {e}"),
             }
         }
         Ok(())

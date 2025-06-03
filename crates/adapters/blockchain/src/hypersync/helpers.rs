@@ -19,16 +19,12 @@ pub fn validate_event_signature_hash(
     event_signature_hash: &str,
     log: &hypersync_client::simple_types::Log,
 ) -> anyhow::Result<()> {
-    if let Some(topic) = log.topics.get(0).and_then(|t| t.as_ref()) {
+    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
         if hex::encode(topic) != event_signature_hash {
-            return Err(anyhow::anyhow!(
-                "Invalid event signature for event '{event_name}'"
-            ));
+            anyhow::bail!("Invalid event signature for event '{event_name}'");
         }
     } else {
-        return Err(anyhow::anyhow!(
-            "Missing event signature in topic0 for event '{event_name}'"
-        ));
+        anyhow::bail!("Missing event signature in topic0 for event '{event_name}'");
     }
     Ok(())
 }
