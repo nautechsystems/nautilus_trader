@@ -26,7 +26,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
-    actor::DataActorCore,
+    actor::DataActor,
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
@@ -229,43 +229,31 @@ impl Trader {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `actor` does not properly implement the `DataActor` trait.
     /// - The trader is not in a valid state for adding components.
     /// - An actor with the same ID is already registered.
-    pub fn add_actor(&mut self, mut actor: Box<dyn Component>) -> anyhow::Result<()> {
+    pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    where
+        T: DataActor + Component + 'static,
+    {
         self.validate_component_registration()?;
 
-        let actor_ref: &DataActorCore =
-            actor
-                .as_any()
-                .downcast_ref::<DataActorCore>()
-                .ok_or_else(|| {
-                    let ty = std::any::type_name_of_val(actor.as_any());
-                    if !ty.contains("DataActor") && !ty.contains("TestDataActor") {
-                        log::warn!(
-                            "Component '{}' (type: {ty}) may not be a DataActor – \
-                     ensure it implements the DataActor trait",
-                            actor.id()
-                        );
-                    }
-                    anyhow::anyhow!("Component '{}' is not a DataActor (type: {ty})", actor.id())
-                })?;
-
-        let actor_id = actor_ref.actor_id;
+        let actor_id = actor.actor_id();
 
         // Check for duplicate registration
         if self.actors.contains_key(&actor_id) {
             anyhow::bail!("Actor '{actor_id}' is already registered");
         }
 
+        let mut component: Box<dyn Component> = Box::new(actor);
+
         let component_clock = self.create_component_clock();
-        let component_id = actor.id();
+        let component_id = component.id();
         self.component_clocks
             .insert(component_id, component_clock.clone());
 
-        actor.register(self.trader_id, component_clock, self.cache.clone())?;
+        component.register(self.trader_id, component_clock, self.cache.clone())?;
 
-        self.actors.insert(actor_id, actor);
+        self.actors.insert(actor_id, component);
         log::info!("Registered actor '{actor_id}'");
 
         Ok(())
@@ -817,9 +805,8 @@ mod tests {
 
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
-        let actor = Box::new(DataActorCore::new(DataActorConfig::default()));
+        let actor = DataActorCore::new(DataActorConfig::default());
         let actor_id = actor.actor_id();
-        let actor: Box<dyn Component> = actor;
 
         let result = trader.add_actor(actor);
         assert!(result.is_ok());
@@ -839,8 +826,8 @@ mod tests {
 
         let mut config = DataActorConfig::default();
         config.actor_id = Some(ActorId::from("TestActor"));
-        let actor1: Box<dyn Component> = Box::new(DataActorCore::new(config.clone()));
-        let actor2: Box<dyn Component> = Box::new(DataActorCore::new(config));
+        let actor1 = DataActorCore::new(config.clone());
+        let actor2 = DataActorCore::new(config);
 
         // First addition should succeed
         assert!(trader.add_actor(actor1).is_ok());
@@ -906,7 +893,7 @@ mod tests {
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
         // Add components
-        let actor: Box<dyn Component> = Box::new(DataActorCore::new(DataActorConfig::default()));
+        let actor = DataActorCore::new(DataActorConfig::default());
         let strategy = Box::new(MockComponent::new("Test-Strategy"));
         let exec_algorithm = Box::new(MockComponent::new("TestExecAlgorithm"));
 
@@ -986,7 +973,7 @@ mod tests {
         // Simulate running state
         trader.state = ComponentState::Running;
 
-        let actor: Box<dyn Component> = Box::new(DataActorCore::new(DataActorConfig::default()));
+        let actor = DataActorCore::new(DataActorConfig::default());
         let result = trader.add_actor(actor);
         assert!(result.is_err());
         assert!(
