@@ -33,7 +33,8 @@ use crate::{
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "TestClock"
+    name = "TestClock",
+    unsendable
 )]
 #[derive(Debug)]
 pub struct TestClock_Py(Box<TestClock>);
@@ -126,7 +127,8 @@ impl TestClock_Py {
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "LiveClock"
+    name = "LiveClock",
+    unsendable
 )]
 #[derive(Debug)]
 pub struct LiveClock_Py(Box<LiveClock>);
