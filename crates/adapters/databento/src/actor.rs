@@ -110,7 +110,6 @@ impl DataActor for DatabentoSubscriberActor {
             self.config.instrument_ids.len()
         );
 
-        // Clone config values to avoid borrowing issues
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
@@ -124,6 +123,28 @@ impl DataActor for DatabentoSubscriberActor {
         }
 
         log::info!("Databento subscriber actor started successfully");
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        log::info!(
+            "Stopping Databento subscriber actor for {} instruments",
+            self.config.instrument_ids.len()
+        );
+
+        let instrument_ids = self.config.instrument_ids.clone();
+        let client_id = self.config.client_id;
+
+        // Unsubscribe to quotes and trades for each instrument
+        for instrument_id in instrument_ids {
+            log::info!("Unsubscribing from quotes for {instrument_id}");
+            self.unsubscribe_quotes::<Self>(instrument_id, Some(client_id), None);
+
+            log::info!("Unsubscribing from trades for {instrument_id}");
+            self.unsubscribe_trades::<Self>(instrument_id, Some(client_id), None);
+        }
+
+        log::info!("Databento subscriber actor stopped successfully");
         Ok(())
     }
 

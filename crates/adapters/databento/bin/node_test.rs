@@ -89,8 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     node.start().await?;
 
-    // Let it run briefly to ensure all components are properly initialized
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
     node.stop().await?;
 
