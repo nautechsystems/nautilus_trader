@@ -23,7 +23,7 @@ use pyo3::{
 ///
 /// # Returns
 ///
-/// Returns the extracted string value or a PyErr if the key is missing or extraction fails.
+/// Returns the extracted string value or a `PyErr` if the key is missing or extraction fails.
 ///
 /// # Errors
 ///
@@ -38,7 +38,7 @@ pub fn get_required_string(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Stri
 ///
 /// # Returns
 ///
-/// Returns the extracted value or a PyErr if the key is missing or extraction fails.
+/// Returns the extracted value or a `PyErr` if the key is missing or extraction fails.
 ///
 /// # Errors
 ///
@@ -57,7 +57,7 @@ where
 /// # Returns
 ///
 /// Returns Some(value) if the key exists and extraction succeeds, None if the key is missing
-/// or if the value is Python None, or a PyErr if extraction fails.
+/// or if the value is Python None, or a `PyErr` if extraction fails.
 ///
 /// # Errors
 ///
@@ -82,7 +82,7 @@ where
 ///
 /// # Returns
 ///
-/// Returns the parsed value or a PyErr if the key is missing, extraction fails, or parsing fails.
+/// Returns the parsed value or a `PyErr` if the key is missing, extraction fails, or parsing fails.
 ///
 /// # Errors
 ///
@@ -99,8 +99,8 @@ where
 ///
 /// # Returns
 ///
-/// Returns Some(parsed_value) if the key exists and parsing succeeds, None if the key is missing
-/// or if the value is Python None, or a PyErr if extraction or parsing fails.
+/// Returns `Some(parsed_value)` if the key exists and parsing succeeds, None if the key is missing
+/// or if the value is Python None, or a `PyErr` if extraction or parsing fails.
 ///
 /// # Errors
 ///
@@ -128,11 +128,11 @@ where
     }
 }
 
-/// Helper function to get a required PyList from a Python dictionary.
+/// Helper function to get a required `PyList` from a Python dictionary.
 ///
 /// # Returns
 ///
-/// Returns the extracted PyList or a PyErr if the key is missing or extraction fails.
+/// Returns the extracted `PyList` or a `PyErr` if the key is missing or extraction fails.
 ///
 /// # Errors
 ///

@@ -1026,7 +1026,7 @@ mod tests {
             instance_id,
             Environment::Live,
             clock.clone(),
-            cache.clone(),
+            cache,
         );
 
         let live_clock = trader_live.create_component_clock();
