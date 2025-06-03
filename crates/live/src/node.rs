@@ -140,7 +140,7 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
-    pub async fn run_async(&mut self) -> anyhow::Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         self.start().await?;
 
         // Set up signal handling
