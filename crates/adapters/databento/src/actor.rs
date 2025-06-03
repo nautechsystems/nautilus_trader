@@ -55,7 +55,7 @@ impl DatabentoSubscriberActorConfig {
 
 /// A basic Databento subscriber actor that subscribes to quotes and trades.
 ///
-/// This actor demonstrates how to use the DataActor trait to subscribe to market data
+/// This actor demonstrates how to use the `DataActor` trait to subscribe to market data
 /// from Databento for specified instruments. It logs received quotes and trades to
 /// demonstrate the data flow.
 #[derive(Debug)]
@@ -117,10 +117,10 @@ impl DataActor for DatabentoSubscriberActor {
         // Subscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
             log::info!("Subscribing to quotes for {instrument_id}");
-            self.subscribe_quotes::<DatabentoSubscriberActor>(instrument_id, Some(client_id), None);
+            self.subscribe_quotes::<Self>(instrument_id, Some(client_id), None);
 
             log::info!("Subscribing to trades for {instrument_id}");
-            self.subscribe_trades::<DatabentoSubscriberActor>(instrument_id, Some(client_id), None);
+            self.subscribe_trades::<Self>(instrument_id, Some(client_id), None);
         }
 
         log::info!("Databento subscriber actor started successfully");
@@ -154,13 +154,13 @@ impl DatabentoSubscriberActor {
 
     /// Returns the number of quotes received by this actor.
     #[must_use]
-    pub fn quote_count(&self) -> usize {
+    pub const fn quote_count(&self) -> usize {
         self.received_quotes.len()
     }
 
     /// Returns the number of trades received by this actor.
     #[must_use]
-    pub fn trade_count(&self) -> usize {
+    pub const fn trade_count(&self) -> usize {
         self.received_trades.len()
     }
 }

@@ -64,7 +64,7 @@ pub struct DatabentoDataClientConfig {
 impl DatabentoDataClientConfig {
     /// Creates a new [`DatabentoDataClientConfig`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         api_key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
@@ -152,7 +152,7 @@ impl DatabentoDataClient {
     fn get_dataset_for_venue(&self, venue: Venue) -> anyhow::Result<String> {
         self.loader
             .get_dataset_for_venue(&venue)
-            .map(|dataset| dataset.to_string())
+            .map(ToString::to_string)
             .ok_or_else(|| anyhow::anyhow!("No dataset found for venue: {venue}"))
     }
 
@@ -512,8 +512,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -554,8 +553,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -596,8 +594,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
@@ -638,8 +635,7 @@ impl DataClient for DatabentoDataClient {
                 symbols,
                 start: request
                     .start
-                    .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |dt| dt.timestamp_nanos_opt().unwrap_or(0) as u64)
                     .into(),
                 end: request
                     .end
