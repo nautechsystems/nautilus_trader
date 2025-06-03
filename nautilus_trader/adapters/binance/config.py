@@ -37,7 +37,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will source the `BINANCE_API_KEY` or
         `BINANCE_TESTNET_API_KEY` environment variables.
     api_secret : str, optional
-        The Binance API public key.
+        The Binance API secret key.
         If ``None`` then will source the `BINANCE_API_SECRET` or
         `BINANCE_TESTNET_API_SECRET` environment variables.
     key_type : BinanceKeyType, default 'HMAC'
@@ -86,9 +86,9 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If ``None`` then will source the `BINANCE_API_KEY` or
         `BINANCE_TESTNET_API_KEY` environment variables.
     api_secret : str, optional
-        The Binance API public key.
-        If ``None`` then will source the `BINANCE_API_KEY` or
-        `BINANCE_TESTNET_API_KEY` environment variables.
+        The Binance API secret key.
+        If ``None`` then will source the `BINANCE_API_SECRET` or
+        `BINANCE_TESTNET_API_SECRET` environment variables.
     key_type : BinanceKeyType, default 'HMAC'
         The private key cryptographic algorithm type.
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
