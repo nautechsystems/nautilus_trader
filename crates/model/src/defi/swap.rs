@@ -15,7 +15,7 @@
 
 use std::fmt::Display;
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
 
 use crate::{

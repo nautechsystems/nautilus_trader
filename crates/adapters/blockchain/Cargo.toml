@@ -57,7 +57,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-alloy = { workspace = true }
+alloy = "1.0.9"
 hypersync-client = { version = "0.18.2", optional = true }
 hypersync-schema = { version = "0.3.0", optional = true }
 

@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 
 use crate::defi::{chain::SharedChain, dex::Dex, token::Token};
 
