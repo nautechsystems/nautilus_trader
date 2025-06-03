@@ -35,20 +35,20 @@ use ustr::Ustr;
 pub struct DatabentoSubscriberActorConfig {
     /// Base data actor configuration.
     pub base: DataActorConfig,
-    /// Instrument IDs to subscribe to.
-    pub instrument_ids: Vec<InstrumentId>,
     /// Client ID to use for subscriptions.
     pub client_id: ClientId,
+    /// Instrument IDs to subscribe to.
+    pub instrument_ids: Vec<InstrumentId>,
 }
 
 impl DatabentoSubscriberActorConfig {
     /// Creates a new [`DatabentoSubscriberActorConfig`] instance.
     #[must_use]
-    pub fn new(instrument_ids: Vec<InstrumentId>, client_id: ClientId) -> Self {
+    pub fn new(client_id: ClientId, instrument_ids: Vec<InstrumentId>) -> Self {
         Self {
             base: DataActorConfig::default(),
-            instrument_ids,
             client_id,
+            instrument_ids,
         }
     }
 }

@@ -23,9 +23,8 @@ use nautilus_databento::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
-use tokio::time::Duration;
 
-// Run with `cargo run -p nautilus-databento --bin databento-node-test --features live`
+// Run with `cargo run --bin databento-node-test --features high-precision`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -82,25 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, client_factory, databento_config)?
         .build()?;
 
-    let actor_config = DatabentoSubscriberActorConfig::new(instrument_ids, client_id);
+    let actor_config = DatabentoSubscriberActorConfig::new(client_id, instrument_ids);
     let actor = DatabentoSubscriberActor::new(actor_config);
 
     node.add_actor(actor)?;
 
-    node.start().await?;
-
-    tokio::time::sleep(Duration::from_secs(5)).await;
-
-    node.stop().await?;
+    node.run().await?;
 
     Ok(())
-}
-
-#[cfg(not(feature = "live"))]
-fn main() {
-    println!("⚠️  databento-node-test binary requires the 'live' feature to be enabled.");
-    println!(
-        "   Run with: cargo run -p nautilus-databento --bin databento-node-test --features live"
-    );
-    std::process::exit(1);
 }
