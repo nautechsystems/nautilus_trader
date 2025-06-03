@@ -485,6 +485,227 @@ class TestTestClock:
         assert event_handlers[0].event.name == "TEST_ALERT"
         assert clock.timer_count == 0
 
+    def test_set_timer_with_past_start_time_allow_past_true(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(10_000_000_000)  # Set current time to 10 seconds
+
+        name = "PAST_TIMER"
+        interval = timedelta(seconds=1)  # 1 second interval
+        past_start_time = clock.utc_now() - timedelta(seconds=5)  # 5 seconds in the past
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=past_start_time,
+            stop_time=None,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # The next event should be at start_time + n * interval where n is the smallest integer
+        # such that start_time + n * interval > current_time
+        # past_start_time = 5_000_000_000, current_time = 10_000_000_000, interval = 1_000_000_000
+        # 5_000_000_000 + n * 1_000_000_000 > 10_000_000_000 => n > 5 => n = 6
+        # So next event should be at 5_000_000_000 + 6 * 1_000_000_000 = 11_000_000_000
+        expected_next_time = 11_000_000_000
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+        # Advance to the expected time and verify the event fires
+        events = clock.advance_time(expected_next_time)
+        assert len(events) == 1
+        assert events[0].event.name == name
+        assert events[0].event.ts_event == expected_next_time
+
+        # Verify the next event is scheduled at the correct interval
+        next_expected_time = 12_000_000_000  # 11_000_000_000 + 1_000_000_000
+        next_actual_time = clock.next_time_ns(name)
+        assert next_actual_time == next_expected_time
+
+    def test_set_timer_with_past_start_time_multiple_intervals(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(25_000_000_000)  # Set current time to 25 seconds
+
+        name = "MULTI_PAST_TIMER"
+        interval = timedelta(seconds=3)  # 3 second interval
+        past_start_time = clock.utc_now() - timedelta(seconds=20)  # 20 seconds in the past
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=past_start_time,
+            stop_time=None,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # The next event should be at start_time + n * interval where n is the smallest integer
+        # such that start_time + n * interval > current_time
+        # past_start_time = 5_000_000_000, current_time = 25_000_000_000, interval = 3_000_000_000
+        # 5_000_000_000 + n * 3_000_000_000 > 25_000_000_000 => n > 6.67 => n = 7
+        # So next event should be at 5_000_000_000 + 7 * 3_000_000_000 = 26_000_000_000
+        expected_next_time = 26_000_000_000
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+        # Advance to the expected time and verify the event fires
+        events = clock.advance_time(expected_next_time)
+        assert len(events) == 1
+        assert events[0].event.name == name
+        assert events[0].event.ts_event == expected_next_time
+
+        # Verify the next event is scheduled at the correct interval
+        next_expected_time = 29_000_000_000  # 26_000_000_000 + 3_000_000_000
+        next_actual_time = clock.next_time_ns(name)
+        assert next_actual_time == next_expected_time
+
+    def test_set_timer_with_past_start_time_exact_boundary(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(10_000_000_000)  # Set current time to 10 seconds
+
+        name = "BOUNDARY_TIMER"
+        interval = timedelta(seconds=1)  # 1 second interval
+        # Set start time such that current time exactly matches an interval
+        past_start_time = clock.utc_now() - timedelta(seconds=5)  # 5 seconds in the past
+        # 5_000_000_000 + 5 * 1_000_000_000 = 10_000_000_000 (exactly current time)
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=past_start_time,
+            stop_time=None,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # Since current time exactly matches 5_000_000_000 + 5 * 1_000_000_000 = 10_000_000_000,
+        # the next event should be at 5_000_000_000 + 6 * 1_000_000_000 = 11_000_000_000
+        expected_next_time = 11_000_000_000
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+    def test_set_time_alert_with_past_time_allow_past_true(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(10_000_000_000)  # Set current time to 10 seconds
+
+        name = "PAST_ALERT"
+        past_alert_time = clock.utc_now() - timedelta(seconds=5)  # 5 seconds in the past
+        handler = []
+
+        # Act
+        clock.set_time_alert(
+            name=name,
+            alert_time=past_alert_time,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # For alerts, the next time should be current time + minimal interval (1 nanosecond)
+        # for immediate firing
+        expected_next_time = 10_000_000_001
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+        # Advance to the expected time and verify the alert fires immediately
+        events = clock.advance_time(expected_next_time)
+        assert len(events) == 1
+        assert events[0].event.name == name
+        assert events[0].event.ts_event == expected_next_time
+        assert clock.timer_count == 0  # Alert should be removed after firing
+
+    def test_set_timer_ns_with_past_start_time_allow_past_true(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(10_000_000_000)  # Set current time to 10 seconds
+
+        name = "PAST_TIMER_NS"
+        interval_ns = 1_000_000_000  # 1 second interval in nanoseconds
+        start_time_ns = 5_000_000_000  # 5 seconds in the past
+        handler = []
+
+        # Act
+        clock.set_timer_ns(
+            name=name,
+            interval_ns=interval_ns,
+            start_time_ns=start_time_ns,
+            stop_time_ns=0,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # The next event should be at start_time + n * interval where n is the smallest integer
+        # such that start_time + n * interval > current_time
+        # start_time_ns = 5_000_000_000, current_time = 10_000_000_000, interval = 1_000_000_000
+        # 5_000_000_000 + n * 1_000_000_000 > 10_000_000_000 => n > 5 => n = 6
+        # So next event should be at 5_000_000_000 + 6 * 1_000_000_000 = 11_000_000_000
+        expected_next_time = 11_000_000_000
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+        # Advance to the expected time and verify the event fires
+        events = clock.advance_time(expected_next_time)
+        assert len(events) == 1
+        assert events[0].event.name == name
+        assert events[0].event.ts_event == expected_next_time
+
+    def test_set_time_alert_ns_with_past_time_allow_past_true(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(10_000_000_000)  # Set current time to 10 seconds
+
+        name = "PAST_ALERT_NS"
+        alert_time_ns = 5_000_000_000  # 5 seconds in the past
+        handler = []
+
+        # Act
+        clock.set_time_alert_ns(
+            name=name,
+            alert_time_ns=alert_time_ns,
+            callback=handler.append,
+            allow_past=True,
+        )
+
+        # For alerts, the next time should be current time + minimal interval (1 nanosecond)
+        # for immediate firing
+        expected_next_time = 10_000_000_001
+        actual_next_time = clock.next_time_ns(name)
+
+        # Assert
+        assert clock.timer_count == 1
+        assert actual_next_time == expected_next_time
+
+        # Advance to the expected time and verify the alert fires immediately
+        events = clock.advance_time(expected_next_time)
+        assert len(events) == 1
+        assert events[0].event.name == name
+        assert events[0].event.ts_event == expected_next_time
+        assert clock.timer_count == 0  # Alert should be removed after firing
+
     def test_advance_time_with_multiple_set_time_alerts_triggers_event(self):
         # Arrange
         clock = TestClock()

@@ -275,12 +275,55 @@ impl TestTimer {
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
 
+        // Calculate the first event time as start_time + interval
+        let first_event_time = start_time_ns + interval_ns.get();
+
         Self {
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns.get(),
+            next_time_ns: first_event_time,
+            is_expired: false,
+        }
+    }
+
+    /// Creates a new [`TestTimer`] instance with current time context.
+    ///
+    /// This method calculates the proper next event time when the start time
+    /// might be in the past relative to the current time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` is not a valid string.
+    #[must_use]
+    pub fn new_with_current_time(
+        name: Ustr,
+        interval_ns: NonZeroU64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        current_time_ns: UnixNanos,
+    ) -> Self {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        // Calculate the next event time
+        let next_time_ns = if start_time_ns <= current_time_ns {
+            // Start time is in the past, calculate next valid time: start_time + n * interval > current_time
+            let elapsed = current_time_ns.as_u64() - start_time_ns.as_u64();
+            let intervals_passed = elapsed / interval_ns.get();
+            let next_interval = intervals_passed + 1;
+            UnixNanos::from(start_time_ns.as_u64() + (next_interval * interval_ns.get()))
+        } else {
+            // Start time is in the future, first event is start_time + interval
+            start_time_ns + interval_ns.get()
+        };
+
+        Self {
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns,
             is_expired: false,
         }
     }
@@ -408,6 +451,53 @@ impl LiveTimer {
         }
     }
 
+    /// Creates a new [`LiveTimer`] instance with current time context.
+    ///
+    /// This method calculates the proper next event time when the start time
+    /// might be in the past relative to the current time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` is not a valid string.
+    #[must_use]
+    #[cfg(not(feature = "clock_v2"))]
+    pub fn new_with_current_time(
+        name: Ustr,
+        interval_ns: NonZeroU64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: TimeEventCallback,
+        current_time_ns: UnixNanos,
+    ) -> Self {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        // Calculate the next event time
+        let next_time_ns = if start_time_ns <= current_time_ns {
+            // Start time is in the past, calculate next valid time: start_time + n * interval > current_time
+            let elapsed = current_time_ns.as_u64() - start_time_ns.as_u64();
+            let intervals_passed = elapsed / interval_ns.get();
+            let next_interval = intervals_passed + 1;
+            start_time_ns.as_u64() + (next_interval * interval_ns.get())
+        } else {
+            // Start time is in the future, first event is start_time + interval
+            start_time_ns.as_u64() + interval_ns.get()
+        };
+
+        log::debug!(
+            "Creating timer '{name}' with next event at {}",
+            UnixNanos::from(next_time_ns).to_rfc3339()
+        );
+        Self {
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
+            callback,
+            task_handle: None,
+        }
+    }
+
     /// Creates a new [`LiveTimer`] instance.
     ///
     /// # Panics
@@ -432,6 +522,55 @@ impl LiveTimer {
             start_time_ns,
             stop_time_ns,
             next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
+            callback,
+            heap,
+            task_handle: None,
+        }
+    }
+
+    /// Creates a new [`LiveTimer`] instance with current time context.
+    ///
+    /// This method calculates the proper next event time when the start time
+    /// might be in the past relative to the current time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` is not a valid string.
+    #[must_use]
+    #[cfg(feature = "clock_v2")]
+    pub fn new_with_current_time(
+        name: Ustr,
+        interval_ns: NonZeroU64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: TimeEventCallback,
+        heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+        current_time_ns: UnixNanos,
+    ) -> Self {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        // Calculate the next event time
+        let next_time_ns = if start_time_ns <= current_time_ns {
+            // Start time is in the past, calculate next valid time: start_time + n * interval > current_time
+            let elapsed = current_time_ns.as_u64() - start_time_ns.as_u64();
+            let intervals_passed = elapsed / interval_ns.get();
+            let next_interval = intervals_passed + 1;
+            start_time_ns.as_u64() + (next_interval * interval_ns.get())
+        } else {
+            // Start time is in the future, first event is start_time + interval
+            start_time_ns.as_u64() + interval_ns.get()
+        };
+
+        log::debug!(
+            "Creating timer '{name}' with next event at {}",
+            UnixNanos::from(next_time_ns).to_rfc3339()
+        );
+        Self {
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
             callback,
             heap,
             task_handle: None,
@@ -472,17 +611,18 @@ impl LiveTimer {
         let clock = get_atomic_clock_realtime();
         let now_ns = clock.get_time_ns();
 
-        // Check if the timer's alert time is in the past and adjust if needed
+        // Get the next time from the atomic (already calculated properly in constructor)
         let mut next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
+        let mut immediate_fire = false;
         if next_time_ns <= now_ns {
+            // This should rarely happen now since constructor calculates proper next time
             log::warn!(
-                "Timer '{}' alert time {} was in the past, adjusted to current time for immediate fire",
+                "Timer '{}' next time {} was still in the past, firing immediately",
                 event_name,
                 next_time_ns,
             );
             next_time_ns = now_ns.into();
-            self.next_time_ns
-                .store(now_ns.as_u64(), atomic::Ordering::SeqCst);
+            immediate_fire = true;
         }
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
@@ -528,7 +668,13 @@ impl LiveTimer {
                 }
 
                 // Prepare next time interval
-                next_time_ns += interval_ns;
+                if immediate_fire {
+                    // For the first event after immediate fire, set next time to now + interval
+                    next_time_ns = now_ns + interval_ns;
+                    immediate_fire = false;
+                } else {
+                    next_time_ns += interval_ns;
+                }
                 next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
                 // Check if expired

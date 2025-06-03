@@ -408,12 +408,28 @@ impl Clock for TestClock {
         if start_time_ns == 0 {
             // Zero start time indicates no explicit start; we use the current time
             start_time_ns = self.timestamp_ns();
-        } else if start_time_ns < ts_now && !allow_past {
-            anyhow::bail!(
-                "Timer '{name}' start time {} was in the past (current time is {})",
-                start_time_ns.to_rfc3339(),
-                ts_now.to_rfc3339(),
-            );
+        } else if start_time_ns < ts_now {
+            if allow_past {
+                // For timers in the past, calculate the next valid time: start_time + n * interval > now
+                let interval_ns = create_valid_interval(interval_ns);
+                let elapsed = ts_now.as_u64() - start_time_ns.as_u64();
+                let intervals_passed = elapsed / interval_ns.get();
+                let next_interval = intervals_passed + 1;
+                let next_fire_time = start_time_ns.as_u64() + (next_interval * interval_ns.get());
+
+                log::warn!(
+                    "Timer '{name}' start time {} was in the past, next fire time calculated as {}",
+                    start_time_ns.to_rfc3339(),
+                    UnixNanos::from(next_fire_time).to_rfc3339(),
+                );
+                // Don't adjust start_time_ns, let TestTimer constructor handle the proper next_time calculation
+            } else {
+                anyhow::bail!(
+                    "Timer '{name}' start time {} was in the past (current time is {})",
+                    start_time_ns.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
         }
 
         if let Some(stop_time) = stop_time_ns {
@@ -428,7 +444,13 @@ impl Clock for TestClock {
 
         let interval_ns = create_valid_interval(interval_ns);
 
-        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
+        let timer = TestTimer::new_with_current_time(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            ts_now,
+        );
         self.timers.insert(name, timer);
 
         Ok(())
@@ -699,12 +721,29 @@ impl Clock for LiveClock {
         if start_time_ns == 0 {
             // Zero start time indicates no explicit start; we use the current time
             start_time_ns = self.timestamp_ns();
-        } else if start_time_ns < ts_now && !allow_past {
-            anyhow::bail!(
-                "Timer '{name}' start time {} was in the past (current time is {})",
-                start_time_ns.to_rfc3339(),
-                ts_now.to_rfc3339(),
-            );
+        } else if start_time_ns < ts_now {
+            if allow_past {
+                // For timers in the past, calculate the next valid time: start_time + n * interval > now
+                let interval_ns_val = create_valid_interval(interval_ns);
+                let elapsed = ts_now.as_u64() - start_time_ns.as_u64();
+                let intervals_passed = elapsed / interval_ns_val.get();
+                let next_interval = intervals_passed + 1;
+                let next_fire_time =
+                    start_time_ns.as_u64() + (next_interval * interval_ns_val.get());
+
+                log::warn!(
+                    "Timer '{name}' start time {} was in the past, next fire time calculated as {}",
+                    start_time_ns.to_rfc3339(),
+                    UnixNanos::from(next_fire_time).to_rfc3339(),
+                );
+                // Don't adjust start_time_ns, let LiveTimer constructor handle the proper next_time calculation
+            } else {
+                anyhow::bail!(
+                    "Timer '{name}' start time {} was in the past (current time is {})",
+                    start_time_ns.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
         }
 
         if let Some(stop_time) = stop_time_ns {
@@ -720,16 +759,24 @@ impl Clock for LiveClock {
         let interval_ns = create_valid_interval(interval_ns);
 
         #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+        let mut timer = LiveTimer::new_with_current_time(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            ts_now,
+        );
 
         #[cfg(feature = "clock_v2")]
-        let mut timer = LiveTimer::new(
+        let mut timer = LiveTimer::new_with_current_time(
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
             callback,
             self.heap.clone(),
+            ts_now,
         );
         timer.start();
 
@@ -1012,5 +1059,171 @@ mod tests {
 
         // Verify no timer was created
         assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_timer_with_past_start_time(mut test_clock: TestClock) {
+        // Set current time to 10000
+        test_clock.set_time(UnixNanos::from(10000));
+
+        // Set timer with start time in the past (5000) and interval of 1000
+        let past_start_time = UnixNanos::from(5000);
+        let interval_ns = 1000;
+
+        test_clock
+            .set_timer_ns(
+                "past_timer",
+                interval_ns,
+                past_start_time,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // The next event should be at start_time + n * interval where n is the smallest integer
+        // such that start_time + n * interval > current_time
+        // 5000 + n * 1000 > 10000 => n > 5 => n = 6
+        // So next event should be at 5000 + 6 * 1000 = 11000
+        let expected_next_time = UnixNanos::from(11000);
+        let actual_next_time = test_clock.next_time_ns("past_timer").unwrap();
+
+        assert_eq!(actual_next_time, expected_next_time);
+
+        // Advance to the expected time and verify the event fires
+        let events = test_clock.advance_time(expected_next_time, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "past_timer");
+        assert_eq!(events[0].ts_event, expected_next_time);
+
+        // Verify the next event is scheduled at the correct interval
+        let next_expected_time = UnixNanos::from(12000); // 11000 + 1000
+        let next_actual_time = test_clock.next_time_ns("past_timer").unwrap();
+        assert_eq!(next_actual_time, next_expected_time);
+    }
+
+    #[rstest]
+    fn test_alert_with_past_time(mut test_clock: TestClock) {
+        // Set current time to 10000
+        test_clock.set_time(UnixNanos::from(10000));
+
+        // Set alert with time in the past (5000)
+        let past_alert_time = UnixNanos::from(5000);
+
+        test_clock
+            .set_time_alert_ns("past_alert", past_alert_time, None, Some(true))
+            .unwrap();
+
+        // For alerts, the next time should be current time + 1 (immediate firing with minimal interval)
+        let expected_next_time = UnixNanos::from(10001);
+        let actual_next_time = test_clock.next_time_ns("past_alert").unwrap();
+
+        assert_eq!(actual_next_time, expected_next_time);
+
+        // Advance to current time and verify the alert fires immediately
+        let events = test_clock.advance_time(expected_next_time, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "past_alert");
+        assert_eq!(events[0].ts_event, expected_next_time);
+    }
+
+    #[rstest]
+    fn test_timer_with_multiple_past_intervals(mut test_clock: TestClock) {
+        // Set current time to 25000
+        test_clock.set_time(UnixNanos::from(25000));
+
+        // Set timer with start time far in the past (5000) and interval of 3000
+        let past_start_time = UnixNanos::from(5000);
+        let interval_ns = 3000;
+
+        test_clock
+            .set_timer_ns(
+                "multi_past_timer",
+                interval_ns,
+                past_start_time,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // The next event should be at start_time + n * interval where n is the smallest integer
+        // such that start_time + n * interval > current_time
+        // 5000 + n * 3000 > 25000 => n > 6.67 => n = 7
+        // So next event should be at 5000 + 7 * 3000 = 26000
+        let expected_next_time = UnixNanos::from(26000);
+        let actual_next_time = test_clock.next_time_ns("multi_past_timer").unwrap();
+
+        assert_eq!(actual_next_time, expected_next_time);
+
+        // Advance to the expected time and verify the event fires
+        let events = test_clock.advance_time(expected_next_time, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "multi_past_timer");
+        assert_eq!(events[0].ts_event, expected_next_time);
+
+        // Verify the next event is scheduled at the correct interval
+        let next_expected_time = UnixNanos::from(29000); // 26000 + 3000
+        let next_actual_time = test_clock.next_time_ns("multi_past_timer").unwrap();
+        assert_eq!(next_actual_time, next_expected_time);
+    }
+
+    #[rstest]
+    fn test_timer_with_past_start_time_edge_case(mut test_clock: TestClock) {
+        // Set current time to exactly match a potential timer event
+        test_clock.set_time(UnixNanos::from(11000));
+
+        // Set timer with start time in the past (5000) and interval of 2000
+        let past_start_time = UnixNanos::from(5000);
+        let interval_ns = 2000;
+
+        test_clock
+            .set_timer_ns(
+                "edge_timer",
+                interval_ns,
+                past_start_time,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // The next event should be at start_time + n * interval where n is the smallest integer
+        // such that start_time + n * interval > current_time
+        // 5000 + n * 2000 > 11000 => n > 3 => n = 4
+        // So next event should be at 5000 + 4 * 2000 = 13000
+        let expected_next_time = UnixNanos::from(13000);
+        let actual_next_time = test_clock.next_time_ns("edge_timer").unwrap();
+
+        assert_eq!(actual_next_time, expected_next_time);
+    }
+
+    #[rstest]
+    fn test_timer_with_past_start_time_exact_boundary(mut test_clock: TestClock) {
+        // Set current time to 10000
+        test_clock.set_time(UnixNanos::from(10000));
+
+        // Set timer with start time in the past where current time exactly matches an interval
+        let past_start_time = UnixNanos::from(5000);
+        let interval_ns = 1000;
+        // 5000 + 5 * 1000 = 10000 (exactly current time)
+
+        test_clock
+            .set_timer_ns(
+                "boundary_timer",
+                interval_ns,
+                past_start_time,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // Since current time exactly matches 5000 + 5 * 1000 = 10000,
+        // the next event should be at 5000 + 6 * 1000 = 11000
+        let expected_next_time = UnixNanos::from(11000);
+        let actual_next_time = test_clock.next_time_ns("boundary_timer").unwrap();
+
+        assert_eq!(actual_next_time, expected_next_time);
     }
 }
