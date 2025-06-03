@@ -91,8 +91,8 @@ itoa = "1.0.15"
 log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 memchr = "2.7.4"
 parquet = "55.1.0"  # Keep major version in line with datafusion
-pyo3 = { version = "0.24.2", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
-pyo3-async-runtimes = { version = "0.24.0", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3 = { version = "0.25.0", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
+pyo3-async-runtimes = { version = "0.25.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.9.1"
 reqwest = { version = "0.12.18", features = ["blocking"] }
 ring = "0.17.14"

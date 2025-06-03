@@ -18,6 +18,7 @@
 pub mod casing;
 pub mod datetime;
 pub mod enums;
+pub mod parsing;
 pub mod serialization;
 pub mod uuid;
 pub mod version;
