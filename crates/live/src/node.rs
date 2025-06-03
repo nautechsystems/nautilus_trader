@@ -19,7 +19,9 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use nautilus_common::{clock::LiveClock, component::Component, enums::Environment};
+use nautilus_common::{
+    actor::DataActor, clock::LiveClock, component::Component, enums::Environment,
+};
 use nautilus_core::UUID4;
 use nautilus_model::identifiers::TraderId;
 use nautilus_system::{
@@ -195,7 +197,10 @@ impl LiveNode {
     /// - The trader is not in a valid state for adding components.
     /// - An actor with the same ID is already registered.
     /// - The node is currently running.
-    pub fn add_actor(&mut self, actor: Box<dyn Component>) -> anyhow::Result<()> {
+    pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
+    where
+        T: DataActor + Component + 'static,
+    {
         if self.is_running {
             anyhow::bail!(
                 "Cannot add actor while node is running. Add actors before calling start()."
@@ -320,20 +325,25 @@ impl LiveNodeBuilder {
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_data_client(
+    pub fn add_data_client<F, C>(
         mut self,
         name: Option<String>,
-        factory: Box<dyn DataClientFactory>,
-        config: Box<dyn ClientConfig>,
-    ) -> anyhow::Result<Self> {
+        factory: F,
+        config: C,
+    ) -> anyhow::Result<Self>
+    where
+        F: DataClientFactory + 'static,
+        C: ClientConfig + 'static,
+    {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.data_client_factories.contains_key(&name) {
             anyhow::bail!("Data client '{name}' is already registered");
         }
 
-        self.data_client_factories.insert(name.clone(), factory);
-        self.data_client_configs.insert(name, config);
+        self.data_client_factories
+            .insert(name.clone(), Box::new(factory));
+        self.data_client_configs.insert(name, Box::new(config));
         Ok(self)
     }
 
@@ -342,20 +352,25 @@ impl LiveNodeBuilder {
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
-    pub fn add_exec_client(
+    pub fn add_exec_client<F, C>(
         mut self,
         name: Option<String>,
-        factory: Box<dyn ExecutionClientFactory>,
-        config: Box<dyn ClientConfig>,
-    ) -> anyhow::Result<Self> {
+        factory: F,
+        config: C,
+    ) -> anyhow::Result<Self>
+    where
+        F: ExecutionClientFactory + 'static,
+        C: ClientConfig + 'static,
+    {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
         if self.exec_client_factories.contains_key(&name) {
             anyhow::bail!("Execution client '{name}' is already registered");
         }
 
-        self.exec_client_factories.insert(name.clone(), factory);
-        self.exec_client_configs.insert(name, config);
+        self.exec_client_factories
+            .insert(name.clone(), Box::new(factory));
+        self.exec_client_configs.insert(name, Box::new(config));
         Ok(self)
     }
 

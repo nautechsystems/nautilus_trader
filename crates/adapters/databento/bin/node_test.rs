@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         true, // bars_timestamp_on_close
     );
 
-    let client_factory = Box::new(DatabentoDataClientFactory::new());
+    let client_factory = DatabentoDataClientFactory::new();
 
     // Create and register a Databento subscriber actor
     let client_id = ClientId::new("DATABENTO");
@@ -79,13 +79,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
         .with_save_state(false)
-        .add_data_client(None, client_factory, Box::new(databento_config))?
+        .add_data_client(None, client_factory, databento_config)?
         .build()?;
 
     let actor_config = DatabentoSubscriberActorConfig::new(instrument_ids, client_id);
     let actor = DatabentoSubscriberActor::new(actor_config);
 
-    node.add_actor(Box::new(actor))?;
+    node.add_actor(actor)?;
 
     node.start().await?;
 
