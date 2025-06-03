@@ -114,7 +114,6 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
     let data_type: String = data
         .first()
         .unwrap() // SAFETY: Unwrap safe as already checked that `data` not empty
-        .as_ref()
         .getattr("__class__")?
         .getattr("__name__")?
         .extract()?;

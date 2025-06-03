@@ -5800,7 +5800,7 @@ def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str 
 #
 # The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
 # (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
-def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> str: ...
 
 # Returns the next session start time in UTC.
 #

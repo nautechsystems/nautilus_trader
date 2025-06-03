@@ -62,7 +62,7 @@ impl Quantity {
     }
 
     fn __add__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() + other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -78,7 +78,7 @@ impl Quantity {
     }
 
     fn __radd__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float + self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -94,7 +94,7 @@ impl Quantity {
     }
 
     fn __sub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() - other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -110,7 +110,7 @@ impl Quantity {
     }
 
     fn __rsub__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float - self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -126,7 +126,7 @@ impl Quantity {
     }
 
     fn __mul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() * other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -142,7 +142,7 @@ impl Quantity {
     }
 
     fn __rmul__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float * self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -158,7 +158,7 @@ impl Quantity {
     }
 
     fn __truediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -174,7 +174,7 @@ impl Quantity {
     }
 
     fn __rtruediv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -190,7 +190,7 @@ impl Quantity {
     }
 
     fn __floordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() / other_float).floor().into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -208,7 +208,7 @@ impl Quantity {
     }
 
     fn __rfloordiv__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float / self.as_f64()).floor().into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -226,7 +226,7 @@ impl Quantity {
     }
 
     fn __mod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (self.as_f64() % other_float).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
@@ -242,7 +242,7 @@ impl Quantity {
     }
 
     fn __rmod__(&self, other: &Bound<'_, PyAny>, py: Python) -> PyResult<PyObject> {
-        if other.as_ref().is_instance_of::<PyFloat>() {
+        if other.is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract()?;
             (other_float % self.as_f64()).into_py_any(py)
         } else if let Ok(other_qty) = other.extract::<Self>() {
