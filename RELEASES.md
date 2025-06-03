@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
+- Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 
 ### Breaking Changes
 None
