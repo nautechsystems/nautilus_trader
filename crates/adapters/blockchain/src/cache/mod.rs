@@ -13,9 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
-use nautilus_model::defi::{amm::Pool, chain::SharedChain, token::Token};
+use alloy::primitives::Address;
+use nautilus_core::UnixNanos;
+use nautilus_model::defi::{
+    amm::{Pool, SharedPool},
+    block::Block,
+    chain::SharedChain,
+    swap::Swap,
+    token::Token,
+};
 use sqlx::postgres::PgConnectOptions;
 
 use crate::{cache::database::BlockchainCacheDatabase, exchanges::extended::DexExtended};
@@ -28,12 +39,14 @@ pub mod rows;
 pub struct BlockchainCache {
     /// The blockchain chain this cache is associated with.
     chain: SharedChain,
+    /// Map of block numbers to their corresponding timestamp
+    block_timestamps: BTreeMap<u64, UnixNanos>,
     /// Map of DEX identifiers to their corresponding extended DEX objects.
     dexes: HashMap<String, DexExtended>,
     /// Map of token addresses to their corresponding `Token` objects.
-    tokens: HashMap<String, Token>,
+    tokens: HashMap<Address, Token>,
     /// Map of pool addresses to their corresponding `Pool` objects.
-    pools: HashMap<String, Pool>,
+    pools: HashMap<Address, SharedPool>,
     /// Optional database connection for persistent storage.
     database: Option<BlockchainCacheDatabase>,
 }
@@ -47,8 +60,19 @@ impl BlockchainCache {
             dexes: HashMap::new(),
             tokens: HashMap::new(),
             pools: HashMap::new(),
+            block_timestamps: BTreeMap::new(),
             database: None,
         }
+    }
+
+    /// Returns the highest block number currently cached, if any.
+    pub fn last_cached_block_number(&self) -> Option<u64> {
+        self.block_timestamps.last_key_value().map(|(k, _)| *k)
+    }
+
+    /// Returns the timestamp for the specified block number if it exists in the cache.
+    pub fn get_block_timestamp(&self, block_number: u64) -> Option<&UnixNanos> {
+        self.block_timestamps.get(&block_number)
     }
 
     /// Initializes the database connection for persistent storage.
@@ -58,12 +82,24 @@ impl BlockchainCache {
     }
 
     /// Connects to the database and loads initial data.
-    pub async fn connect(&mut self) -> anyhow::Result<()> {
+    pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
         // Seed target adapter chain in database
         if let Some(database) = &self.database {
             database.seed_chain(&self.chain).await?;
         }
         self.load_tokens().await?;
+        if let Err(e) = self.load_blocks(from_block).await {
+            log::error!("Error loading blocks from database: {}", e);
+        }
+        Ok(())
+    }
+
+    /// Adds a block to the cache and persists it to the database if available.
+    pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.add_block(self.chain.chain_id, &block).await?;
+        }
+        self.block_timestamps.insert(block.number, block.timestamp);
         Ok(())
     }
 
@@ -80,21 +116,20 @@ impl BlockchainCache {
     /// Adds a liquidity pool/pair to the cache.
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
         let pool_address = pool.address.clone();
-        log::info!("Adding dex pool {} to the cache", pool_address.as_str());
+        log::info!("Adding dex pool {} to the cache", pool_address.to_string());
         if let Some(database) = &self.database {
             database.add_pool(&pool).await?;
         }
-        self.pools.insert(pool_address, pool);
+        self.pools.insert(pool_address, Arc::new(pool));
         Ok(())
     }
 
     /// Adds a token to the cache.
     pub async fn add_token(&mut self, token: Token) -> anyhow::Result<()> {
-        let token_address = token.address.clone();
         if let Some(database) = &self.database {
             database.add_token(&token).await?;
         }
-        self.tokens.insert(token_address, token);
+        self.tokens.insert(token.address, token);
         Ok(())
     }
 
@@ -104,9 +139,50 @@ impl BlockchainCache {
             let tokens = database.load_tokens(self.chain.clone()).await?;
             log::info!("Loading {} tokens from cache database", tokens.len());
             for token in tokens {
-                self.tokens.insert(token.address.clone(), token);
+                self.tokens.insert(token.address, token);
             }
         }
+        Ok(())
+    }
+
+    /// Loads block timestamps from the database starting from the specified block number.
+    async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            let block_timestamps = database
+                .load_block_timestamps(self.chain.clone(), from_block)
+                .await?;
+
+            // Verify block number sequence consistency
+            if !block_timestamps.is_empty() {
+                let first = block_timestamps.first().unwrap().number;
+                let last = block_timestamps.last().unwrap().number;
+                let expected_len = (last - first + 1) as usize;
+                if block_timestamps.len() != expected_len {
+                    return Err(anyhow::anyhow!(
+                        "Block timestamps are not consistent and sequential. Expected {} blocks but got {}",
+                        expected_len,
+                        block_timestamps.len()
+                    ));
+                }
+            }
+
+            log::info!(
+                "Loading {} blocks timestamps from the cache database",
+                block_timestamps.len()
+            );
+            for block in block_timestamps {
+                self.block_timestamps.insert(block.number, block.timestamp);
+            }
+        }
+        Ok(())
+    }
+
+    /// Adds a swap transaction to the database if available.
+    pub async fn add_swap(&self, swap: Swap) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.add_swap(self.chain.chain_id, &swap).await?;
+        }
+
         Ok(())
     }
 
@@ -116,9 +192,15 @@ impl BlockchainCache {
         self.dexes.get(name)
     }
 
+    /// Returns a reference to the pool associated with the given address.
+    #[must_use]
+    pub fn get_pool(&self, address: &Address) -> Option<&SharedPool> {
+        self.pools.get(address)
+    }
+
     /// Returns a reference to the `Token` associated with the given address.
     #[must_use]
-    pub fn get_token(&self, address: &str) -> Option<&Token> {
+    pub fn get_token(&self, address: &Address) -> Option<&Token> {
         self.tokens.get(address)
     }
 }

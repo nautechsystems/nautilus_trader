@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, sync::Arc};
 
 use crate::defi::{amm::Pool, chain::Chain};
 
@@ -45,12 +45,17 @@ pub struct Dex {
     pub factory: Cow<'static, str>,
     /// The event signature or identifier used to detect pool creation events.
     pub pool_created_event: Cow<'static, str>,
+    /// The event signature or identifier used to detect swap events.
+    pub swap_created_event: Cow<'static, str>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
     #[allow(dead_code)] // TBD
     pairs: Vec<Pool>,
 }
+
+/// A thread-safe shared pointer to a `Dex`, enabling efficient reuse across multiple components.
+pub type SharedDex = Arc<Dex>;
 
 impl Dex {
     /// Creates a new [`Dex`] instance with the specified properties.
@@ -61,12 +66,14 @@ impl Dex {
         factory: impl Into<Cow<'static, str>>,
         amm_type: AmmType,
         pool_created_event: impl Into<Cow<'static, str>>,
+        swap_created_event: impl Into<Cow<'static, str>>,
     ) -> Self {
         Self {
             chain,
             name: name.into(),
             factory: factory.into(),
             pool_created_event: pool_created_event.into(),
+            swap_created_event: swap_created_event.into(),
             amm_type,
             pairs: vec![],
         }

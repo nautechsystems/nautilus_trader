@@ -132,6 +132,7 @@ pub struct Chain {
     pub rpc_url: Option<String>,
 }
 
+/// A thread-safe shared pointer to a `Chain`, enabling efficient reuse across multiple components.
 pub type SharedChain = Arc<Chain>;
 
 impl Chain {
