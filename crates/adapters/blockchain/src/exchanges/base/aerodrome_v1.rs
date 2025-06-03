@@ -30,6 +30,7 @@ pub static AERODROME_V1: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x420DD381b31aEf6683db6B902084cB0FFECe40Da",
         AmmType::CPAMM,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

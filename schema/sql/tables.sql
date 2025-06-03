@@ -300,6 +300,18 @@ CREATE TABLE IF NOT EXISTS "chain" (
     name TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS "block" (
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    number BIGINT NOT NULL,
+    hash TEXT,
+    parent_hash TEXT,
+    miner TEXT,
+    gas_limit BIGINT,
+    gas_used BIGINT,
+    timestamp TEXT,
+    PRIMARY KEY (chain_id, number)
+);
+
 CREATE TABLE IF NOT EXISTS "token"(
     chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
     address TEXT NOT NULL,
@@ -330,4 +342,17 @@ CREATE TABLE IF NOT EXISTS "pool" (
     FOREIGN KEY (token0_chain, token0_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (token1_chain, token1_address) REFERENCES token(chain_id, address),
     FOREIGN KEY (chain_id, dex_name) REFERENCES dex(chain_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS "swap" (
+    id BIGSERIAL PRIMARY KEY,
+    chain_id INTEGER NOT NULL REFERENCES chain(chain_id) ON DELETE CASCADE,
+    pool_address TEXT NOT NULL,
+    block BIGINT NOT NULL,
+    sender TEXT,
+    side TEXT,
+    quantity TEXT,
+    price TEXT,
+    FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
+    FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number)
 );

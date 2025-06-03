@@ -30,6 +30,7 @@ pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
         AmmType::CLAMM,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

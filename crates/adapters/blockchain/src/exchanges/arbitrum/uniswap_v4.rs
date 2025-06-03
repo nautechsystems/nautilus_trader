@@ -30,6 +30,7 @@ pub static UNISWAP_V4: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x4E3288c9ca110bCC82bf38F09A7b425c095d92Bf",
         AmmType::CLAMEnhanced,
         "",
+        "",
     );
     DexExtended::new(dex)
 });
