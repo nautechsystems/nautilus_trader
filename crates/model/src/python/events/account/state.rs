@@ -17,13 +17,12 @@ use std::str::FromStr;
 
 use nautilus_core::{
     UUID4,
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
+    python::{
+        IntoPyObjectNautilusExt,
+        parsing::{get_required, get_required_list, get_required_parsed, get_required_string},
+    },
 };
-use pyo3::{
-    basic::CompareOp,
-    prelude::*,
-    types::{PyDict, PyList},
-};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     enums::AccountType,
@@ -114,11 +113,10 @@ impl AccountState {
     /// Panics if any `unwrap` on parsed values fails (e.g., invalid formats or missing items).
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
-        let dict = values.as_ref();
-        let account_id: String = dict.get_item("account_id")?.extract()?;
-        let account_type: String = dict.get_item("account_type")?.extract()?;
-        let base_currency: String = dict.get_item("base_currency")?.extract()?;
-        let balances_list: Bound<'_, PyList> = dict.get_item("balances")?.extract()?;
+        let account_id = get_required_string(values, "account_id")?;
+        let _account_type = get_required_string(values, "account_type")?;
+        let _base_currency = get_required_string(values, "base_currency")?;
+        let balances_list = get_required_list(values, "balances")?;
         let balances: Vec<AccountBalance> = balances_list
             .iter()
             .map(|b| {
@@ -126,7 +124,7 @@ impl AccountState {
                 AccountBalance::py_from_dict(&balance_dict)
             })
             .collect::<PyResult<Vec<AccountBalance>>>()?;
-        let margins_list: Bound<'_, PyList> = dict.get_item("margins")?.extract()?;
+        let margins_list = get_required_list(values, "margins")?;
         let margins: Vec<MarginBalance> = margins_list
             .iter()
             .map(|m| {
@@ -134,20 +132,26 @@ impl AccountState {
                 MarginBalance::py_from_dict(&margin_dict)
             })
             .collect::<PyResult<Vec<MarginBalance>>>()?;
-        let reported: bool = dict.get_item("reported")?.extract()?;
-        let event_id: String = dict.get_item("event_id")?.extract()?;
-        let ts_event: u64 = dict.get_item("ts_event")?.extract()?;
-        let ts_init: u64 = dict.get_item("ts_init")?.extract()?;
+        let reported = get_required::<bool>(values, "reported")?;
+        let _event_id = get_required_string(values, "event_id")?;
+        let ts_event = get_required::<u64>(values, "ts_event")?;
+        let ts_init = get_required::<u64>(values, "ts_init")?;
         let account = Self::new(
             AccountId::from(account_id.as_str()),
-            AccountType::from_str(account_type.as_str()).unwrap(),
+            get_required_parsed(values, "account_type", |s| {
+                AccountType::from_str(&s).map_err(|e| e.to_string())
+            })?,
             balances,
             margins,
             reported,
-            UUID4::from_str(event_id.as_str()).unwrap(),
+            get_required_parsed(values, "event_id", |s| {
+                UUID4::from_str(&s).map_err(|e| e.to_string())
+            })?,
             ts_event.into(),
             ts_init.into(),
-            Some(Currency::from_str(base_currency.as_str()).map_err(to_pyvalue_err)?),
+            Some(get_required_parsed(values, "base_currency", |s| {
+                Currency::from_str(&s).map_err(|e| e.to_string())
+            })?),
         );
         Ok(account)
     }

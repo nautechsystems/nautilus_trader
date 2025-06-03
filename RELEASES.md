@@ -9,10 +9,10 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
-None
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
-None
+- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 
 ### Documentation Updates
 None
