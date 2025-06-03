@@ -33,7 +33,12 @@ mod tests;
 
 pub use core::MessageBus;
 use core::{Endpoint, Subscription};
-use std::{self, any::Any, cell::RefCell, fmt::Debug, rc::Rc, sync::OnceLock};
+use std::{
+    self,
+    any::Any,
+    cell::{OnceCell, RefCell},
+    rc::Rc,
+};
 
 use handler::ShareableMessageHandler;
 use matching::is_matching_backtracking;
@@ -46,43 +51,39 @@ use crate::messages::data::DataResponse;
 pub use crate::msgbus::core::{MStr, Pattern, Topic};
 pub use crate::msgbus::message::BusMessage;
 
-#[derive(Debug)]
-pub struct ShareableMessageBus(Rc<RefCell<MessageBus>>);
-
-// SAFETY: Cannot be sent across thread boundaries
-#[allow(unsafe_code)]
-unsafe impl Send for ShareableMessageBus {}
-#[allow(unsafe_code)]
-unsafe impl Sync for ShareableMessageBus {}
-
-static MESSAGE_BUS: OnceLock<ShareableMessageBus> = OnceLock::new();
-
-/// Sets the global message bus.
-///
-/// # Panics
-///
-/// Panics if a message bus has already been set.
-pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
-    if MESSAGE_BUS.set(ShareableMessageBus(msgbus)).is_err() {
-        panic!("Failed to set MessageBus");
-    }
+// Thread-local storage for MessageBus instances. Each thread (including async runtimes)
+// gets its own MessageBus instance, eliminating the need for unsafe Send/Sync implementations
+// while maintaining the global singleton access pattern that the codebase expects.
+thread_local! {
+    static MESSAGE_BUS: OnceCell<Rc<RefCell<MessageBus>>> = const { OnceCell::new() };
 }
 
-/// Gets the global message bus.
+/// Sets the thread-local message bus.
 ///
 /// # Panics
 ///
-/// Panics if the global message bus is uninitialized.
+/// Panics if a message bus has already been set for this thread.
+pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
+    MESSAGE_BUS.with(|bus| {
+        if bus.set(msgbus).is_err() {
+            panic!("Failed to set MessageBus: already initialized for this thread");
+        }
+    });
+}
+
+/// Gets the thread-local message bus.
+///
+/// If no message bus has been set for this thread, a default one is created and initialized.
+/// This ensures each thread gets its own MessageBus instance, preventing data races while
+/// maintaining the singleton pattern that the codebase expects.
 pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
-    if MESSAGE_BUS.get().is_none() {
-        // Initialize default message bus
-        let msgbus = MessageBus::default();
-        let msgbus = Rc::new(RefCell::new(msgbus));
-        let _ = MESSAGE_BUS.set(ShareableMessageBus(msgbus.clone()));
-        msgbus
-    } else {
-        MESSAGE_BUS.get().unwrap().0.clone()
-    }
+    MESSAGE_BUS.with(|bus| {
+        bus.get_or_init(|| {
+            let msgbus = MessageBus::default();
+            Rc::new(RefCell::new(msgbus))
+        })
+        .clone()
+    })
 }
 
 /// Sends the `message` to the `endpoint`.
