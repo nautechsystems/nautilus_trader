@@ -53,7 +53,7 @@ pub use crate::msgbus::message::BusMessage;
 
 // Thread-local storage for MessageBus instances. Each thread (including async runtimes)
 // gets its own MessageBus instance, eliminating the need for unsafe Send/Sync implementations
-// while maintaining the global singleton access pattern that the codebase expects.
+// while maintaining the global singleton access pattern that the framework expects.
 thread_local! {
     static MESSAGE_BUS: OnceCell<Rc<RefCell<MessageBus>>> = const { OnceCell::new() };
 }
