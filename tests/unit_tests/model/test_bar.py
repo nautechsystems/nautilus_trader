@@ -88,8 +88,6 @@ class TestBarSpecification:
         assert str(bar_spec) == "1-MINUTE-BID"
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
 
-
-
     @pytest.mark.parametrize(
         ("bar_aggregation", "step"),
         [
@@ -103,11 +101,15 @@ class TestBarSpecification:
             [BarAggregation.DAY, 2],
             [BarAggregation.WEEK, 3],
             [BarAggregation.MONTH, 5],
-        ]
+        ],
     )
-    def test_instantiate_given_invalid_step_raises_value_error(self, bar_aggregation: BarAggregation, step: int):
+    def test_instantiate_given_invalid_step_raises_value_error(
+        self,
+        bar_aggregation: BarAggregation,
+        step: int,
+    ):
         with pytest.raises(ValueError):
-            bar_spec = BarSpecification(step, bar_aggregation, PriceType.BID)
+            BarSpecification(step, bar_aggregation, PriceType.BID)
 
     @pytest.mark.parametrize(
         "aggregation",
@@ -186,8 +188,8 @@ class TestBarSpecification:
         ("value", "expected"),
         [
             [
-                "300-MILLISECOND-LAST",
-                BarSpecification(300, BarAggregation.MILLISECOND, PriceType.LAST),
+                "200-MILLISECOND-LAST",
+                BarSpecification(200, BarAggregation.MILLISECOND, PriceType.LAST),
             ],
             [
                 "1-MINUTE-BID",

@@ -1174,4 +1174,3 @@ cdef class TimeBarAggregator(BarAggregator):
 
         # Close time becomes the next open time
         self._stored_open_ns = event.ts_event
-

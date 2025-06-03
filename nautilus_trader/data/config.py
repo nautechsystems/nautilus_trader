@@ -16,8 +16,8 @@
 from __future__ import annotations
 
 from nautilus_trader.common.config import NautilusConfig
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.enums import BarIntervalType
+from nautilus_trader.model.identifiers import ClientId
 
 
 class DataEngineConfig(NautilusConfig, frozen=True):
