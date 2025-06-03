@@ -166,12 +166,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
         self._recv_window = config.recv_window_ms
+        self._max_retries = config.max_retries or 3
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
+        self._log.info(f"{config.recv_window_ms=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_max_ms=}", LogColor.BLUE)
@@ -325,7 +327,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
-    async def generate_order_status_report(
+    async def generate_order_status_report(  # noqa: C901 (too complex)
         self,
         command: GenerateOrderStatusReport,
     ) -> OrderStatusReport | None:
@@ -335,12 +337,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         retries = self._generate_order_status_retries.get(command.client_order_id, 0)
-        if retries > 3:
+        if retries > self._max_retries:
             self._log.error(
-                f"Reached maximum retries 3/3 for generating OrderStatusReport for "
+                f"Reached maximum retries {self._max_retries}/{self._max_retries} for generating OrderStatusReport for "
                 f"{repr(command.client_order_id) if command.client_order_id else ''} "
                 f"{repr(command.venue_order_id) if command.venue_order_id else ''}",
             )
+
+            # Clean up retry counter after max retries exceeded
+            if (
+                command.client_order_id
+                and command.client_order_id in self._generate_order_status_retries
+            ):
+                del self._generate_order_status_retries[command.client_order_id]
+
             return None
 
         self._log.info(
@@ -367,7 +377,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         except BinanceError as e:
             retries += 1
             self._log.error(
-                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/3",
+                f"Cannot generate order status report for {command.client_order_id!r}: {e.message}. Retry {retries}/{self._max_retries}",
             )
             self._generate_order_status_retries[command.client_order_id] = retries
             if not command.client_order_id:
@@ -380,10 +390,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 elif order.is_closed:
                     return None  # Nothing else to do
 
-                if retries >= 3:
+                if retries >= self._max_retries:
+                    # Clean up retry counter when order is finally rejected
+                    if (
+                        command.client_order_id
+                        and command.client_order_id in self._generate_order_status_retries
+                    ):
+                        del self._generate_order_status_retries[command.client_order_id]
+
                     # Order will no longer be considered in-flight once this event is applied.
-                    # We could pop the value out of the hashmap here, but better to leave it in
-                    # so that there are no longer subsequent retries (we don't expect many of these).
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=command.instrument_id,
@@ -409,6 +424,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             treat_expired_as_canceled=self._treat_expired_as_canceled,
             ts_init=self._clock.timestamp_ns(),
         )
+
+        # Clean up retry counter on successful report generation
+        if (
+            command.client_order_id
+            and command.client_order_id in self._generate_order_status_retries
+        ):
+            del self._generate_order_status_retries[command.client_order_id]
 
         self._log.debug(f"Received {report}")
         return report
@@ -867,8 +889,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        # Convert basis points to percentage rounded to 1 decimal place
-        callback_rate = Decimal(f"{order.trailing_offset / 100:.1f}")
+        # Convert basis points to percentage, preserving precision
+        # Binance supports up to 1 decimal place precision for callback rates
+        callback_rate = Decimal(order.trailing_offset) / Decimal("100")
+        # Round to 1 decimal place only if necessary to meet Binance requirements
+        callback_rate = callback_rate.quantize(Decimal("0.1"))
 
         if callback_rate < BINANCE_MIN_CALLBACK_RATE or callback_rate > BINANCE_MAX_CALLBACK_RATE:
             self._log.error(
