@@ -20,10 +20,9 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use databento::dbn;
+use databento::dbn::{self, InstrumentDefMsg};
 use dbn::{
     Publisher,
-    compat::InstrumentDefMsgV1,
     decode::{DbnMetadata, DecodeStream, dbn::Decoder},
 };
 use fallible_streaming_iterator::FallibleStreamingIterator;
@@ -36,14 +35,11 @@ use nautilus_model::{
 };
 
 use super::{
-    decode::{
-        decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
-        decode_status_msg,
-    },
+    decode::{decode_imbalance_msg, decode_record, decode_statistics_msg, decode_status_msg},
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
-use crate::symbology::MetadataCache;
+use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
@@ -198,14 +194,8 @@ impl DatabentoDataLoader {
         filepath: &Path,
         use_exchange_as_venue: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
-        let mut decoder = Decoder::from_zstd_file(filepath)?;
-
-        // Setting the policy to decode v1 data in its original format,
-        // rather than upgrading to v2 for now (decoding tests fail on `UpgradeToV2`).
-        let upgrade_policy = dbn::VersionUpgradePolicy::AsIs;
-        decoder.set_upgrade_policy(upgrade_policy)?;
-
-        let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
+        let decoder = Decoder::from_zstd_file(filepath)?;
+        let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsg>();
 
         Ok(std::iter::from_fn(move || {
             let result: anyhow::Result<Option<InstrumentAny>> = (|| {
@@ -216,8 +206,8 @@ impl DatabentoDataLoader {
                 if let Some(rec) = dbn_stream.get() {
                     let record = dbn::RecordRef::from(rec);
                     let msg = record
-                        .get::<InstrumentDefMsgV1>()
-                        .ok_or_else(|| anyhow::anyhow!("Failed to decode InstrumentDefMsgV1"))?;
+                        .get::<InstrumentDefMsg>()
+                        .ok_or_else(|| anyhow::anyhow!("Failed to decode InstrumentDefMsg"))?;
 
                     // Symbol and venue resolution
                     let raw_symbol = rec
@@ -253,7 +243,7 @@ impl DatabentoDataLoader {
                     let instrument_id = InstrumentId::new(symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    let data = decode_instrument_def_msg_v1(rec, instrument_id, Some(ts_init))?;
+                    let data = decode_instrument_def_msg(rec, instrument_id, Some(ts_init))?;
                     Ok(Some(data))
                 } else {
                     // No more records
@@ -714,8 +704,7 @@ mod tests {
     }
 
     #[rstest]
-    // #[case(test_data_path().join("test_data.definition.dbn.zst"))] // TODO: Fails
-    #[case(test_data_path().join("test_data.definition.v1.dbn.zst"))]
+    #[case(test_data_path().join("test_data.definition.dbn.zst"))]
     fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instruments = loader.load_instruments(&path, false).unwrap();
 

@@ -72,7 +72,7 @@ tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
 regex = "1.11.1"
-sysinfo = "0.35.1"
+sysinfo = "0.35.2"
 
 [dev-dependencies]
 proptest = { workspace = true }
