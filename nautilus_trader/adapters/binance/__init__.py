@@ -24,6 +24,8 @@ subpackage's top level, so downstream code can simply import from
 ``nautilus_trader.adapters.binance``.
 
 """
+from typing import Final
+
 import pyarrow as pa
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE
@@ -43,6 +45,7 @@ from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLo
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 register_serializable_type(
@@ -57,7 +60,7 @@ register_serializable_type(
     BinanceTicker.from_dict,
 )
 
-NAUTILUS_ARROW_SCHEMA[BinanceBar] = pa.schema(
+BINANCE_BAR_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
     {
         "bar_type": pa.dictionary(pa.int16(), pa.string()),
         "instrument_id": pa.dictionary(pa.int64(), pa.string()),
@@ -74,6 +77,10 @@ NAUTILUS_ARROW_SCHEMA[BinanceBar] = pa.schema(
         "ts_init": pa.uint64(),
     },
 )
+
+NAUTILUS_ARROW_SCHEMA[BinanceBar] = BINANCE_BAR_ARROW_SCHEMA
+
+register_arrow(BinanceBar, BINANCE_BAR_ARROW_SCHEMA)
 
 __all__ = [
     "BINANCE",
