@@ -54,7 +54,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true, features = ["python"] }
-nautilus-core = { workspace = true, features = ["python", "high-precision"] }
+nautilus-core = { workspace = true, features = ["python"] }
 nautilus-cryptography = { workspace = true, features = ["python"] }
 nautilus-execution = { workspace = true, features = ["python"] }
 nautilus-indicators = { workspace = true, features = ["python"] }
