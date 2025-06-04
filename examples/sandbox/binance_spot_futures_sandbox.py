@@ -33,10 +33,9 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType, QuoteTick, TradeTick, Bar, DataType
+from nautilus_trader.model.data import QuoteTick, TradeTick, Bar, DataType
 from nautilus_trader.model.identifiers import InstrumentId, ClientId, TraderId, Venue
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading.config import StrategyConfig
 
