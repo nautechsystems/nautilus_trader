@@ -7,6 +7,3 @@ edition.workspace = true
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
-
-[dependencies]
-nautilus_core = { features = ["high-precision"] }
