@@ -149,7 +149,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            venue=config.venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
