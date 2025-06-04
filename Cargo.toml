@@ -45,7 +45,7 @@ nautilus-analysis = { path = "crates/analysis", version = "0.48.0" }
 nautilus-backtest = { path = "crates/backtest", version = "0.48.0" }
 nautilus-cli = { path = "crates/cli", version = "0.48.0" }
 nautilus-common = { path = "crates/common", version = "0.48.0" }
-nautilus-core = { path = "crates/core", version = "0.48.0", features = ["high-precision"] }
+nautilus-core = { path = "crates/core", version = "0.48.0" }
 nautilus-cryptography = { path = "crates/cryptography", version = "0.48.0" }
 nautilus-data = { path = "crates/data", version = "0.48.0" }
 nautilus-execution = { path = "crates/execution", version = "0.48.0" }
