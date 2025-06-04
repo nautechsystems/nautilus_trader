@@ -175,3 +175,6 @@ incremental = true
 debug = "full"
 strip = false
 lto = false
+
+[dependencies]
+nautilus_core = { version = "*", features = ["high-precision"] }
