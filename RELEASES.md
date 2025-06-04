@@ -7,9 +7,11 @@ Released on TBD (UTC).
 - Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 
 ### Breaking Changes
-None
+- Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
+- Changed Databento DBN upgrade policy to default v3
 
 ### Internal Improvements
+- Upgraded `databento` crate to v0.26.2
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
