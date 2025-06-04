@@ -107,7 +107,8 @@ impl LiveNode {
         }
 
         log::info!("Starting live node");
-        self.kernel.start();
+        self.kernel.start_async().await;
+        log::info!("Kernel start completed");
         self.is_running = true;
 
         log::info!("LiveNode started successfully");
@@ -125,7 +126,7 @@ impl LiveNode {
         }
 
         log::info!("Stopping live node");
-        self.kernel.stop();
+        self.kernel.stop_async().await;
         self.is_running = false;
 
         log::info!("LiveNode stopped successfully");
@@ -141,17 +142,40 @@ impl LiveNode {
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        log::info!("Starting LiveNode...");
         self.start().await?;
 
-        // Set up signal handling
-        let sigint = tokio::signal::ctrl_c();
+        log::info!("LiveNode started, setting up signal handler...");
 
-        tokio::select! {
-            _ = sigint => {
-                log::info!("Received SIGINT, shutting down...");
+        let loop_duration = tokio::time::Duration::from_millis(100);
+
+        // TODO: Temporary count logging for development
+        let mut count = 0;
+        loop {
+            count += 1;
+            if count % 10 == 0 {
+                log::info!("Signal handler loop iteration {count}");
+            }
+
+            tokio::select! {
+                result = tokio::signal::ctrl_c() => {
+                    match result {
+                        Ok(()) => {
+                            log::info!("Received SIGINT, shutting down...");
+                            break;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to listen for SIGINT: {e}");
+                            anyhow::bail!("Signal handling failed: {e}");
+                        }
+                    }
+                }
+                _ = tokio::time::sleep(loop_duration) => {
+                }
             }
         }
 
+        log::info!("Shutting down after signal...");
         self.stop().await?;
         Ok(())
     }
@@ -392,7 +416,7 @@ impl LiveNodeBuilder {
         );
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
-        let mut kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
+        let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
         let runner = AsyncRunner::new(clock.clone());
 
         // Create and register data clients
@@ -413,7 +437,11 @@ impl LiveNodeBuilder {
                     client,
                 );
 
-                kernel.data_engine.register_client(adapter, venue);
+                kernel
+                    .data_engine
+                    .borrow_mut()
+                    .register_client(adapter, venue);
+
                 log::info!("Successfully registered data client '{name}' ({client_id})");
             } else {
                 log::warn!("No config found for data client factory '{name}'");

@@ -114,6 +114,7 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 tokio = { version = "1.45.1", features = ["full"] }
 tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
+tokio-util = "0.7.14"
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
 
