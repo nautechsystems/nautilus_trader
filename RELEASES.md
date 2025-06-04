@@ -17,6 +17,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
+- Fixed Arrow schema registration for `BinanceBar`
 
 ### Documentation Updates
 None
