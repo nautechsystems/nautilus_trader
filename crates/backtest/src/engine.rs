@@ -233,7 +233,10 @@ impl BacktestEngine {
         // Check client has been registered
         self.add_market_data_client_if_not_exists(instrument.id().venue);
 
-        self.kernel.data_engine.process(&instrument as &dyn Any);
+        self.kernel
+            .data_engine
+            .borrow_mut()
+            .process(&instrument as &dyn Any);
         log::info!(
             "Added instrument {} to exchange {}",
             instrument_id,
@@ -342,6 +345,7 @@ impl BacktestEngine {
         if !self
             .kernel
             .data_engine
+            .borrow()
             .registered_clients()
             .contains(&client_id)
         {
@@ -356,6 +360,7 @@ impl BacktestEngine {
             );
             self.kernel
                 .data_engine
+                .borrow_mut()
                 .register_client(data_client_adapter, None);
         }
     }
@@ -436,11 +441,20 @@ mod tests {
                 .get(&venue)
                 .is_some_and(|venue| venue.borrow().get_matching_engine(&instrument_id).is_some())
         );
-        assert_eq!(engine.kernel.data_engine.registered_clients().len(), 1);
+        assert_eq!(
+            engine
+                .kernel
+                .data_engine
+                .borrow()
+                .registered_clients()
+                .len(),
+            1
+        );
         assert!(
             engine
                 .kernel
                 .data_engine
+                .borrow()
                 .registered_clients()
                 .contains(&client_id)
         );

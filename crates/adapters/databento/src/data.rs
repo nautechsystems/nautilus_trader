@@ -38,7 +38,8 @@ use nautilus_model::{
     identifiers::{ClientId, Symbol, Venue},
     instruments::Instrument,
 };
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
@@ -99,6 +100,10 @@ pub struct DatabentoDataClient {
     loader: DatabentoDataLoader,
     /// Feed handler command senders per dataset.
     cmd_channels: Arc<Mutex<AHashMap<String, mpsc::UnboundedSender<LiveCommand>>>>,
+    /// Task handles for life cycle management.
+    task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// Cancellation token for graceful shutdown.
+    cancellation_token: CancellationToken,
     /// Publisher to venue mapping.
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     /// Symbol to venue mapping (for caching).
@@ -143,6 +148,8 @@ impl DatabentoDataClient {
             historical,
             loader,
             cmd_channels: Arc::new(Mutex::new(AHashMap::new())),
+            task_handles: Arc::new(Mutex::new(Vec::new())),
+            cancellation_token: CancellationToken::new(),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
         })
@@ -167,9 +174,9 @@ impl DatabentoDataClient {
         if !channels.contains_key(dataset) {
             tracing::info!("Creating new feed handler for dataset: {dataset}");
             let cmd_tx = self.initialize_live_feed(dataset.to_string())?;
-            channels.insert(dataset.to_string(), cmd_tx);
+            channels.insert(dataset.to_string(), cmd_tx.clone());
 
-            self.send_command_to_dataset(dataset, LiveCommand::Start)?;
+            tracing::debug!("Feed handler created for dataset: {dataset}, channel stored");
         }
 
         Ok(())
@@ -214,49 +221,78 @@ impl DatabentoDataClient {
             self.config.bars_timestamp_on_close,
         );
 
-        // Spawn the feed handler task
-        tokio::spawn(async move {
-            if let Err(e) = feed_handler.run().await {
-                tracing::error!("Feed handler error: {e}");
+        let cancellation_token = self.cancellation_token.clone();
+
+        // Spawn the feed handler task with cancellation support
+        let feed_handle = tokio::spawn(async move {
+            tokio::select! {
+                result = feed_handler.run() => {
+                    if let Err(e) = result {
+                        tracing::error!("Feed handler error: {e}");
+                    }
+                }
+                _ = cancellation_token.cancelled() => {
+                    tracing::info!("Feed handler cancelled");
+                }
             }
         });
 
-        // Spawn message processing task
-        tokio::spawn(async move {
+        let cancellation_token = self.cancellation_token.clone();
+
+        // Spawn message processing task with cancellation support
+        let msg_handle = tokio::spawn(async move {
             let mut msg_rx = msg_rx;
-            while let Some(msg) = msg_rx.recv().await {
-                match msg {
-                    LiveMessage::Data(data) => {
-                        tracing::debug!("Received data: {data:?}");
-                        // TODO: Forward to message bus or data engine
+            loop {
+                tokio::select! {
+                    msg = msg_rx.recv() => {
+                        match msg {
+                            Some(LiveMessage::Data(data)) => {
+                                tracing::debug!("Received data: {data:?}");
+                                // TODO: Forward to message bus or data engine
+                            }
+                            Some(LiveMessage::Instrument(instrument)) => {
+                                tracing::debug!("Received instrument: {}", instrument.id());
+                                // TODO: Forward to cache or instrument manager
+                            }
+                            Some(LiveMessage::Status(status)) => {
+                                tracing::debug!("Received status: {status:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Imbalance(imbalance)) => {
+                                tracing::debug!("Received imbalance: {imbalance:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Statistics(statistics)) => {
+                                tracing::debug!("Received statistics: {statistics:?}");
+                                // TODO: Forward to appropriate handler
+                            }
+                            Some(LiveMessage::Error(error)) => {
+                                tracing::error!("Feed handler error: {error}");
+                                // TODO: Handle error appropriately
+                            }
+                            Some(LiveMessage::Close) => {
+                                tracing::info!("Feed handler closed");
+                                break;
+                            }
+                            None => {
+                                tracing::debug!("Message channel closed");
+                                break;
+                            }
+                        }
                     }
-                    LiveMessage::Instrument(instrument) => {
-                        tracing::debug!("Received instrument: {}", instrument.id());
-                        // TODO: Forward to cache or instrument manager
-                    }
-                    LiveMessage::Status(status) => {
-                        tracing::debug!("Received status: {status:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Imbalance(imbalance) => {
-                        tracing::debug!("Received imbalance: {imbalance:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Statistics(statistics) => {
-                        tracing::debug!("Received statistics: {statistics:?}");
-                        // TODO: Forward to appropriate handler
-                    }
-                    LiveMessage::Error(error) => {
-                        tracing::error!("Feed handler error: {error}");
-                        // TODO: Handle error appropriately
-                    }
-                    LiveMessage::Close => {
-                        tracing::info!("Feed handler closed");
+                    _ = cancellation_token.cancelled() => {
+                        tracing::info!("Message processing cancelled");
                         break;
                     }
                 }
             }
         });
+
+        {
+            let mut handles = self.task_handles.lock().unwrap();
+            handles.push(feed_handle);
+            handles.push(msg_handle);
+        }
 
         Ok(cmd_tx)
     }
@@ -279,6 +315,9 @@ impl DataClient for DatabentoDataClient {
 
     fn stop(&self) -> anyhow::Result<()> {
         tracing::debug!("Stopping Databento data client");
+
+        // Signal cancellation to all running tasks
+        self.cancellation_token.cancel();
 
         // Send close command to all active feed handlers
         let channels = self.cmd_channels.lock().unwrap();
@@ -317,6 +356,9 @@ impl DataClient for DatabentoDataClient {
     async fn disconnect(&self) -> anyhow::Result<()> {
         tracing::debug!("Disconnecting Databento data client");
 
+        // Signal cancellation to all running tasks
+        self.cancellation_token.cancel();
+
         // Send close command to all active feed handlers
         {
             let channels = self.cmd_channels.lock().unwrap();
@@ -327,9 +369,22 @@ impl DataClient for DatabentoDataClient {
             }
         }
 
+        // Wait for all spawned tasks to complete
+        let handles = {
+            let mut task_handles = self.task_handles.lock().unwrap();
+            std::mem::take(&mut *task_handles)
+        };
+
+        for handle in handles {
+            if let Err(e) = handle.await {
+                if !e.is_cancelled() {
+                    tracing::error!("Task join error: {e}");
+                }
+            }
+        }
+
         self.is_connected.store(false, Ordering::Relaxed);
 
-        // Clear all command senders
         {
             let mut channels = self.cmd_channels.lock().unwrap();
             channels.clear();
@@ -352,7 +407,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe quotes: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -373,7 +438,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe trades: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -394,7 +469,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe book deltas: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
@@ -418,7 +503,17 @@ impl DataClient for DatabentoDataClient {
         tracing::debug!("Subscribe instrument status: {cmd:?}");
 
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
+        let was_new_handler = {
+            let channels = self.cmd_channels.lock().unwrap();
+            !channels.contains_key(&dataset)
+        };
+
         self.get_or_create_feed_handler(&dataset)?;
+
+        // Start the feed handler if it was newly created
+        if was_new_handler {
+            self.send_command_to_dataset(&dataset, LiveCommand::Start)?;
+        }
 
         let symbol = instrument_id_to_symbol_string(
             cmd.instrument_id,
