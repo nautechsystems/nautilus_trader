@@ -1398,7 +1398,10 @@ cdef class DataEngine(Component):
 
         if self._catalogs and update_catalog_mode is None:
             self.query_catalog(request)
-            return
+            force_client_request = request.params.get("force_client_request", False)
+
+            if not force_client_request:
+                return
 
         if client is None:
             self._log_request_warning(request)
@@ -1415,7 +1418,10 @@ cdef class DataEngine(Component):
 
         if last_timestamp:
             self.query_catalog(request)
-            return
+            force_client_request = request.params.get("force_client_request", False)
+
+            if not force_client_request:
+                return
 
         if client is None:
             self._log_request_warning(request)

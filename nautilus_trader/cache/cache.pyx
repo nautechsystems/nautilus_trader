@@ -111,6 +111,7 @@ cdef class Cache(CacheFacade):
         self.has_backing = database is not None
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
+        self._specific_venue = None
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -3498,9 +3499,26 @@ cdef class Cache(CacheFacade):
 
         return self._accounts.get(account_id)
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """
+        Set a specific venue for the portfolio.
+        Used with Interactive Brokers as account updates are not related to a specific venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The unique venue to set.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        self._specific_venue = venue
+
     cpdef Account account_for_venue(self, Venue venue):
         """
         Return the account matching the given client ID (if found).
+
+        If unique_venue is set, it will be used instead of the provided venue.
 
         Parameters
         ----------
@@ -3514,7 +3532,10 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(venue, "venue")
 
-        cdef AccountId account_id = self._index_venue_account.get(venue)
+        # Use unique_venue if it's set
+        cdef Venue used_venue = self._specific_venue or venue
+        cdef AccountId account_id = self._index_venue_account.get(used_venue)
+
         if account_id is None:
             return None
 

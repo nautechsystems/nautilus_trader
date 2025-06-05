@@ -49,7 +49,6 @@ cdef class Portfolio(PortfolioFacade):
     cdef str _log_price
     cdef str _log_xrate
 
-    cdef Venue _venue
     cdef dict[InstrumentId, Money] _unrealized_pnls
     cdef dict[InstrumentId, Money] _realized_pnls
     cdef dict[InstrumentId, Decimal] _net_positions
@@ -62,7 +61,6 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef void set_use_mark_prices(self, bint value)
     cpdef void set_use_mark_xrates(self, bint value)
-    cpdef void set_specific_venue(self, Venue venue)
     cpdef void initialize_orders(self)
     cpdef void initialize_positions(self)
     cpdef void update_quote_tick(self, QuoteTick tick)

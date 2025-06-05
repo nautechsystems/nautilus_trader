@@ -334,6 +334,7 @@ async def test_get_historical_ticks(ib_client):
     # Act
     with patch("asyncio.wait_for"):
         await ib_client.get_historical_ticks(
+            InstrumentId.from_str("AAPL.NASDAQ"),
             contract,
             tick_type,
             start_date_time,

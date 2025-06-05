@@ -22,8 +22,8 @@ from ibapi.contract import ContractDetails
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.common import dict_to_contract_details
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
-from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUE_MEMBERS
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
@@ -68,12 +68,15 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._build_options_chain = config.build_options_chain
         self._build_futures_chain = config.build_futures_chain
         self._cache_validity_days = config.cache_validity_days
+        self._convert_exchange_to_mic_venue = config.convert_exchange_to_mic_venue
+        self._symbol_to_mic_venue = config.symbol_to_mic_venue
         # TODO: If cache_validity_days > 0 and Catalog is provided
 
         self._client = client
         self.config = config
-        self.contract_details: dict[str, IBContractDetails] = {}
+        self.contract_details: dict[InstrumentId, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
+        self.contract: dict[InstrumentId, IBContract] = {}
 
     async def initialize(self, reload: bool = False) -> None:
         await super().initialize(reload)
@@ -86,6 +89,107 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._loading = False
             self._loaded = True
 
+    async def get_instrument(self, contract_id: int) -> Instrument:
+        instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+
+        if not instrument_id:
+            await self.load_async(IBContract(conId=contract_id))
+            instrument_id = self.contract_id_to_instrument_id.get(contract_id)
+
+        instrument = self.find(instrument_id)
+
+        return instrument
+
+    async def instrument_id_to_ib_contract(
+        self,
+        instrument_id: InstrumentId,
+    ) -> IBContract | None:
+        venue = instrument_id.venue.value
+        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
+
+        if len(possible_exchanges) == 1:
+            return instrument_id_to_ib_contract(
+                instrument_id,
+                possible_exchanges[0],
+                self.config.symbology_method,
+            )
+        elif await self.fetch_instrument_id(instrument_id):
+            return self.contract[instrument_id]
+        else:
+            return None
+
+    async def instrument_id_to_ib_contract_details(
+        self,
+        instrument_id: InstrumentId,
+    ) -> IBContractDetails | None:
+        if await self.fetch_instrument_id(instrument_id):
+            return self.contract_details[instrument_id]
+
+        return None
+
+    def get_price_magnifier(self, instrument_id: InstrumentId) -> int:
+        """
+        Get the price magnifier for an instrument from its contract details.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier.
+
+        Returns
+        -------
+        int
+            The price magnifier, defaults to 1 if not found.
+
+        """
+        contract_details = self.contract_details.get(instrument_id)
+
+        if contract_details:
+            return contract_details.priceMagnifier
+
+        return 1
+
+    def determine_venue_from_contract(self, contract: IBContract) -> str:
+        """
+        Determine the venue for a contract using the instrument provider configuration
+        logic.
+
+        Parameters
+        ----------
+        contract : IBContract
+            The contract to determine the venue for.
+
+        Returns
+        -------
+        str
+            The determined venue.
+
+        """
+        # Use the exchange from the contract
+        exchange = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
+        venue = None
+
+        if self._convert_exchange_to_mic_venue:
+            # Check symbol-specific venue mapping first
+            if self._symbol_to_mic_venue:
+                for symbol_prefix, symbol_venue in self._symbol_to_mic_venue.items():
+                    if contract.symbol.startswith(symbol_prefix):
+                        venue = symbol_venue
+                        break
+
+            # If no symbol-specific mapping found, use VENUE_MEMBERS mapping
+            if not venue:
+                for venue_member, exchanges in VENUE_MEMBERS.items():
+                    if exchange in exchanges:
+                        venue = venue_member
+                        break
+
+        # Fall back to using the exchange as venue
+        if not venue:
+            venue = exchange
+
+        return venue
+
     async def load_all_async(self, filters: dict | None = None) -> None:
         await self.load_ids_async([])
 
@@ -93,14 +197,17 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
+        force_reload: bool = False,
     ) -> None:
         # Parse and load Instrument IDs
         if self._load_ids_on_start:
-            for instrument_id in [
+            typed_instrument_ids = [
                 (InstrumentId.from_str(i) if isinstance(i, str) else i)
                 for i in self._load_ids_on_start
-            ]:
-                await self.load_async(instrument_id)
+            ]
+
+            for instrument_id in typed_instrument_ids:
+                await self.load_async(instrument_id, force_reload=force_reload)
 
         # Load IBContracts
         if self._load_contracts_on_start:
@@ -108,7 +215,132 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 (IBContract(**c) if isinstance(c, dict) else c)
                 for c in self._load_contracts_on_start
             ]:
-                await self.load_async(contract)
+                await self.load_async(contract, force_reload=force_reload)
+
+        for instrument_id in instrument_ids:
+            await self.load_async(instrument_id, force_reload=force_reload)
+
+    async def load_async(
+        self,
+        instrument_id: InstrumentId | IBContract,
+        filters: dict | None = None,
+        force_reload: bool = False,
+    ) -> None:
+        """
+        Search and load the instrument for the given IBContract. It is important that
+        the Contract shall have enough parameters so only one match is returned.
+
+        Parameters
+        ----------
+        instrument_id : IBContract
+            InteractiveBroker's Contract.
+        filters : dict, optional
+            Not applicable in this case.
+        force_reload : bool, optional
+            Whether to reload instrument from IB if it's already cached.
+
+        """
+        contract_details: list | None = None
+
+        if isinstance(instrument_id, InstrumentId):
+            venue = instrument_id.venue.value
+
+            if await self.fetch_instrument_id(instrument_id, force_reload):
+                return
+        elif isinstance(instrument_id, IBContract):
+            contract = instrument_id
+            contract_details = await self.get_contract_details(contract)
+            full_contract = contract_details[0].contract
+            venue = self.determine_venue_from_contract(full_contract)
+        else:
+            self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
+            return
+
+        if contract_details:
+            self._process_contract_details(contract_details, venue, force_reload)
+        else:
+            self._log.error(
+                f"Unable to resolve contract details for {instrument_id!r}. "
+                f"If you believe the InstrumentId is correct, please verify its tradability "
+                f"in TWS (Trader Workstation) for Interactive Brokers.",
+            )
+
+    async def fetch_instrument_id(
+        self,
+        instrument_id: InstrumentId,
+        force_reload: bool = False,
+    ) -> bool:
+        if instrument_id in self.contract:
+            return True
+
+        venue = instrument_id.venue.value
+
+        # We try to quickly build the contract details if they are already present in an instrument
+        if (instrument := self._client._cache.instrument(instrument_id)) and not force_reload:
+            if instrument.info and instrument.info.get("contract"):
+                converted_contract_details = dict_to_contract_details(instrument.info)
+                self._process_contract_details([converted_contract_details], venue)
+                return True
+
+        # VENUE_MEMBERS associates a MIC venue to several possible IB exchanges
+        possible_exchanges = VENUE_MEMBERS.get(venue, [venue])
+
+        try:
+            for exchange in possible_exchanges:
+                contract = instrument_id_to_ib_contract(
+                    instrument_id=instrument_id,
+                    exchange=exchange,
+                    symbology_method=self.config.symbology_method,
+                )
+
+                self._log.info(f"Attempting to find instrument for {contract=}")
+                contract_details: list = await self.get_contract_details(contract)
+
+                if contract_details:
+                    self._process_contract_details(contract_details, venue, force_reload)
+                    return True
+        except ValueError as e:
+            self._log.error(str(e))
+
+        return False
+
+    def _process_contract_details(
+        self,
+        contract_details: list[ContractDetails],
+        venue: str,
+        force_reload: bool = False,
+    ) -> None:
+        for details in copy.deepcopy(contract_details):
+            details.contract = IBContract(**details.contract.__dict__)
+            details = IBContractDetails(**details.__dict__)
+            self._log.debug(f"Attempting to create instrument from {details}")
+
+            try:
+                instrument: Instrument = parse_instrument(
+                    details,
+                    venue,
+                    self.config.symbology_method,
+                )
+            except ValueError as e:
+                self._log.error(f"{self.config.symbology_method=} failed to parse {details=}, {e}")
+                continue
+
+            if self.config.filter_callable is not None:
+                filter_callable = resolve_path(self.config.filter_callable)
+
+                if not filter_callable(instrument):
+                    continue
+
+            self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
+
+            self.add(instrument)
+
+            if not self._client._cache.instrument(instrument.id) or force_reload:
+                self._client._cache.add_instrument(instrument)
+
+            self.contract[instrument.id] = details.contract
+            self.contract_details[instrument.id] = details
+            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
 
     async def get_contract_details(
         self,
@@ -140,7 +372,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
 
         if (
-            contract.secType in ["FUT", "CONTFUT"] and contract.build_futures_chain
+            contract.secType == "FUT" and contract.build_futures_chain
         ) or self._build_futures_chain:
             # Return Underlying contract details with Future Chains
             details = await self.get_future_chain_details(
@@ -149,16 +381,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 max_expiry=max_expiry,
             )
         elif contract.secType == "CONTFUT":
-            # Get Active Month's Future
             details = await self._client.get_contract_details(
                 IBContract(
-                    secType="FUT",
-                    localSymbol=qualified.contract.localSymbol,
+                    secType="CONTFUT",
+                    symbol=qualified.contract.symbol,
                     exchange=qualified.contract.exchange,
-                    tradingClass=qualified.contract.tradingClass,
                 ),
             )
-            self._log.debug(f"Got {details=}")
 
         if (
             contract.secType in ["STK", "FUT", "IND"] and contract.build_options_chain
@@ -250,104 +479,3 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self._log.debug(f"Got {option_details=}")
 
         return option_details
-
-    async def load_async(
-        self,
-        instrument_id: InstrumentId | IBContract,
-        filters: dict | None = None,
-    ) -> None:
-        """
-        Search and load the instrument for the given IBContract. It is important that
-        the Contract shall have enough parameters so only one match is returned.
-
-        Parameters
-        ----------
-        instrument_id : IBContract
-            InteractiveBroker's Contract.
-        filters : dict, optional
-            Not applicable in this case.
-
-        """
-        databento_venue = None
-        if isinstance(instrument_id, InstrumentId):
-            databento_venue = (
-                str(instrument_id.venue)
-                if self.config.symbology_method == SymbologyMethod.DATABENTO
-                else None
-            )
-            try:
-                contract = instrument_id_to_ib_contract(
-                    instrument_id=instrument_id,
-                    symbology_method=self.config.symbology_method,
-                )
-            except ValueError as e:
-                self._log.error(str(e))
-                return
-        elif isinstance(instrument_id, IBContract):
-            assert self.config.symbology_method != SymbologyMethod.DATABENTO
-            contract = instrument_id
-        else:
-            self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
-            return
-
-        self._log.info(f"Attempting to find instrument for {contract=}")
-        contract_details = []
-        if databento_venue in VENUE_MEMBERS.keys():
-            # Use a safe mapping to prevent unintended symbol matches from global venues
-            for exchange in VENUE_MEMBERS.get(databento_venue, []):
-                contract = instrument_id_to_ib_contract(
-                    instrument_id=instrument_id,
-                    symbology_method=self.config.symbology_method,
-                    exchange=exchange,
-                )
-                contract_details = await self.get_contract_details(contract)
-                if contract_details:
-                    break
-        else:
-            contract_details = await self.get_contract_details(contract)
-
-        if contract_details:
-            await self._process_contract_details(contract_details, databento_venue=databento_venue)
-        else:
-            self._log.error(
-                f"Unable to resolve contract details for {instrument_id!r}. "
-                f"If you believe the InstrumentId is correct, please verify its tradability "
-                f"in TWS (Trader Workstation) for Interactive Brokers.",
-            )
-
-    async def _process_contract_details(
-        self,
-        contract_details: list[ContractDetails],
-        databento_venue: str | None = None,
-    ) -> None:
-        for details in copy.deepcopy(contract_details):
-            details.contract = IBContract(**details.contract.__dict__)
-            details = IBContractDetails(**details.__dict__)
-            self._log.debug(f"Attempting to create instrument from {details}")
-            try:
-                instrument: Instrument = parse_instrument(
-                    contract_details=details,
-                    symbology_method=self.config.symbology_method,
-                    databento_venue=databento_venue,
-                )
-            except ValueError as e:
-                self._log.error(f"{self.config.symbology_method=} failed to parse {details=}, {e}")
-                continue
-            if self.config.filter_callable is not None:
-                filter_callable = resolve_path(self.config.filter_callable)
-                if not filter_callable(instrument):
-                    continue
-            self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
-            self.add(instrument)
-            if self.config.symbology_method != SymbologyMethod.DATABENTO:
-                self._client._cache.add_instrument(instrument)
-            self.contract_details[instrument.id.value] = details
-            self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
-
-    async def find_with_contract_id(self, contract_id: int) -> Instrument:
-        instrument_id = self.contract_id_to_instrument_id.get(contract_id)
-        if not instrument_id:
-            await self.load_async(IBContract(conId=contract_id))
-            instrument_id = self.contract_id_to_instrument_id.get(contract_id)
-        instrument = self.find(instrument_id)
-        return instrument

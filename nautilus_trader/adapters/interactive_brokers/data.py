@@ -57,6 +57,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 
 
@@ -131,6 +132,9 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         # Connect client
         await self._client.wait_until_ready(self._connection_timeout)
         self._client.registered_nautilus_clients.add(self.id)
+
+        # Set instrument provider on client for price magnifier access
+        self._client._instrument_provider = self._instrument_provider
 
         # Set Market Data Type
         await self._client.set_market_data_type(self._market_data_type)
@@ -289,7 +293,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        await self.instrument_provider.load_async(request.instrument_id)
+        force_reload = request.params.get("force_reload", False)
+        await self.instrument_provider.load_async(request.instrument_id, force_reload=force_reload)
 
         if instrument := self.instrument_provider.find(request.instrument_id):
             self._handle_data(instrument)
@@ -300,9 +305,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_instrument(instrument, request.id, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_request_instruments` coroutine",  # pragma: no cover
-        )
+        # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
+        instruments = self._cache.instruments()
+        instrument_ids = [instrument.id for instrument in instruments]
+        force_reload = request.params.get("force_reload", False)
+        await self.instrument_provider.load_ids_async(instrument_ids, force_reload=force_reload)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         if not (instrument := self._cache.instrument(request.instrument_id)):
@@ -312,6 +319,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         ticks = await self._handle_ticks_request(
+            request.instrument_id,
             IBContract(**instrument.info["contract"]),
             "BID_ASK",
             request.limit,
@@ -339,6 +347,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         ticks = await self._handle_ticks_request(
+            request.instrument_id,
             IBContract(**instrument.info["contract"]),
             "TRADES",
             request.limit,
@@ -354,6 +363,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _handle_ticks_request(
         self,
+        instrument_id: InstrumentId,
         contract: IBContract,
         tick_type: str,
         limit: int,
@@ -371,6 +381,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         while (start and end > start) or (len(ticks) < limit > 0):
             await self._client.wait_until_ready()
             ticks_part = await self._client.get_historical_ticks(
+                instrument_id,
                 contract,
                 tick_type,
                 end_date_time=end,

@@ -74,7 +74,7 @@ async def main(
     )
 
     trade_ticks = await client.request_ticks(
-        "TRADES",
+        tick_type="TRADES",
         start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
         end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
         tz_name="America/New_York",
@@ -83,7 +83,7 @@ async def main(
     )
 
     quote_ticks = await client.request_ticks(
-        "BID_ASK",
+        tick_type="BID_ASK",
         start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
         end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
         tz_name="America/New_York",

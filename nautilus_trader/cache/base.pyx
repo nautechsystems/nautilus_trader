@@ -238,6 +238,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `account` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method `set_specific_venue` must be implemented in the subclass")  # p
+
     cpdef Account account_for_venue(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `account_for_venue` must be implemented in the subclass")  # pragma: no cover
