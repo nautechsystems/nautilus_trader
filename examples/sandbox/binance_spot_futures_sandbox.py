@@ -32,8 +32,14 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import QuoteTick, TradeTick, Bar, DataType
-from nautilus_trader.model.identifiers import InstrumentId, ClientId, TraderId, Venue
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading.config import StrategyConfig
@@ -62,7 +68,7 @@ class TestStrategy(Strategy):
         if self.futures_instrument is None:
             self.log.error(
                 f"Could not find instrument for {self.config.futures_instrument_id}"
-                f"\nPossible instruments: {self.cache.instrument_ids()}"
+                f"\nPossible instruments: {self.cache.instrument_ids()}",
             )
             self.stop()
             return
@@ -70,22 +76,16 @@ class TestStrategy(Strategy):
         if self.spot_instrument is None:
             self.log.error(
                 f"Could not find futures instrument for {self.config.spot_instrument_id}"
-                f"\nPossible instruments: {self.cache.instrument_ids()}"
+                f"\nPossible instruments: {self.cache.instrument_ids()}",
             )
             self.stop()
             return
 
         account = self.portfolio.account(venue=self.futures_instrument.venue)
-        balances = {
-            str(currency): str(balance)
-            for currency, balance in account.balances().items()
-        }
+        balances = {str(currency): str(balance) for currency, balance in account.balances().items()}
         self.log.info(f"Futures balances\n{json.dumps(balances, indent=4)}", LogColor.GREEN)
         account = self.portfolio.account(venue=self.spot_instrument.venue)
-        balances = {
-            str(currency): str(balance)
-            for currency, balance in account.balances().items()
-        }
+        balances = {str(currency): str(balance) for currency, balance in account.balances().items()}
         self.log.info(f"Spot balances\n{json.dumps(balances, indent=4)}", LogColor.GREEN)
 
         # Subscribe to live data
