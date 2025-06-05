@@ -265,6 +265,7 @@ cdef class BarBuilder:
         return bar
 
 
+#TODO: Mark price aggregation
 cdef class BarAggregator:
     """
     Provides a means of aggregating specified bars and sending to a registered handler.

@@ -16,6 +16,7 @@
 from datetime import timedelta
 from decimal import ROUND_HALF_EVEN
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -1766,292 +1767,389 @@ class TestTimeBarAggregator:
                 time_bars_origin=time_bars_origin,
             )
 
-    # TODO: Test precision of time_bars_origin to nanoseconds
+    @staticmethod
+    def enrich_data_test_instantiate_and_update_timer_with_various_bar_specs_data(data: list[Any]):
+        ret: list[Any] = []
+
+        for test_case in data:
+            bar_spec: BarSpecification = test_case[0]
+            expected1 = test_case[2]
+            expected2 = test_case[3]
+
+            if (
+                bar_spec.price_type == PriceType.BID
+                or bar_spec.price_type == PriceType.ASK
+                or bar_spec.price_type == PriceType.MID
+            ):
+                _tick1 = QuoteTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    bid_price=Price.from_str("1.00005"),
+                    ask_price=Price.from_str("1.00005"),
+                    bid_size=Quantity.from_int(1),
+                    ask_size=Quantity.from_int(1),
+                    ts_event=expected1.value,
+                    ts_init=expected1.value,
+                )
+
+                _tick2 = QuoteTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    bid_price=Price.from_str("0.99999"),
+                    ask_price=Price.from_str("0.99999"),
+                    bid_size=Quantity.from_int(1),
+                    ask_size=Quantity.from_int(1),
+                    ts_event=expected2.value,
+                    ts_init=expected2.value,
+                )
+
+            elif bar_spec.price_type == PriceType.LAST:
+                _tick1 = TradeTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    price=Price.from_str("1.00005"),
+                    size=Quantity.from_int(1),
+                    ts_event=expected1.value,
+                    ts_init=expected1.value,
+                    aggressor_side=AggressorSide.BUYER,
+                    trade_id=TradeId("123457"),
+                )
+
+                _tick2 = TradeTick(
+                    instrument_id=AUDUSD_SIM.id,
+                    price=Price.from_str("0.99999"),
+                    size=Quantity.from_int(1),
+                    ts_event=expected2.value,
+                    ts_init=expected2.value,
+                    aggressor_side=AggressorSide.SELLER,
+                    trade_id=TradeId("123457"),
+                )
+
+            else:
+                raise ValueError(f"{bar_spec.PriceType} is not supported in the test")
+
+            for tick1 in [None, _tick1]:
+                for tick2 in [None, _tick2]:
+                    ret.append([*test_case, tick1, tick2])
+
+        return ret
+
+    # TODO (in Rust): Test precision of time_bars_origin to nanoseconds
+    # TODO: Test MARK price when implemented
     @pytest.mark.parametrize(
-        ("bar_spec", "time_bars_origin", "expected1", "expected2"),
-        [
+        ("bar_spec", "time_bars_origin_offset", "expected1", "expected2", "tick1", "tick2"),
+        enrich_data_test_instantiate_and_update_timer_with_various_bar_specs_data(
             [
-                BarSpecification(1, BarAggregation.MILLISECOND, PriceType.MID),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 1000),
+                [
+                    BarSpecification(1, BarAggregation.MILLISECOND, PriceType.MID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 1000),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.MILLISECOND, PriceType.LAST),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 10000),
+                ],
+                [
+                    BarSpecification(5, BarAggregation.MILLISECOND, PriceType.BID),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
+                ],
+                [
+                    BarSpecification(5, BarAggregation.MILLISECOND, PriceType.LAST),
+                    pd.Timedelta(microseconds=-4999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
+                ],
+                [
+                    BarSpecification(5, BarAggregation.MILLISECOND, PriceType.BID),
+                    pd.Timedelta(microseconds=-4_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
+                ],
+                [
+                    BarSpecification(5, BarAggregation.MILLISECOND, PriceType.ASK),
+                    pd.Timedelta(microseconds=4_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999 + 5_000),
+                ],
+                [
+                    BarSpecification(5, BarAggregation.MILLISECOND, PriceType.LAST),
+                    pd.Timedelta(microseconds=-1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999 + 5_000),
+                ],
+                [
+                    BarSpecification(15, BarAggregation.SECOND, PriceType.ASK),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 15),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.SECOND, PriceType.ASK),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 10) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
+                    pd.Timedelta(microseconds=-1),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0, 0)
+                        + pd.Timedelta(seconds=9, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0, 10)
+                        + pd.Timedelta(seconds=9, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.SECOND, PriceType.MID),
+                    pd.Timedelta(seconds=-9, microseconds=-999_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 10) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
+                    pd.Timedelta(seconds=9, microseconds=999_999),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0, 0)
+                        + pd.Timedelta(seconds=9, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0, 10)
+                        + pd.Timedelta(seconds=9, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(60, BarAggregation.SECOND, PriceType.BID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 1, 0),
+                ],
+                [
+                    BarSpecification(12, BarAggregation.SECOND, PriceType.MID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 0, 12),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 1),
+                ],
+                [
+                    BarSpecification(2, BarAggregation.MINUTE, PriceType.LAST),
+                    pd.Timedelta(minutes=1, seconds=59, microseconds=999_999),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(minutes=1, seconds=59, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 2)
+                        + pd.Timedelta(minutes=1, seconds=59, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(2, BarAggregation.MINUTE, PriceType.LAST),
+                    pd.Timedelta(minutes=-1, seconds=-59, microseconds=-999_999),
+                    (pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1)),
+                    (pd.Timestamp(1990, 1, 1, 0, 2) + pd.Timedelta(microseconds=1)),
+                ],
+                [
+                    BarSpecification(2, BarAggregation.MINUTE, PriceType.ASK),
+                    pd.Timedelta(minutes=-1, seconds=-59, microseconds=-999_999),
+                    (pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1)),
+                    (pd.Timestamp(1990, 1, 1, 0, 2) + pd.Timedelta(microseconds=1)),
+                ],
+                [
+                    BarSpecification(10, BarAggregation.MINUTE, PriceType.BID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 0, 10),
+                ],
+                [
+                    BarSpecification(60, BarAggregation.MINUTE, PriceType.MID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 1, 0),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.HOUR, PriceType.BID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 1, 0),
+                ],
+                [
+                    BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 6, 0) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
+                    pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 1, 6, 0)
+                        + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
+                    pd.Timedelta(microseconds=-1),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 1, 6, 0)
+                        + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
+                    pd.Timedelta(hours=-5, minutes=-59, seconds=-59, microseconds=-999_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 6, 0) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(12, BarAggregation.HOUR, PriceType.LAST),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 1, 12, 0),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.DAY, PriceType.ASK),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 2, 0, 0),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
+                    pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 2, 0, 0)
+                        + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 2, 0, 0) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
+                    pd.Timedelta(microseconds=-1),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 2, 0, 0)
+                        + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
+                    ),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
+                    pd.Timedelta(hours=-23, minutes=-59, seconds=-59, microseconds=-999_999),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 2, 0, 0) + pd.Timedelta(microseconds=1),
+                ],
+                # Based on the calendar
+                [
+                    BarSpecification(1, BarAggregation.WEEK, PriceType.LAST),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 1, 8, 0, 0),
+                ],
+                # Based on the calendar
+                [
+                    BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
+                    pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(
+                            days=6,
+                            hours=23,
+                            minutes=59,
+                            seconds=59,
+                            microseconds=999_999,
+                        )
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 8, 0, 0)
+                        + pd.Timedelta(
+                            days=6,
+                            hours=23,
+                            minutes=59,
+                            seconds=59,
+                            microseconds=999_999,
+                        )
+                    ),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 8, 0, 0) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
+                    pd.Timedelta(
+                        days=-6,
+                        hours=-23,
+                        minutes=-59,
+                        seconds=-59,
+                        microseconds=-999_999,
+                    ),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 8, 0, 0) + pd.Timedelta(microseconds=1),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
+                    pd.Timedelta(microseconds=-1),
+                    (
+                        pd.Timestamp(1990, 1, 1, 0, 0)
+                        + pd.Timedelta(
+                            days=6,
+                            hours=23,
+                            minutes=59,
+                            seconds=59,
+                            microseconds=999_999,
+                        )
+                    ),
+                    (
+                        pd.Timestamp(1990, 1, 8, 0, 0)
+                        + pd.Timedelta(
+                            days=6,
+                            hours=23,
+                            minutes=59,
+                            seconds=59,
+                            microseconds=999_999,
+                        )
+                    ),
+                ],
             ],
-            [
-                BarSpecification(10, BarAggregation.MILLISECOND, PriceType.LAST),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 10000),
-            ],
-            [
-                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.BID),
-                pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
-            ],
-            [
-                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.BID),
-                pd.Timedelta(microseconds=-4999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
-            ],
-            [
-                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.BID),
-                pd.Timedelta(microseconds=-4_999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 5001),
-            ],
-            [
-                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.ASK),
-                pd.Timedelta(microseconds=4_999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999 + 5_000),
-            ],
-            [
-                BarSpecification(5, BarAggregation.MILLISECOND, PriceType.ASK),
-                pd.Timedelta(microseconds=-1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0, 4_999 + 5_000),
-            ],
-            [
-                BarSpecification(15, BarAggregation.SECOND, PriceType.MARK),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 0, 15),
-            ],
-            [
-                BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
-                pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 10) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
-                pd.Timedelta(microseconds=-1),
-                (pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(seconds=9, microseconds=999_999)),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0, 10)
-                    + pd.Timedelta(seconds=9, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
-                pd.Timedelta(seconds=-9, microseconds=-999_999),
-                pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0, 10) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(10, BarAggregation.SECOND, PriceType.LAST),
-                pd.Timedelta(seconds=9, microseconds=999_999),
-                (pd.Timestamp(1990, 1, 1, 0, 0, 0) + pd.Timedelta(seconds=9, microseconds=999_999)),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0, 10)
-                    + pd.Timedelta(seconds=9, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(60, BarAggregation.SECOND, PriceType.BID),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 1, 0),
-            ],
-            [
-                BarSpecification(12, BarAggregation.SECOND, PriceType.MID),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 0, 12),
-            ],
-            [
-                BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 1),
-            ],
-            [
-                BarSpecification(2, BarAggregation.MINUTE, PriceType.MARK),
-                pd.Timedelta(minutes=1, seconds=59, microseconds=999_999),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(minutes=1, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 2)
-                    + pd.Timedelta(minutes=1, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(2, BarAggregation.MINUTE, PriceType.MARK),
-                pd.Timedelta(minutes=-1, seconds=-59, microseconds=-999_999),
-                (pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1)),
-                (pd.Timestamp(1990, 1, 1, 0, 2) + pd.Timedelta(microseconds=1)),
-            ],
-            [
-                BarSpecification(2, BarAggregation.MINUTE, PriceType.MARK),
-                pd.Timedelta(minutes=-1, seconds=-59, microseconds=-999_999),
-                (pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1)),
-                (pd.Timestamp(1990, 1, 1, 0, 2) + pd.Timedelta(microseconds=1)),
-            ],
-            [
-                BarSpecification(10, BarAggregation.MINUTE, PriceType.MARK),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 1, 0, 10),
-            ],
-            [
-                BarSpecification(60, BarAggregation.MINUTE, PriceType.MID),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 1, 1, 0),
-            ],
-            [
-                BarSpecification(1, BarAggregation.HOUR, PriceType.BID),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 1, 1, 0),
-            ],
-            [
-                BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
-                pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 6, 0) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
-                pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 1, 6, 0)
-                    + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
-                pd.Timedelta(microseconds=-1),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 1, 6, 0)
-                    + pd.Timedelta(hours=5, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(6, BarAggregation.HOUR, PriceType.ASK),
-                pd.Timedelta(hours=-5, minutes=-59, seconds=-59, microseconds=-999_999),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 6, 0) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(12, BarAggregation.HOUR, PriceType.LAST),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 1, 12, 0),
-            ],
-            [
-                BarSpecification(1, BarAggregation.DAY, PriceType.ASK),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 2, 0, 0),
-            ],
-            [
-                BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
-                pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 2, 0, 0)
-                    + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
-                pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 2, 0, 0) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
-                pd.Timedelta(microseconds=-1),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 2, 0, 0)
-                    + pd.Timedelta(hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
-                pd.Timedelta(hours=-23, minutes=-59, seconds=-59, microseconds=-999_999),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 2, 0, 0) + pd.Timedelta(microseconds=1),
-            ],
-            # Based on the calendar
-            [
-                BarSpecification(1, BarAggregation.WEEK, PriceType.LAST),
-                None,
-                pd.Timestamp(1990, 1, 1, 0, 0),
-                pd.Timestamp(1990, 1, 8, 0, 0),
-            ],
-            # Based on the calendar
-            [
-                BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
-                pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 8, 0, 0)
-                    + pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            [
-                BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
-                pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 8, 0, 0) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
-                pd.Timedelta(days=-6, hours=-23, minutes=-59, seconds=-59, microseconds=-999_999),
-                pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
-                pd.Timestamp(1990, 1, 8, 0, 0) + pd.Timedelta(microseconds=1),
-            ],
-            [
-                BarSpecification(1, BarAggregation.WEEK, PriceType.MID),
-                pd.Timedelta(microseconds=-1),
-                (
-                    pd.Timestamp(1990, 1, 1, 0, 0)
-                    + pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-                (
-                    pd.Timestamp(1990, 1, 8, 0, 0)
-                    + pd.Timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999_999)
-                ),
-            ],
-            # TODO: Not working because of a potential bug in Pandas
-            # TODO: Test time_bars_origin for MONTH
-            # [
-            #    BarSpecification(12, BarAggregation.MONTH, PriceType.MID),
-            #    None,
-            #    pd.Timestamp(1990, 1, 1, 0, 0).value,
-            #    pd.Timestamp(1991, 1, 1, 0, 0).value,
-            # ],
-        ],
+        ),
     )
     def test_instantiate_and_update_timer_with_various_bar_specs(
         self,
         bar_spec: BarSpecification,
-        time_bars_origin: pd.Timedelta,
+        time_bars_origin_offset: pd.Timedelta,
         expected1: pd.Timestamp,
         expected2: pd.Timestamp,
+        tick1: QuoteTick | TradeTick | None,
+        tick2: QuoteTick | TradeTick | None,
     ):
         # Arrange
         start_time_ns = pd.Timestamp(1990, 1, 1).value
@@ -2069,31 +2167,120 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            time_bars_origin=time_bars_origin,
+            time_bars_origin=time_bars_origin_offset,
         )
 
         initial_next_close = aggregator.next_close_ns
 
+        def handle_tick(tick: QuoteTick | TradeTick | None):
+            if type(tick) is QuoteTick:
+                aggregator.handle_quote_tick(tick)
+            elif type(tick) is TradeTick:
+                aggregator.handle_trade_tick(tick)
+
+        handle_tick(tick1)
         events = clock.advance_time(initial_next_close)
         events[0].handle()
 
+        handle_tick(tick2)
         second_next_close = aggregator.next_close_ns
         events = clock.advance_time(second_next_close)
         events[0].handle()
 
         # Assert
-        assert pd.Timestamp(initial_next_close) == pd.Timestamp(expected1)
-        assert pd.Timestamp(second_next_close) == pd.Timestamp(expected2)
-        assert pd.Timestamp(aggregator.next_close_ns) == pd.Timestamp(
-            expected2 + (expected2 - expected1),
-        )
+        assert pd.Timestamp(initial_next_close) == expected1
+        assert pd.Timestamp(second_next_close) == expected2
+        assert pd.Timestamp(aggregator.next_close_ns) == expected2 + (expected2 - expected1)
 
+        if tick1 is not None and tick2 is not None:
+            assert len(handler) == 2
+
+            assert handler[0].volume == 1
+            assert pd.Timestamp(handler[0].ts_init) == expected1
+            assert pd.Timestamp(handler[0].ts_event) == expected1
+
+            assert handler[1].volume == 1
+            assert pd.Timestamp(handler[1].ts_init) == expected2
+            assert pd.Timestamp(handler[1].ts_event) == expected2
+        elif tick1 is not None:
+            assert len(handler) == 2
+
+            assert handler[0].volume == 1
+            assert pd.Timestamp(handler[0].ts_init) == expected1
+            assert pd.Timestamp(handler[0].ts_event) == expected1
+
+            assert pd.Timestamp(handler[1].ts_init) == expected2
+            assert pd.Timestamp(handler[1].ts_event) == expected2
+        elif tick2 is not None:
+            assert len(handler) == 1
+
+            assert pd.Timestamp(handler[0].ts_init) == expected2
+            assert pd.Timestamp(handler[0].ts_event) == expected2
+        else:
+            assert len(handler) == 0
+
+    # TODO (in Rust): Test precision of time_bars_origin to nanoseconds
+    # TODO: Test MARK price when implemented
+    @pytest.mark.parametrize(
+        (
+            "bar_spec",
+            "time_bars_origin_offset",
+            "expected1",
+            "expected2",
+            "expected3",
+            "tick1",
+            "tick2",
+        ),
+        enrich_data_test_instantiate_and_update_timer_with_various_bar_specs_data(
+            [
+                # TODO: Test time_bars_origin with DateOffset for MONTH
+                [
+                    BarSpecification(12, BarAggregation.MONTH, PriceType.MID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1991, 1, 1, 0, 0),
+                    pd.Timestamp(1992, 1, 1, 0, 0),
+                ],
+                [
+                    BarSpecification(1, BarAggregation.MONTH, PriceType.BID),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 2, 1, 0, 0),
+                    pd.Timestamp(1990, 3, 1, 0, 0),
+                ],
+                [
+                    BarSpecification(6, BarAggregation.MONTH, PriceType.LAST),
+                    None,
+                    pd.Timestamp(1990, 1, 1, 0, 0),
+                    pd.Timestamp(1990, 7, 1, 0, 0),
+                    pd.Timestamp(1991, 1, 1, 0, 0),
+                ],
+                [
+                    BarSpecification(2, BarAggregation.MONTH, PriceType.ASK),
+                    pd.Timedelta(days=28, microseconds=-1),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(days=28, microseconds=-1),
+                    pd.Timestamp(1990, 3, 1, 0, 0) + pd.Timedelta(days=28, microseconds=-1),
+                    pd.Timestamp(1990, 5, 1, 0, 0) + pd.Timedelta(days=28, microseconds=-1),
+                ],
+                [
+                    BarSpecification(2, BarAggregation.MONTH, PriceType.LAST),
+                    pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 1, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 3, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                    pd.Timestamp(1990, 5, 1, 0, 0) + pd.Timedelta(microseconds=1),
+                ],
+            ],
+        ),
+    )
     def test_instantiate_and_update_month_timer_with_various_bar_specs(
         self,
         bar_spec: BarSpecification,
-        time_bars_origin: pd.Timedelta,
+        time_bars_origin_offset: pd.Timedelta,
         expected1: pd.Timestamp,
         expected2: pd.Timestamp,
+        expected3: pd.Timestamp,
+        tick1: QuoteTick | TradeTick | None,
+        tick2: QuoteTick | TradeTick | None,
     ):
         # Arrange
         start_time_ns = pd.Timestamp(1990, 1, 1).value
@@ -2111,24 +2298,61 @@ class TestTimeBarAggregator:
             bar_type,
             handler.append,
             clock,
-            time_bars_origin=time_bars_origin,
+            time_bars_origin=time_bars_origin_offset,
         )
 
         initial_next_close = aggregator.next_close_ns
 
+        def handle_tick(tick: QuoteTick | TradeTick | None):
+            if type(tick) is QuoteTick:
+                aggregator.handle_quote_tick(tick)
+            elif type(tick) is TradeTick:
+                aggregator.handle_trade_tick(tick)
+
+        handle_tick(tick1)
         events = clock.advance_time(initial_next_close)
         events[0].handle()
 
+        handle_tick(tick2)
         second_next_close = aggregator.next_close_ns
         events = clock.advance_time(second_next_close)
         events[0].handle()
 
+        allowed_diff_ns = 10
+
         # Assert
-        assert pd.Timestamp(initial_next_close) == pd.Timestamp(expected1)
-        assert pd.Timestamp(second_next_close) == pd.Timestamp(expected2)
-        assert pd.Timestamp(aggregator.next_close_ns) == pd.Timestamp(
-            expected2 + (expected2 - expected1),
-        )
+        assert abs(pd.Timestamp(initial_next_close).value - expected1.value) < allowed_diff_ns
+        assert abs(pd.Timestamp(second_next_close).value - expected2.value) < allowed_diff_ns
+        assert abs(pd.Timestamp(aggregator.next_close_ns).value - expected3.value) < allowed_diff_ns
+
+        if tick1 is not None and tick2 is not None:
+            assert len(handler) == 2
+
+            assert handler[0].volume == 1
+            assert abs(pd.Timestamp(handler[0].ts_init).value - expected1.value) < allowed_diff_ns
+            assert abs(pd.Timestamp(handler[0].ts_event).value - expected1.value) < allowed_diff_ns
+
+            assert handler[1].volume == 1
+            assert abs(pd.Timestamp(handler[1].ts_init).value - expected2.value) < allowed_diff_ns
+            assert abs(pd.Timestamp(handler[1].ts_event).value - expected2.value) < allowed_diff_ns
+        elif tick1 is not None:
+            assert len(handler) == 2
+
+            assert handler[0].volume == 1
+            assert abs(pd.Timestamp(handler[0].ts_init).value - expected1.value) < allowed_diff_ns
+            assert abs(pd.Timestamp(handler[0].ts_event).value - expected1.value) < allowed_diff_ns
+
+            assert handler[1].volume == 0
+            assert abs(pd.Timestamp(handler[1].ts_init).value - expected2.value) < allowed_diff_ns
+            assert abs(pd.Timestamp(handler[1].ts_event).value - expected2.value) < allowed_diff_ns
+        elif tick2 is not None:
+            assert len(handler) == 1
+
+            assert handler[0].volume == 1
+            assert abs(pd.Timestamp(handler[0].ts_init).value - expected2.value) < allowed_diff_ns
+            assert abs(pd.Timestamp(handler[0].ts_event).value - expected2.value) < allowed_diff_ns
+        else:
+            assert len(handler) == 0
 
     def test_update_timer_with_test_clock_sends_single_bar_to_handler(self):
         # Arrange
