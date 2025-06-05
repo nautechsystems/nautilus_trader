@@ -4817,6 +4817,7 @@ dependencies = [
  "serde",
  "strum",
  "tokio",
+ "tracing",
  "ustr",
 ]
 
