@@ -109,7 +109,7 @@ pub struct DatabentoDataClient {
     loader: DatabentoDataLoader,
     /// Feed handler command senders per dataset.
     cmd_channels: Arc<Mutex<AHashMap<String, mpsc::UnboundedSender<LiveCommand>>>>,
-    /// Task handles for life cycle management.
+    /// Task handles for lifecycle management.
     task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,

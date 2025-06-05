@@ -15,7 +15,7 @@
 
 #![allow(unsafe_code)]
 
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
 use ustr::Ustr;
 
@@ -32,7 +32,7 @@ pub use data_actor::{DataActor, DataActorCore};
 
 pub use crate::component::Component;
 
-pub trait Actor: Any {
+pub trait Actor: Any + Debug {
     /// The unique identifier for the actor.
     fn id(&self) -> Ustr;
     /// Handles the `msg`.

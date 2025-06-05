@@ -13,11 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use nautilus_model::identifiers::{ComponentId, TraderId};
 
 use crate::{
+    actor::Actor,
     cache::Cache,
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
@@ -25,12 +26,11 @@ use crate::{
 };
 
 /// Common trait for components.
-pub trait Component: Debug + Any {
-    /// Returns a reference to the component as `Any` for downcasting.
-    fn as_any(&self) -> &dyn Any;
-
+///
+/// Components are actors with lifecycle management capabilities.
+pub trait Component: Actor {
     /// Returns the unique identifier for this component.
-    fn id(&self) -> ComponentId;
+    fn component_id(&self) -> ComponentId;
 
     /// Returns the current state of the component.
     fn state(&self) -> ComponentState;
@@ -84,7 +84,7 @@ pub trait Component: Debug + Any {
     /// Returns an error if the component fails to dispose.
     fn dispose(&mut self) -> anyhow::Result<()>;
 
-    /// Handles a timer event (TBD).
+    /// Handles a time event (TBD).
     fn handle_event(&mut self, event: TimeEvent);
 }
 

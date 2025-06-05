@@ -5104,6 +5104,7 @@ dependencies = [
  "pyo3",
  "rstest",
  "strum",
+ "ustr",
 ]
 
 [[package]]

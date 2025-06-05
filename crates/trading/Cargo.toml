@@ -55,6 +55,7 @@ chrono-tz = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

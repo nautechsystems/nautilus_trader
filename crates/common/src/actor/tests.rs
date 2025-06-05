@@ -269,6 +269,7 @@ fn test_logging() -> Option<LogGuard> {
 }
 
 /// A simple Actor implementation for testing.
+#[derive(Debug)]
 struct DummyActor {
     id_str: Ustr,
     count: usize,
@@ -305,17 +306,14 @@ fn register_data_actor(
 
     let actor_id = actor.actor_id;
 
-    let actor_rc = Rc::new(UnsafeCell::new(actor));
-    register_actor(actor_rc);
+    register_actor(actor);
     actor_id.inner()
 }
 
 /// Helper to register a dummy actor and return its Rc.
 fn register_dummy(name: &str) -> Rc<UnsafeCell<dyn Actor>> {
     let actor = DummyActor::new(name);
-    let rc: Rc<UnsafeCell<dyn Actor>> = Rc::new(UnsafeCell::new(actor));
-    register_actor(rc.clone());
-    rc
+    register_actor(actor)
 }
 
 #[rstest]
