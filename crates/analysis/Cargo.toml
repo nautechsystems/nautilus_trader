@@ -47,5 +47,4 @@ pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
 rstest = { workspace = true }

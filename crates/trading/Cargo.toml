@@ -57,5 +57,4 @@ pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
 rstest = { workspace = true }

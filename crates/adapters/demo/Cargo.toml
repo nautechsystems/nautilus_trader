@@ -67,7 +67,6 @@ tokio-stream = "0.1.17"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
