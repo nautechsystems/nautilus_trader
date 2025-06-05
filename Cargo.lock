@@ -4425,7 +4425,6 @@ name = "nautilus-analysis"
 version = "0.49.0"
 dependencies = [
  "anyhow",
- "criterion",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
@@ -4519,7 +4518,6 @@ dependencies = [
  "async-stream",
  "base64",
  "chrono",
- "criterion",
  "derive_builder",
  "futures-util",
  "indexmap 2.9.0",
@@ -4641,7 +4639,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "criterion",
  "indexmap 2.9.0",
  "log",
  "nautilus-common",
@@ -4660,7 +4657,6 @@ dependencies = [
  "ahash 0.8.12",
  "anyhow",
  "async-trait",
- "criterion",
  "databento",
  "dotenvy",
  "fallible-streaming-iterator",
@@ -4695,7 +4691,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
- "criterion",
  "futures",
  "log",
  "nautilus-common",
@@ -4921,7 +4916,6 @@ dependencies = [
 name = "nautilus-portfolio"
 version = "0.49.0"
 dependencies = [
- "criterion",
  "log",
  "nautilus-analysis",
  "nautilus-common",
@@ -4961,7 +4955,6 @@ dependencies = [
 name = "nautilus-risk"
 version = "0.49.0"
 dependencies = [
- "criterion",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -4981,7 +4974,6 @@ version = "0.49.0"
 dependencies = [
  "anyhow",
  "arrow",
- "criterion",
  "nautilus-core",
  "nautilus-model",
  "nautilus-testkit",
@@ -5026,7 +5018,6 @@ dependencies = [
  "arrow",
  "async-stream",
  "chrono",
- "criterion",
  "csv",
  "derive_builder",
  "flate2",
@@ -5087,7 +5078,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "chrono-tz",
- "criterion",
  "log",
  "nautilus-common",
  "nautilus-core",
