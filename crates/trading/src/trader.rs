@@ -173,7 +173,7 @@ impl Trader {
 
     /// Returns the number of registered actors.
     #[must_use]
-    pub fn actor_count(&self) -> usize {
+    pub const fn actor_count(&self) -> usize {
         self.actor_ids.len()
     }
 

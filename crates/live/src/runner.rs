@@ -97,7 +97,7 @@ impl AsyncRunner {
             let next_event = tokio::select! {
                 Some(resp) = self.data_rx.recv() => RunnerEvent::Data(resp),
                 Some(event) = time_event_stream.next() => RunnerEvent::Time(event),
-                Some(_) = self.signal_rx.recv() => {
+                Some(()) = self.signal_rx.recv() => {
                     tracing::info!("AsyncRunner received signal, shutting down");
                     return; // Signal to stop
                 },

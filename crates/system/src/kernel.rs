@@ -156,7 +156,7 @@ impl NautilusKernel {
         let endpoint = MessagingSwitchboard::data_engine_process();
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |data: &Data| {
-                data_engine_ref.borrow_mut().process_data(data.clone()) // TODO: Optimize
+                data_engine_ref.borrow_mut().process_data(data.clone()); // TODO: Optimize
             })));
         msgbus::register(endpoint, handler);
 
