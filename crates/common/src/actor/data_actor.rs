@@ -112,24 +112,9 @@ impl Default for DataActorConfig {
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
 
-pub trait DataActor {
-    /// Returns the actor ID for convenience.
-    fn actor_id(&self) -> ActorId;
-
-    /// Returns a reference to the core.
-    fn core(&self) -> &DataActorCore;
-
-    /// Returns a mutable reference to the core.
-    fn core_mut(&mut self) -> &mut DataActorCore;
-
-    fn not_running(&self) -> bool {
-        !self.is_running()
-    }
-
-    fn is_running(&self) -> bool {
-        self.core().state == ComponentState::Running
-    }
-
+pub trait DataActor:
+    Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
+{
     /// Actions to be performed when the actor state is saved.
     ///
     /// # Errors
@@ -691,8 +676,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_data(handler, data_type, client_id, params);
+        DataActorCore::subscribe_data(self, handler, data_type, client_id, params);
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -713,9 +697,7 @@ pub trait DataActor {
             },
         )));
 
-        // Use core to register handler and send commands
-        self.core_mut()
-            .subscribe_quotes(topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_quotes(self, topic, handler, instrument_id, client_id, params);
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
@@ -736,8 +718,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_instruments(topic, handler, venue, client_id, params);
+        DataActorCore::subscribe_instruments(self, topic, handler, venue, client_id, params);
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
@@ -758,8 +739,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_instrument(topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_instrument(self, topic, handler, instrument_id, client_id, params);
     }
 
     /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
@@ -783,7 +763,8 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut().subscribe_book_deltas(
+        DataActorCore::subscribe_book_deltas(
+            self,
             topic,
             handler,
             instrument_id,
@@ -816,7 +797,8 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut().subscribe_book_at_interval(
+        DataActorCore::subscribe_book_at_interval(
+            self,
             topic,
             handler,
             instrument_id,
@@ -846,8 +828,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_trades(topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_trades(self, topic, handler, instrument_id, client_id, params);
     }
 
     /// Subscribe to streaming [`Bar`] data for the `bar_type`.
@@ -868,8 +849,15 @@ pub trait DataActor {
                 get_actor_unchecked::<Self>(&actor_id).handle_bar(bar);
             })));
 
-        self.core_mut()
-            .subscribe_bars(topic, handler, bar_type, client_id, await_partial, params);
+        DataActorCore::subscribe_bars(
+            self,
+            topic,
+            handler,
+            bar_type,
+            client_id,
+            await_partial,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
@@ -890,8 +878,14 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_mark_prices(topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_mark_prices(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`IndexPriceUpdate`] data for the `instrument_id`.
@@ -912,8 +906,14 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .subscribe_index_prices(topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_index_prices(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
@@ -934,7 +934,8 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut().subscribe_instrument_status(
+        DataActorCore::subscribe_instrument_status(
+            self,
             topic,
             handler,
             instrument_id,
@@ -961,7 +962,8 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut().subscribe_instrument_close(
+        DataActorCore::subscribe_instrument_close(
+            self,
             topic,
             handler,
             instrument_id,
@@ -979,8 +981,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_data(data_type, client_id, params);
+        DataActorCore::unsubscribe_data(self, data_type, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
@@ -992,8 +993,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_instruments(venue, client_id, params);
+        DataActorCore::unsubscribe_instruments(self, venue, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `instrument_id`.
@@ -1005,8 +1005,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_instrument(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`OrderBookDeltas`] data for the `instrument_id`.
@@ -1018,8 +1017,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_book_deltas(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_book_deltas(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
@@ -1032,8 +1030,13 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_book_at_interval(instrument_id, interval_ms, client_id, params);
+        DataActorCore::unsubscribe_book_at_interval(
+            self,
+            instrument_id,
+            interval_ms,
+            client_id,
+            params,
+        );
     }
 
     /// Unsubscribe from streaming [`QuoteTick`] data for the `instrument_id`.
@@ -1045,8 +1048,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_quotes(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_quotes(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
@@ -1058,8 +1060,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_trades(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_trades(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
@@ -1071,8 +1072,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_bars(bar_type, client_id, params);
+        DataActorCore::unsubscribe_bars(self, bar_type, client_id, params);
     }
 
     /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
@@ -1084,8 +1084,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_mark_prices(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_mark_prices(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
@@ -1097,8 +1096,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_index_prices(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_index_prices(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
@@ -1110,8 +1108,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_instrument_status(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument_status(self, instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
@@ -1123,8 +1120,7 @@ pub trait DataActor {
     ) where
         Self: 'static + Debug + Sized,
     {
-        self.core_mut()
-            .unsubscribe_instrument_close(instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
     }
 
     /// Request historical custom data of the given `data_type`.
@@ -1151,8 +1147,9 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_data(data_type, client_id, start, end, limit, params, handler)
+        DataActorCore::request_data(
+            self, data_type, client_id, start, end, limit, params, handler,
+        )
     }
 
     /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
@@ -1178,8 +1175,15 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_instrument(instrument_id, start, end, client_id, params, handler)
+        DataActorCore::request_instrument(
+            self,
+            instrument_id,
+            start,
+            end,
+            client_id,
+            params,
+            handler,
+        )
     }
 
     /// Request historical [`InstrumentsResponse`] definitions for the optional `venue`.
@@ -1205,8 +1209,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_instruments(venue, start, end, client_id, params, handler)
+        DataActorCore::request_instruments(self, venue, start, end, client_id, params, handler)
     }
 
     /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
@@ -1231,8 +1234,7 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_book_snapshot(instrument_id, depth, client_id, params, handler)
+        DataActorCore::request_book_snapshot(self, instrument_id, depth, client_id, params, handler)
     }
 
     /// Request historical [`QuoteTick`] data for the given `instrument_id`.
@@ -1259,8 +1261,16 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_quotes(instrument_id, start, end, limit, client_id, params, handler)
+        DataActorCore::request_quotes(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
     }
 
     /// Request historical [`TradeTick`] data for the given `instrument_id`.
@@ -1287,8 +1297,16 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_trades(instrument_id, start, end, limit, client_id, params, handler)
+        DataActorCore::request_trades(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
     }
 
     /// Request historical [`Bar`] data for the given `bar_type`.
@@ -1315,8 +1333,9 @@ pub trait DataActor {
             },
         )));
 
-        self.core_mut()
-            .request_bars(bar_type, start, end, limit, client_id, params, handler)
+        DataActorCore::request_bars(
+            self, bar_type, start, end, limit, client_id, params, handler,
+        )
     }
 }
 
@@ -1326,7 +1345,7 @@ where
     T: DataActor + Debug + 'static,
 {
     fn id(&self) -> Ustr {
-        self.core().actor_id.inner()
+        self.actor_id.inner()
     }
 
     fn handle(&mut self, msg: &dyn Any) {
@@ -1344,23 +1363,11 @@ where
     T: DataActor + Debug + 'static,
 {
     fn component_id(&self) -> ComponentId {
-        ComponentId::new(self.core().actor_id.inner().as_str())
+        ComponentId::new(self.actor_id.inner().as_str())
     }
 
     fn state(&self) -> ComponentState {
-        self.core().state
-    }
-
-    fn is_running(&self) -> bool {
-        self.core().state == ComponentState::Running
-    }
-
-    fn is_stopped(&self) -> bool {
-        self.core().state == ComponentState::Stopped
-    }
-
-    fn is_disposed(&self) -> bool {
-        self.core().state == ComponentState::Disposed
+        self.state
     }
 
     fn register(
@@ -1369,62 +1376,57 @@ where
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        self.core_mut().register(trader_id, clock, cache)
+        DataActorCore::register(self, trader_id, clock, cache)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
-        self.core_mut().transition_state(ComponentTrigger::Start)?; // -> Starting
+        self.transition_state(ComponentTrigger::Start)?; // -> Starting
 
         if let Err(e) = DataActor::on_start(self) {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.core_mut()
-            .transition_state(ComponentTrigger::StartCompleted)?;
+        self.transition_state(ComponentTrigger::StartCompleted)?;
 
         Ok(())
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        self.core_mut().transition_state(ComponentTrigger::Stop)?; // -> Stopping
+        self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
 
         if let Err(e) = DataActor::on_stop(self) {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.core_mut()
-            .transition_state(ComponentTrigger::StopCompleted)?;
+        self.transition_state(ComponentTrigger::StopCompleted)?;
 
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        self.core_mut().transition_state(ComponentTrigger::Reset)?; // -> Resetting
+        self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
 
         if let Err(e) = DataActor::on_reset(self) {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.core_mut()
-            .transition_state(ComponentTrigger::ResetCompleted)?;
+        self.transition_state(ComponentTrigger::ResetCompleted)?;
 
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        self.core_mut()
-            .transition_state(ComponentTrigger::Dispose)?; // -> Disposing
+        self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
 
         if let Err(e) = DataActor::on_dispose(self) {
             log_error(&e);
             return Err(e); // Halt state transition
         }
 
-        self.core_mut()
-            .transition_state(ComponentTrigger::DisposeCompleted)?;
+        self.transition_state(ComponentTrigger::DisposeCompleted)?;
 
         Ok(())
     }
@@ -1555,7 +1557,7 @@ impl DataActorCore {
         Ok(())
     }
 
-    pub fn generate_timestamp_ns(&self) -> UnixNanos {
+    pub fn timestamp_ns(&self) -> UnixNanos {
         self.clock_ref().timestamp_ns()
     }
 
@@ -1658,7 +1660,7 @@ impl DataActorCore {
             self.actor_id.inner(),
             reason,
             UUID4::new(),
-            self.generate_timestamp_ns(),
+            self.timestamp_ns(),
         );
 
         let endpoint = "command.system.shutdown".into();
@@ -1699,11 +1701,7 @@ impl DataActorCore {
         self.check_registered();
 
         let topic = get_custom_topic(&data_type);
-
-        // Store the handler for this topic
         self.topic_handlers.insert(topic, handler.clone());
-
-        // Subscribe to the message bus topic
         msgbus::subscribe_topic(topic, handler, None);
 
         // If no client ID specified, just subscribe to the topic
@@ -1711,13 +1709,12 @@ impl DataActorCore {
             return;
         }
 
-        // Send subscription command to data engine
         let command = SubscribeCommand::Data(SubscribeCustomData {
             data_type,
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1735,19 +1732,15 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        // Store the handler for this topic
         self.topic_handlers.insert(topic, handler.clone());
-
-        // Subscribe to the message bus topic
         msgbus::subscribe_topic(topic, handler, None);
 
-        // Send subscription command to data engine
         let command = SubscribeCommand::Quotes(SubscribeQuotes {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1764,6 +1757,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1771,7 +1765,7 @@ impl DataActorCore {
             client_id,
             venue,
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1788,6 +1782,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1796,7 +1791,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1817,6 +1812,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1826,7 +1822,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             depth,
             managed,
             params,
@@ -1848,6 +1844,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1857,7 +1854,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             depth,
             interval_ms,
             params,
@@ -1876,6 +1873,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1884,7 +1882,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1902,6 +1900,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1910,7 +1909,7 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             await_partial,
             params,
         });
@@ -1928,6 +1927,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1936,7 +1936,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1953,6 +1953,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1961,7 +1962,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -1978,6 +1979,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -1986,7 +1988,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2003,6 +2005,7 @@ impl DataActorCore {
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
+
         self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
@@ -2011,7 +2014,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2041,7 +2044,7 @@ impl DataActorCore {
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2066,7 +2069,7 @@ impl DataActorCore {
             client_id,
             venue,
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2092,7 +2095,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2118,7 +2121,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2145,7 +2148,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2171,7 +2174,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2197,7 +2200,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2223,7 +2226,7 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2249,7 +2252,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2275,7 +2278,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2301,7 +2304,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2327,7 +2330,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2359,7 +2362,7 @@ impl DataActorCore {
             client_id,
             data_type,
             request_id,
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
@@ -2471,7 +2474,7 @@ impl DataActorCore {
             depth,
             client_id,
             request_id,
-            ts_init: self.generate_timestamp_ns(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 

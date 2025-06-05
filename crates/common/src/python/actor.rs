@@ -17,7 +17,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -27,7 +30,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
-    identifiers::{ActorId, ClientId, InstrumentId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
@@ -52,19 +55,21 @@ pub struct PyDataActor {
     core: DataActorCore,
 }
 
-impl DataActor for PyDataActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
+impl Deref for PyDataActor {
+    type Target = DataActorCore;
 
-    fn core(&self) -> &DataActorCore {
+    fn deref(&self) -> &Self::Target {
         &self.core
     }
+}
 
-    fn core_mut(&mut self) -> &mut DataActorCore {
+impl DerefMut for PyDataActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
+
+impl DataActor for PyDataActor {}
 
 #[pymethods]
 impl PyDataActor {
@@ -80,67 +85,75 @@ impl PyDataActor {
     }
 
     #[getter]
-    fn actor_id(&self) -> PyResult<String> {
-        Ok(self.core.actor_id.to_string())
+    #[pyo3(name = "actor_id")]
+    fn py_actor_id(&self) -> ActorId {
+        self.actor_id
     }
 
     #[getter]
-    fn state(&self) -> PyResult<ComponentState> {
-        Ok(self.core.state())
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> Option<TraderId> {
+        self.trader_id()
     }
 
-    #[getter]
-    fn trader_id(&self) -> PyResult<Option<String>> {
-        Ok(self.core.trader_id().map(|id| id.to_string()))
+    #[pyo3(name = "state")]
+    fn py_state(&self) -> ComponentState {
+        self.state()
     }
 
-    fn is_ready(&self) -> PyResult<bool> {
-        Ok(Component::state(self) == ComponentState::Ready)
+    #[pyo3(name = "is_ready")]
+    fn py_is_ready(&self) -> bool {
+        self.is_ready()
     }
 
-    fn is_running(&self) -> PyResult<bool> {
-        Ok(Component::is_running(self))
+    #[pyo3(name = "is_running")]
+    fn py_is_running(&self) -> bool {
+        self.is_running()
     }
 
-    fn is_stopped(&self) -> PyResult<bool> {
-        Ok(Component::is_stopped(self))
+    #[pyo3(name = "is_stopped")]
+    fn py_is_stopped(&self) -> bool {
+        self.is_stopped()
     }
 
-    fn is_disposed(&self) -> PyResult<bool> {
-        Ok(Component::is_disposed(self))
+    #[pyo3(name = "is_degraded")]
+    fn py_is_degraded(&self) -> bool {
+        self.is_degraded()
     }
 
-    fn is_degraded(&self) -> PyResult<bool> {
-        Ok(Component::state(self) == ComponentState::Degraded)
+    #[pyo3(name = "is_faulted")]
+    fn py_is_faulted(&self) -> bool {
+        self.is_faulted()
     }
 
-    fn is_faulting(&self) -> PyResult<bool> {
-        Ok(Component::state(self) == ComponentState::Faulted)
+    #[pyo3(name = "is_disposed")]
+    fn py_is_disposed(&self) -> bool {
+        self.is_disposed()
     }
 
     #[pyo3(name = "start")]
     fn py_start(&mut self) -> PyResult<()> {
-        Component::start(self).map_err(to_pyruntime_err)
+        self.start().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stop")]
     fn py_stop(&mut self) -> PyResult<()> {
-        Component::stop(self).map_err(to_pyruntime_err)
+        self.stop().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "resume")]
     fn py_resume(&mut self) -> PyResult<()> {
-        self.core.resume().map_err(to_pyruntime_err)
+        self.resume().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) -> PyResult<()> {
-        Component::reset(self).map_err(to_pyruntime_err)
+        self.reset().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) -> PyResult<()> {
-        Component::dispose(self).map_err(to_pyruntime_err)
+        self.dispose().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "degrade")]
@@ -690,19 +703,15 @@ mod tests {
     fn test_unregistered_actor_methods_work(data_type: DataType, client_id: ClientId) {
         let actor = create_unregistered_actor();
 
-        // These should work without registration since we simplified the structure
-        assert!(actor.actor_id().is_ok());
-        assert!(actor.state().is_ok());
-        assert!(actor.trader_id().is_ok());
-        assert!(actor.is_ready().is_ok());
-        assert!(actor.is_running().is_ok());
-        assert!(actor.is_stopped().is_ok());
-        assert!(actor.is_disposed().is_ok());
-        assert!(actor.is_degraded().is_ok());
-        assert!(actor.is_faulting().is_ok());
+        assert!(!actor.py_is_ready());
+        assert!(!actor.py_is_running());
+        assert!(!actor.py_is_stopped());
+        assert!(!actor.py_is_disposed());
+        assert!(!actor.py_is_degraded());
+        assert!(!actor.py_is_faulted());
 
         // Verify unregistered state
-        assert_eq!(actor.trader_id().unwrap(), None);
+        assert_eq!(actor.trader_id(), None);
     }
 
     #[rstest]
@@ -725,15 +734,14 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
 
-        assert!(actor.actor_id().is_ok());
-        assert_eq!(actor.state().unwrap(), ComponentState::Ready);
-        assert_eq!(actor.trader_id().unwrap(), Some(trader_id.to_string()));
-        assert_eq!(actor.is_ready().unwrap(), true);
-        assert_eq!(actor.is_running().unwrap(), false);
-        assert_eq!(actor.is_stopped().unwrap(), false);
-        assert_eq!(actor.is_disposed().unwrap(), false);
-        assert_eq!(actor.is_degraded().unwrap(), false);
-        assert_eq!(actor.is_faulting().unwrap(), false);
+        assert_eq!(actor.state(), ComponentState::Ready);
+        assert_eq!(actor.trader_id(), Some(TraderId::from("TRADER-001")));
+        assert!(actor.py_is_ready());
+        assert!(!actor.py_is_running());
+        assert!(!actor.py_is_stopped());
+        assert!(!actor.py_is_disposed());
+        assert!(!actor.py_is_degraded());
+        assert!(!actor.py_is_faulted());
     }
 
     #[rstest]

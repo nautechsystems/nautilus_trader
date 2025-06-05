@@ -657,6 +657,8 @@ mod tests {
         }
     }
 
+    impl DataActor for TestDataActor {}
+
     impl Deref for TestDataActor {
         type Target = DataActorCore;
         fn deref(&self) -> &Self::Target {
@@ -666,20 +668,6 @@ mod tests {
 
     impl DerefMut for TestDataActor {
         fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.core
-        }
-    }
-
-    impl DataActor for TestDataActor {
-        fn actor_id(&self) -> ActorId {
-            self.core.actor_id()
-        }
-
-        fn core(&self) -> &DataActorCore {
-            &self.core
-        }
-
-        fn core_mut(&mut self) -> &mut DataActorCore {
             &mut self.core
         }
     }

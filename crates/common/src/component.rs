@@ -25,8 +25,6 @@ use crate::{
     timer::TimeEvent,
 };
 
-/// Common trait for components.
-///
 /// Components are actors with lifecycle management capabilities.
 pub trait Component: Actor {
     /// Returns the unique identifier for this component.
@@ -35,14 +33,40 @@ pub trait Component: Actor {
     /// Returns the current state of the component.
     fn state(&self) -> ComponentState;
 
-    /// Returns whether the component is currently running.
-    fn is_running(&self) -> bool;
+    /// Returns whether the component is ready.
+    fn is_ready(&self) -> bool {
+        self.state() == ComponentState::Ready
+    }
+
+    /// Returns whether the component is *not* running.
+    fn not_running(&self) -> bool {
+        !self.is_running()
+    }
+
+    /// Returns whether the component is running.
+    fn is_running(&self) -> bool {
+        self.state() == ComponentState::Running
+    }
 
     /// Returns whether the component is stopped.
-    fn is_stopped(&self) -> bool;
+    fn is_stopped(&self) -> bool {
+        self.state() == ComponentState::Stopped
+    }
+
+    /// Returns whether the component has been degraded.
+    fn is_degraded(&self) -> bool {
+        self.state() == ComponentState::Degraded
+    }
+
+    /// Returns whether the component has been faulted.
+    fn is_faulted(&self) -> bool {
+        self.state() == ComponentState::Faulted
+    }
 
     /// Returns whether the component has been disposed.
-    fn is_disposed(&self) -> bool;
+    fn is_disposed(&self) -> bool {
+        self.state() == ComponentState::Disposed
+    }
 
     /// Registers the component with a system.
     ///
