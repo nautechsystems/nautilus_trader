@@ -24,6 +24,7 @@ use nautilus_model::defi::{
     amm::{Pool, SharedPool},
     block::Block,
     chain::SharedChain,
+    liquidity::PoolLiquidityUpdate,
     swap::Swap,
     token::Token,
 };
@@ -178,10 +179,24 @@ impl BlockchainCache {
         Ok(())
     }
 
-    /// Adds a swap transaction to the database if available.
+    /// Adds a [`Swap`] to the cache database if available.
     pub async fn add_swap(&self, swap: Swap) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_swap(self.chain.chain_id, &swap).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Adds a [`PoolLiquidityUpdate`] to the cache database if available.
+    pub async fn add_pool_liquidity_update(
+        &self,
+        liquidity_update: PoolLiquidityUpdate,
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_liquidity_update(self.chain.chain_id, &liquidity_update)
+                .await?;
         }
 
         Ok(())

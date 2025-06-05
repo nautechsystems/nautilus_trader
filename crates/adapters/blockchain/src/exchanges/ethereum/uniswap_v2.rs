@@ -31,6 +31,8 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::CPAMM,
         "PoolCreated(address,address,address,uint256)",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });

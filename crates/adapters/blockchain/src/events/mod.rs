@@ -13,5 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod burn;
+pub mod mint;
 pub mod pool_created;
 pub mod swap;

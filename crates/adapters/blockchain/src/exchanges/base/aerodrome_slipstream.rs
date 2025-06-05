@@ -31,6 +31,8 @@ pub static AERODROME_SLIPSTREAM: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::StableSwap,
         "",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });

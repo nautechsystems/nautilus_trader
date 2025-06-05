@@ -130,6 +130,8 @@ pub struct Chain {
     pub hypersync_url: String,
     /// URL endpoint for the default RPC connection.
     pub rpc_url: Option<String>,
+    /// The number of decimals for the native currency
+    pub native_currency_decimals: u8,
 }
 
 /// A thread-safe shared pointer to a `Chain`, enabling efficient reuse across multiple components.
@@ -142,6 +144,7 @@ impl Chain {
             name,
             hypersync_url: format!("https://{}.hypersync.xyz", chain_id),
             rpc_url: None,
+            native_currency_decimals: 18, // Default to 18 for EVM chains
         }
     }
 

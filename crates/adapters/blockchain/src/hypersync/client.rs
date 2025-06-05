@@ -97,6 +97,9 @@ impl HyperSyncClient {
             "field_selection": {
                 "log": [
                     "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
                     "data",
                     "topic0",
                     "topic1",

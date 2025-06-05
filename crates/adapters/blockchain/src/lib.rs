@@ -59,4 +59,5 @@ pub mod factories;
 
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
+pub mod math;
 pub mod validation;

@@ -31,6 +31,8 @@ pub static BASEX: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::CLAMM,
         "",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });

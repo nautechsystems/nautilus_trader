@@ -31,6 +31,8 @@ pub static SUSHISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::CPAMM,
         "",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });
