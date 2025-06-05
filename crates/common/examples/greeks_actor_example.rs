@@ -22,13 +22,10 @@ use std::{
 };
 
 use nautilus_common::{
-    actor::{
-        Actor,
-        data_actor::{DataActor, DataActorConfig, DataActorCore},
-    },
+    actor::data_actor::{DataActor, DataActorConfig, DataActorCore},
     cache::Cache,
     clock::LiveClock,
-    enums::ComponentState,
+    component::Component,
     greeks::GreeksCalculator,
 };
 use nautilus_model::{
@@ -152,21 +149,6 @@ impl GreeksActor {
     }
 }
 
-impl Actor for GreeksActor {
-    fn id(&self) -> ustr::Ustr {
-        self.core.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn std::any::Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 // We need to explicitly implement `Deref` for actors to improve API ergonomics.
 // In the future we can probably create a macro to do this.
 impl Deref for GreeksActor {
@@ -190,8 +172,12 @@ impl DataActor for GreeksActor {
         self.core.actor_id()
     }
 
-    fn state(&self) -> ComponentState {
-        self.core.state()
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.core
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {

@@ -17,7 +17,6 @@ use std::{
     any::Any,
     cell::{RefCell, UnsafeCell},
     num::NonZeroUsize,
-    ops::{Deref, DerefMut},
     rc::Rc,
     str::FromStr,
     sync::Arc,
@@ -50,7 +49,7 @@ use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
     clock::TestClock,
-    enums::ComponentState,
+    component::Component,
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookResponse, CustomDataResponse, InstrumentResponse, InstrumentsResponse,
@@ -86,43 +85,17 @@ struct TestDataActor {
     pub received_closes: Vec<InstrumentClose>,
 }
 
-impl Deref for TestDataActor {
-    type Target = DataActorCore;
-
-    fn deref(&self) -> &Self::Target {
-        &self.core
-    }
-}
-
-impl DerefMut for TestDataActor {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.core
-    }
-}
-
-impl Actor for TestDataActor {
-    fn id(&self) -> Ustr {
-        self.core.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-// Implement DataActor trait overriding handlers as required
 impl DataActor for TestDataActor {
     fn actor_id(&self) -> ActorId {
         self.core.actor_id()
     }
 
-    fn state(&self) -> ComponentState {
-        self.core.state()
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.core
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -304,7 +277,7 @@ fn register_data_actor(
     let mut actor = TestDataActor::new(config);
     actor.register(trader_id, clock, cache).unwrap();
 
-    let actor_id = actor.actor_id;
+    let actor_id = actor.actor_id();
 
     register_actor(actor);
     actor_id.inner()
@@ -366,7 +339,7 @@ fn test_subscribe_and_receive_custom_data(
     actor.start().unwrap();
 
     let data_type = DataType::new(stringify!(String), None);
-    actor.subscribe_data::<TestDataActor>(data_type.clone(), None, None);
+    actor.subscribe_data(data_type.clone(), None, None);
 
     let topic = get_custom_topic(&data_type);
     let data = String::from("CustomData-01");
@@ -388,7 +361,7 @@ fn test_unsubscribe_custom_data(
     actor.start().unwrap();
 
     let data_type = DataType::new(stringify!(String), None);
-    actor.subscribe_data::<TestDataActor>(data_type.clone(), None, None);
+    actor.subscribe_data(data_type.clone(), None, None);
 
     let topic = get_custom_topic(&data_type);
     let data = String::from("CustomData-01");
@@ -396,7 +369,7 @@ fn test_unsubscribe_custom_data(
     let data = String::from("CustomData-02");
     msgbus::publish(topic, &data);
 
-    actor.unsubscribe_data::<TestDataActor>(data_type, None, None);
+    actor.unsubscribe_data(data_type, None, None);
 
     // Publish more data
     let data = String::from("CustomData-03");
@@ -419,14 +392,7 @@ fn test_subscribe_and_receive_book_deltas(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_book_deltas::<TestDataActor>(
-        audusd_sim.id,
-        BookType::L2_MBP,
-        None,
-        None,
-        false,
-        None,
-    );
+    actor.subscribe_book_deltas(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
 
     let topic = get_book_deltas_topic(audusd_sim.id);
 
@@ -463,14 +429,7 @@ fn test_unsubscribe_book_deltas(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_book_deltas::<TestDataActor>(
-        audusd_sim.id,
-        BookType::L2_MBP,
-        None,
-        None,
-        false,
-        None,
-    );
+    actor.subscribe_book_deltas(audusd_sim.id, BookType::L2_MBP, None, None, false, None);
 
     let topic = get_book_deltas_topic(audusd_sim.id);
 
@@ -494,7 +453,7 @@ fn test_unsubscribe_book_deltas(
     msgbus::publish(topic, &deltas);
 
     // Unsubscribe
-    actor.unsubscribe_book_deltas::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_book_deltas(audusd_sim.id, None, None);
 
     let delta2 = OrderBookDelta::new(
         audusd_sim.id,
@@ -528,14 +487,7 @@ fn test_subscribe_and_receive_book_at_interval(
     let book_type = BookType::L2_MBP;
     let interval_ms = NonZeroUsize::new(1_000).unwrap();
 
-    actor.subscribe_book_at_interval::<TestDataActor>(
-        audusd_sim.id,
-        book_type,
-        None,
-        interval_ms,
-        None,
-        None,
-    );
+    actor.subscribe_book_at_interval(audusd_sim.id, book_type, None, interval_ms, None, None);
 
     let topic = get_book_snapshots_topic(audusd_sim.id);
     let book = OrderBook::new(audusd_sim.id, book_type);
@@ -559,14 +511,7 @@ fn test_unsubscribe_book_at_interval(
     let book_type = BookType::L2_MBP;
     let interval_ms = NonZeroUsize::new(1_000).unwrap();
 
-    actor.subscribe_book_at_interval::<TestDataActor>(
-        audusd_sim.id,
-        book_type,
-        None,
-        interval_ms,
-        None,
-        None,
-    );
+    actor.subscribe_book_at_interval(audusd_sim.id, book_type, None, interval_ms, None, None);
 
     let topic = get_book_snapshots_topic(audusd_sim.id);
     let book = OrderBook::new(audusd_sim.id, book_type);
@@ -575,7 +520,7 @@ fn test_unsubscribe_book_at_interval(
 
     assert_eq!(actor.received_books.len(), 1);
 
-    actor.unsubscribe_book_at_interval::<TestDataActor>(audusd_sim.id, interval_ms, None, None);
+    actor.unsubscribe_book_at_interval(audusd_sim.id, interval_ms, None, None);
 
     // Publish more book refs
     msgbus::publish(topic, &book);
@@ -596,7 +541,7 @@ fn test_subscribe_and_receive_quotes(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_quotes(audusd_sim.id, None, None);
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
@@ -617,14 +562,14 @@ fn test_unsubscribe_quotes(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_quotes(audusd_sim.id, None, None);
 
     let topic = get_quotes_topic(audusd_sim.id);
     let quote = QuoteTick::default();
     msgbus::publish(topic, &quote);
     msgbus::publish(topic, &quote);
 
-    actor.unsubscribe_quotes::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_quotes(audusd_sim.id, None, None);
 
     // Publish more quotes
     msgbus::publish(topic, &quote);
@@ -645,7 +590,7 @@ fn test_subscribe_and_receive_trades(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_trades::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_trades(audusd_sim.id, None, None);
 
     let topic = get_trades_topic(audusd_sim.id);
     let trade = TradeTick::default();
@@ -666,14 +611,14 @@ fn test_unsubscribe_trades(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_trades::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_trades(audusd_sim.id, None, None);
 
     let topic = get_trades_topic(audusd_sim.id);
     let trade = TradeTick::default();
     msgbus::publish(topic, &trade);
     msgbus::publish(topic, &trade);
 
-    actor.unsubscribe_trades::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_trades(audusd_sim.id, None, None);
 
     // Publish more trades
     msgbus::publish(topic, &trade);
@@ -695,7 +640,7 @@ fn test_subscribe_and_receive_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars::<TestDataActor>(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, false, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
@@ -716,14 +661,14 @@ fn test_unsubscribe_bars(
     actor.start().unwrap();
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
-    actor.subscribe_bars::<TestDataActor>(bar_type, None, false, None);
+    actor.subscribe_bars(bar_type, None, false, None);
 
     let topic = get_bars_topic(bar_type);
     let bar = Bar::default();
     msgbus::publish(topic, &bar);
 
     // Unsubscribe
-    actor.unsubscribe_bars::<TestDataActor>(bar_type, None, None);
+    actor.unsubscribe_bars(bar_type, None, None);
 
     // Publish more bars
     msgbus::publish(topic, &bar);
@@ -745,7 +690,7 @@ fn test_request_instrument(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_instrument::<TestDataActor>(audusd_sim.id, None, None, None, None)
+        .request_instrument(audusd_sim.id, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -775,7 +720,7 @@ fn test_request_instruments(
 
     let venue = Venue::from("SIM");
     let request_id = actor
-        .request_instruments::<TestDataActor>(Some(venue), None, None, None, None)
+        .request_instruments(Some(venue), None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -804,7 +749,7 @@ fn test_request_quotes(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_quotes::<TestDataActor>(audusd_sim.id, None, None, None, None, None)
+        .request_quotes(audusd_sim.id, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -831,7 +776,7 @@ fn test_request_trades(
     actor.start().unwrap();
 
     let request_id = actor
-        .request_trades::<TestDataActor>(audusd_sim.id, None, None, None, None, None)
+        .request_trades(audusd_sim.id, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -859,7 +804,7 @@ fn test_request_bars(
 
     let bar_type = BarType::from_str(&format!("{}-1-MINUTE-LAST-INTERNAL", audusd_sim.id)).unwrap();
     let request_id = actor
-        .request_bars::<TestDataActor>(bar_type, None, None, None, None, None)
+        .request_bars(bar_type, None, None, None, None, None)
         .unwrap();
 
     let client_id = ClientId::new("TestClient");
@@ -888,7 +833,7 @@ fn test_subscribe_and_receive_instruments(
     actor.start().unwrap();
 
     let venue = Venue::from("SIM");
-    actor.subscribe_instruments::<TestDataActor>(venue, None, None);
+    actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
@@ -913,7 +858,7 @@ fn test_subscribe_and_receive_instrument(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_instrument::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_instrument(audusd_sim.id, None, None);
 
     let topic = get_instrument_topic(audusd_sim.id);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
@@ -937,7 +882,7 @@ fn test_subscribe_and_receive_mark_prices(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_mark_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_mark_prices(audusd_sim.id, None, None);
 
     let topic = get_mark_price_topic(audusd_sim.id);
     let mp1 = MarkPriceUpdate::new(
@@ -971,7 +916,7 @@ fn test_subscribe_and_receive_index_prices(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_index_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_index_prices(audusd_sim.id, None, None);
 
     let topic = get_index_price_topic(audusd_sim.id);
     let ip = IndexPriceUpdate::new(
@@ -998,7 +943,7 @@ fn test_subscribe_and_receive_instrument_status(
     actor.start().unwrap();
 
     let instrument_id = stub_instrument_status.instrument_id;
-    actor.subscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
+    actor.subscribe_instrument_status(instrument_id, None, None);
 
     let topic = get_instrument_status_topic(instrument_id);
     msgbus::publish(topic, &stub_instrument_status);
@@ -1019,7 +964,7 @@ fn test_subscribe_and_receive_instrument_close(
     actor.start().unwrap();
 
     let instrument_id = stub_instrument_close.instrument_id;
-    actor.subscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
+    actor.subscribe_instrument_close(instrument_id, None, None);
 
     let topic = get_instrument_close_topic(instrument_id);
     msgbus::publish(topic, &stub_instrument_close);
@@ -1041,7 +986,7 @@ fn test_unsubscribe_instruments(
     actor.start().unwrap();
 
     let venue = Venue::from("SIM");
-    actor.subscribe_instruments::<TestDataActor>(venue, None, None);
+    actor.subscribe_instruments(venue, None, None);
 
     let topic = get_instruments_topic(venue);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
@@ -1051,7 +996,7 @@ fn test_unsubscribe_instruments(
 
     assert_eq!(actor.received_instruments.len(), 2);
 
-    actor.unsubscribe_instruments::<TestDataActor>(venue, None, None);
+    actor.unsubscribe_instruments(venue, None, None);
 
     let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
     msgbus::publish(topic, &inst3);
@@ -1073,7 +1018,7 @@ fn test_unsubscribe_instrument(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_instrument::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_instrument(audusd_sim.id, None, None);
 
     let topic = get_instrument_topic(audusd_sim.id);
     let inst1 = InstrumentAny::CurrencyPair(audusd_sim.clone());
@@ -1083,7 +1028,7 @@ fn test_unsubscribe_instrument(
 
     assert_eq!(actor.received_instruments.len(), 2);
 
-    actor.unsubscribe_instrument::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_instrument(audusd_sim.id, None, None);
 
     let inst3 = InstrumentAny::CurrencyPair(audusd_sim.clone());
     msgbus::publish(topic, &inst3);
@@ -1104,7 +1049,7 @@ fn test_unsubscribe_mark_prices(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_mark_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_mark_prices(audusd_sim.id, None, None);
 
     let topic = get_mark_price_topic(audusd_sim.id);
     let mp1 = MarkPriceUpdate::new(
@@ -1124,7 +1069,7 @@ fn test_unsubscribe_mark_prices(
 
     assert_eq!(actor.received_mark_prices.len(), 2);
 
-    actor.unsubscribe_mark_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_mark_prices(audusd_sim.id, None, None);
 
     let mp3 = MarkPriceUpdate::new(
         audusd_sim.id,
@@ -1155,7 +1100,7 @@ fn test_unsubscribe_index_prices(
     let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
     actor.start().unwrap();
 
-    actor.subscribe_index_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.subscribe_index_prices(audusd_sim.id, None, None);
 
     let topic = get_index_price_topic(audusd_sim.id);
     let ip1 = IndexPriceUpdate::new(
@@ -1168,7 +1113,7 @@ fn test_unsubscribe_index_prices(
 
     assert_eq!(actor.received_index_prices.len(), 1);
 
-    actor.unsubscribe_index_prices::<TestDataActor>(audusd_sim.id, None, None);
+    actor.unsubscribe_index_prices(audusd_sim.id, None, None);
 
     let ip2 = IndexPriceUpdate::new(
         audusd_sim.id,
@@ -1193,14 +1138,14 @@ fn test_unsubscribe_instrument_status(
     actor.start().unwrap();
 
     let instrument_id = stub_instrument_status.instrument_id;
-    actor.subscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
+    actor.subscribe_instrument_status(instrument_id, None, None);
 
     let topic = get_instrument_status_topic(instrument_id);
     msgbus::publish(topic, &stub_instrument_status);
 
     assert_eq!(actor.received_status.len(), 1);
 
-    actor.unsubscribe_instrument_status::<TestDataActor>(instrument_id, None, None);
+    actor.unsubscribe_instrument_status(instrument_id, None, None);
 
     let stub2 = stub_instrument_status.clone();
     msgbus::publish(topic, &stub2);
@@ -1220,14 +1165,14 @@ fn test_unsubscribe_instrument_close(
     actor.start().unwrap();
 
     let instrument_id = stub_instrument_close.instrument_id;
-    actor.subscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
+    actor.subscribe_instrument_close(instrument_id, None, None);
 
     let topic = get_instrument_close_topic(instrument_id);
     msgbus::publish(topic, &stub_instrument_close);
 
     assert_eq!(actor.received_closes.len(), 1);
 
-    actor.unsubscribe_instrument_close::<TestDataActor>(instrument_id, None, None);
+    actor.unsubscribe_instrument_close(instrument_id, None, None);
 
     let stub2 = stub_instrument_close.clone();
     msgbus::publish(topic, &stub2);
@@ -1248,7 +1193,7 @@ fn test_request_book_snapshot(
 
     // Request a book snapshot
     let request_id = actor
-        .request_book_snapshot::<TestDataActor>(audusd_sim.id, None, None, None)
+        .request_book_snapshot(audusd_sim.id, None, None, None)
         .unwrap();
 
     // Build a dummy book and response
@@ -1288,7 +1233,7 @@ fn test_request_data(
     let data_type = DataType::new("TestData", None);
     let client_id = ClientId::new("TestClient");
     let request_id = actor
-        .request_data::<TestDataActor>(data_type.clone(), client_id.clone(), None, None, None, None)
+        .request_data(data_type.clone(), client_id.clone(), None, None, None, None)
         .unwrap();
 
     // Build a response payload containing a String

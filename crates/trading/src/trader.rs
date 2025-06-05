@@ -620,7 +620,11 @@ impl Component for Trader {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        ops::{Deref, DerefMut},
+        rc::Rc,
+    };
 
     use nautilus_common::{
         actor::{DataActorCore, data_actor::DataActorConfig},
@@ -638,6 +642,47 @@ mod tests {
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
 
     use super::*;
+
+    // Simple DataActor wrapper for testing
+    #[derive(Debug)]
+    struct TestDataActor {
+        core: DataActorCore,
+    }
+
+    impl TestDataActor {
+        fn new(config: DataActorConfig) -> Self {
+            Self {
+                core: DataActorCore::new(config),
+            }
+        }
+    }
+
+    impl Deref for TestDataActor {
+        type Target = DataActorCore;
+        fn deref(&self) -> &Self::Target {
+            &self.core
+        }
+    }
+
+    impl DerefMut for TestDataActor {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.core
+        }
+    }
+
+    impl DataActor for TestDataActor {
+        fn actor_id(&self) -> ActorId {
+            self.core.actor_id()
+        }
+
+        fn core(&self) -> &DataActorCore {
+            &self.core
+        }
+
+        fn core_mut(&mut self) -> &mut DataActorCore {
+            &mut self.core
+        }
+    }
 
     // Mock component for testing
     #[derive(Debug)]
@@ -837,7 +882,7 @@ mod tests {
 
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
-        let actor = DataActorCore::new(DataActorConfig::default());
+        let actor = TestDataActor::new(DataActorConfig::default());
         let actor_id = actor.actor_id();
 
         let result = trader.add_actor(actor);
@@ -858,8 +903,8 @@ mod tests {
 
         let mut config = DataActorConfig::default();
         config.actor_id = Some(ActorId::from("TestActor"));
-        let actor1 = DataActorCore::new(config.clone());
-        let actor2 = DataActorCore::new(config);
+        let actor1 = TestDataActor::new(config.clone());
+        let actor2 = TestDataActor::new(config);
 
         // First addition should succeed
         assert!(trader.add_actor(actor1).is_ok());
@@ -925,7 +970,7 @@ mod tests {
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
         // Add components
-        let actor = DataActorCore::new(DataActorConfig::default());
+        let actor = TestDataActor::new(DataActorConfig::default());
         let strategy = Box::new(MockComponent::new("Test-Strategy"));
         let exec_algorithm = Box::new(MockComponent::new("TestExecAlgorithm"));
 
@@ -1005,7 +1050,7 @@ mod tests {
         // Simulate running state
         trader.state = ComponentState::Running;
 
-        let actor = DataActorCore::new(DataActorConfig::default());
+        let actor = TestDataActor::new(DataActorConfig::default());
         let result = trader.add_actor(actor);
         assert!(result.is_err());
         assert!(
