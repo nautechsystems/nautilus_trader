@@ -26,10 +26,16 @@ use std::{
 use ahash::AHashMap;
 use databento::live::Subscription;
 use indexmap::IndexMap;
-use nautilus_common::messages::data::{
-    RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-    SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-    UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+use nautilus_common::{
+    messages::{
+        DataEvent,
+        data::{
+            RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+        },
+    },
+    runner::get_data_event_sender,
 };
 use nautilus_core::time::AtomicTime;
 use nautilus_data::client::DataClient;
@@ -38,7 +44,10 @@ use nautilus_model::{
     identifiers::{ClientId, Symbol, Venue},
     instruments::Instrument,
 };
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::mpsc::{self, UnboundedSender},
+    task::JoinHandle,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -108,6 +117,8 @@ pub struct DatabentoDataClient {
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
+    /// Data event sender for forwarding data to AsyncRunner.
+    data_sender: UnboundedSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -141,6 +152,9 @@ impl DatabentoDataClient {
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
+        // Get the data event sender for forwarding data to AsyncRunner
+        let data_sender = get_data_event_sender();
+
         Ok(Self {
             client_id,
             config,
@@ -152,6 +166,7 @@ impl DatabentoDataClient {
             cancellation_token: CancellationToken::new(),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(RwLock::new(AHashMap::new())),
+            data_sender,
         })
     }
 
@@ -238,6 +253,7 @@ impl DatabentoDataClient {
         });
 
         let cancellation_token = self.cancellation_token.clone();
+        let data_sender = self.data_sender.clone();
 
         // Spawn message processing task with cancellation support
         let msg_handle = tokio::spawn(async move {
@@ -248,7 +264,9 @@ impl DatabentoDataClient {
                         match msg {
                             Some(LiveMessage::Data(data)) => {
                                 tracing::debug!("Received data: {data:?}");
-                                // TODO: Forward to message bus or data engine
+                                if let Err(e) = data_sender.send(DataEvent::Data(data)) {
+                                    tracing::error!("Failed to send data event: {e}");
+                                }
                             }
                             Some(LiveMessage::Instrument(instrument)) => {
                                 tracing::debug!("Received instrument: {}", instrument.id());

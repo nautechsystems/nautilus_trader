@@ -254,7 +254,10 @@ impl Trader {
         component.register(self.trader_id, component_clock, self.cache.clone())?;
 
         self.actors.insert(actor_id, component);
-        log::info!("Registered actor '{actor_id}'");
+        log::info!(
+            "Registered actor '{actor_id}' with trader {}",
+            self.trader_id
+        );
 
         Ok(())
     }
@@ -283,8 +286,11 @@ impl Trader {
 
         strategy.register(self.trader_id, component_clock, self.cache.clone())?;
 
-        log::info!("Registered strategy '{strategy_id}'");
         self.strategies.insert(strategy_id, strategy);
+        log::info!(
+            "Registered strategy '{strategy_id}' with trader {}",
+            self.trader_id
+        );
 
         Ok(())
     }
@@ -316,9 +322,12 @@ impl Trader {
 
         exec_algorithm.register(self.trader_id, component_clock, self.cache.clone())?;
 
-        log::info!("Registered execution algorithm '{exec_algorithm_id}'");
         self.exec_algorithms
             .insert(exec_algorithm_id, exec_algorithm);
+        log::info!(
+            "Registered execution algorithm '{exec_algorithm_id}' with trader {}",
+            self.trader_id
+        );
 
         Ok(())
     }
@@ -347,19 +356,16 @@ impl Trader {
     pub fn start_components(&mut self) -> anyhow::Result<()> {
         log::info!("Starting {} components", self.component_count());
 
-        // Start actors
         for (id, actor) in &mut self.actors {
             log::debug!("Starting actor '{id}'");
             actor.start()?;
         }
 
-        // Start strategies
         for (id, strategy) in &mut self.strategies {
             log::debug!("Starting strategy '{id}'");
             strategy.start()?;
         }
 
-        // Start execution algorithms
         for (id, exec_algorithm) in &mut self.exec_algorithms {
             log::debug!("Starting execution algorithm '{id}'");
             exec_algorithm.start()?;
@@ -377,19 +383,16 @@ impl Trader {
     pub fn stop_components(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {} components", self.component_count());
 
-        // Stop execution algorithms first
         for (id, exec_algorithm) in &mut self.exec_algorithms {
             log::debug!("Stopping execution algorithm '{id}'");
             exec_algorithm.stop()?;
         }
 
-        // Stop strategies
         for (id, strategy) in &mut self.strategies {
             log::debug!("Stopping strategy '{id}'");
             strategy.stop()?;
         }
 
-        // Stop actors last
         for (id, actor) in &mut self.actors {
             log::debug!("Stopping actor '{id}'");
             actor.stop()?;
@@ -407,7 +410,6 @@ impl Trader {
     pub fn reset_components(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting {} components", self.component_count());
 
-        // Reset all components
         for (id, actor) in &mut self.actors {
             log::debug!("Resetting actor '{id}'");
             actor.reset()?;
@@ -435,7 +437,6 @@ impl Trader {
     pub fn dispose_components(&mut self) -> anyhow::Result<()> {
         log::info!("Disposing {} components", self.component_count());
 
-        // Dispose all components
         for (id, actor) in &mut self.actors {
             log::debug!("Disposing actor '{id}'");
             actor.dispose()?;
@@ -451,7 +452,6 @@ impl Trader {
             exec_algorithm.dispose()?;
         }
 
-        // Clear all collections
         self.actors.clear();
         self.strategies.clear();
         self.exec_algorithms.clear();
