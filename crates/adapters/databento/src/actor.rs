@@ -20,7 +20,7 @@ use std::ops::{Deref, DerefMut};
 use nautilus_common::actor::{DataActor, DataActorCore, data_actor::DataActorConfig};
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
-    identifiers::{ActorId, ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId},
 };
 
 /// Configuration for the Databento subscriber actor.
@@ -74,18 +74,6 @@ impl DerefMut for DatabentoSubscriberActor {
 }
 
 impl DataActor for DatabentoSubscriberActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
-
-    fn core(&self) -> &DataActorCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut DataActorCore {
-        &mut self.core
-    }
-
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!(
             "Starting Databento subscriber actor for {} instruments",

@@ -114,6 +114,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::TriggerType>()?;
     // Identifiers
     m.add_class::<crate::identifiers::AccountId>()?;
+    m.add_class::<crate::identifiers::ActorId>()?;
     m.add_class::<crate::identifiers::ClientId>()?;
     m.add_class::<crate::identifiers::ClientOrderId>()?;
     m.add_class::<crate::identifiers::ComponentId>()?;

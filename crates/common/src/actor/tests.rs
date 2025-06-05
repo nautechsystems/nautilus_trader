@@ -17,6 +17,7 @@ use std::{
     any::Any,
     cell::{RefCell, UnsafeCell},
     num::NonZeroUsize,
+    ops::{Deref, DerefMut},
     rc::Rc,
     str::FromStr,
     sync::Arc,
@@ -33,7 +34,7 @@ use nautilus_model::{
         stubs::{stub_instrument_close, stub_instrument_status},
     },
     enums::{BookAction, BookType, OrderSide},
-    identifiers::{ActorId, ClientId, TraderId, Venue},
+    identifiers::{ClientId, TraderId, Venue},
     instruments::{
         CurrencyPair, InstrumentAny,
         stubs::{audusd_sim, gbpusd_sim},
@@ -85,19 +86,21 @@ struct TestDataActor {
     pub received_closes: Vec<InstrumentClose>,
 }
 
-impl DataActor for TestDataActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
+impl Deref for TestDataActor {
+    type Target = DataActorCore;
 
-    fn core(&self) -> &DataActorCore {
+    fn deref(&self) -> &Self::Target {
         &self.core
     }
+}
 
-    fn core_mut(&mut self) -> &mut DataActorCore {
+impl DerefMut for TestDataActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
+}
 
+impl DataActor for TestDataActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting actor"); // Custom log
         Ok(())

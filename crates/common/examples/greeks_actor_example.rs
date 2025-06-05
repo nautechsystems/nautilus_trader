@@ -31,7 +31,7 @@ use nautilus_common::{
 use nautilus_model::{
     data::greeks::GreeksData,
     enums::PositionSide,
-    identifiers::{ActorId, InstrumentId, TraderId},
+    identifiers::{InstrumentId, TraderId},
 };
 
 /// A custom actor that uses the `GreeksCalculator`.
@@ -73,7 +73,7 @@ impl GreeksActor {
         let use_cached_greeks = false;
         let cache_greeks = true;
         let publish_greeks = true;
-        let ts_event = self.core.generate_timestamp_ns();
+        let ts_event = self.core.timestamp_ns();
         let position = None;
         let percent_greeks = false;
         let index_instrument_id = None;
@@ -149,8 +149,6 @@ impl GreeksActor {
     }
 }
 
-// We need to explicitly implement `Deref` for actors to improve API ergonomics.
-// In the future we can probably create a macro to do this.
 impl Deref for GreeksActor {
     type Target = DataActorCore;
 
@@ -159,8 +157,6 @@ impl Deref for GreeksActor {
     }
 }
 
-// We need to explicitly implement `DerefMut` for actors to improve API ergonomics.
-// In the future we can probably create a macro to do this.
 impl DerefMut for GreeksActor {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
@@ -168,18 +164,6 @@ impl DerefMut for GreeksActor {
 }
 
 impl DataActor for GreeksActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
-
-    fn core(&self) -> &DataActorCore {
-        &self.core
-    }
-
-    fn core_mut(&mut self) -> &mut DataActorCore {
-        &mut self.core
-    }
-
     fn on_start(&mut self) -> anyhow::Result<()> {
         // Subscribe to greeks data for SPY
         self.subscribe_to_greeks("SPY");
