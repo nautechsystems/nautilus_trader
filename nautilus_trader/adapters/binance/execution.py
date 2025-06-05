@@ -18,7 +18,6 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
@@ -148,8 +147,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            client_id=ClientId(name or config.venue.value),
+            venue=config.venue,
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
@@ -180,7 +179,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
-            AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
+            AccountId(f"{name or config.venue.value}-{self._binance_account_type.value}-master"),
         )
 
         # Enum parser
