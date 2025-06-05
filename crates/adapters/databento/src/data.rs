@@ -117,7 +117,7 @@ pub struct DatabentoDataClient {
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
-    /// Data event sender for forwarding data to AsyncRunner.
+    /// Data event sender for forwarding data to `AsyncRunner`.
     data_sender: UnboundedSender<DataEvent>,
 }
 
@@ -189,7 +189,7 @@ impl DatabentoDataClient {
         if !channels.contains_key(dataset) {
             tracing::info!("Creating new feed handler for dataset: {dataset}");
             let cmd_tx = self.initialize_live_feed(dataset.to_string())?;
-            channels.insert(dataset.to_string(), cmd_tx.clone());
+            channels.insert(dataset.to_string(), cmd_tx);
 
             tracing::debug!("Feed handler created for dataset: {dataset}, channel stored");
         }
@@ -246,7 +246,7 @@ impl DatabentoDataClient {
                         tracing::error!("Feed handler error: {e}");
                     }
                 }
-                _ = cancellation_token.cancelled() => {
+                () = cancellation_token.cancelled() => {
                     tracing::info!("Feed handler cancelled");
                 }
             }
@@ -298,7 +298,7 @@ impl DatabentoDataClient {
                             }
                         }
                     }
-                    _ = cancellation_token.cancelled() => {
+                    () = cancellation_token.cancelled() => {
                         tracing::info!("Message processing cancelled");
                         break;
                     }

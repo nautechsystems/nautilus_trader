@@ -156,7 +156,7 @@ impl LiveNode {
 
         tokio::select! {
             // Run on main thread
-            _ = self.runner.run() => {
+            () = self.runner.run() => {
                 log::info!("AsyncRunner finished");
             }
             // Handle SIGINT signal
@@ -423,7 +423,7 @@ impl LiveNodeBuilder {
         let (runner, signal_tx) = AsyncRunner::new(clock.clone());
 
         // Create and register data clients
-        for (name, factory) in self.data_client_factories.into_iter() {
+        for (name, factory) in self.data_client_factories {
             if let Some(config) = self.data_client_configs.remove(&name) {
                 log::info!("Creating data client '{name}'");
 
@@ -452,7 +452,7 @@ impl LiveNodeBuilder {
         }
 
         // Create and register execution clients
-        for (name, factory) in self.exec_client_factories.into_iter() {
+        for (name, factory) in self.exec_client_factories {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::info!("Creating execution client '{name}'");
 
