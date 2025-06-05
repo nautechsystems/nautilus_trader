@@ -18,7 +18,6 @@ import asyncio
 import json
 from decimal import Decimal
 
-from dotenv import load_dotenv
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
@@ -38,8 +37,6 @@ from nautilus_trader.model.identifiers import InstrumentId, ClientId, TraderId, 
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading.config import StrategyConfig
-
-load_dotenv()
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
