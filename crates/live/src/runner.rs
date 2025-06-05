@@ -19,10 +19,9 @@ use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
     messages::DataEvent,
-    runner::{DataQueue, RunnerEvent, get_data_cmd_queue, set_data_evt_queue},
-    runtime::get_runtime,
+    msgbus::{self, switchboard::MessagingSwitchboard},
+    runner::{DataQueue, RunnerEvent, set_data_event_sender, set_data_evt_queue},
 };
-use nautilus_data::engine::DataEngine;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub struct AsyncDataQueue(UnboundedSender<DataEvent>);
@@ -41,14 +40,14 @@ impl DataQueue for AsyncDataQueue {
     }
 }
 
-// TODO: Use message bus instead of direct reference to DataEngine
 pub trait Runner {
-    fn run(&mut self, data_engine: &mut DataEngine);
+    fn run(&mut self);
 }
 
 pub struct AsyncRunner {
     pub clock: Rc<RefCell<LiveClock>>,
     data_rx: UnboundedReceiver<DataEvent>,
+    signal_rx: UnboundedReceiver<()>,
 }
 
 impl Debug for AsyncRunner {
@@ -60,42 +59,57 @@ impl Debug for AsyncRunner {
 }
 
 impl AsyncRunner {
-    pub fn new(clock: Rc<RefCell<LiveClock>>) -> Self {
+    pub fn new(clock: Rc<RefCell<LiveClock>>) -> (Self, UnboundedSender<()>) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+        // Set up the global data event sender for direct access
+        set_data_event_sender(data_tx.clone());
+
+        // Also keep the existing AsyncDataQueue for backward compatibility
         set_data_evt_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
 
-        Self { clock, data_rx }
+        let runner = Self {
+            clock,
+            data_rx,
+            signal_rx,
+        };
+
+        (runner, signal_tx)
     }
 }
 
-impl Runner for AsyncRunner {
-    fn run(&mut self, data_engine: &mut DataEngine) {
+impl AsyncRunner {
+    /// Runs the async runner event loop.
+    ///
+    /// This method processes data events, time events, and signal events in an async loop.
+    /// It will run until a signal is received or the event streams are closed.
+    pub async fn run(&mut self) {
+        log::info!("Starting AsyncRunner");
+
         let mut time_event_stream = self.clock.borrow().get_event_stream();
-        let data_cmd_queue = get_data_cmd_queue();
+
+        let data_engine_process = MessagingSwitchboard::data_engine_process();
+        let data_engine_response = MessagingSwitchboard::data_engine_response();
 
         loop {
-            while let Some(cmd) = data_cmd_queue.borrow_mut().pop_front() {
-                // TODO: Send to data engine execute endpoint address
-                data_engine.execute(&cmd);
-            }
-
-            // Collect the next event to process
-            let next_event = get_runtime().block_on(async {
-                tokio::select! {
-                    Some(resp) = self.data_rx.recv() => Some(RunnerEvent::Data(resp)),
-                    Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
-                    else => None,
-                }
-            });
-
-            // Process the event outside of the async context
-            match next_event {
-                Some(RunnerEvent::Data(event)) => match event {
-                    DataEvent::Response(resp) => data_engine.response(resp),
-                    DataEvent::Data(data) => data_engine.process_data(data),
+            // Collect the next event to process, including signal events
+            let next_event = tokio::select! {
+                Some(resp) = self.data_rx.recv() => RunnerEvent::Data(resp),
+                Some(event) = time_event_stream.next() => RunnerEvent::Time(event),
+                Some(_) = self.signal_rx.recv() => {
+                    tracing::info!("AsyncRunner received signal, shutting down");
+                    return; // Signal to stop
                 },
-                Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
-                None => break, // Sentinel event ends runner
+                else => return, // Sentinel event ends run
+            };
+
+            match next_event {
+                RunnerEvent::Time(event) => self.clock.borrow().get_handler(event).run(),
+                RunnerEvent::Data(event) => match event {
+                    DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
+                    DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                },
             }
         }
     }

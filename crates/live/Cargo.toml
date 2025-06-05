@@ -71,6 +71,7 @@ pyo3 = { workspace = true, optional = true }
 serde = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]

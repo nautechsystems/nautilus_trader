@@ -33,7 +33,7 @@ use nautilus_common::{
         logger::{LogGuard, LoggerConfig},
         writer::FileWriterConfig,
     },
-    messages::data::DataCommand,
+    messages::{DataResponse, data::DataCommand},
     msgbus::{
         self, MessageBus, get_message_bus,
         handler::{ShareableMessageHandler, TypedMessageHandler},
@@ -44,7 +44,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{data::Data, identifiers::TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use nautilus_trading::trader::Trader;
@@ -132,7 +132,6 @@ impl NautilusKernel {
         set_message_bus(msgbus);
 
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
-        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let risk_engine = RiskEngine::new(
             config.risk_engine().unwrap_or_default(),
             Portfolio::new(cache.clone(), clock.clone(), config.portfolio()),
@@ -141,13 +140,32 @@ impl NautilusKernel {
         );
         let exec_engine = ExecutionEngine::new(clock.clone(), cache.clone(), config.exec_engine());
 
+        let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
+
+        // Register DataEngine execute handler
         let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |cmd: &DataCommand| data_engine_ref.borrow_mut().execute(cmd),
         )));
+        msgbus::register(endpoint, handler);
 
-        let endpoint = MessagingSwitchboard::data_engine_execute();
+        // Register DataEngine process handler
+        let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_process();
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |data: &Data| {
+                data_engine_ref.borrow_mut().process_data(data.clone()) // TODO: Optimize
+            })));
+        msgbus::register(endpoint, handler);
+
+        // Register DataEngine response handler
+        let data_engine_ref = data_engine.clone();
+        let endpoint = MessagingSwitchboard::data_engine_response();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &DataResponse| data_engine_ref.borrow_mut().response(resp.clone()),
+        )));
         msgbus::register(endpoint, handler);
 
         let trader = Trader::new(
