@@ -82,7 +82,7 @@ or multiple wallets could be configured with multiple `PolymarketExecutionClient
 Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
 :::
 
-### Setting allowances for Polymarket contracts
+### Setting Allowances for Polymarket Contracts
 
 Before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
 You can do this by running the provided script located at `/adapters/polymarket/scripts/set_allowances.py`.
@@ -129,7 +129,7 @@ Run the script using:
 python nautilus_trader/adapters/polymarket/scripts/set_allowances.py
 ```
 
-### Script breakdown
+### Script Breakdown
 
 The script performs the following actions:
 
@@ -215,7 +215,7 @@ Polymarket operates as a prediction market with limited order complexity compare
 | `FOK`         | ✓              | Fill or Kill.                             |
 | `IOC`         | ✓              | Immediate or Cancel (maps to FAK).        |
 
-### Advanced order features
+### Advanced Order Features
 
 | Feature            | Binary Options | Notes                                |
 |--------------------|----------------|--------------------------------------|
@@ -223,7 +223,7 @@ Polymarket operates as a prediction market with limited order complexity compare
 | Bracket/OCO Orders | -              | *Not supported*.                     |
 | Iceberg Orders     | -              | *Not supported*.                     |
 
-### Configuration options
+### Configuration Options
 
 The following execution client configuration options are available:
 

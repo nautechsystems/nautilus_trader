@@ -81,13 +81,13 @@ The Tardis integration ensures seamless compatibility with NautilusTrader’s cr
 by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
 provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
 
-### Common rules
+### Common Rules
 
 - All symbols are converted to uppercase.
 - Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
 - Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
 
-### Exchange-specific normalizations
+### Exchange-Specific Normalizations
 
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
@@ -228,7 +228,7 @@ An example configuration file, `example_config.json`, is available [here](https:
 }
 ```
 
-### Python replays
+### Python Replays
 
 To run a replay in Python, create a script similar to the following:
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Rust replays
+### Rust Replays
 
 To run a replay in Rust, create a binary similar to the following:
 
@@ -293,7 +293,7 @@ You can also optionally specify a `limit` parameter for the `load_*` functions/m
 Loading mixed-instrument CSV files is challenging due to precision requirements and is not recommended. Use single-instrument CSV files instead (see below).
 :::
 
-### Loading CSV data in Python
+### Loading CSV Data in Python
 
 You can load Tardis-format CSV data in Python using the `TardisCSVDataLoader`.
 When loading data, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
@@ -319,7 +319,7 @@ limit = None
 deltas = loader.load_deltas(filepath, limit)
 ```
 
-### Loading CSV data in Rust
+### Loading CSV Data in Rust
 
 You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/src/csv/mod.rs).
 When loading data, you can optionally specify the instrument ID but must specify both the price precision and size precision.
@@ -372,7 +372,7 @@ Ensure that you use Tardis’s lower-kebab casing convention when referring to a
 A Tardis API key is required to access the instruments metadata API.
 :::
 
-### Requesting instruments in Python
+### Requesting Instruments in Python
 
 To request instrument definitions in Python, create a script similar to the following:
 
@@ -396,7 +396,7 @@ if __name__ == "__main__":
     asyncio.run(run())
 ```
 
-### Requesting instruments in Rust
+### Requesting Instruments in Rust
 
 To request instrument definitions in Rust, use code similar to the following.
 For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/crates/adapters/tardis/bin/example_http.rs).
