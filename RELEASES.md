@@ -18,7 +18,7 @@ Released on TBD (UTC).
 - Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
 - Fixed Arrow schema registration for `BinanceBar`
-- Fixed the Binance data and execution models to be able to run strategies that trade simultaneously on spot and future markets, including the possibility to use sandbox execution.
+- Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 
 ### Documentation Updates
 None
