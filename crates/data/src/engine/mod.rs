@@ -571,7 +571,9 @@ impl DataEngine {
     /// Currently supports `InstrumentAny`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
-        if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
+        if let Some(data) = data.downcast_ref::<Data>() {
+            self.process_data(data.clone()); // TODO: Optimize (not necessary if we change handler)
+        } else if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
         } else {
             log::error!("Cannot process data {data:?}, type is unrecognized");

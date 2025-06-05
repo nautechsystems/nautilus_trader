@@ -19,8 +19,12 @@
 
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use anyhow::Context;
 use nautilus_common::{
-    actor::DataActor, clock::LiveClock, component::Component, enums::Environment,
+    actor::{Actor, DataActor},
+    clock::LiveClock,
+    component::Component,
+    enums::Environment,
 };
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
@@ -30,6 +34,7 @@ use nautilus_system::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     kernel::NautilusKernel,
 };
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{config::LiveNodeConfig, runner::AsyncRunner};
 
@@ -42,6 +47,7 @@ pub struct LiveNode {
     clock: Rc<RefCell<LiveClock>>,
     kernel: NautilusKernel,
     runner: AsyncRunner,
+    signal_tx: Option<UnboundedSender<()>>,
     config: LiveNodeConfig,
     is_running: bool,
 }
@@ -83,7 +89,7 @@ impl LiveNode {
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new(name, config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
+        let (runner, signal_tx) = AsyncRunner::new(clock.clone());
 
         log::info!("LiveNode built successfully with kernel config");
 
@@ -91,6 +97,7 @@ impl LiveNode {
             clock,
             kernel,
             runner,
+            signal_tx: Some(signal_tx),
             config,
             is_running: false,
         })
@@ -106,9 +113,9 @@ impl LiveNode {
             anyhow::bail!("LiveNode is already running");
         }
 
-        log::info!("Starting live node");
+        log::info!("Starting LiveNode");
+
         self.kernel.start_async().await;
-        log::info!("Kernel start completed");
         self.is_running = true;
 
         log::info!("LiveNode started successfully");
@@ -125,7 +132,8 @@ impl LiveNode {
             anyhow::bail!("LiveNode is not running");
         }
 
-        log::info!("Stopping live node");
+        log::info!("Stopping LiveNode");
+
         self.kernel.stop_async().await;
         self.is_running = false;
 
@@ -142,40 +150,35 @@ impl LiveNode {
     ///
     /// Returns an error if the node fails to start or encounters a runtime error.
     pub async fn run(&mut self) -> anyhow::Result<()> {
-        log::info!("Starting LiveNode...");
+        let signal_tx = self.signal_tx.take().context("LiveNode already running")?;
+
         self.start().await?;
 
-        log::info!("LiveNode started, setting up signal handler...");
-
-        let loop_duration = tokio::time::Duration::from_millis(100);
-
-        // TODO: Temporary count logging for development
-        let mut count = 0;
-        loop {
-            count += 1;
-            if count % 10 == 0 {
-                log::info!("Signal handler loop iteration {count}");
+        tokio::select! {
+            // Run on main thread
+            _ = self.runner.run() => {
+                log::info!("AsyncRunner finished");
             }
-
-            tokio::select! {
-                result = tokio::signal::ctrl_c() => {
-                    match result {
-                        Ok(()) => {
-                            log::info!("Received SIGINT, shutting down...");
-                            break;
+            // Handle SIGINT signal
+            result = tokio::signal::ctrl_c() => {
+                match result {
+                    Ok(()) => {
+                        log::info!("Received SIGINT, shutting down");
+                        if let Err(e) = signal_tx.send(()) {
+                            log::error!("Failed to send shutdown signal: {e}");
                         }
-                        Err(e) => {
-                            log::error!("Failed to listen for SIGINT: {e}");
-                            anyhow::bail!("Signal handling failed: {e}");
-                        }
+                        // Give the AsyncRunner a moment to process the shutdown signal
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     }
-                }
-                _ = tokio::time::sleep(loop_duration) => {
+                    Err(e) => {
+                        log::error!("Failed to listen for SIGINT: {e}");
+                    }
                 }
             }
         }
 
-        log::info!("Shutting down after signal...");
+        log::debug!("AsyncRunner and signal handling finished"); // TODO: Temp logging
+
         self.stop().await?;
         Ok(())
     }
@@ -224,7 +227,7 @@ impl LiveNode {
     /// - The node is currently running.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + 'static,
+        T: DataActor + Component + Actor + 'static,
     {
         if self.is_running {
             anyhow::bail!(
@@ -417,7 +420,7 @@ impl LiveNodeBuilder {
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
+        let (runner, signal_tx) = AsyncRunner::new(clock.clone());
 
         // Create and register data clients
         for (name, factory) in self.data_client_factories.into_iter() {
@@ -471,6 +474,7 @@ impl LiveNodeBuilder {
             clock,
             kernel,
             runner,
+            signal_tx: Some(signal_tx),
             config: self.config,
             is_running: false,
         })

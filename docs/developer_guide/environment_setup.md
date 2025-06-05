@@ -142,9 +142,9 @@ docker-compose up -d postgres
 
 Used services are:
 
-- `postgres`: Postgres database with root user `POSTRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`
-- `redis`: Redis server
-- `pgadmin`: PgAdmin4 for database management and administration
+- `postgres`: Postgres database with root user `POSTRES_USER` which defaults to `postgres`, `POSTGRES_PASSWORD` which defaults to `pass` and `POSTGRES_DB` which defaults to `postgres`.
+- `redis`: Redis server.
+- `pgadmin`: PgAdmin4 for database management and administration.
 
 :::info
 Please use this as development environment only. For production, use a proper and more secure setup.
@@ -217,8 +217,8 @@ POSTGRES_DATABASE=nautilus
 
 List of commands are:
 
-1. `nautilus database init`: Will bootstrap schema, roles and all sql files located in `schema` root directory (like `tables.sql`)
-2. `nautilus database drop`: Will drop all tables, roles and data in target Postgres database
+1. `nautilus database init`: Will bootstrap schema, roles and all sql files located in `schema` root directory (like `tables.sql`).
+2. `nautilus database drop`: Will drop all tables, roles and data in target Postgres database.
 
 ## Rust analyzer settings
 

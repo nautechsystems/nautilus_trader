@@ -32,10 +32,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // #[cfg(feature = "python")]
     pyo3::prepare_freethreaded_python();
 
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
-
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
@@ -70,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and register a Databento subscriber actor
     let client_id = ClientId::new("DATABENTO");
     let instrument_ids = vec![
-        InstrumentId::from("ES.c.0.GLBX"),
+        InstrumentId::from("ESM5.XCME"),
         // Add more instruments as needed
     ];
 
