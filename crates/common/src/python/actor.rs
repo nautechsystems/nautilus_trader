@@ -27,12 +27,15 @@ use nautilus_core::{
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, Venue},
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    actor::data_actor::{DataActorConfig, DataActorCore},
+    actor::{
+        DataActor,
+        data_actor::{DataActorConfig, DataActorCore},
+    },
     component::Component,
     enums::ComponentState,
 };
@@ -47,6 +50,20 @@ use crate::{
 #[derive(Debug)]
 pub struct PyDataActor {
     core: DataActorCore,
+}
+
+impl DataActor for PyDataActor {
+    fn actor_id(&self) -> ActorId {
+        self.core.actor_id()
+    }
+
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.core
+    }
 }
 
 #[pymethods]
@@ -78,37 +95,37 @@ impl PyDataActor {
     }
 
     fn is_ready(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Ready)
+        Ok(Component::state(self) == ComponentState::Ready)
     }
 
     fn is_running(&self) -> PyResult<bool> {
-        Ok(Component::is_running(&self.core))
+        Ok(Component::is_running(self))
     }
 
     fn is_stopped(&self) -> PyResult<bool> {
-        Ok(Component::is_stopped(&self.core))
+        Ok(Component::is_stopped(self))
     }
 
     fn is_disposed(&self) -> PyResult<bool> {
-        Ok(Component::is_disposed(&self.core))
+        Ok(Component::is_disposed(self))
     }
 
     fn is_degraded(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Degraded)
+        Ok(Component::state(self) == ComponentState::Degraded)
     }
 
     fn is_faulting(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Faulted)
+        Ok(Component::state(self) == ComponentState::Faulted)
     }
 
     #[pyo3(name = "start")]
     fn py_start(&mut self) -> PyResult<()> {
-        self.core.start().map_err(to_pyruntime_err)
+        Component::start(self).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stop")]
     fn py_stop(&mut self) -> PyResult<()> {
-        self.core.stop().map_err(to_pyruntime_err)
+        Component::stop(self).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "resume")]
@@ -118,12 +135,12 @@ impl PyDataActor {
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) -> PyResult<()> {
-        self.core.reset().map_err(to_pyruntime_err)
+        Component::reset(self).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) -> PyResult<()> {
-        self.core.dispose().map_err(to_pyruntime_err)
+        Component::dispose(self).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "degrade")]
@@ -151,8 +168,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_data::<DataActorCore>(data_type, client_id, params);
+        self.subscribe_data(data_type, client_id, params);
         Ok(())
     }
 
@@ -164,8 +180,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instruments::<DataActorCore>(venue, client_id, params);
+        self.subscribe_instruments(venue, client_id, params);
         Ok(())
     }
 
@@ -177,8 +192,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -194,14 +208,7 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         let depth = depth.and_then(NonZeroUsize::new);
-        self.core.subscribe_book_deltas::<DataActorCore>(
-            instrument_id,
-            book_type,
-            depth,
-            client_id,
-            managed,
-            params,
-        );
+        self.subscribe_book_deltas(instrument_id, book_type, depth, client_id, managed, params);
         Ok(())
     }
 
@@ -220,7 +227,7 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.core.subscribe_book_at_interval::<DataActorCore>(
+        self.subscribe_book_at_interval(
             instrument_id,
             book_type,
             depth,
@@ -239,8 +246,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_quotes::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_quotes(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -252,8 +258,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_trades::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_trades(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -266,8 +271,7 @@ impl PyDataActor {
         await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_bars::<DataActorCore>(bar_type, client_id, await_partial, params);
+        self.subscribe_bars(bar_type, client_id, await_partial, params);
         Ok(())
     }
 
@@ -279,8 +283,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_mark_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_mark_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -292,8 +295,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_index_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_index_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -305,8 +307,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument_status::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument_status(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -318,8 +319,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument_close::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument_close(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -340,8 +340,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_data::<DataActorCore>(data_type, client_id, start, end, limit, params)
+            .request_data(data_type, client_id, start, end, limit, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -360,8 +359,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_instrument::<DataActorCore>(instrument_id, start, end, client_id, params)
+            .request_instrument(instrument_id, start, end, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -380,8 +378,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_instruments::<DataActorCore>(venue, start, end, client_id, params)
+            .request_instruments(venue, start, end, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -398,8 +395,7 @@ impl PyDataActor {
         let depth = depth.and_then(NonZeroUsize::new);
 
         let request_id = self
-            .core
-            .request_book_snapshot::<DataActorCore>(instrument_id, depth, client_id, params)
+            .request_book_snapshot(instrument_id, depth, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -420,8 +416,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_quotes::<DataActorCore>(instrument_id, start, end, limit, client_id, params)
+            .request_quotes(instrument_id, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -442,8 +437,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_trades::<DataActorCore>(instrument_id, start, end, limit, client_id, params)
+            .request_trades(instrument_id, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -464,8 +458,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_bars::<DataActorCore>(bar_type, start, end, limit, client_id, params)
+            .request_bars(bar_type, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -479,8 +472,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_data::<DataActorCore>(data_type, client_id, params);
+        self.unsubscribe_data(data_type, client_id, params);
         Ok(())
     }
 
@@ -492,8 +484,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instruments::<DataActorCore>(venue, client_id, params);
+        self.unsubscribe_instruments(venue, client_id, params);
         Ok(())
     }
 
@@ -505,8 +496,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -518,8 +508,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_book_deltas::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_book_deltas(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -535,12 +524,7 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.core.unsubscribe_book_at_interval::<DataActorCore>(
-            instrument_id,
-            interval_ms,
-            client_id,
-            params,
-        );
+        self.unsubscribe_book_at_interval(instrument_id, interval_ms, client_id, params);
         Ok(())
     }
 
@@ -552,8 +536,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_quotes::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_quotes(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -565,8 +548,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_trades::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_trades(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -578,8 +560,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_bars::<DataActorCore>(bar_type, client_id, params);
+        self.unsubscribe_bars(bar_type, client_id, params);
         Ok(())
     }
 
@@ -591,8 +572,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_mark_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_mark_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -604,8 +584,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_index_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_index_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -617,8 +596,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument_status::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument_status(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -630,8 +608,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument_close::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument_close(instrument_id, client_id, params);
         Ok(())
     }
 }

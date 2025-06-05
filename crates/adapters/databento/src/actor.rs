@@ -15,20 +15,13 @@
 
 //! Basic Databento subscriber actor implementation for quotes and trades.
 
-use std::{
-    any::Any,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{
-    actor::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig},
-    enums::ComponentState,
-};
+use nautilus_common::actor::{DataActor, DataActorCore, data_actor::DataActorConfig};
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
     identifiers::{ActorId, ClientId, InstrumentId},
 };
-use ustr::Ustr;
 
 /// Configuration for the Databento subscriber actor.
 #[derive(Debug, Clone)]
@@ -80,28 +73,17 @@ impl DerefMut for DatabentoSubscriberActor {
     }
 }
 
-impl Actor for DatabentoSubscriberActor {
-    fn id(&self) -> Ustr {
-        self.core.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 impl DataActor for DatabentoSubscriberActor {
     fn actor_id(&self) -> ActorId {
         self.core.actor_id()
     }
 
-    fn state(&self) -> ComponentState {
-        self.core.state()
+    fn core(&self) -> &DataActorCore {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.core
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
@@ -116,10 +98,10 @@ impl DataActor for DatabentoSubscriberActor {
         // Subscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
             log::info!("Subscribing to quotes for {instrument_id}");
-            self.subscribe_quotes::<Self>(instrument_id, Some(client_id), None);
+            self.subscribe_quotes(instrument_id, Some(client_id), None);
 
             log::info!("Subscribing to trades for {instrument_id}");
-            self.subscribe_trades::<Self>(instrument_id, Some(client_id), None);
+            self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
         log::info!("Databento subscriber actor started successfully");
@@ -138,10 +120,10 @@ impl DataActor for DatabentoSubscriberActor {
         // Unsubscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
             log::info!("Unsubscribing from quotes for {instrument_id}");
-            self.unsubscribe_quotes::<Self>(instrument_id, Some(client_id), None);
+            self.unsubscribe_quotes(instrument_id, Some(client_id), None);
 
             log::info!("Unsubscribing from trades for {instrument_id}");
-            self.unsubscribe_trades::<Self>(instrument_id, Some(client_id), None);
+            self.unsubscribe_trades(instrument_id, Some(client_id), None);
         }
 
         log::info!("Databento subscriber actor stopped successfully");
