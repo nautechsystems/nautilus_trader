@@ -686,28 +686,24 @@ impl<T> Component for T
 where
     T: DataActor + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore> + Debug,
 {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn id(&self) -> ComponentId {
-        Component::id(self.deref())
+    fn component_id(&self) -> ComponentId {
+        ComponentId::new(self.deref().actor_id.inner().as_str())
     }
 
     fn state(&self) -> ComponentState {
-        Component::state(self.deref())
+        self.deref().state
     }
 
     fn is_running(&self) -> bool {
-        Component::is_running(self.deref())
+        self.deref().state == ComponentState::Running
     }
 
     fn is_stopped(&self) -> bool {
-        Component::is_stopped(self.deref())
+        self.deref().state == ComponentState::Stopped
     }
 
     fn is_disposed(&self) -> bool {
-        Component::is_disposed(self.deref())
+        self.deref().state == ComponentState::Disposed
     }
 
     fn register(
@@ -716,7 +712,7 @@ where
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        Component::register(self.deref_mut(), trader_id, clock, cache)
+        self.deref_mut().register(trader_id, clock, cache)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -777,7 +773,7 @@ where
     }
 
     fn handle_event(&mut self, event: TimeEvent) {
-        Component::handle_event(self.deref_mut(), event)
+        self.deref_mut().handle_time_event(&event)
     }
 }
 
@@ -2267,7 +2263,7 @@ fn check_timestamps(
 }
 
 impl Component for DataActorCore {
-    fn id(&self) -> ComponentId {
+    fn component_id(&self) -> ComponentId {
         ComponentId::new(self.actor_id.inner().as_str())
     }
 
@@ -2350,10 +2346,6 @@ impl Component for DataActorCore {
 
     fn handle_event(&mut self, event: TimeEvent) {
         self.handle_time_event(&event);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
