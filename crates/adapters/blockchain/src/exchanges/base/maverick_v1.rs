@@ -31,6 +31,8 @@ pub static MAVERICK_V1: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::CLAMM,
         "",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });

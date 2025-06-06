@@ -94,9 +94,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::select! {
             () = notify.notified() => break,
              () = async {
-                // Sync the pools from the creation block to the next block
-                // so that we have it processed and in the cache
-
                 data_client.sync_exchange_pools(
                     dex_id.as_str(),
                     Some(pool_creation_block),
@@ -108,8 +105,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     from_block,
                     None,
                 ).await.unwrap();
-
-
+                data_client.sync_pool_mints(
+                    dex_id.as_str(),
+                    weth_usdc_pool.to_string(),
+                    from_block,
+                    None,
+                ).await.unwrap();
+                data_client.sync_pool_burns(
+                    dex_id.as_str(),
+                    weth_usdc_pool.to_string(),
+                    from_block,
+                    None,
+                ).await.unwrap();
             } => break,
         }
     }
