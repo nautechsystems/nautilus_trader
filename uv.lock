@@ -1422,7 +1422,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26.4" },
     { name = "pandas", specifier = ">=2.2.3,<3.0.0" },
     { name = "protobuf", marker = "extra == 'dydx'", specifier = "==5.29.1" },
-    { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = ">=0.21.0,<1.0.0" },
+    { name = "py-clob-client", marker = "extra == 'polymarket'", specifier = "==0.23.0,<1.0.0" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pycryptodome", marker = "extra == 'dydx'", specifier = ">=3.20.0,<4.0.0" },
     { name = "pytz", specifier = ">=2025.1.0" },
