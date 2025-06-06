@@ -108,7 +108,7 @@ sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio", "json"] }
 strum = { version = "0.27.1", features = ["derive"] }
 thiserror = "2.0.12"
 thousands = "0.2.0"
-toml = "0.8.20"
+toml = "0.8.23"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
