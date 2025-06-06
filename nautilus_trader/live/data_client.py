@@ -254,7 +254,7 @@ class LiveDataClient(DataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, request: RequestData) -> None:
-        self._log.debug(f"Request {request.data_type} {request.request_id}")
+        self._log.debug(f"Request {request.data_type} {request.id}")
         self.create_task(
             self._request(request),
             log_msg=f"request_{request.data_type}",
