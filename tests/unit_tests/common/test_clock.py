@@ -586,10 +586,11 @@ class TestTestClock:
 
         # Assert
         # With fire_immediately=True, expect events at: 0ms, 100ms, 200ms, 300ms = 4 events
-        assert len(event_handlers) == 3
+        assert len(event_handlers) == 4
         assert event_handlers[0].event.ts_event == 0  # Fires immediately at start
         assert event_handlers[1].event.ts_event == 100_000_000  # Then after interval
         assert event_handlers[2].event.ts_event == 200_000_000
+        assert event_handlers[3].event.ts_event == 300_000_000
         assert clock.timer_names == [name]
         assert clock.timer_count == 1
 
@@ -620,6 +621,134 @@ class TestTestClock:
         assert event_handlers[2].event.ts_event == 300_000_000
         assert clock.timer_names == [name]
         assert clock.timer_count == 1
+
+    def test_cython_validation_prevents_rust_panic_for_time_alert(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(2000_000_000)  # Set current time to 2 seconds
+        past_alert_time = 1000_000_000  # 1 second (in the past)
+
+        # Act & Assert - Cython validation should catch this before Rust
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_time_alert_ns(
+                name="past_alert",
+                alert_time_ns=past_alert_time,
+                allow_past=False,
+            )
+
+        assert "was in the past" in str(exc_info.value)
+        assert "past_alert" in str(exc_info.value)
+        assert clock.timer_count == 0  # No timer should be created
+
+    def test_cython_validation_prevents_rust_panic_for_timer_fire_immediately(self):
+        # Arrange
+        clock = TestClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        clock.set_time(2000_000_000)  # Set current time to 2 seconds
+        past_start_time = 1000_000_000  # 1 second (in the past)
+
+        # Act & Assert - With fire_immediately=True, next event = start time (in past)
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_timer_ns(
+                name="past_timer",
+                interval_ns=500_000_000,  # 0.5 second interval
+                start_time_ns=past_start_time,
+                stop_time_ns=0,
+                allow_past=False,
+                fire_immediately=True,
+            )
+
+        assert "would be in the past" in str(exc_info.value)
+        assert "past_timer" in str(exc_info.value)
+        assert clock.timer_count == 0  # No timer should be created
+
+    def test_cython_validation_prevents_rust_panic_for_timer_next_event_past(self):
+        # Arrange
+        clock = TestClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        clock.set_time(3000_000_000)  # Set current time to 3 seconds
+        past_start_time = 1000_000_000  # 1 second (in the past)
+        interval = 500_000_000  # 0.5 second interval
+
+        # Act & Assert - Next event would be 1.5 seconds, still in past vs current 3 seconds
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_timer_ns(
+                name="past_next_event_timer",
+                interval_ns=interval,
+                start_time_ns=past_start_time,
+                stop_time_ns=0,
+                allow_past=False,
+                fire_immediately=False,
+            )
+
+        assert "would be in the past" in str(exc_info.value)
+        assert "past_next_event_timer" in str(exc_info.value)
+        assert clock.timer_count == 0  # No timer should be created
+
+    def test_cython_validation_allows_valid_timer_with_past_start_but_future_next_event(self):
+        # Arrange
+        clock = TestClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        clock.set_time(1500_000_000)  # Set current time to 1.5 seconds
+        past_start_time = 1000_000_000  # 1 second (in the past)
+        interval = 1000_000_000  # 1 second interval
+
+        # Act - Next event would be 2 seconds, which is > current time (1.5 seconds)
+        # This should succeed (bar aggregation use case)
+        clock.set_timer_ns(
+            name="valid_timer",
+            interval_ns=interval,
+            start_time_ns=past_start_time,
+            stop_time_ns=0,
+            allow_past=False,
+            fire_immediately=False,
+        )
+
+        # Assert
+        assert clock.timer_count == 1
+        assert "valid_timer" in clock.timer_names
+
+    def test_cython_validation_allows_zero_start_time_regardless_of_allow_past(self):
+        # Arrange
+        clock = TestClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        clock.set_time(2000_000_000)  # Set current time to 2 seconds
+
+        # Act - Zero start time should always work (uses current time)
+        clock.set_timer_ns(
+            name="zero_start_timer",
+            interval_ns=500_000_000,  # 0.5 second interval
+            start_time_ns=0,  # Zero start time
+            stop_time_ns=0,
+            allow_past=False,
+            fire_immediately=True,
+        )
+
+        # Assert
+        assert clock.timer_count == 1
+        assert "zero_start_timer" in clock.timer_names
+
+    def test_cython_validation_error_message_format(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(2000_000_000)  # Set current time to 2 seconds
+        past_alert_time = 1000_000_000  # 1 second (in the past)
+
+        # Act & Assert - Check error message contains readable timestamps
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_time_alert_ns(
+                name="error_msg_test",
+                alert_time_ns=past_alert_time,
+                allow_past=False,
+            )
+
+        error_msg = str(exc_info.value)
+        assert "error_msg_test" in error_msg
+        assert "alert time" in error_msg
+        assert "was in the past" in error_msg
+        assert "current time is" in error_msg
+        # Should contain ISO format timestamps
+        assert "1970-01-01" in error_msg  # Both timestamps should be from epoch
 
 
 class TestLiveClock:
@@ -918,3 +1047,69 @@ class TestLiveClock:
 
         # Assert
         assert len(self.handler) >= 2
+
+    def test_cython_validation_prevents_rust_panic_live_clock_time_alert(self):
+        # Arrange
+        clock = LiveClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        current_time_ns = clock.timestamp_ns()
+        past_alert_time = current_time_ns - 1_000_000_000  # 1 second in the past
+
+        # Act & Assert - Cython validation should catch this before Rust
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_time_alert_ns(
+                name="past_alert_live",
+                alert_time_ns=past_alert_time,
+                allow_past=False,
+            )
+
+        assert "would be in the past" in str(exc_info.value) or "was in the past" in str(
+            exc_info.value,
+        )
+        assert "past_alert_live" in str(exc_info.value)
+        assert clock.timer_count == 0  # No timer should be created
+
+    def test_cython_validation_prevents_rust_panic_live_clock_timer(self):
+        # Arrange
+        clock = LiveClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+        current_time_ns = clock.timestamp_ns()
+        past_start_time = current_time_ns - 2_000_000_000  # 2 seconds in the past
+        interval = 500_000_000  # 0.5 second interval
+
+        # Act & Assert - Next event would be 1.5 seconds ago, still in past
+        with pytest.raises(ValueError) as exc_info:
+            clock.set_timer_ns(
+                name="past_timer_live",
+                interval_ns=interval,
+                start_time_ns=past_start_time,
+                stop_time_ns=0,
+                allow_past=False,
+                fire_immediately=False,
+            )
+
+        assert "would be in the past" in str(exc_info.value)
+        assert "past_timer_live" in str(exc_info.value)
+        assert clock.timer_count == 0  # No timer should be created
+
+    def test_cython_validation_allows_zero_start_time_live_clock(self):
+        # Arrange
+        clock = LiveClock()
+        clock.register_default_handler(lambda event: None)  # Add default handler
+
+        # Act - Zero start time should always work (uses current time)
+        clock.set_timer_ns(
+            name="zero_start_live",
+            interval_ns=100_000_000,  # 0.1 second interval
+            start_time_ns=0,  # Zero start time
+            stop_time_ns=0,
+            allow_past=False,
+            fire_immediately=True,
+        )
+
+        # Assert
+        assert clock.timer_count == 1
+        assert "zero_start_live" in clock.timer_names
+
+        # Cleanup
+        clock.cancel_timer("zero_start_live")
