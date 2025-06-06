@@ -73,6 +73,7 @@ cdef class Clock:
         datetime stop_time=*,
         callback: Callable[[TimeEvent], None]=*,
         bint allow_past=*,
+        bint fire_immediately=*,
     )
     cpdef void set_timer_ns(
         self,
@@ -82,6 +83,7 @@ cdef class Clock:
         uint64_t stop_time_ns,
         callback: Callable[[TimeEvent], None]=*,
         bint allow_past=*,
+        bint fire_immediately=*,
     )
     cpdef void cancel_timer(self, str name)
     cpdef void cancel_timers(self)

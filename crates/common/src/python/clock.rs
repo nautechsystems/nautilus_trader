@@ -81,7 +81,8 @@ impl TestClock_Py {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -90,6 +91,7 @@ impl TestClock_Py {
         stop_time_ns: Option<u64>,
         callback: Option<PyObject>,
         allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
     ) -> PyResult<()> {
         self.0
             .set_timer_ns(
@@ -99,6 +101,7 @@ impl TestClock_Py {
                 stop_time_ns.map(UnixNanos::from),
                 callback.map(TimeEventCallback::from),
                 allow_past,
+                fire_immediately,
             )
             .map_err(to_pyvalue_err)
     }
@@ -163,7 +166,8 @@ impl LiveClock_Py {
             .map_err(to_pyvalue_err)
     }
 
-    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None))]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None, allow_past=None, fire_immediately=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -172,6 +176,7 @@ impl LiveClock_Py {
         stop_time_ns: Option<u64>,
         callback: Option<PyObject>,
         allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
     ) -> PyResult<()> {
         self.0
             .set_timer_ns(
@@ -181,6 +186,7 @@ impl LiveClock_Py {
                 stop_time_ns.map(UnixNanos::from),
                 callback.map(TimeEventCallback::from),
                 allow_past,
+                fire_immediately,
             )
             .map_err(to_pyvalue_err)
     }
@@ -236,7 +242,7 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None, None)
+                .set_timer_ns(timer_name, 10, 0.into(), None, None, None, None)
                 .unwrap();
 
             assert_eq!(test_clock.timer_names(), [timer_name]);
@@ -254,7 +260,7 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None, None)
+                .set_timer_ns(timer_name, 10, 0.into(), None, None, None, None)
                 .unwrap();
             test_clock.cancel_timer(timer_name);
 
@@ -273,7 +279,7 @@ mod tests {
 
             let timer_name = "TEST_TIME1";
             test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None, None)
+                .set_timer_ns(timer_name, 10, 0.into(), None, None, None, None)
                 .unwrap();
             test_clock.cancel_timers();
 
@@ -297,6 +303,7 @@ mod tests {
                     1,
                     1.into(),
                     Some(UnixNanos::from(3)),
+                    None,
                     None,
                     None,
                 )
@@ -324,6 +331,7 @@ mod tests {
                     Some(UnixNanos::from(3)),
                     None,
                     None,
+                    None,
                 )
                 .unwrap();
             test_clock.advance_time(3.into(), true);
@@ -348,6 +356,7 @@ mod tests {
                     2,
                     0.into(),
                     Some(UnixNanos::from(3)),
+                    None,
                     None,
                     None,
                 )

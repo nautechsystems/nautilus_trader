@@ -565,6 +565,62 @@ class TestTestClock:
         assert clock.timer_names == ["TEST_TIMER1", "TEST_TIMER2"]
         assert clock.timer_count == 2
 
+    def test_set_timer_with_fire_immediately_true(self):
+        # Arrange
+        clock = TestClock()
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=UNIX_EPOCH,
+            stop_time=None,
+            callback=handler.append,
+            fire_immediately=True,
+        )
+
+        event_handlers = clock.advance_time(300_000_000)  # Advance 300ms
+
+        # Assert
+        # With fire_immediately=True, expect events at: 0ms, 100ms, 200ms, 300ms = 4 events
+        assert len(event_handlers) == 3
+        assert event_handlers[0].event.ts_event == 0  # Fires immediately at start
+        assert event_handlers[1].event.ts_event == 100_000_000  # Then after interval
+        assert event_handlers[2].event.ts_event == 200_000_000
+        assert clock.timer_names == [name]
+        assert clock.timer_count == 1
+
+    def test_set_timer_with_fire_immediately_false(self):
+        # Arrange
+        clock = TestClock()
+        name = "TEST_TIMER"
+        interval = timedelta(milliseconds=100)
+        handler = []
+
+        # Act
+        clock.set_timer(
+            name=name,
+            interval=interval,
+            start_time=UNIX_EPOCH,
+            stop_time=None,
+            callback=handler.append,
+            fire_immediately=False,
+        )
+
+        event_handlers = clock.advance_time(300_000_000)  # Advance 300ms
+
+        # Assert
+        # With fire_immediately=False (default), expect events at: 100ms, 200ms, 300ms = 3 events
+        assert len(event_handlers) == 3
+        assert event_handlers[0].event.ts_event == 100_000_000  # Fires after first interval
+        assert event_handlers[1].event.ts_event == 200_000_000
+        assert event_handlers[2].event.ts_event == 300_000_000
+        assert clock.timer_names == [name]
+        assert clock.timer_count == 1
+
 
 class TestLiveClock:
     def setup(self):

@@ -187,6 +187,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
     allow_past: u8,
+    fire_immediately: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -211,6 +212,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
             stop_time_ns,
             callback,
             Some(allow_past != 0),
+            Some(fire_immediately != 0),
         )
         .expect(FAILED);
 }
@@ -422,6 +424,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
     stop_time_ns: UnixNanos,
     callback_ptr: *mut ffi::PyObject,
     allow_past: u8,
+    fire_immediately: u8,
 ) {
     assert!(!callback_ptr.is_null());
 
@@ -447,6 +450,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
             stop_time_ns,
             callback,
             Some(allow_past != 0),
+            Some(fire_immediately != 0),
         )
         .expect(FAILED);
 }
