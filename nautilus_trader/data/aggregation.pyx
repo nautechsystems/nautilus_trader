@@ -734,7 +734,6 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._time_bars_origin_offset = time_bars_origin_offset
         self._skip_first_non_full_bar = skip_first_non_full_bar
-        self._skip_first_non_full_bar_original = skip_first_non_full_bar
         self._timestamp_on_close = timestamp_on_close
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
@@ -917,21 +916,12 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation not time based, was {bar_aggregation_to_str(aggregation)}",
             )
 
-    cpdef void _invalidate_skip_first_non_full_bar_on_exact_start(self, datetime now, datetime start_time):
-        if self.bar_type.spec.aggregation != BarAggregation.MONTH and start_time + self.interval == now:
-            self._skip_first_non_full_bar = False
-        # TODO: Make tests for this behavior
-        # TODO: Bug in Pandas break this. Use inequality instead
-        elif self.bar_type.spec.aggregation == BarAggregation.MONTH and start_time + pd.DateOffset(months=self.bar_type.spec.step) == now:
-            self._skip_first_non_full_bar = False
 
     cpdef void _set_build_timer(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
         cdef datetime start_time = self.get_start_time(now)
-
-        self._invalidate_skip_first_non_full_bar_on_exact_start(now, start_time)
 
         start_time += timedelta(microseconds=self._bar_build_delay)
         self._log.debug(f"Timer {start_time=}")
@@ -961,12 +951,17 @@ cdef class TimeBarAggregator(BarAggregator):
         """
         Stop the bar aggregator.
         """
-        self._clock.cancel_timer(str(self.bar_type))
+        self._clock.cancel_timer(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
         if self._skip_first_non_full_bar:
             self._builder.reset()
             self._skip_first_non_full_bar = False
+        # TODO: Test this behavior
+        elif not self._build_with_no_updates and self._builder.count == 0:
+            pass
+        elif not self._builder.initialized:
+            pass
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
@@ -976,11 +971,6 @@ cdef class TimeBarAggregator(BarAggregator):
 
         cdef datetime given_start_time = unix_nanos_to_dt(time_ns)
         cdef datetime start_time = self.get_start_time(given_start_time)
-
-        #TODO: Test this behavior
-        #TODO: Bug here: what if the first bar is empty
-        self._skip_first_non_full_bar = self._skip_first_non_full_bar_original
-        self._invalidate_skip_first_non_full_bar_on_exact_start(given_start_time, start_time)
 
         self._batch_open_ns = dt_to_unix_nanos(start_time)
 
@@ -1057,22 +1047,6 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(price, size, ts_event)
 
-        if self._build_on_next_tick:
-            if ts_event <= self._stored_close_ns:
-                ts_init = ts_event
-
-                # Adjusting the timestamp logic based on interval_type
-                if self._is_left_open:
-                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-                else:
-                    ts_event = self._stored_open_ns
-
-                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-            # Reset flag and clear stored close
-            self._build_on_next_tick = False
-            self._stored_close_ns = 0
-
         if self._batch_next_close_ns != 0:
             self._batch_post_update(ts_event)
 
@@ -1081,20 +1055,6 @@ cdef class TimeBarAggregator(BarAggregator):
             self._batch_pre_update(ts_init)
 
         self._builder.update_bar(bar, volume, ts_init)
-
-        if self._build_on_next_tick:
-            if ts_init <= self._stored_close_ns:
-                # Adjusting the timestamp logic based on interval_type
-                if self._is_left_open:
-                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-                else:
-                    ts_event = self._stored_open_ns
-
-                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
-
-            # Reset flag and clear stored close
-            self._build_on_next_tick = False
-            self._stored_close_ns = 0
 
         if self._batch_next_close_ns != 0:
             self._batch_post_update(ts_init)
@@ -1117,15 +1077,6 @@ cdef class TimeBarAggregator(BarAggregator):
 
             self.next_close_ns = dt_to_unix_nanos(alert_time)
 
-        if not self._builder.initialized:
-            # Set flag to build on next close with the stored close time
-            # _build_on_next_tick is used to avoid a race condition between a data update and a TimeEvent from the timer
-            self._build_on_next_tick = True
-            self._stored_close_ns = event.ts_event
-            return
-
-        if not self._build_with_no_updates and self._builder.count == 0:
-            return  # Do not build and emit bar
 
         cdef uint64_t ts_init = event.ts_event
         cdef uint64_t ts_event
