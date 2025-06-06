@@ -16,6 +16,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Upgraded Cython to v3.1.1
 - Upgraded `databento` crate to v0.26.2
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
