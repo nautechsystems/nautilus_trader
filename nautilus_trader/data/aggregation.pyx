@@ -22,6 +22,7 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
@@ -768,7 +769,6 @@ cdef class TimeBarAggregator(BarAggregator):
         self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
         self._stored_close_ns = 0
 
-
     def _validate_time_bars_origin_offset(self):
         # TODO: Tests for DateOffset time_bars_origin validation
         # TODO: Better documentation in the code, of which values are allowed
@@ -793,13 +793,21 @@ cdef class TimeBarAggregator(BarAggregator):
                 if -self._time_bars_origin_offset >= sup_time_bars_origin_offset:
                     raise ValueError(
                         f"Invalid time_bars_origin: "
-                        f"{self._time_bars_origi_offsetn} for aggregation={self.bar_type}. "
+                        f"{self._time_bars_origin_offset} for aggregation={self.bar_type}. "
                         f"Must be larger than {-sup_time_bars_origin_offset}."
                     )
 
 
         if aggregation != BarAggregation.MONTH:
-            validate(self.interval, True)
+            if isinstance(self._time_bars_origin_offset, timedelta):
+                validate(self.interval, True)
+            else:
+                raise ValueError(
+                    f"Invalid time_bars_origin: "
+                    f"{self._time_bars_origin_offset} for aggregation={self.bar_type}. "
+                    f"Must be an instance of timedelta."
+                )
+
         else:
             if isinstance(self._time_bars_origin_offset, timedelta):
                 # Days of February in common year
@@ -808,8 +816,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
             else:
                 # TODO: DateOffset time_bars_origin validation for months
-                pass
-
+                offset: pd.DateOffset = self._time_bars_origin_offset
 
 
     def __str__(self):
@@ -828,77 +835,34 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef int step = self.bar_type.spec.step
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
 
-        if aggregation == BarAggregation.MILLISECOND:
-            start_time = now.floor(freq="s")
+        if aggregation != BarAggregation.MONTH:
+            if aggregation == BarAggregation.MILLISECOND:
+                start_time = now.floor(freq="s")
+            elif aggregation == BarAggregation.SECOND:
+                start_time = now.floor(freq="min")
+            elif aggregation == BarAggregation.MINUTE:
+                start_time = now.floor(freq="h")
+            elif aggregation == BarAggregation.HOUR:
+                start_time = now.floor(freq="d")
+            elif aggregation == BarAggregation.DAY:
+                start_time = now.floor(freq="d")
+            elif aggregation == BarAggregation.WEEK:
+                start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
+            else:  # pragma: no cover (design-time error)
+                raise ValueError(
+                    f"Aggregation type not supported for time bars, "
+                    f"was {bar_aggregation_to_str(aggregation)}",
+                )
 
-            if self._time_bars_origin_offset is not None:
-                start_time += self._time_bars_origin_offset
-
-            start_time = now.floor(freq="s") + self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(seconds=1)
-
+            start_time += self._time_bars_origin_offset - self.interval
             while start_time < now:
-                start_time += pd.Timedelta(milliseconds=step)
-
-            start_time -= pd.Timedelta(milliseconds=step)
-        elif aggregation == BarAggregation.SECOND:
-            start_time = now.floor(freq="min") + self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(minutes=1)
-
-            while start_time < now:
-                start_time += pd.Timedelta(seconds=step)
-
-            start_time -= pd.Timedelta(seconds=step)
-        elif aggregation == BarAggregation.MINUTE:
-            start_time = now.floor(freq="h") + self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(hours=1)
-
-            while start_time < now:
-                start_time += pd.Timedelta(minutes=step)
-
-            start_time -= pd.Timedelta(minutes=step)
-        elif aggregation == BarAggregation.HOUR:
-            start_time = now.floor(freq="d") + self._time_bars_origin_offset
-
-            if now < start_time:
-                start_time -= pd.Timedelta(days=1)
-
-            while start_time < now:
-                start_time += pd.Timedelta(hours=step)
-
-            start_time -= pd.Timedelta(hours=step)
-        elif aggregation == BarAggregation.DAY:
-            start_time = now.floor(freq="d") + self._time_bars_origin_offset
-
-            if now <= start_time:
-                start_time -= pd.Timedelta(days=1)
-        elif aggregation == BarAggregation.WEEK:
-            start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d") + self._time_bars_origin_offset
-
-            if now <= start_time:
-                start_time -= pd.Timedelta(weeks=1)
-        elif aggregation == BarAggregation.MONTH:
+                start_time += self.interval
+        else:
             start_time = ((now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
-                          + self._time_bars_origin_offset)
-
-            if now < start_time:
-                start_time -= pd.DateOffset(years=1)
+                          + self._time_bars_origin_offset - pd.DateOffset(months=step))
 
             while start_time < now:
                 start_time += pd.DateOffset(months=step)
-
-            start_time -= pd.DateOffset(months=step)
-        else:  # pragma: no cover (design-time error)
-            raise ValueError(
-                f"Aggregation type not supported for time bars, "
-                f"was {bar_aggregation_to_str(aggregation)}",
-            )
 
         return start_time
 
@@ -961,7 +925,6 @@ cdef class TimeBarAggregator(BarAggregator):
         elif self.bar_type.spec.aggregation == BarAggregation.MONTH and start_time + pd.DateOffset(months=self.bar_type.spec.step) == now:
             self._skip_first_non_full_bar = False
 
-
     cpdef void _set_build_timer(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
@@ -980,14 +943,14 @@ cdef class TimeBarAggregator(BarAggregator):
                 start_time=start_time,
                 stop_time=None,
                 callback=self._build_bar,
+                fire_immediately=True,
+                allow_past=True
             )
         else:
             # The monthly alert time is defined iteratively at each alert time as there is no regular interval
-            alert_time = start_time + pd.DateOffset(months=step)
-
             self._clock.set_time_alert(
                 name=self._timer_name,
-                alert_time=alert_time,
+                alert_time=start_time,
                 callback=self._build_bar,
                 override=True,
             )
@@ -1006,7 +969,6 @@ cdef class TimeBarAggregator(BarAggregator):
             self._skip_first_non_full_bar = False
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
-
 
     def _start_batch_time(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step
