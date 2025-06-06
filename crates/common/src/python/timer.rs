@@ -229,6 +229,7 @@ mod tests {
             start_time,
             None,
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -243,6 +244,7 @@ mod tests {
                     None,
                     callback,
                     heap,
+                    false,
                 ),
             )
         };
@@ -280,6 +282,7 @@ mod tests {
             start_time,
             Some(stop_time),
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -294,6 +297,7 @@ mod tests {
                     Some(stop_time),
                     callback,
                     heap,
+                    false,
                 ),
             )
         };
@@ -331,6 +335,7 @@ mod tests {
             start_time,
             Some(stop_time),
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -345,6 +350,7 @@ mod tests {
                     Some(stop_time),
                     callback,
                     heap,
+                    false,
                 ),
             )
         };

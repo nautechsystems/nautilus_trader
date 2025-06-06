@@ -82,6 +82,7 @@ pub trait Clock: Debug {
     ///
     /// Returns an error if `name` is invalid, `alert_time_ns` is non-positive when not allowed,
     /// or any predicate check fails.
+    #[allow(clippy::too_many_arguments)]
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -97,6 +98,7 @@ pub trait Clock: Debug {
     ///
     /// Returns an error if `name` is invalid, `interval_ns` is not positive,
     /// or if any predicate check fails.
+    #[allow(clippy::too_many_arguments)]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -105,6 +107,7 @@ pub trait Clock: Debug {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
     ) -> anyhow::Result<()>;
 
     /// Returns the time interval in which the timer `name` is triggered.
@@ -372,7 +375,7 @@ impl Clock for TestClock {
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
 
-        let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns));
+        let timer = TestTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), false);
         self.timers.insert(name, timer);
 
         Ok(())
@@ -386,6 +389,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
@@ -396,6 +400,7 @@ impl Clock for TestClock {
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
+        let fire_immediately = fire_immediately.unwrap_or(false);
 
         match callback {
             Some(callback_py) => self.callbacks.insert(name, callback_py),
@@ -428,7 +433,13 @@ impl Clock for TestClock {
 
         let interval_ns = create_valid_interval(interval_ns);
 
-        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
+        let timer = TestTimer::new(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            fire_immediately,
+        );
         self.timers.insert(name, timer);
 
         Ok(())
@@ -644,7 +655,14 @@ impl Clock for LiveClock {
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
 
         #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            ts_now,
+            Some(alert_time_ns),
+            callback,
+            false,
+        );
 
         #[cfg(feature = "clock_v2")]
         let mut timer = LiveTimer::new(
@@ -654,6 +672,7 @@ impl Clock for LiveClock {
             Some(alert_time_ns),
             callback,
             self.heap.clone(),
+            false,
         );
 
         timer.start();
@@ -672,6 +691,7 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
         check_valid_string(name, stringify!(name))?;
         check_positive_u64(interval_ns, stringify!(interval_ns))?;
@@ -682,6 +702,7 @@ impl Clock for LiveClock {
 
         let name = Ustr::from(name);
         let allow_past = allow_past.unwrap_or(true);
+        let fire_immediately = fire_immediately.unwrap_or(false);
 
         let callback = match callback {
             Some(callback) => callback,
@@ -720,7 +741,14 @@ impl Clock for LiveClock {
         let interval_ns = create_valid_interval(interval_ns);
 
         #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+        );
 
         #[cfg(feature = "clock_v2")]
         let mut timer = LiveTimer::new(
@@ -730,6 +758,7 @@ impl Clock for LiveClock {
             stop_time_ns,
             callback,
             self.heap.clone(),
+            fire_immediately,
         );
         timer.start();
 
@@ -889,7 +918,7 @@ mod tests {
     fn test_time_advancement(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("test_timer", 1000, start_time, None, None, None)
+            .set_timer_ns("test_timer", 1000, start_time, None, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2500).into(), true);
         assert_eq!(events.len(), 2);
@@ -939,10 +968,10 @@ mod tests {
     fn test_multiple_timers(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("timer1", 1000, start_time, None, None, None)
+            .set_timer_ns("timer1", 1000, start_time, None, None, None, None)
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 2000, start_time, None, None, None)
+            .set_timer_ns("timer2", 2000, start_time, None, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2000).into(), true);
         assert_eq!(events.len(), 3);
@@ -1004,6 +1033,7 @@ mod tests {
             Some(stop_time),
             None,
             None,
+            None,
         );
 
         // Verify the operation failed with appropriate error
@@ -1012,5 +1042,313 @@ mod tests {
 
         // Verify no timer was created
         assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_set_timer_ns_fire_immediately_true(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+
+        test_clock
+            .set_timer_ns(
+                "fire_immediately_timer",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // Advance time to check immediate firing and subsequent intervals
+        let events = test_clock.advance_time((start_time + 2500).into(), true);
+
+        // Should fire immediately at start_time (0), then at start_time+1000
+        assert_eq!(events.len(), 2);
+        assert_eq!(*events[0].ts_event, *start_time); // Fires immediately
+        assert_eq!(*events[1].ts_event, *start_time + 1000); // Then after interval
+    }
+
+    #[rstest]
+    fn test_set_timer_ns_fire_immediately_false(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+
+        test_clock
+            .set_timer_ns(
+                "normal_timer",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+
+        // Advance time to check normal behavior
+        let events = test_clock.advance_time((start_time + 2500).into(), true);
+
+        // Should fire after first interval, not immediately
+        assert_eq!(events.len(), 2);
+        assert_eq!(*events[0].ts_event, *start_time + 1000); // Fires after first interval
+        assert_eq!(*events[1].ts_event, *start_time + 2000); // Then after second interval
+    }
+
+    #[rstest]
+    fn test_set_timer_ns_fire_immediately_default_is_false(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+
+        // Don't specify fire_immediately (should default to false)
+        test_clock
+            .set_timer_ns(
+                "default_timer",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = test_clock.advance_time((start_time + 1500).into(), true);
+
+        // Should behave the same as fire_immediately=false
+        assert_eq!(events.len(), 1);
+        assert_eq!(*events[0].ts_event, *start_time + 1000); // Fires after first interval
+    }
+
+    #[rstest]
+    fn test_set_timer_ns_fire_immediately_with_zero_start_time(mut test_clock: TestClock) {
+        test_clock.set_time(5000.into());
+        let interval_ns = 1000;
+
+        test_clock
+            .set_timer_ns(
+                "zero_start_timer",
+                interval_ns,
+                0.into(),
+                None,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        let events = test_clock.advance_time(7000.into(), true);
+
+        // With zero start time, should use current time as start
+        // Fire immediately at current time (5000), then at 6000, 7000
+        assert_eq!(events.len(), 3);
+        assert_eq!(*events[0].ts_event, 5000); // Immediate fire at current time
+        assert_eq!(*events[1].ts_event, 6000);
+        assert_eq!(*events[2].ts_event, 7000);
+    }
+
+    #[rstest]
+    fn test_multiple_timers_different_fire_immediately_settings(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+
+        // One timer with fire_immediately=true
+        test_clock
+            .set_timer_ns(
+                "immediate_timer",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        // One timer with fire_immediately=false
+        test_clock
+            .set_timer_ns(
+                "normal_timer",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+
+        let events = test_clock.advance_time((start_time + 1500).into(), true);
+
+        // Should have 2 events total: immediate_timer fires at start, normal_timer fires at 1000
+        assert_eq!(events.len(), 2);
+
+        // Sort events by timestamp to check order
+        let mut event_times: Vec<u64> = events.iter().map(|e| e.ts_event.as_u64()).collect();
+        event_times.sort();
+
+        assert_eq!(event_times[0], start_time.as_u64()); // immediate_timer fires immediately
+        assert_eq!(event_times[1], start_time.as_u64() + 1000); // normal_timer fires at interval
+    }
+
+    #[rstest]
+    fn test_timer_name_collision_overwrites(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        // Set first timer
+        test_clock
+            .set_timer_ns("collision_timer", 1000, start_time, None, None, None, None)
+            .unwrap();
+
+        // Setting timer with same name should overwrite the existing one
+        let result =
+            test_clock.set_timer_ns("collision_timer", 2000, start_time, None, None, None, None);
+
+        assert!(result.is_ok());
+        // Should still only have one timer (overwritten)
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // The timer should have the new interval
+        let next_time = test_clock.next_time_ns("collision_timer").unwrap();
+        // With interval 2000 and start at start_time, next time should be start_time + 2000
+        assert_eq!(next_time, start_time + 2000);
+    }
+
+    #[rstest]
+    fn test_timer_zero_interval_error(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        // Attempt to set timer with zero interval should fail
+        let result =
+            test_clock.set_timer_ns("zero_interval", 0, start_time, None, None, None, None);
+
+        assert!(result.is_err());
+        assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_timer_empty_name_error(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        // Attempt to set timer with empty name should fail
+        let result = test_clock.set_timer_ns("", 1000, start_time, None, None, None, None);
+
+        assert!(result.is_err());
+        assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_timer_fire_immediately_at_exact_stop_time(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+        let stop_time = start_time + interval_ns; // Stop exactly at first interval
+
+        test_clock
+            .set_timer_ns(
+                "exact_stop",
+                interval_ns,
+                start_time,
+                Some(stop_time.into()),
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        let events = test_clock.advance_time(stop_time.into(), true);
+
+        // Should fire immediately at start, then timer should be expired
+        assert_eq!(events.len(), 1);
+        assert_eq!(*events[0].ts_event, *start_time); // Only immediate fire
+    }
+
+    #[rstest]
+    fn test_timer_advance_to_exact_next_time(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        let interval_ns = 1000;
+
+        test_clock
+            .set_timer_ns(
+                "exact_advance",
+                interval_ns,
+                start_time,
+                None,
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+
+        // Advance to exactly the next fire time
+        let next_time = test_clock.next_time_ns("exact_advance").unwrap();
+        let events = test_clock.advance_time(next_time, true);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(*events[0].ts_event, *next_time);
+    }
+
+    #[rstest]
+    fn test_cancel_timer_during_execution(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        test_clock
+            .set_timer_ns("cancel_test", 1000, start_time, None, None, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // Cancel the timer
+        test_clock.cancel_timer("cancel_test");
+
+        assert_eq!(test_clock.timer_count(), 0);
+
+        // Advance time - should get no events from cancelled timer
+        let events = test_clock.advance_time((start_time + 2000).into(), true);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[rstest]
+    fn test_cancel_all_timers(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        // Create multiple timers
+        test_clock
+            .set_timer_ns("timer1", 1000, start_time, None, None, None, None)
+            .unwrap();
+        test_clock
+            .set_timer_ns("timer2", 1500, start_time, None, None, None, None)
+            .unwrap();
+        test_clock
+            .set_timer_ns("timer3", 2000, start_time, None, None, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 3);
+
+        // Cancel all timers
+        test_clock.cancel_timers();
+
+        assert_eq!(test_clock.timer_count(), 0);
+
+        // Advance time - should get no events
+        let events = test_clock.advance_time((start_time + 5000).into(), true);
+        assert_eq!(events.len(), 0);
+    }
+
+    #[rstest]
+    fn test_clock_reset_clears_timers(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+
+        test_clock
+            .set_timer_ns("reset_test", 1000, start_time, None, None, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // Reset the clock
+        test_clock.reset();
+
+        assert_eq!(test_clock.timer_count(), 0);
+        assert_eq!(test_clock.timestamp_ns(), UnixNanos::default()); // Time reset to zero
     }
 }
