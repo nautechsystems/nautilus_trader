@@ -581,7 +581,7 @@ pub trait DataActor:
     fn handle_time_event(&mut self, event: &TimeEvent) {
         log_received(&event);
 
-        if let Err(e) = self.on_time_event(event) {
+        if let Err(e) = DataActor::on_time_event(self, event) {
             log_error(&e);
         }
     }
@@ -590,7 +590,7 @@ pub trait DataActor:
     fn handle_event(&mut self, event: &dyn Any) {
         log_received(&event);
 
-        if let Err(e) = self.on_event(event) {
+        if let Err(e) = DataActor::on_event(self, event) {
             log_error(&e);
         }
     }
@@ -1370,69 +1370,48 @@ where
         self.state
     }
 
+    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+        self.state = self.state.transition(&trigger)?;
+        log::info!("{}", self.state);
+        Ok(())
+    }
+
     fn register(
         &mut self,
         trader_id: TraderId,
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        DataActorCore::register(self, trader_id, clock, cache)
+        DataActorCore::register(self, trader_id, clock, cache)?;
+        self.initialize()
     }
 
-    fn start(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Start)?; // -> Starting
-
-        if let Err(e) = DataActor::on_start(self) {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::StartCompleted)?;
-
-        Ok(())
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        DataActor::on_start(self)
     }
 
-    fn stop(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
-
-        if let Err(e) = DataActor::on_stop(self) {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::StopCompleted)?;
-
-        Ok(())
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        DataActor::on_stop(self)
     }
 
-    fn reset(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
-
-        if let Err(e) = DataActor::on_reset(self) {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::ResetCompleted)?;
-
-        Ok(())
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        DataActor::on_resume(self)
     }
 
-    fn dispose(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
-
-        if let Err(e) = DataActor::on_dispose(self) {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::DisposeCompleted)?;
-
-        Ok(())
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        DataActor::on_degrade(self)
     }
 
-    fn handle_event(&mut self, event: TimeEvent) {
-        DataActor::handle_time_event(self, &event)
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        DataActor::on_fault(self)
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        DataActor::on_reset(self)
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        DataActor::on_dispose(self)
     }
 }
 
@@ -1488,28 +1467,6 @@ impl DataActorCore {
         }
     }
 
-    fn default_actor_id(config: &DataActorConfig) -> ActorId {
-        let memory_address = std::ptr::from_ref(config) as *const _ as usize;
-        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
-    }
-
-    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-        self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state);
-        Ok(())
-    }
-
-    // TODO: TBD initialization flow (potentially remove initialize())
-
-    /// Initializes the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the initialization state transition fails.
-    pub fn initialize(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Initialize)
-    }
-
     /// Returns the trader ID this actor is registered to.
     pub fn trader_id(&self) -> Option<TraderId> {
         self.trader_id
@@ -1519,42 +1476,9 @@ impl DataActorCore {
         self.actor_id
     }
 
-    // TODO: Extract this common state logic and handling out to some component module
-    pub fn state(&self) -> ComponentState {
-        self.state
-    }
-
-    /// Resume the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the resume state transition fails.
-    pub fn resume(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
-        self.transition_state(ComponentTrigger::ResumeCompleted)?; // -> Running
-        Ok(())
-    }
-
-    /// Degrade the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the degrade state transition fails.
-    pub fn degrade(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
-        self.transition_state(ComponentTrigger::DegradeCompleted)?; // -> Degraded
-        Ok(())
-    }
-
-    /// Fault the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the fault state transition fails.
-    pub fn fault(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
-        self.transition_state(ComponentTrigger::FaultCompleted)?; // -> Faulted
-        Ok(())
+    fn default_actor_id(config: &DataActorConfig) -> ActorId {
+        let memory_address = std::ptr::from_ref(config) as *const _ as usize;
+        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
     }
 
     pub fn timestamp_ns(&self) -> UnixNanos {
@@ -1600,8 +1524,6 @@ impl DataActorCore {
         self.trader_id = Some(trader_id);
         self.clock = Some(clock);
         self.cache = Some(cache);
-
-        self.transition_state(ComponentTrigger::Initialize)?;
 
         log::info!("Registered {} with trader {trader_id}", self.actor_id);
         Ok(())

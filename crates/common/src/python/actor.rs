@@ -158,12 +158,12 @@ impl PyDataActor {
 
     #[pyo3(name = "degrade")]
     fn py_degrade(&mut self) -> PyResult<()> {
-        self.core.degrade().map_err(to_pyruntime_err)
+        self.degrade().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "fault")]
     fn py_fault(&mut self) -> PyResult<()> {
-        self.core.fault().map_err(to_pyruntime_err)
+        self.fault().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "shutdown_system")]
@@ -642,7 +642,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::PyDataActor;
-    use crate::{cache::Cache, clock::TestClock, enums::ComponentState};
+    use crate::{cache::Cache, clock::TestClock, component::Component, enums::ComponentState};
 
     #[fixture]
     fn clock() -> Rc<RefCell<TestClock>> {
@@ -689,14 +689,14 @@ mod tests {
         trader_id: TraderId,
     ) -> PyDataActor {
         let mut actor = PyDataActor::py_new(None).unwrap();
-        actor.core.register(trader_id, clock, cache).unwrap();
+        actor.register(trader_id, clock, cache).unwrap();
         actor
     }
 
     #[rstest]
     fn test_new_actor_creation() {
         let actor = PyDataActor::py_new(None).unwrap();
-        assert!(actor.core.trader_id().is_none());
+        assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
@@ -721,9 +721,9 @@ mod tests {
         trader_id: TraderId,
     ) {
         let mut actor = create_unregistered_actor();
-        actor.core.register(trader_id, clock, cache).unwrap();
-        assert!(actor.core.trader_id().is_some());
-        assert_eq!(actor.core.trader_id().unwrap(), trader_id);
+        actor.register(trader_id, clock, cache).unwrap();
+        assert!(actor.trader_id().is_some());
+        assert_eq!(actor.trader_id().unwrap(), trader_id);
     }
 
     #[rstest]
@@ -829,7 +829,7 @@ mod tests {
 
         // These methods exist and compile correctly
         // Verify it's unregistered
-        assert!(actor.core.trader_id().is_none());
+        assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
@@ -841,7 +841,7 @@ mod tests {
         let actor = create_registered_actor(clock, cache, trader_id);
 
         // Test Component trait method (using the trait method directly)
-        let state = actor.core.state();
+        let state = actor.state();
         assert_eq!(state, ComponentState::Ready);
     }
 }
