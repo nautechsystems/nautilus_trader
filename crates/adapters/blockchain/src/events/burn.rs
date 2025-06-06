@@ -13,15 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use alloy::primitives::{Address, I256, U160};
+use alloy::primitives::{Address, U256};
 
-/// Represents a token swap event from liquidity pools emitted from smart contract.
-///
-/// This struct captures the essential data from a swap transaction on decentralized
-/// exchanges (DEXs) that use automated market maker (AMM) protocols.
+/// Represents a burn event that occurs when liquidity is removed from a position in a liquidity pool.
 #[derive(Debug, Clone)]
-pub struct SwapEvent {
-    /// The block number in which this swap transaction was included.
+pub struct BurnEvent {
+    /// The block number when the burn occurred.
     pub block_number: u64,
     /// The unique hash identifier of the transaction containing this event.
     pub transaction_hash: String,
@@ -29,46 +26,47 @@ pub struct SwapEvent {
     pub transaction_index: u32,
     /// The position of this event log within the transaction.
     pub log_index: u32,
-    /// The address that initiated the swap transaction.
-    pub sender: Address,
-    /// The address that received the swapped tokens.
-    pub receiver: Address,
-    /// The amount of token0 involved in the swap.
-    /// Negative values indicate tokens flowing out of the pool, positive values indicate tokens flowing in.
-    pub amount0: I256,
-    /// The amount of token1 involved in the swap.
-    /// Negative values indicate tokens flowing out of the pool, positive values indicate tokens flowing in.
-    pub amount1: I256,
-    /// The square root of the price ratio encoded as a Q64.96 fixed-point number.
-    /// This represents the price of token1 in terms of token0 after the swap.
-    pub sqrt_price_x96: U160,
+    /// The owner of the position.
+    pub owner: Address,
+    /// The lower tick boundary of the position.
+    pub tick_lower: i32,
+    /// The upper tick boundary of the position.
+    pub tick_upper: i32,
+    /// The amount of liquidity burned to the position range.
+    pub amount: u128,
+    /// The amount of token0 withdrawn.
+    pub amount0: U256,
+    /// The amount of token1 withdrawn.
+    pub amount1: U256,
 }
 
-impl SwapEvent {
-    /// Creates a new [`SwapEvent`] instance with the specified parameters.
+impl BurnEvent {
+    /// Creates a new [`BurnEvent`] instance with the specified parameters.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        sender: Address,
-        receiver: Address,
-        amount0: I256,
-        amount1: I256,
-        sqrt_price_x96: U160,
+        owner: Address,
+        tick_lower: i32,
+        tick_upper: i32,
+        amount: u128,
+        amount0: U256,
+        amount1: U256,
     ) -> Self {
         Self {
             block_number,
             transaction_hash,
             transaction_index,
             log_index,
-            sender,
-            receiver,
+            owner,
+            tick_lower,
+            tick_upper,
+            amount,
             amount0,
             amount1,
-            sqrt_price_x96,
         }
     }
 }

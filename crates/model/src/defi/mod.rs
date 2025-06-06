@@ -18,6 +18,7 @@ pub mod block;
 pub mod chain;
 pub mod dex;
 pub mod hex;
+pub mod liquidity;
 pub mod rpc;
 pub mod swap;
 pub mod token;

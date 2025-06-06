@@ -13,6 +13,56 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+/// Extracts the transaction hash from a log entry
+///
+/// # Errors
+///
+/// Returns an error if the transaction hash is not present in the log.
+pub fn extract_transaction_hash(
+    log: &hypersync_client::simple_types::Log,
+) -> anyhow::Result<String> {
+    log.transaction_hash
+        .as_ref()
+        .map(|hash| hash.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Missing transaction hash in the log"))
+}
+
+/// Extracts the transaction index from a log entry
+///
+/// # Errors
+///
+/// Returns an error if the transaction index is not present in the log.
+pub fn extract_transaction_index(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u32> {
+    log.transaction_index
+        .as_ref()
+        .map(|index| **index as u32)
+        .ok_or_else(|| anyhow::anyhow!("Missing transaction index in the log"))
+}
+
+/// Extracts the log index from a log entry
+///
+/// # Errors
+///
+/// Returns an error if the log index is not present in the log.
+pub fn extract_log_index(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u32> {
+    log.log_index
+        .as_ref()
+        .map(|index| **index as u32)
+        .ok_or_else(|| anyhow::anyhow!("Missing log index in the log"))
+}
+
+/// Extracts the block number from a log entry
+///
+/// # Errors
+///
+/// Returns an error if the block number is not present in the log.
+pub fn extract_block_number(log: &hypersync_client::simple_types::Log) -> anyhow::Result<u64> {
+    log.block_number
+        .as_ref()
+        .map(|number| **number)
+        .ok_or_else(|| anyhow::anyhow!("Missing block number in the log"))
+}
+
 /// Validates that a log entry corresponds to the expected event by comparing its topic0 with the provided event signature hash.
 pub fn validate_event_signature_hash(
     event_name: &str,
@@ -163,6 +213,181 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "Missing event signature in topic0 for event 'Swap'"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_transaction_hash_success() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_transaction_hash(&log);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_transaction_hash_missing() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_transaction_hash(&log);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing transaction hash in log"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_transaction_index_success() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": "0x5",
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_transaction_index(&log);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 5u32);
+    }
+
+    #[rstest]
+    fn test_extract_transaction_index_missing() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_transaction_index(&log);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing transaction index in the log"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_log_index_success() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": "0xa",
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_log_index(&log);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10u32);
+    }
+
+    #[rstest]
+    fn test_extract_log_index_missing() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_log_index(&log);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing log index in the log"
+        );
+    }
+
+    #[rstest]
+    fn test_extract_block_number_success() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": "0x1581b82",
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_block_number(&log);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 22551426u64); // 0x1581b82 in decimal
+    }
+
+    #[rstest]
+    fn test_extract_block_number_missing() {
+        let log_json = json!({
+            "removed": null,
+            "log_index": null,
+            "transaction_index": null,
+            "transaction_hash": null,
+            "block_hash": null,
+            "block_number": null,
+            "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+            "data": "0x",
+            "topics": []
+        });
+        let log: Log = serde_json::from_value(log_json).expect("Failed to deserialize log");
+
+        let result = extract_block_number(&log);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Missing block number in the log"
         );
     }
 }

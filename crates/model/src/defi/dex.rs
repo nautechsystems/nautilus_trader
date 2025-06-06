@@ -47,6 +47,10 @@ pub struct Dex {
     pub pool_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect swap events.
     pub swap_created_event: Cow<'static, str>,
+    /// The event signature or identifier used to detect mint events
+    pub mint_created_event: Cow<'static, str>,
+    /// The event signature or identifier used to detect burn events
+    pub burn_created_event: Cow<'static, str>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
@@ -60,6 +64,7 @@ pub type SharedDex = Arc<Dex>;
 impl Dex {
     /// Creates a new [`Dex`] instance with the specified properties.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chain: Chain,
         name: impl Into<Cow<'static, str>>,
@@ -67,6 +72,8 @@ impl Dex {
         amm_type: AmmType,
         pool_created_event: impl Into<Cow<'static, str>>,
         swap_created_event: impl Into<Cow<'static, str>>,
+        mint_created_event: impl Into<Cow<'static, str>>,
+        burn_created_event: impl Into<Cow<'static, str>>,
     ) -> Self {
         Self {
             chain,
@@ -74,6 +81,8 @@ impl Dex {
             factory: factory.into(),
             pool_created_event: pool_created_event.into(),
             swap_created_event: swap_created_event.into(),
+            mint_created_event: mint_created_event.into(),
+            burn_created_event: burn_created_event.into(),
             amm_type,
             pairs: vec![],
         }

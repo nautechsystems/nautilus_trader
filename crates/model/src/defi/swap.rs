@@ -35,6 +35,12 @@ pub struct Swap {
     pub pool: SharedPool,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
+    /// The unique hash identifier of the blockchain transaction containing the swap.
+    pub transaction_hash: String,
+    /// The index position of the transaction within the block.
+    pub transaction_index: u32,
+    /// The index position of the swap event log within the transaction.
+    pub log_index: u32,
     /// The blockchain address of the user or contract that initiated the swap.
     pub sender: Address,
     /// The direction of the swap from the perspective of the base token.
@@ -56,6 +62,9 @@ impl Swap {
         dex: SharedDex,
         pool: SharedPool,
         block: u64,
+        transaction_hash: String,
+        transaction_index: u32,
+        log_index: u32,
         timestamp: UnixNanos,
         sender: Address,
         side: OrderSide,
@@ -67,6 +76,9 @@ impl Swap {
             dex,
             pool,
             block,
+            transaction_hash,
+            transaction_index,
+            log_index,
             timestamp,
             sender,
             side,

@@ -15,6 +15,7 @@
 
 use std::{cmp::max, sync::Arc};
 
+use alloy::primitives::U256;
 use futures_util::StreamExt;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
@@ -31,22 +32,25 @@ use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
-        amm::Pool,
+        amm::{Pool, SharedPool},
         chain::{Blockchain, SharedChain},
         dex::Dex,
+        liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
         swap::Swap,
         token::Token,
     },
     identifiers::{ClientId, Venue},
+    types::{Quantity, fixed::FIXED_PRECISION},
 };
 
 use crate::{
     cache::BlockchainCache,
     config::BlockchainAdapterConfig,
     contracts::erc20::Erc20Contract,
-    events::pool_created::PoolCreated,
+    events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
     hypersync::client::HyperSyncClient,
+    math::convert_u256_to_f64,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -198,73 +202,227 @@ impl BlockchainDataClient {
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
         let dex_extended = self.get_dex(dex_id)?.clone();
-        let pool_address = validate_address(&pool_address)?;
-        let pool = match self.cache.get_pool(&pool_address) {
-            Some(pool) => pool,
-            None => anyhow::bail!("Pool {pool_address} is not registered"),
-        };
-
-        if dex_extended.parse_swap_event_fn.is_none() {
-            anyhow::bail!("Swap event parsing function is not set for dex {dex_id}");
-        }
-
-        if dex_extended.convert_to_trade_data_fn.is_none() {
-            anyhow::bail!("Trade data conversion function is not set for dex {dex_id}");
-        }
-
+        let pool = self.get_pool(&pool_address)?;
         let from_block =
             from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
+        log::info!(
+            "Syncing pool swaps for {} on Dex {} from block {}{}",
+            pool.ticker(),
+            dex_extended.name,
+            from_block,
+            to_block.map_or("".to_string(), |block| format!(" to {}", block))
+        );
         let swap_event_signature = dex_extended.swap_created_event.as_ref();
-        let parse_swap_event_fn = dex_extended.parse_swap_event_fn.as_ref().unwrap();
-        let convert_to_trade_data_fn = dex_extended.convert_to_trade_data_fn.as_ref().unwrap();
-        let pool_address = pool.address.to_string();
-        let swaps_stream = self
+        let stream = self
             .hypersync_client
             .request_contract_events_stream(
                 from_block,
                 to_block,
-                &pool_address,
+                &pool.address.to_string(),
                 swap_event_signature,
                 Vec::new(),
             )
             .await;
 
-        tokio::pin!(swaps_stream);
-        while let Some(log) = swaps_stream.next().await {
-            match parse_swap_event_fn(log) {
-                Ok(swap_event) => {
-                    let timestamp = if let Some(num) =
-                        self.cache.get_block_timestamp(swap_event.block_number)
-                    {
-                        num
-                    } else {
-                        log::error!(
-                            "Missing block timestamp for block {} while processing swap event in the cache",
-                            swap_event.block_number
-                        );
-                        continue;
-                    };
-                    let (order_side, size, price) =
-                        convert_to_trade_data_fn(&pool.token0, &pool.token1, &swap_event)
-                            .expect("Failed to convert swap event to trade data");
+        tokio::pin!(stream);
+        while let Some(log) = stream.next().await {
+            let swap_event = dex_extended.parse_swap_event(log)?;
+            let Some(timestamp) = self.cache.get_block_timestamp(swap_event.block_number) else {
+                log::error!(
+                    "Missing block timestamp in the cache for block {} while processing swap event",
+                    swap_event.block_number
+                );
+                continue;
+            };
+            let (order_side, size, price) = dex_extended
+                .convert_to_trade_data(&pool.token0, &pool.token1, &swap_event)
+                .expect("Failed to convert swap event to trade data");
 
-                    let swap = Swap::new(
-                        self.chain.clone(),
-                        dex_extended.dex.clone(),
-                        pool.clone(),
-                        swap_event.block_number,
-                        *timestamp,
-                        swap_event.sender,
-                        order_side,
-                        size,
-                        price,
-                    );
-                    self.cache.add_swap(swap).await?;
-                }
-                Err(e) => log::error!("Error processing swap event: {e}"),
-            }
+            let swap = Swap::new(
+                self.chain.clone(),
+                dex_extended.dex.clone(),
+                pool.clone(),
+                swap_event.block_number,
+                swap_event.transaction_hash,
+                swap_event.transaction_index,
+                swap_event.log_index,
+                *timestamp,
+                swap_event.sender,
+                order_side,
+                size,
+                price,
+            );
+            self.cache.add_swap(swap).await?;
         }
         log::info!("Finished syncing pool swaps");
+        Ok(())
+    }
+
+    pub async fn sync_pool_mints(
+        &self,
+        dex_id: &str,
+        pool_address: String,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
+        let dex_extended = self.get_dex(dex_id)?.clone();
+        let pool = self.get_pool(&pool_address)?.clone();
+        let from_block =
+            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
+        log::info!(
+            "Syncing pool mints for {} on Dex {} from block {from_block}{}",
+            pool.ticker(),
+            dex_extended.name,
+            to_block.map_or("".to_string(), |block| format!(" to {}", block))
+        );
+        let mint_event_signature = dex_extended.mint_created_event.as_ref();
+        let stream = self
+            .hypersync_client
+            .request_contract_events_stream(
+                from_block,
+                to_block,
+                &pool.address.to_string(),
+                mint_event_signature,
+                Vec::new(),
+            )
+            .await;
+
+        tokio::pin!(stream);
+        while let Some(log) = stream.next().await {
+            let mint_event = dex_extended.parse_mint_event(log)?;
+            let Some(timestamp) = self.cache.get_block_timestamp(mint_event.block_number) else {
+                log::error!(
+                    "Missing block timestamp in the cache for block {} while processing mint event",
+                    mint_event.block_number
+                );
+                continue;
+            };
+            let liquidity = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(
+                    U256::from(mint_event.amount),
+                    self.chain.native_currency_decimals
+                )?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let amount0 = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(mint_event.amount0, pool.token0.decimals)?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let amount1 = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(mint_event.amount1, pool.token1.decimals)?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let liquidity_update = PoolLiquidityUpdate::new(
+                self.chain.clone(),
+                dex_extended.dex.clone(),
+                pool.clone(),
+                PoolLiquidityUpdateType::Mint,
+                mint_event.block_number,
+                mint_event.transaction_hash,
+                mint_event.transaction_index,
+                mint_event.log_index,
+                Some(mint_event.sender),
+                mint_event.owner,
+                liquidity,
+                amount0,
+                amount1,
+                mint_event.tick_lower,
+                mint_event.tick_upper,
+                *timestamp,
+            );
+            self.cache
+                .add_pool_liquidity_update(liquidity_update)
+                .await?;
+        }
+
+        log::info!("Finished syncing pool mints");
+        Ok(())
+    }
+
+    pub async fn sync_pool_burns(
+        &self,
+        dex_id: &str,
+        pool_address: String,
+        from_block: Option<u64>,
+        to_block: Option<u64>,
+    ) -> anyhow::Result<()> {
+        let dex_extended = self.get_dex(dex_id)?.clone();
+        let pool = self.get_pool(&pool_address)?.clone();
+        let from_block =
+            from_block.map_or(pool.creation_block, |block| max(block, pool.creation_block));
+        log::info!(
+            "Syncing pool burns for {} on Dex {} from block {from_block}{}",
+            pool.ticker(),
+            dex_extended.name,
+            to_block.map_or("".to_string(), |block| format!(" to {}", block))
+        );
+        let burn_event_signature = dex_extended.burn_created_event.as_ref();
+        let stream = self
+            .hypersync_client
+            .request_contract_events_stream(
+                from_block,
+                to_block,
+                &pool.address.to_string(),
+                burn_event_signature,
+                Vec::new(),
+            )
+            .await;
+
+        tokio::pin!(stream);
+        while let Some(log) = stream.next().await {
+            let burn_event = dex_extended.parse_burn_event(log)?;
+            let Some(timestamp) = self.cache.get_block_timestamp(burn_event.block_number) else {
+                log::error!(
+                    "Missing block timestamp in the cache for block {} while processing burn event",
+                    burn_event.block_number
+                );
+                continue;
+            };
+            let liquidity = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(
+                    U256::from(burn_event.amount),
+                    self.chain.native_currency_decimals
+                )?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let amount0 = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(burn_event.amount0, pool.token0.decimals)?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let amount1 = Quantity::from(format!(
+                "{:.precision$}",
+                convert_u256_to_f64(burn_event.amount1, pool.token1.decimals)?,
+                precision = FIXED_PRECISION as usize
+            ));
+            let liquidity_update = PoolLiquidityUpdate::new(
+                self.chain.clone(),
+                dex_extended.dex.clone(),
+                pool.clone(),
+                PoolLiquidityUpdateType::Burn,
+                burn_event.block_number,
+                burn_event.transaction_hash,
+                burn_event.transaction_index,
+                burn_event.log_index,
+                None,
+                burn_event.owner,
+                liquidity,
+                amount0,
+                amount1,
+                burn_event.tick_lower,
+                burn_event.tick_upper,
+                *timestamp,
+            );
+            self.cache
+                .add_pool_liquidity_update(liquidity_update)
+                .await?;
+        }
+
+        log::info!("Finished syncing pool burns");
         Ok(())
     }
 
@@ -276,16 +434,11 @@ impl BlockchainDataClient {
         to_block: Option<u64>,
     ) -> anyhow::Result<()> {
         let from_block = from_block.unwrap_or(0);
-        log::info!("Syncing dex exchange pools for {dex_id} from block {from_block}");
-
+        log::info!(
+            "Syncing Dex exchange pools for {dex_id} from block {from_block}{}",
+            to_block.map_or("".to_string(), |block| format!(" to {}", block))
+        );
         let dex = self.get_dex(dex_id)?.clone();
-
-        // Parsing of pool-created events should be defined in the DEX implementation.
-        if dex.parse_pool_created_event_fn.is_none() {
-            anyhow::bail!("Pool created event parsing function not set for dex {dex_id}");
-        }
-
-        let parse_pool_created_event_fn = dex.parse_pool_created_event_fn.as_ref().unwrap();
         let factory_address = dex.factory.as_ref();
         let pair_created_event_signature = dex.pool_created_event.as_ref();
         let pools_stream = self
@@ -301,14 +454,10 @@ impl BlockchainDataClient {
 
         tokio::pin!(pools_stream);
         while let Some(log) = pools_stream.next().await {
-            match parse_pool_created_event_fn(log) {
-                Ok(pool) => {
-                    self.process_token(pool.token0.to_string()).await?;
-                    self.process_token(pool.token1.to_string()).await?;
-                    self.process_pool(&dex.dex, pool).await?;
-                }
-                Err(e) => log::error!("Error processing pool created event: {e}"),
-            }
+            let pool = dex.parse_pool_created_event(log)?;
+            self.process_token(pool.token0.to_string()).await?;
+            self.process_token(pool.token1.to_string()).await?;
+            self.process_pool(&dex.dex, pool).await?;
         }
         Ok(())
     }
@@ -336,7 +485,7 @@ impl BlockchainDataClient {
     }
 
     /// Processes a pool creation event by creating and caching a `Pool` entity.
-    async fn process_pool(&mut self, dex: &Dex, event: PoolCreated) -> anyhow::Result<()> {
+    async fn process_pool(&mut self, dex: &Dex, event: PoolCreatedEvent) -> anyhow::Result<()> {
         let pool = Pool::new(
             self.chain.clone(),
             dex.clone(),
@@ -415,10 +564,17 @@ impl BlockchainDataClient {
     }
 
     fn get_dex(&self, dex_id: &str) -> anyhow::Result<&DexExtended> {
-        if let Some(dex) = self.cache.get_dex(dex_id) {
-            Ok(dex)
-        } else {
-            Err(anyhow::anyhow!("Dex {dex_id} is not registered"))
+        match self.cache.get_dex(dex_id) {
+            Some(dex) => Ok(dex),
+            None => anyhow::bail!("Dex {dex_id} is not registered"),
+        }
+    }
+
+    fn get_pool(&self, pool_address: &str) -> anyhow::Result<&SharedPool> {
+        let pool_address = validate_address(&pool_address)?;
+        match self.cache.get_pool(&pool_address) {
+            Some(pool) => Ok(pool),
+            None => anyhow::bail!("Pool {pool_address} is not registered"),
         }
     }
 }

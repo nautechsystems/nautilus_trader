@@ -18,6 +18,7 @@ use nautilus_model::defi::{
     block::Block,
     chain::{Chain, SharedChain},
     dex::Dex,
+    liquidity::PoolLiquidityUpdate,
     swap::Swap,
     token::Token,
 };
@@ -202,18 +203,24 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into token table: {e}"))
     }
 
-    /// Records a swap transaction in the database.
+    /// Persists a token swap transaction event to the pool_swap table.
     pub async fn add_swap(&self, chain_id: u32, swap: &Swap) -> anyhow::Result<()> {
         sqlx::query(
             r"
-            INSERT INTO swap (
-                chain_id, pool_address, block, sender, side, quantity, price
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO pool_swap (
+                chain_id, pool_address, block, transaction_hash, transaction_index,
+                log_index, sender, side, quantity, price
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (chain_id, transaction_hash, log_index)
+            DO NOTHING
         ",
         )
         .bind(chain_id as i32)
         .bind(swap.pool.address.to_string())
         .bind(swap.block as i64)
+        .bind(swap.transaction_hash.as_str())
+        .bind(swap.transaction_index as i32)
+        .bind(swap.log_index as i32)
         .bind(swap.sender.to_string())
         .bind(swap.side.to_string())
         .bind(swap.quantity.to_string())
@@ -221,7 +228,43 @@ impl BlockchainCacheDatabase {
         .execute(&self.pool)
         .await
         .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("Failed to insert into swap table: {e}"))
+        .map_err(|e| anyhow::anyhow!("Failed to insert into pool_swap table: {e}"))
+    }
+
+    /// Persists a liquidity position change (mint/burn) event to the pool_liquidity table.
+    pub async fn add_pool_liquidity_update(
+        &self,
+        chain_id: u32,
+        liquidity_update: &PoolLiquidityUpdate,
+    ) -> anyhow::Result<()> {
+        sqlx::query(
+            r"
+            INSERT INTO pool_liquidity (
+                chain_id, pool_address, block, transaction_hash, transaction_index, log_index,
+                event_type, sender, owner, position_liquidity, amount0, amount1, tick_lower, tick_upper
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (chain_id, transaction_hash, log_index)
+            DO NOTHING
+        ",
+        )
+        .bind(chain_id as i32)
+        .bind(liquidity_update.pool.address.to_string())
+        .bind(liquidity_update.block as i64)
+        .bind(liquidity_update.transaction_hash.as_str())
+        .bind(liquidity_update.transaction_index as i32)
+        .bind(liquidity_update.log_index as i32)
+        .bind(liquidity_update.kind.to_string())
+        .bind(liquidity_update.sender.map(|sender| sender.to_string()))
+        .bind(liquidity_update.owner.to_string())
+        .bind(liquidity_update.position_liquidity.to_string())
+        .bind(liquidity_update.amount0.to_string())
+        .bind(liquidity_update.amount1.to_string())
+        .bind(liquidity_update.tick_lower)
+        .bind(liquidity_update.tick_upper)
+        .execute(&self.pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into pool_liquidity table: {e}"))
     }
 
     /// Retrieves all token records for the given chain and converts them into `Token` domain objects.

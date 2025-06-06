@@ -31,6 +31,8 @@ pub static FLUID_DEX: LazyLock<DexExtended> = LazyLock::new(|| {
         AmmType::CLAMM,
         "",
         "",
+        "",
+        "",
     );
     DexExtended::new(dex)
 });
