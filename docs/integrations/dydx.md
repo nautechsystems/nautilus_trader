@@ -161,7 +161,7 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 | `FOK`         | ✓          | Fill or Kill.                                   |
 | `IOC`         | ✓          | Immediate or Cancel.                            |
 
-### Advanced order features
+### Advanced Order Features
 
 | Feature            | Perpetuals | Notes                                           |
 |--------------------|------------|-------------------------------------------------|
@@ -169,7 +169,7 @@ dYdX supports perpetual futures trading with a comprehensive set of order types 
 | Bracket/OCO Orders | -          | *Not supported*.                                |
 | Iceberg Orders     | -          | *Not supported*.                                |
 
-### Configuration options
+### Configuration Options
 
 The following execution client configuration options are available:
 
@@ -191,7 +191,7 @@ dYdX classifies orders as either **short-term** or **long-term** orders:
 
 The product types for each client must be specified in the configurations.
 
-### Execution clients
+### Execution Clients
 
 The account type must be a margin account to trade the perpetual futures contracts.
 
@@ -239,7 +239,7 @@ node.add_exec_client_factory("DYDX", DYDXLiveExecClientFactory)
 node.build()
 ```
 
-### API credentials
+### API Credentials
 
 There are two options for supplying your credentials to the dYdX clients.
 Either pass the corresponding `wallet_address` and `mnemonic` values to the configuration objects, or
@@ -286,7 +286,7 @@ config = TradingNodeConfig(
 )
 ```
 
-### Parser warnings
+### Parser Warnings
 
 Some dYdX instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.

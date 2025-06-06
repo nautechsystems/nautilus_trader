@@ -17,7 +17,6 @@ use std::{
     cell::{RefCell, UnsafeCell},
     fmt::Debug,
     rc::Rc,
-    sync::OnceLock,
 };
 
 use ahash::{HashMap, HashMapExt};
@@ -25,6 +24,11 @@ use ustr::Ustr;
 
 use super::Actor;
 
+thread_local! {
+    static ACTOR_REGISTRY: ActorRegistry = ActorRegistry::new();
+}
+
+/// Registry for storing actors.
 pub struct ActorRegistry {
     actors: RefCell<HashMap<Ustr, Rc<UnsafeCell<dyn Actor>>>>,
 }
@@ -61,24 +65,27 @@ impl ActorRegistry {
     }
 }
 
-// SAFETY: ActorRegistry uses non-thread-safe internals (Rc, RefCell, UnsafeCell).
-// We mark it Sync + Send to satisfy `OnceLock<T>: Sync` for static initialization,
-// but all registry operations must still occur on a single thread. Moving or accessing
-// from multiple threads is undefined behavior.
-unsafe impl Sync for ActorRegistry {}
-unsafe impl Send for ActorRegistry {}
-
-static ACTOR_REGISTRY: OnceLock<ActorRegistry> = OnceLock::new();
-
 pub fn get_actor_registry() -> &'static ActorRegistry {
-    ACTOR_REGISTRY.get_or_init(ActorRegistry::new)
+    ACTOR_REGISTRY.with(|registry| unsafe {
+        // SAFETY: We return a static reference that lives for the lifetime of the thread.
+        // Since this is thread_local storage, each thread has its own instance.
+        std::mem::transmute::<&ActorRegistry, &'static ActorRegistry>(registry)
+    })
 }
 
-pub fn register_actor(actor: Rc<UnsafeCell<dyn Actor>>) {
-    // SAFETY: We only immutably borrow the actor to call `id()`,
-    // which takes &self. This does not violate aliasing or mutable borrow rules.
-    let actor_id = unsafe { &*actor.get() }.id();
-    get_actor_registry().insert(actor_id, actor);
+/// Registers an actor.
+pub fn register_actor<T>(actor: T) -> Rc<UnsafeCell<T>>
+where
+    T: Actor + 'static,
+{
+    let actor_id = actor.id();
+    let actor_ref = Rc::new(UnsafeCell::new(actor));
+
+    // Register as Actor (message handling only)
+    let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = actor_ref.clone();
+    get_actor_registry().insert(actor_id, actor_trait_ref);
+
+    actor_ref
 }
 
 pub fn get_actor(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Actor>>> {
@@ -96,8 +103,8 @@ pub fn get_actor_unchecked<T: Actor>(id: &Ustr) -> &mut T {
     unsafe { &mut *(actor.get() as *mut _ as *mut T) }
 }
 
-// Clears the global actor registry (for test isolation).
 #[cfg(test)]
+/// Clears the actor registry (for test isolation).
 pub fn clear_actor_registry() {
     // SAFETY: Clearing registry actors; tests should run single-threaded for actor registry
     get_actor_registry().actors.borrow_mut().clear();

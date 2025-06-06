@@ -220,6 +220,11 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
+    pub fn data_engine_response() -> MStr<Endpoint> {
+        "DataEngine.response".into()
+    }
+
+    #[must_use]
     pub fn exec_engine_execute() -> MStr<Endpoint> {
         "ExecEngine.execute".into()
     }

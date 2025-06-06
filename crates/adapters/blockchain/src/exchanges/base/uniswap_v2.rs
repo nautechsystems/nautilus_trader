@@ -30,6 +30,7 @@ pub static UNISWAP_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x8909Dc15e40173Ff4699343b6eB8132c65e18eC6",
         AmmType::CPAMM,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

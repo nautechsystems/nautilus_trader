@@ -3,16 +3,26 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
+- Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 
 ### Breaking Changes
-None
+- Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
+- Changed behavior of timers `allow_past=False` to permit start times in the past if the next event time is still in the future
+- Changed Databento DBN upgrade policy to default v3
+- Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
 
 ### Internal Improvements
-None
+- Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Upgraded `databento` crate to v0.26.2
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
-None
+- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
+- Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
+- Fixed Arrow schema registration for `BinanceBar`
+- Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 
 ### Documentation Updates
 None

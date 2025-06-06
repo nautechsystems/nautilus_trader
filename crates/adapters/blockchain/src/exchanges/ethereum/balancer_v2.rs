@@ -30,6 +30,7 @@ pub static BALANCER_V2: LazyLock<DexExtended> = LazyLock::new(|| {
         "0x8E9aa87E45e92bad84D5F8DD1bFf34Fb92637de9",
         AmmType::WeightedPool,
         "",
+        "",
     );
     DexExtended::new(dex)
 });

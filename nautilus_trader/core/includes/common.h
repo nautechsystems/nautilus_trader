@@ -378,7 +378,8 @@ void test_clock_set_timer(struct TestClock_API *clock,
                           uint64_t start_time_ns,
                           uint64_t stop_time_ns,
                           PyObject *callback_ptr,
-                          uint8_t allow_past);
+                          uint8_t allow_past,
+                          uint8_t fire_immediately);
 
 /**
  * # Safety
@@ -470,7 +471,8 @@ void live_clock_set_timer(struct LiveClock_API *clock,
                           uint64_t start_time_ns,
                           uint64_t stop_time_ns,
                           PyObject *callback_ptr,
-                          uint8_t allow_past);
+                          uint8_t allow_past,
+                          uint8_t fire_immediately);
 
 /**
  * # Safety

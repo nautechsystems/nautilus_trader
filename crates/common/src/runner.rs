@@ -19,6 +19,8 @@ use std::{
     rc::Rc,
 };
 
+use tokio::sync::mpsc::UnboundedSender;
+
 use crate::{
     clock::Clock,
     messages::{DataEvent, data::DataCommand},
@@ -56,6 +58,7 @@ pub fn set_global_clock(c: Rc<RefCell<dyn Clock>>) {
 pub type DataCommandQueue = Rc<RefCell<VecDeque<DataCommand>>>;
 
 /// Get globally shared message bus command queue
+///
 /// # Panics
 ///
 /// Panics if thread-local storage cannot be accessed.
@@ -106,16 +109,64 @@ pub fn set_data_evt_queue(dq: Rc<RefCell<dyn DataQueue>>) {
         .expect("Should be able to access thread local storage");
 }
 
+/// Sends a data event to the global data event queue.
+///
+/// This function provides a convenient way for data clients and feed handlers
+/// to send data events to the AsyncRunner for processing.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the data event queue is uninitialized.
+pub fn send_data_event(event: DataEvent) {
+    get_data_evt_queue().borrow_mut().push(event);
+}
+
+/// Sets the global data event sender.
+///
+/// This should be called by the AsyncRunner when it creates the channel.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or a sender is already set.
+pub fn set_data_event_sender(sender: UnboundedSender<DataEvent>) {
+    DATA_EVT_SENDER
+        .try_with(|s| {
+            assert!(s.set(sender).is_ok(), "Data event sender already set");
+        })
+        .expect("Should be able to access thread local storage");
+}
+
+/// Gets a cloned data event sender.
+///
+/// This allows data clients to send events directly to the AsyncRunner
+/// without going through shared mutable state.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the sender is uninitialized.
+#[must_use]
+pub fn get_data_event_sender() -> UnboundedSender<DataEvent> {
+    DATA_EVT_SENDER
+        .try_with(|s| {
+            s.get()
+                .expect("Data event sender should be initialized by AsyncRunner")
+                .clone()
+        })
+        .expect("Should be able to access thread local storage")
+}
+
 thread_local! {
     static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
     static DATA_EVT_QUEUE: OnceCell<GlobalDataQueue> = OnceCell::new();
     static DATA_CMD_QUEUE: DataCommandQueue = Rc::new(RefCell::new(VecDeque::new()));
+    // TODO: Potentially redundant but added to simplify the abstraction layers for now
+    static DATA_EVT_SENDER: OnceCell<UnboundedSender<DataEvent>> = const { OnceCell::new() };
 }
 
 // Represents different event types for the runner.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum RunnerEvent {
+    Time(TimeEvent),
     Data(DataEvent),
-    Timer(TimeEvent),
 }

@@ -18,7 +18,7 @@ Throughout the documentation, the term *"Nautilus system boundary"* refers to op
 the runtime of a single Nautilus node (also known as a "trader instance").
 :::
 
-## Design philosophy
+## Design Philosophy
 
 The major architectural techniques and design patterns employed by NautilusTrader are:
 
@@ -30,7 +30,7 @@ The major architectural techniques and design patterns employed by NautilusTrade
 
 These techniques have been utilized to assist in achieving certain architectural quality attributes.
 
-### Quality attributes
+### Quality Attributes
 
 Architectural decisions are often a trade-off between competing priorities. The
 below is a list of some of the most important quality attributes which are considered
@@ -43,7 +43,7 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 - Maintainability
 - Deployability
 
-## System architecture
+## System Architecture
 
 The NautilusTrader codebase is actually both a framework for composing trading
  systems, and a set of default system implementations which can operate in various
@@ -110,7 +110,7 @@ Provides comprehensive risk management:
 - Real-time risk calculations.
 - Configurable risk rules and limits.
 
-### Environment contexts
+### Environment Contexts
 
 An environment context in NautilusTrader defines the type of data and trading venue you are working
 with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
@@ -121,7 +121,7 @@ Here are the available environments you can work with:
 - `Sandbox`: Real-time data with simulated venues.
 - `Live`: Real-time data with live venues (paper trading or real accounts).
 
-### Common core
+### Common Core
 
 The platform has been designed to share as much common code between backtest, sandbox and live trading systems as possible.
 This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class,

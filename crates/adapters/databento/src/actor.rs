@@ -15,47 +15,40 @@
 
 //! Basic Databento subscriber actor implementation for quotes and trades.
 
-use std::{
-    any::Any,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{
-    actor::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig},
-    enums::ComponentState,
-};
+use nautilus_common::actor::{DataActor, DataActorCore, data_actor::DataActorConfig};
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
-    identifiers::{ActorId, ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId},
 };
-use ustr::Ustr;
 
 /// Configuration for the Databento subscriber actor.
 #[derive(Debug, Clone)]
 pub struct DatabentoSubscriberActorConfig {
     /// Base data actor configuration.
     pub base: DataActorConfig,
-    /// Instrument IDs to subscribe to.
-    pub instrument_ids: Vec<InstrumentId>,
     /// Client ID to use for subscriptions.
     pub client_id: ClientId,
+    /// Instrument IDs to subscribe to.
+    pub instrument_ids: Vec<InstrumentId>,
 }
 
 impl DatabentoSubscriberActorConfig {
     /// Creates a new [`DatabentoSubscriberActorConfig`] instance.
     #[must_use]
-    pub fn new(instrument_ids: Vec<InstrumentId>, client_id: ClientId) -> Self {
+    pub fn new(client_id: ClientId, instrument_ids: Vec<InstrumentId>) -> Self {
         Self {
             base: DataActorConfig::default(),
-            instrument_ids,
             client_id,
+            instrument_ids,
         }
     }
 }
 
 /// A basic Databento subscriber actor that subscribes to quotes and trades.
 ///
-/// This actor demonstrates how to use the DataActor trait to subscribe to market data
+/// This actor demonstrates how to use the `DataActor` trait to subscribe to market data
 /// from Databento for specified instruments. It logs received quotes and trades to
 /// demonstrate the data flow.
 #[derive(Debug)]
@@ -80,50 +73,48 @@ impl DerefMut for DatabentoSubscriberActor {
     }
 }
 
-impl Actor for DatabentoSubscriberActor {
-    fn id(&self) -> Ustr {
-        self.core.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn Any) {
-        // Let the core handle message routing
-        self.core.handle(msg);
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 impl DataActor for DatabentoSubscriberActor {
-    fn actor_id(&self) -> ActorId {
-        self.core.actor_id()
-    }
-
-    fn state(&self) -> ComponentState {
-        self.core.state()
-    }
-
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!(
             "Starting Databento subscriber actor for {} instruments",
             self.config.instrument_ids.len()
         );
 
-        // Clone config values to avoid borrowing issues
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
         // Subscribe to quotes and trades for each instrument
         for instrument_id in instrument_ids {
             log::info!("Subscribing to quotes for {instrument_id}");
-            self.subscribe_quotes::<DatabentoSubscriberActor>(instrument_id, Some(client_id), None);
+            self.subscribe_quotes(instrument_id, Some(client_id), None);
 
             log::info!("Subscribing to trades for {instrument_id}");
-            self.subscribe_trades::<DatabentoSubscriberActor>(instrument_id, Some(client_id), None);
+            self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
         log::info!("Databento subscriber actor started successfully");
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        log::info!(
+            "Stopping Databento subscriber actor for {} instruments",
+            self.config.instrument_ids.len()
+        );
+
+        let instrument_ids = self.config.instrument_ids.clone();
+        let client_id = self.config.client_id;
+
+        // Unsubscribe to quotes and trades for each instrument
+        for instrument_id in instrument_ids {
+            log::info!("Unsubscribing from quotes for {instrument_id}");
+            self.unsubscribe_quotes(instrument_id, Some(client_id), None);
+
+            log::info!("Unsubscribing from trades for {instrument_id}");
+            self.unsubscribe_trades(instrument_id, Some(client_id), None);
+        }
+
+        log::info!("Databento subscriber actor stopped successfully");
         Ok(())
     }
 
@@ -154,13 +145,13 @@ impl DatabentoSubscriberActor {
 
     /// Returns the number of quotes received by this actor.
     #[must_use]
-    pub fn quote_count(&self) -> usize {
+    pub const fn quote_count(&self) -> usize {
         self.received_quotes.len()
     }
 
     /// Returns the number of trades received by this actor.
     #[must_use]
-    pub fn trade_count(&self) -> usize {
+    pub const fn trade_count(&self) -> usize {
         self.received_trades.len()
     }
 }

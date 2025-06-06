@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
+use alloy_primitives::Address;
+
 use crate::defi::{chain::SharedChain, dex::Dex, token::Token};
 
 /// Represents a liquidity pool in a decentralized exchange.
@@ -23,7 +27,7 @@ pub struct Pool {
     /// The decentralized exchange protocol that created and manages this pool.
     pub dex: Dex,
     /// The blockchain address of the pool smart contract.
-    pub address: String,
+    pub address: Address,
     /// The block number when this pool was created on the blockchain.
     pub creation_block: u64,
     /// The first token in the trading pair.
@@ -36,6 +40,9 @@ pub struct Pool {
     pub tick_spacing: u32,
 }
 
+/// A thread-safe shared pointer to a `Pool`, enabling efficient reuse across multiple components.
+pub type SharedPool = Arc<Pool>;
+
 impl Pool {
     /// Creates a new [`Pool`] instance with the specified properties.
     #[must_use]
@@ -43,7 +50,7 @@ impl Pool {
     pub fn new(
         chain: SharedChain,
         dex: Dex,
-        address: String,
+        address: Address,
         creation_block: u64,
         token0: Token,
         token1: Token,
@@ -60,5 +67,11 @@ impl Pool {
             fee,
             tick_spacing,
         }
+    }
+
+    /// Returns the ticker symbol for this pool as a formatted string.
+    #[must_use]
+    pub fn ticker(&self) -> String {
+        format!("{}/{}", self.token0.symbol, self.token1.symbol)
     }
 }

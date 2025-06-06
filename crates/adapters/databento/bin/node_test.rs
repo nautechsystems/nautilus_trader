@@ -23,19 +23,14 @@ use nautilus_databento::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{ClientId, InstrumentId, TraderId};
-use tokio::time::Duration;
 
-// Run with `cargo run -p nautilus-databento --bin databento-node-test --features live`
+// Run with `cargo run --bin databento-node-test --features high-precision`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // TODO: Initialize Python interpreter only if python feature is enabled
     // #[cfg(feature = "python")]
     pyo3::prepare_freethreaded_python();
-
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .init();
 
     dotenvy::dotenv().ok();
 
@@ -66,12 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         true, // bars_timestamp_on_close
     );
 
-    let client_factory = Box::new(DatabentoDataClientFactory::new());
+    let client_factory = DatabentoDataClientFactory::new();
 
     // Create and register a Databento subscriber actor
     let client_id = ClientId::new("DATABENTO");
     let instrument_ids = vec![
-        InstrumentId::from("ES.c.0.GLBX"),
+        InstrumentId::from("ESM5.XCME"),
         // Add more instruments as needed
     ];
 
@@ -79,29 +74,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
         .with_save_state(false)
-        .add_data_client(None, client_factory, Box::new(databento_config))?
+        .add_data_client(None, client_factory, databento_config)?
         .build()?;
 
-    let actor_config = DatabentoSubscriberActorConfig::new(instrument_ids, client_id);
+    let actor_config = DatabentoSubscriberActorConfig::new(client_id, instrument_ids);
     let actor = DatabentoSubscriberActor::new(actor_config);
 
-    node.add_actor(Box::new(actor))?;
+    node.add_actor(actor)?;
 
-    node.start().await?;
-
-    // Let it run briefly to ensure all components are properly initialized
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    node.stop().await?;
+    node.run().await?;
 
     Ok(())
-}
-
-#[cfg(not(feature = "live"))]
-fn main() {
-    println!("⚠️  databento-node-test binary requires the 'live' feature to be enabled.");
-    println!(
-        "   Run with: cargo run -p nautilus-databento --bin databento-node-test --features live"
-    );
-    std::process::exit(1);
 }

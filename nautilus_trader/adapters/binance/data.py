@@ -20,7 +20,6 @@ from decimal import Decimal
 import msgspec
 import pandas as pd
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
@@ -148,8 +147,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     ) -> None:
         super().__init__(
             loop=loop,
-            client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            client_id=ClientId(name or config.venue.value),
+            venue=config.venue,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

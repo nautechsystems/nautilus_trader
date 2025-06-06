@@ -119,7 +119,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 | `FOK`         | ✓    | ✓      | ✓       | Fill or Kill.                |
 | `IOC`         | ✓    | ✓      | ✓       | Immediate or Cancel.         |
 
-### Advanced order features
+### Advanced Order Features
 
 | Feature            | Spot | Linear | Inverse | Notes                                  |
 |--------------------|------|--------|---------|----------------------------------------|
@@ -127,7 +127,7 @@ All the order types listed below can be used as *either* entries or exits, excep
 | Bracket/OCO Orders | ✓    | ✓      | ✓       | UI only; API users implement manually. |
 | Iceberg Orders     | ✓    | ✓      | ✓       | Max 10 per account, 1 per symbol.      |
 
-### Configuration options
+### Configuration Options
 
 The following execution client configuration options affect order behavior:
 
@@ -147,7 +147,7 @@ The following limitations apply to SPOT products, as positions are not tracked o
 - `reduce_only` orders are *not supported*.
 - Trailing stop orders are *not supported*.
 
-### Trailing stops
+### Trailing Stops
 
 Trailing stops on Bybit do not have a client order ID on the venue side (though there is a `venue_order_id`).
 This is because trailing stops are associated with a netted position for an instrument.
@@ -162,11 +162,11 @@ Consider the following points when using trailing stops on Bybit:
 
 The product types for each client must be specified in the configurations.
 
-### Data clients
+### Data Clients
 
 If no product types are specified then all product types will be loaded and available.
 
-### Execution clients
+### Execution Clients
 
 Because Nautilus does not support a "unified" account, the account type must be either cash **or** margin.
 This means there is a limitation that you cannot specify SPOT with any of the other derivative product types.
@@ -225,7 +225,7 @@ node.add_exec_client_factory(BYBIT, BybitLiveExecClientFactory)
 node.build()
 ```
 
-### API credentials
+### API Credentials
 
 There are two options for supplying your credentials to the Bybit clients.
 Either pass the corresponding `api_key` and `api_secret` values to the configuration objects, or

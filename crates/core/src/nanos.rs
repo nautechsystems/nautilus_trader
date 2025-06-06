@@ -320,9 +320,10 @@ impl From<DateTime<Utc>> for UnixNanos {
             .timestamp_nanos_opt()
             .expect("DateTime timestamp out of range for UnixNanos");
 
-        if nanos < 0 {
-            panic!("DateTime timestamp cannot be negative: {nanos}");
-        }
+        assert!(
+            (nanos >= 0),
+            "DateTime timestamp cannot be negative: {nanos}"
+        );
 
         Self::from(nanos as u64)
     }

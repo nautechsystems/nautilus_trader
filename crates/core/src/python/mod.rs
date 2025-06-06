@@ -18,6 +18,7 @@
 pub mod casing;
 pub mod datetime;
 pub mod enums;
+pub mod parsing;
 pub mod serialization;
 pub mod uuid;
 pub mod version;
@@ -96,7 +97,7 @@ fn is_pycapsule(obj: PyObject) -> bool {
     }
 }
 
-/// Loaded as `nautilus_pyo3.core`
+/// Loaded as `nautilus_pyo3.core`.
 ///
 /// # Errors
 ///

@@ -17,7 +17,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    ops::{Deref, DerefMut},
+};
 
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -27,12 +30,15 @@ use nautilus_core::{
 use nautilus_model::{
     data::{BarType, DataType},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
 };
 use pyo3::{exceptions::PyValueError, prelude::*};
 
 use crate::{
-    actor::data_actor::{DataActorConfig, DataActorCore},
+    actor::{
+        DataActor,
+        data_actor::{DataActorConfig, DataActorCore},
+    },
     component::Component,
     enums::ComponentState,
 };
@@ -49,6 +55,22 @@ pub struct PyDataActor {
     core: DataActorCore,
 }
 
+impl Deref for PyDataActor {
+    type Target = DataActorCore;
+
+    fn deref(&self) -> &Self::Target {
+        &self.core
+    }
+}
+
+impl DerefMut for PyDataActor {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.core
+    }
+}
+
+impl DataActor for PyDataActor {}
+
 #[pymethods]
 impl PyDataActor {
     #[new]
@@ -63,77 +85,85 @@ impl PyDataActor {
     }
 
     #[getter]
-    fn actor_id(&self) -> PyResult<String> {
-        Ok(self.core.actor_id.to_string())
+    #[pyo3(name = "actor_id")]
+    fn py_actor_id(&self) -> ActorId {
+        self.actor_id
     }
 
     #[getter]
-    fn state(&self) -> PyResult<ComponentState> {
-        Ok(self.core.state())
+    #[pyo3(name = "trader_id")]
+    fn py_trader_id(&self) -> Option<TraderId> {
+        self.trader_id()
     }
 
-    #[getter]
-    fn trader_id(&self) -> PyResult<Option<String>> {
-        Ok(self.core.trader_id().map(|id| id.to_string()))
+    #[pyo3(name = "state")]
+    fn py_state(&self) -> ComponentState {
+        self.state()
     }
 
-    fn is_ready(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Ready)
+    #[pyo3(name = "is_ready")]
+    fn py_is_ready(&self) -> bool {
+        self.is_ready()
     }
 
-    fn is_running(&self) -> PyResult<bool> {
-        Ok(Component::is_running(&self.core))
+    #[pyo3(name = "is_running")]
+    fn py_is_running(&self) -> bool {
+        self.is_running()
     }
 
-    fn is_stopped(&self) -> PyResult<bool> {
-        Ok(Component::is_stopped(&self.core))
+    #[pyo3(name = "is_stopped")]
+    fn py_is_stopped(&self) -> bool {
+        self.is_stopped()
     }
 
-    fn is_disposed(&self) -> PyResult<bool> {
-        Ok(Component::is_disposed(&self.core))
+    #[pyo3(name = "is_degraded")]
+    fn py_is_degraded(&self) -> bool {
+        self.is_degraded()
     }
 
-    fn is_degraded(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Degraded)
+    #[pyo3(name = "is_faulted")]
+    fn py_is_faulted(&self) -> bool {
+        self.is_faulted()
     }
 
-    fn is_faulting(&self) -> PyResult<bool> {
-        Ok(self.core.state() == ComponentState::Faulted)
+    #[pyo3(name = "is_disposed")]
+    fn py_is_disposed(&self) -> bool {
+        self.is_disposed()
     }
 
     #[pyo3(name = "start")]
     fn py_start(&mut self) -> PyResult<()> {
-        self.core.start().map_err(to_pyruntime_err)
+        self.start().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stop")]
     fn py_stop(&mut self) -> PyResult<()> {
-        self.core.stop().map_err(to_pyruntime_err)
+        self.stop().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "resume")]
     fn py_resume(&mut self) -> PyResult<()> {
-        self.core.resume().map_err(to_pyruntime_err)
+        self.resume().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) -> PyResult<()> {
-        self.core.reset().map_err(to_pyruntime_err)
+        self.reset().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) -> PyResult<()> {
-        self.core.dispose().map_err(to_pyruntime_err)
+        self.dispose().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "degrade")]
     fn py_degrade(&mut self) -> PyResult<()> {
-        self.core.degrade().map_err(to_pyruntime_err)
+        self.degrade().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "fault")]
     fn py_fault(&mut self) -> PyResult<()> {
-        self.core.fault().map_err(to_pyruntime_err)
+        self.fault().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "shutdown_system")]
@@ -151,8 +181,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_data::<DataActorCore>(data_type, client_id, params);
+        self.subscribe_data(data_type, client_id, params);
         Ok(())
     }
 
@@ -164,8 +193,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instruments::<DataActorCore>(venue, client_id, params);
+        self.subscribe_instruments(venue, client_id, params);
         Ok(())
     }
 
@@ -177,8 +205,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -194,14 +221,7 @@ impl PyDataActor {
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
         let depth = depth.and_then(NonZeroUsize::new);
-        self.core.subscribe_book_deltas::<DataActorCore>(
-            instrument_id,
-            book_type,
-            depth,
-            client_id,
-            managed,
-            params,
-        );
+        self.subscribe_book_deltas(instrument_id, book_type, depth, client_id, managed, params);
         Ok(())
     }
 
@@ -220,7 +240,7 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.core.subscribe_book_at_interval::<DataActorCore>(
+        self.subscribe_book_at_interval(
             instrument_id,
             book_type,
             depth,
@@ -239,8 +259,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_quotes::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_quotes(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -252,8 +271,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_trades::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_trades(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -266,8 +284,7 @@ impl PyDataActor {
         await_partial: bool,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_bars::<DataActorCore>(bar_type, client_id, await_partial, params);
+        self.subscribe_bars(bar_type, client_id, await_partial, params);
         Ok(())
     }
 
@@ -279,8 +296,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_mark_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_mark_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -292,8 +308,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_index_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_index_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -305,8 +320,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument_status::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument_status(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -318,8 +332,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .subscribe_instrument_close::<DataActorCore>(instrument_id, client_id, params);
+        self.subscribe_instrument_close(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -340,8 +353,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_data::<DataActorCore>(data_type, client_id, start, end, limit, params)
+            .request_data(data_type, client_id, start, end, limit, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -360,8 +372,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_instrument::<DataActorCore>(instrument_id, start, end, client_id, params)
+            .request_instrument(instrument_id, start, end, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -380,8 +391,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_instruments::<DataActorCore>(venue, start, end, client_id, params)
+            .request_instruments(venue, start, end, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -398,8 +408,7 @@ impl PyDataActor {
         let depth = depth.and_then(NonZeroUsize::new);
 
         let request_id = self
-            .core
-            .request_book_snapshot::<DataActorCore>(instrument_id, depth, client_id, params)
+            .request_book_snapshot(instrument_id, depth, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -420,8 +429,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_quotes::<DataActorCore>(instrument_id, start, end, limit, client_id, params)
+            .request_quotes(instrument_id, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -442,8 +450,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_trades::<DataActorCore>(instrument_id, start, end, limit, client_id, params)
+            .request_trades(instrument_id, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -464,8 +471,7 @@ impl PyDataActor {
         let end = end.map(|ts| UnixNanos::from(ts).to_datetime_utc());
 
         let request_id = self
-            .core
-            .request_bars::<DataActorCore>(bar_type, start, end, limit, client_id, params)
+            .request_bars(bar_type, start, end, limit, client_id, params)
             .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
@@ -479,8 +485,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_data::<DataActorCore>(data_type, client_id, params);
+        self.unsubscribe_data(data_type, client_id, params);
         Ok(())
     }
 
@@ -492,8 +497,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instruments::<DataActorCore>(venue, client_id, params);
+        self.unsubscribe_instruments(venue, client_id, params);
         Ok(())
     }
 
@@ -505,8 +509,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -518,8 +521,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_book_deltas::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_book_deltas(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -535,12 +537,7 @@ impl PyDataActor {
         let interval_ms = NonZeroUsize::new(interval_ms)
             .ok_or_else(|| PyErr::new::<PyValueError, _>("interval_ms must be > 0"))?;
 
-        self.core.unsubscribe_book_at_interval::<DataActorCore>(
-            instrument_id,
-            interval_ms,
-            client_id,
-            params,
-        );
+        self.unsubscribe_book_at_interval(instrument_id, interval_ms, client_id, params);
         Ok(())
     }
 
@@ -552,8 +549,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_quotes::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_quotes(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -565,8 +561,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_trades::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_trades(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -578,8 +573,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_bars::<DataActorCore>(bar_type, client_id, params);
+        self.unsubscribe_bars(bar_type, client_id, params);
         Ok(())
     }
 
@@ -591,8 +585,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_mark_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_mark_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -604,8 +597,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_index_prices::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_index_prices(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -617,8 +609,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument_status::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument_status(instrument_id, client_id, params);
         Ok(())
     }
 
@@ -630,8 +621,7 @@ impl PyDataActor {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) -> PyResult<()> {
-        self.core
-            .unsubscribe_instrument_close::<DataActorCore>(instrument_id, client_id, params);
+        self.unsubscribe_instrument_close(instrument_id, client_id, params);
         Ok(())
     }
 }
@@ -652,7 +642,7 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::PyDataActor;
-    use crate::{cache::Cache, clock::TestClock, enums::ComponentState};
+    use crate::{cache::Cache, clock::TestClock, component::Component, enums::ComponentState};
 
     #[fixture]
     fn clock() -> Rc<RefCell<TestClock>> {
@@ -699,33 +689,29 @@ mod tests {
         trader_id: TraderId,
     ) -> PyDataActor {
         let mut actor = PyDataActor::py_new(None).unwrap();
-        actor.core.register(trader_id, clock, cache).unwrap();
+        actor.register(trader_id, clock, cache).unwrap();
         actor
     }
 
     #[rstest]
     fn test_new_actor_creation() {
         let actor = PyDataActor::py_new(None).unwrap();
-        assert!(actor.core.trader_id().is_none());
+        assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
     fn test_unregistered_actor_methods_work(data_type: DataType, client_id: ClientId) {
         let actor = create_unregistered_actor();
 
-        // These should work without registration since we simplified the structure
-        assert!(actor.actor_id().is_ok());
-        assert!(actor.state().is_ok());
-        assert!(actor.trader_id().is_ok());
-        assert!(actor.is_ready().is_ok());
-        assert!(actor.is_running().is_ok());
-        assert!(actor.is_stopped().is_ok());
-        assert!(actor.is_disposed().is_ok());
-        assert!(actor.is_degraded().is_ok());
-        assert!(actor.is_faulting().is_ok());
+        assert!(!actor.py_is_ready());
+        assert!(!actor.py_is_running());
+        assert!(!actor.py_is_stopped());
+        assert!(!actor.py_is_disposed());
+        assert!(!actor.py_is_degraded());
+        assert!(!actor.py_is_faulted());
 
         // Verify unregistered state
-        assert_eq!(actor.trader_id().unwrap(), None);
+        assert_eq!(actor.trader_id(), None);
     }
 
     #[rstest]
@@ -735,9 +721,9 @@ mod tests {
         trader_id: TraderId,
     ) {
         let mut actor = create_unregistered_actor();
-        actor.core.register(trader_id, clock, cache).unwrap();
-        assert!(actor.core.trader_id().is_some());
-        assert_eq!(actor.core.trader_id().unwrap(), trader_id);
+        actor.register(trader_id, clock, cache).unwrap();
+        assert!(actor.trader_id().is_some());
+        assert_eq!(actor.trader_id().unwrap(), trader_id);
     }
 
     #[rstest]
@@ -748,15 +734,14 @@ mod tests {
     ) {
         let actor = create_registered_actor(clock, cache, trader_id);
 
-        assert!(actor.actor_id().is_ok());
-        assert_eq!(actor.state().unwrap(), ComponentState::Ready);
-        assert_eq!(actor.trader_id().unwrap(), Some(trader_id.to_string()));
-        assert_eq!(actor.is_ready().unwrap(), true);
-        assert_eq!(actor.is_running().unwrap(), false);
-        assert_eq!(actor.is_stopped().unwrap(), false);
-        assert_eq!(actor.is_disposed().unwrap(), false);
-        assert_eq!(actor.is_degraded().unwrap(), false);
-        assert_eq!(actor.is_faulting().unwrap(), false);
+        assert_eq!(actor.state(), ComponentState::Ready);
+        assert_eq!(actor.trader_id(), Some(TraderId::from("TRADER-001")));
+        assert!(actor.py_is_ready());
+        assert!(!actor.py_is_running());
+        assert!(!actor.py_is_stopped());
+        assert!(!actor.py_is_disposed());
+        assert!(!actor.py_is_degraded());
+        assert!(!actor.py_is_faulted());
     }
 
     #[rstest]
@@ -844,7 +829,7 @@ mod tests {
 
         // These methods exist and compile correctly
         // Verify it's unregistered
-        assert!(actor.core.trader_id().is_none());
+        assert!(actor.trader_id().is_none());
     }
 
     #[rstest]
@@ -856,7 +841,7 @@ mod tests {
         let actor = create_registered_actor(clock, cache, trader_id);
 
         // Test Component trait method (using the trait method directly)
-        let state = actor.core.state();
+        let state = actor.state();
         assert_eq!(state, ComponentState::Ready);
     }
 }

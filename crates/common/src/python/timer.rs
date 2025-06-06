@@ -58,6 +58,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
         Self {
             event: value.event,
             callback: match value.callback {
+                #[cfg(feature = "python")]
                 TimeEventCallback::Python(callback) => callback,
                 TimeEventCallback::Rust(_) => {
                     panic!("Python time event handler is not supported for Rust callback")
@@ -193,7 +194,7 @@ mod tests {
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
-    use ustr::Ustr; // Import required
+    use ustr::Ustr; // Import required (due feature gating)
 
     use crate::{
         testing::wait_until,
@@ -228,6 +229,7 @@ mod tests {
             start_time,
             None,
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -242,6 +244,7 @@ mod tests {
                     None,
                     callback,
                     heap,
+                    false,
                 ),
             )
         };
@@ -279,6 +282,7 @@ mod tests {
             start_time,
             Some(stop_time),
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -293,6 +297,7 @@ mod tests {
                     Some(stop_time),
                     callback,
                     heap,
+                    false,
                 ),
             )
         };
@@ -330,6 +335,7 @@ mod tests {
             start_time,
             Some(stop_time),
             callback,
+            false,
         );
 
         #[cfg(feature = "clock_v2")]
@@ -344,6 +350,7 @@ mod tests {
                     Some(stop_time),
                     callback,
                     heap,
+                    false,
                 ),
             )
         };

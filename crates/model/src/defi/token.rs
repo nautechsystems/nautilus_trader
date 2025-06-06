@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use std::{
+    fmt::{Display, Formatter},
+    sync::Arc,
+};
+
+use alloy_primitives::Address;
 
 use crate::defi::chain::SharedChain;
 
@@ -23,7 +28,7 @@ pub struct Token {
     /// The blockchain network where this token exists.
     pub chain: SharedChain,
     /// The blockchain address of the token contract.
-    pub address: String,
+    pub address: Address,
     /// The full name of the token.
     pub name: String,
     /// The token's ticker symbol.
@@ -32,12 +37,15 @@ pub struct Token {
     pub decimals: u8,
 }
 
+/// A thread-safe shared pointer to a `Token`, enabling efficient reuse across multiple components.
+pub type SharedToken = Arc<Token>;
+
 impl Token {
     /// Creates a new [`Token`] instance with the specified properties.
     #[must_use]
     pub fn new(
         chain: SharedChain,
-        address: String,
+        address: Address,
         name: String,
         symbol: String,
         decimals: u8,

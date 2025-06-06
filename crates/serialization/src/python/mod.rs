@@ -20,7 +20,7 @@ pub mod enums;
 
 use pyo3::prelude::*;
 
-/// Loaded as nautilus_pyo3.serialization
+/// Loaded as `nautilus_pyo3.serialization`.
 ///
 /// # Errors
 ///
