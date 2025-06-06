@@ -78,3 +78,15 @@ jobs:
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
           run: uv run --no-sync pytest tests/performance_tests --benchmark-disable-gc --codspeed
+
+      - name: Build the benchmark target(s)
+        run: |
+          # Replace criterion with codspeed-criterion-compat in Cargo.toml files
+          find . -name "Cargo.toml" -exec sed -i 's/criterion = "0.5.1"/criterion = { version = "2.10.1", package = "codspeed-criterion-compat" }/g' {} +
+          cargo codspeed build
+
+      - name: Run the benchmarks
+        uses: CodSpeedHQ/action@v3
+        with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          run: cargo codspeed run

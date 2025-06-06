@@ -71,7 +71,6 @@ urlencoding = "2.1.3"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 
