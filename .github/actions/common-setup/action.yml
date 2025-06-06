@@ -80,12 +80,6 @@ runs:
       with:
         tool: nextest
 
-    - name: Install cargo-codspeed
-      # https://github.com/taiki-e/install-action # v2.50.10
-      uses: taiki-e/install-action@83254c543806f3224380bf1001d6fac8feaf2d0b
-      with:
-        tool: cargo-codspeed
-
     # > --------------------------------------------------
     # > sccache
     - name: Set sccache env vars (common)
