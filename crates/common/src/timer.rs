@@ -323,9 +323,12 @@ impl TestTimer {
     ///
     /// This allows testing of multiple time intervals within a single step.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
-        let advances = to_time_ns
-            .saturating_sub(self.next_time_ns.saturating_sub(self.interval_ns.get()))
-            / self.interval_ns.get();
+        // Calculate how many events should fire up to and including to_time_ns
+        let advances = if self.next_time_ns <= to_time_ns {
+            (to_time_ns.as_u64() - self.next_time_ns.as_u64()) / self.interval_ns.get() + 1
+        } else {
+            0
+        };
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -344,6 +347,14 @@ impl Iterator for TestTimer {
         if self.is_expired {
             None
         } else {
+            // Check if current event would exceed stop time before creating the event
+            if let Some(stop_time_ns) = self.stop_time_ns {
+                if self.next_time_ns > stop_time_ns {
+                    self.is_expired = true;
+                    return None;
+                }
+            }
+
             let item = (
                 TimeEvent {
                     name: self.name,
@@ -354,9 +365,9 @@ impl Iterator for TestTimer {
                 self.next_time_ns,
             );
 
-            // If current next event time has exceeded stop time, then expire timer
+            // Check if we should expire after this event (for repeating timers at stop boundary)
             if let Some(stop_time_ns) = self.stop_time_ns {
-                if self.next_time_ns >= stop_time_ns {
+                if self.next_time_ns == stop_time_ns {
                     self.is_expired = true;
                 }
             }

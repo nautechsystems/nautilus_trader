@@ -413,12 +413,22 @@ impl Clock for TestClock {
         if start_time_ns == 0 {
             // Zero start time indicates no explicit start; we use the current time
             start_time_ns = self.timestamp_ns();
-        } else if start_time_ns < ts_now && !allow_past {
-            anyhow::bail!(
-                "Timer '{name}' start time {} was in the past (current time is {})",
-                start_time_ns.to_rfc3339(),
-                ts_now.to_rfc3339(),
-            );
+        } else if !allow_past {
+            // Calculate the next event time based on fire_immediately flag
+            let next_event_time = if fire_immediately {
+                start_time_ns
+            } else {
+                start_time_ns + interval_ns
+            };
+
+            // Check if the next event would be in the past
+            if next_event_time < ts_now {
+                anyhow::bail!(
+                    "Timer '{name}' next event time {} would be in the past (current time is {})",
+                    next_event_time.to_rfc3339(),
+                    ts_now.to_rfc3339(),
+                );
+            }
         }
 
         if let Some(stop_time) = stop_time_ns {
@@ -1064,10 +1074,11 @@ mod tests {
         // Advance time to check immediate firing and subsequent intervals
         let events = test_clock.advance_time((start_time + 2500).into(), true);
 
-        // Should fire immediately at start_time (0), then at start_time+1000
-        assert_eq!(events.len(), 2);
+        // Should fire immediately at start_time (0), then at start_time+1000, then at start_time+2000
+        assert_eq!(events.len(), 3);
         assert_eq!(*events[0].ts_event, *start_time); // Fires immediately
         assert_eq!(*events[1].ts_event, *start_time + 1000); // Then after interval
+        assert_eq!(*events[2].ts_event, *start_time + 2000); // Then after second interval
     }
 
     #[rstest]
@@ -1181,15 +1192,16 @@ mod tests {
 
         let events = test_clock.advance_time((start_time + 1500).into(), true);
 
-        // Should have 2 events total: immediate_timer fires at start, normal_timer fires at 1000
-        assert_eq!(events.len(), 2);
+        // Should have 3 events total: immediate_timer fires at start & 1000, normal_timer fires at 1000
+        assert_eq!(events.len(), 3);
 
         // Sort events by timestamp to check order
         let mut event_times: Vec<u64> = events.iter().map(|e| e.ts_event.as_u64()).collect();
         event_times.sort();
 
         assert_eq!(event_times[0], start_time.as_u64()); // immediate_timer fires immediately
-        assert_eq!(event_times[1], start_time.as_u64() + 1000); // normal_timer fires at interval
+        assert_eq!(event_times[1], start_time.as_u64() + 1000); // both timers fire at 1000
+        assert_eq!(event_times[2], start_time.as_u64() + 1000); // both timers fire at 1000
     }
 
     #[rstest]
@@ -1258,9 +1270,10 @@ mod tests {
 
         let events = test_clock.advance_time(stop_time.into(), true);
 
-        // Should fire immediately at start, then timer should be expired
-        assert_eq!(events.len(), 1);
-        assert_eq!(*events[0].ts_event, *start_time); // Only immediate fire
+        // Should fire immediately at start, then at stop time (which equals first interval)
+        assert_eq!(events.len(), 2);
+        assert_eq!(*events[0].ts_event, *start_time); // Immediate fire
+        assert_eq!(*events[1].ts_event, *stop_time); // Fire at stop time
     }
 
     #[rstest]
@@ -1286,6 +1299,95 @@ mod tests {
 
         assert_eq!(events.len(), 1);
         assert_eq!(*events[0].ts_event, *next_time);
+    }
+
+    #[rstest]
+    fn test_allow_past_bar_aggregation_use_case(mut test_clock: TestClock) {
+        // Simulate bar aggregation scenario: current time is in middle of a bar window
+        test_clock.set_time(UnixNanos::from(100_500)); // 100.5 seconds
+
+        let bar_start_time = UnixNanos::from(100_000); // 100 seconds (0.5 sec ago)
+        let interval_ns = 1000; // 1 second bars
+
+        // With allow_past=false and fire_immediately=false:
+        // start_time is in past (100 sec) but next event (101 sec) is in future
+        // This should be ALLOWED for bar aggregation
+        let result = test_clock.set_timer_ns(
+            "bar_timer",
+            interval_ns,
+            bar_start_time,
+            None,
+            None,
+            Some(false), // allow_past = false
+            Some(false), // fire_immediately = false
+        );
+
+        // Should succeed because next event time (100_000 + 1000 = 101_000) > current time (100_500)
+        assert!(result.is_ok());
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // Next event should be at bar_start_time + interval = 101_000
+        let next_time = test_clock.next_time_ns("bar_timer").unwrap();
+        assert_eq!(*next_time, 101_000);
+    }
+
+    #[rstest]
+    fn test_allow_past_false_rejects_when_next_event_in_past(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(102_000)); // 102 seconds
+
+        let past_start_time = UnixNanos::from(100_000); // 100 seconds (2 sec ago)
+        let interval_ns = 1000; // 1 second interval
+
+        // With allow_past=false and fire_immediately=false:
+        // Next event would be 100_000 + 1000 = 101_000, which is < current time (102_000)
+        // This should be REJECTED
+        let result = test_clock.set_timer_ns(
+            "past_event_timer",
+            interval_ns,
+            past_start_time,
+            None,
+            None,
+            Some(false), // allow_past = false
+            Some(false), // fire_immediately = false
+        );
+
+        // Should fail because next event time (101_000) < current time (102_000)
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("would be in the past")
+        );
+    }
+
+    #[rstest]
+    fn test_allow_past_false_with_fire_immediately_true(mut test_clock: TestClock) {
+        test_clock.set_time(UnixNanos::from(100_500)); // 100.5 seconds
+
+        let past_start_time = UnixNanos::from(100_000); // 100 seconds (0.5 sec ago)
+        let interval_ns = 1000;
+
+        // With fire_immediately=true, next event = start_time (which is in past)
+        // This should be REJECTED with allow_past=false
+        let result = test_clock.set_timer_ns(
+            "immediate_past_timer",
+            interval_ns,
+            past_start_time,
+            None,
+            None,
+            Some(false), // allow_past = false
+            Some(true),  // fire_immediately = true
+        );
+
+        // Should fail because next event time (100_000) < current time (100_500)
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("would be in the past")
+        );
     }
 
     #[rstest]
