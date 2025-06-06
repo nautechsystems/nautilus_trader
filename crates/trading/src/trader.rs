@@ -36,7 +36,6 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     component::Component,
     enums::{ComponentState, ComponentTrigger, Environment},
-    timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
@@ -151,24 +150,6 @@ impl Trader {
     #[must_use]
     pub const fn ts_stopped(&self) -> Option<UnixNanos> {
         self.ts_stopped
-    }
-
-    /// Returns whether the trader is running.
-    #[must_use]
-    pub const fn is_running(&self) -> bool {
-        matches!(self.state, ComponentState::Running)
-    }
-
-    /// Returns whether the trader is stopped.
-    #[must_use]
-    pub const fn is_stopped(&self) -> bool {
-        matches!(self.state, ComponentState::Stopped)
-    }
-
-    /// Returns whether the trader is disposed.
-    #[must_use]
-    pub const fn is_disposed(&self) -> bool {
-        matches!(self.state, ComponentState::Disposed)
     }
 
     /// Returns the number of registered actors.
@@ -484,17 +465,63 @@ impl Trader {
         log::info!("Trader {} initialized successfully", self.trader_id);
         Ok(())
     }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        log::info!("Starting trader {}", self.trader_id);
+
+        self.start_components()?;
+
+        // Transition to running state
+        self.ts_started = Some(self.clock.borrow().timestamp_ns());
+
+        log::info!("Trader {} started successfully", self.trader_id);
+        Ok(())
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        log::info!("Stopping trader {}", self.trader_id);
+
+        self.stop_components()?;
+
+        self.ts_stopped = Some(self.clock.borrow().timestamp_ns());
+
+        log::info!("Trader {} stopped successfully", self.trader_id);
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        log::info!("Resetting trader {}", self.trader_id);
+
+        self.reset_components()?;
+
+        self.ts_started = None;
+        self.ts_stopped = None;
+
+        log::info!("Trader {} reset successfully", self.trader_id);
+        Ok(())
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        if self.is_running() {
+            self.stop()?;
+        }
+
+        log::info!("Disposing trader {}", self.trader_id);
+
+        self.dispose_components()?;
+
+        log::info!("Trader {} disposed successfully", self.trader_id);
+        Ok(())
+    }
 }
 
 impl Actor for Trader {
     fn id(&self) -> ustr::Ustr {
-        // Convert TraderId to Ustr via string
-        let trader_id_str = format!("Trader-{}", self.trader_id);
-        Ustr::from(trader_id_str.as_str())
+        Ustr::from(&format!("Trader-{}", self.trader_id))
     }
 
     fn handle(&mut self, _msg: &dyn Any) {
-        // Trader doesn't handle messages directly
+        panic!("Trader cannot handle messages directly") // TODO: TBD
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -504,23 +531,17 @@ impl Actor for Trader {
 
 impl Component for Trader {
     fn component_id(&self) -> ComponentId {
-        ComponentId::from(format!("Trader-{}", self.trader_id).as_str())
+        ComponentId::new(self.id())
     }
 
     fn state(&self) -> ComponentState {
         self.state
     }
 
-    fn is_running(&self) -> bool {
-        self.is_running()
-    }
-
-    fn is_stopped(&self) -> bool {
-        self.is_stopped()
-    }
-
-    fn is_disposed(&self) -> bool {
-        self.is_disposed()
+    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+        self.state = self.state.transition(&trigger)?;
+        log::info!("{}", self.state);
+        Ok(())
     }
 
     fn register(
@@ -529,88 +550,23 @@ impl Component for Trader {
         _clock: Rc<RefCell<dyn Clock>>,
         _cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        // Trader doesn't need to register with itself
-        Ok(())
+        anyhow::bail!("Trader cannot register with itself")
     }
 
-    fn start(&mut self) -> anyhow::Result<()> {
-        if self.state == ComponentState::Running {
-            log::warn!("Trader is already running");
-            return Ok(());
-        }
-
-        // Validate that we can start from current state
-        if !matches!(self.state, ComponentState::Ready | ComponentState::Stopped) {
-            anyhow::bail!("Cannot start trader from {} state", self.state);
-        }
-
-        log::info!("Starting trader {}", self.trader_id);
-
-        self.start_components()?;
-
-        // Transition to running state
-        self.state = ComponentState::Running;
-        self.ts_started = Some(self.clock.borrow().timestamp_ns());
-
-        log::info!("Trader {} started successfully", self.trader_id);
-        Ok(())
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        Trader::on_start(self)
     }
 
-    fn stop(&mut self) -> anyhow::Result<()> {
-        if !self.is_running() {
-            log::warn!("Trader is not running");
-            return Ok(());
-        }
-
-        log::info!("Stopping trader {}", self.trader_id);
-
-        // Stop all components
-        self.stop_components()?;
-
-        self.state = ComponentState::Stopped;
-        self.ts_stopped = Some(self.clock.borrow().timestamp_ns());
-
-        log::info!("Trader {} stopped successfully", self.trader_id);
-        Ok(())
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        Trader::on_stop(self)
     }
 
-    fn reset(&mut self) -> anyhow::Result<()> {
-        if self.is_running() {
-            anyhow::bail!("Cannot reset trader while running. Stop first.");
-        }
-
-        log::info!("Resetting trader {}", self.trader_id);
-
-        // Reset all components
-        self.reset_components()?;
-
-        self.state = ComponentState::Ready;
-        self.ts_started = None;
-        self.ts_stopped = None;
-
-        log::info!("Trader {} reset successfully", self.trader_id);
-        Ok(())
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        Trader::on_reset(self)
     }
 
-    fn dispose(&mut self) -> anyhow::Result<()> {
-        if self.is_running() {
-            self.stop()?;
-        }
-
-        log::info!("Disposing trader {}", self.trader_id);
-
-        // Dispose all components
-        self.dispose_components()?;
-
-        self.state = ComponentState::Disposed;
-
-        log::info!("Trader {} disposed successfully", self.trader_id);
-        Ok(())
-    }
-
-    fn handle_event(&mut self, _event: TimeEvent) {
-        // TODO: Implement event handling for the trader
-        // This would coordinate timer events with components
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        Trader::on_dispose(self)
     }
 }
 
@@ -632,7 +588,6 @@ mod tests {
         clock::TestClock,
         enums::{ComponentState, Environment},
         msgbus::MessageBus,
-        timer::TimeEvent,
     };
     use nautilus_core::UUID4;
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
@@ -640,6 +595,7 @@ mod tests {
     use nautilus_model::identifiers::{ActorId, ComponentId, TraderId};
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
+    use rstest::rstest;
 
     use super::*;
 
@@ -711,35 +667,9 @@ mod tests {
             self.state
         }
 
-        fn is_running(&self) -> bool {
-            matches!(self.state, ComponentState::Running)
-        }
-
-        fn is_stopped(&self) -> bool {
-            matches!(self.state, ComponentState::Stopped)
-        }
-
-        fn is_disposed(&self) -> bool {
-            matches!(self.state, ComponentState::Disposed)
-        }
-
-        fn start(&mut self) -> anyhow::Result<()> {
-            self.state = ComponentState::Running;
-            Ok(())
-        }
-
-        fn stop(&mut self) -> anyhow::Result<()> {
-            self.state = ComponentState::Stopped;
-            Ok(())
-        }
-
-        fn reset(&mut self) -> anyhow::Result<()> {
-            self.state = ComponentState::Ready;
-            Ok(())
-        }
-
-        fn dispose(&mut self) -> anyhow::Result<()> {
-            self.state = ComponentState::Disposed;
+        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+            self.state = self.state.transition(&trigger)?;
+            log::info!("{}", self.state);
             Ok(())
         }
 
@@ -753,8 +683,8 @@ mod tests {
             Ok(())
         }
 
-        fn handle_event(&mut self, _event: TimeEvent) {
-            // No-op for mock
+        fn on_start(&mut self) -> anyhow::Result<()> {
+            Ok(())
         }
     }
 
@@ -821,7 +751,7 @@ mod tests {
         )
     }
 
-    #[test]
+    #[rstest]
     fn test_trader_creation() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -846,7 +776,7 @@ mod tests {
         assert!(trader.ts_stopped().is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_trader_component_id() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -861,7 +791,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_add_actor_success() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -880,7 +810,7 @@ mod tests {
         assert!(trader.actor_ids().contains(&actor_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_add_duplicate_actor_fails() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -910,7 +840,7 @@ mod tests {
         assert_eq!(trader.actor_count(), 1);
     }
 
-    #[test]
+    #[rstest]
     fn test_add_strategy_success() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -929,7 +859,7 @@ mod tests {
         assert!(trader.strategy_ids().contains(&strategy_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_add_exec_algorithm_success() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -948,7 +878,7 @@ mod tests {
         assert!(trader.exec_algorithm_ids().contains(&exec_algorithm_id));
     }
 
-    #[test]
+    #[rstest]
     fn test_component_lifecycle() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -981,7 +911,7 @@ mod tests {
         assert_eq!(trader.component_count(), 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_trader_component_lifecycle() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -1000,7 +930,7 @@ mod tests {
         assert!(trader.start().is_err());
 
         // Simulate initialization (normally done by kernel)
-        trader.state = ComponentState::Ready;
+        trader.initialize().unwrap();
 
         // Test start
         assert!(trader.start().is_ok());
@@ -1026,7 +956,7 @@ mod tests {
         assert!(trader.is_disposed());
     }
 
-    #[test]
+    #[rstest]
     fn test_cannot_add_components_while_running() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
@@ -1049,7 +979,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_create_component_clock_backtest_vs_live() {
         let (msgbus, cache, portfolio, data_engine, risk_engine, exec_engine, clock) =
             create_trader_components();
