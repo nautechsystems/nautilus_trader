@@ -19,8 +19,9 @@ Released on TBD (UTC).
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
-- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
+- Fixed data request identifier attribute access for `LiveDataClient`
+- Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 
