@@ -55,7 +55,7 @@ http = "1.2.0"
 nonzero_ext = "0.3.0"
 rustls-pemfile = "2.2.0"
 tokio-rustls = "0.26.2"
-webpki-roots = "0.26.10"
+webpki-roots = "1.0.0"
 
 [dev-dependencies]
 nautilus-common = { path = "../common" }

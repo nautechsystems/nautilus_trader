@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
 - Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
+- Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
