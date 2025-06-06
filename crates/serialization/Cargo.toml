@@ -45,6 +45,5 @@ strum = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 rstest = { workspace = true }

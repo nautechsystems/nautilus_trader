@@ -58,5 +58,4 @@ strum = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
 rstest = { workspace = true }
