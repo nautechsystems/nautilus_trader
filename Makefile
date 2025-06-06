@@ -38,8 +38,8 @@ build-dry-run:
 
 .PHONY: clean
 clean:
-	find . -type d -name "__pycache__" -print0 | xargs -0 rm -rf
-	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -print0 | xargs -0 rm -f
+	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 rm -rf
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
 	rm -rf \
 		.benchmarks/ \
 		.mypy_cache/ \
@@ -53,7 +53,7 @@ clean:
 distclean: clean
 	@[ "$$FORCE" = 1 ] || { echo "Pass FORCE=1 to really nuke"; exit 1; }
 	@echo "⚠️  nuking working tree (git clean -fxd)…"
-	git clean -fxd -e tests/test_data/large/
+	git clean -fxd -e tests/test_data/large/ -e .venv
 
 .PHONY: format
 format:
