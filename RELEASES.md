@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
+- Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
 
 ### Documentation Updates
 None
