@@ -83,10 +83,10 @@ jobs:
         run: |
           # Replace criterion with codspeed-criterion-compat in Cargo.toml files
           find . -name "Cargo.toml" -exec sed -i 's/criterion = "0.5.1"/criterion = { version = "2.10.1", package = "codspeed-criterion-compat" }/g' {} +
-          cargo codspeed build
+          cargo codspeed build -p nautilus-common -p nautilus-core -p nautilus-model -p nautilus-persistence
 
       - name: Run the benchmarks
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: cargo codspeed run
+          run: cargo codspeed run -p nautilus-common -p nautilus-core -p nautilus-model -p nautilus-persistence
