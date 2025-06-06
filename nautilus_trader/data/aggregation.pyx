@@ -725,6 +725,10 @@ cdef class TimeBarAggregator(BarAggregator):
             bar_type=bar_type.standard(),
             handler=handler,
         )
+        Condition.is_true(bar_type.is_internally_aggregated(),
+                          "Aggregators make only internally aggregated bars.", ValueError)
+        Condition.type_or_none(time_bars_origin_offset, pd.Timedelta | pd.DateOffset, "time_bars_origin_offset")
+
         self._clock = clock
 
         self._time_bars_origin_offset = time_bars_origin_offset
@@ -746,9 +750,9 @@ cdef class TimeBarAggregator(BarAggregator):
         self.interval = self._get_interval()
         self.interval_ns = self._get_interval_ns()
 
-        if self._time_bars_origin is None:
-            self._time_bars_origin = pd.Timedelta(0)
-        self._validate_time_bars_origin()
+        if self._time_bars_origin_offset is None:
+            self._time_bars_origin_offset = pd.Timedelta(0)
+        self._validate_time_bars_origin_offset()
 
         self._timer_name = None
         self._build_on_next_tick = False
@@ -765,42 +769,39 @@ cdef class TimeBarAggregator(BarAggregator):
         self._stored_close_ns = 0
 
 
-    def _validate_time_bars_origin(self):
+    def _validate_time_bars_origin_offset(self):
         # TODO: Tests for DateOffset time_bars_origin validation
         # TODO: Better documentation in the code, of which values are allowed
 
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
 
-        if type(self._time_bars_origin) is not pd.Timedelta and type(self._time_bars_origin) is not pd.DateOffset:
-            raise TypeError("Invalid time_bars_origin: Must have type pd.Timedelta or pd.DateOffset.")
-
-        def validate(sup_time_bars_origin: pd.Timedelta, allow_negative: bool):
-            if self._time_bars_origin >= sup_time_bars_origin:
+        def validate(sup_time_bars_origin_offset: pd.Timedelta, allow_negative: bool):
+            if self._time_bars_origin_offset >= sup_time_bars_origin_offset:
                 raise ValueError(
                     f"Invalid time_bars_origin: "
-                    f"{self._time_bars_origin} for aggregation={self.bar_type}. "
-                    f"Must be smaller than {sup_time_bars_origin}."
+                    f"{self._time_bars_origin_offset} for aggregation={self.bar_type}. "
+                    f"Must be smaller than {sup_time_bars_origin_offset}."
                 )
-            elif self._time_bars_origin < pd.Timedelta(0):
+            elif self._time_bars_origin_offset < pd.Timedelta(0):
                 if not allow_negative:
                     raise ValueError(
                         f"Invalid time_bars_origin: "
-                        f"{self._time_bars_origin} for aggregation={self.bar_type}. "
+                        f"{self._time_bars_origin_offset} for aggregation={self.bar_type}. "
                         f"Negative time_bars_origin is not supported for given aggregation type."
                     )
 
-                if -self._time_bars_origin >= sup_time_bars_origin:
+                if -self._time_bars_origin_offset >= sup_time_bars_origin_offset:
                     raise ValueError(
                         f"Invalid time_bars_origin: "
-                        f"{self._time_bars_origin} for aggregation={self.bar_type}. "
-                        f"Must be larger than {-sup_time_bars_origin}."
+                        f"{self._time_bars_origi_offsetn} for aggregation={self.bar_type}. "
+                        f"Must be larger than {-sup_time_bars_origin_offset}."
                     )
 
 
         if aggregation != BarAggregation.MONTH:
             validate(self.interval, True)
         else:
-            if type(self._time_bars_origin) is pd.Timedelta:
+            if isinstance(self._time_bars_origin_offset, timedelta):
                 # Days of February in common year
                 # To prevent "quasi-chaotic" indicator behavior
                 validate(pd.Timedelta(days=28), False) #
