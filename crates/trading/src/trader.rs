@@ -23,23 +23,20 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
-    actor::{
-        Actor, DataActor,
-        registry::{
-            dispose_component, register_component, reset_component, start_component, stop_component,
-        },
-    },
+    actor::DataActor,
     cache::Cache,
     clock::{Clock, TestClock},
-    component::Component,
+    component::{
+        Component, dispose_component, register_component_actor, reset_component, start_component,
+        stop_component,
+    },
     enums::{ComponentState, ComponentTrigger, Environment},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
-use ustr::Ustr;
 
 /// Central orchestrator for managing trading components.
 ///
@@ -235,12 +232,11 @@ impl Trader {
         let component_id = ComponentId::new(actor_id.inner().as_str());
         self.clocks.insert(component_id, clock.clone());
 
-        // Register actor with Component interface first
         let mut actor_mut = actor;
         actor_mut.register(self.trader_id, clock, self.cache.clone())?;
 
-        // Register in global registry for message bus access (this consumes the actor)
-        register_component(actor_mut);
+        // Register in both component and actor registries (this consumes the actor)
+        register_component_actor(actor_mut);
 
         // Store actor ID for lifecycle management
         self.actor_ids.push(actor_id);
@@ -259,7 +255,7 @@ impl Trader {
     pub fn add_strategy(&mut self, mut strategy: Box<dyn Component>) -> anyhow::Result<()> {
         self.validate_component_registration()?;
 
-        let strategy_id = StrategyId::from(strategy.id().to_string().as_str());
+        let strategy_id = StrategyId::from(strategy.component_id().inner().as_str());
 
         // Check for duplicate registration
         if self.strategies.contains_key(&strategy_id) {
@@ -294,7 +290,8 @@ impl Trader {
     ) -> anyhow::Result<()> {
         self.validate_component_registration()?;
 
-        let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.id().to_string().as_str());
+        let exec_algorithm_id =
+            ExecAlgorithmId::from(exec_algorithm.component_id().inner().as_str());
 
         // Check for duplicate registration
         if self.exec_algorithms.contains_key(&exec_algorithm_id) {
@@ -515,23 +512,9 @@ impl Trader {
     }
 }
 
-impl Actor for Trader {
-    fn id(&self) -> ustr::Ustr {
-        Ustr::from(&format!("Trader-{}", self.trader_id))
-    }
-
-    fn handle(&mut self, _msg: &dyn Any) {
-        panic!("Trader cannot handle messages directly") // TODO: TBD
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 impl Component for Trader {
     fn component_id(&self) -> ComponentId {
-        ComponentId::new(self.id())
+        ComponentId::new(format!("Trader-{}", self.trader_id))
     }
 
     fn state(&self) -> ComponentState {
@@ -641,20 +624,6 @@ mod tests {
                 id: ComponentId::from(id),
                 state: ComponentState::PreInitialized,
             }
-        }
-    }
-
-    impl Actor for MockComponent {
-        fn id(&self) -> ustr::Ustr {
-            Ustr::from(self.id.to_string().as_str())
-        }
-
-        fn handle(&mut self, _msg: &dyn Any) {
-            // Mock implementation
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
         }
     }
 
@@ -850,7 +819,7 @@ mod tests {
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
         let strategy = Box::new(MockComponent::new("Test-Strategy"));
-        let strategy_id = StrategyId::from(strategy.id().to_string().as_str());
+        let strategy_id = StrategyId::from(strategy.component_id().inner().as_str());
 
         let result = trader.add_strategy(strategy);
         assert!(result.is_ok());
@@ -869,7 +838,8 @@ mod tests {
         let mut trader = Trader::new(trader_id, instance_id, Environment::Backtest, clock, cache);
 
         let exec_algorithm = Box::new(MockComponent::new("TestExecAlgorithm"));
-        let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.id().to_string().as_str());
+        let exec_algorithm_id =
+            ExecAlgorithmId::from(exec_algorithm.component_id().inner().as_str());
 
         let result = trader.add_exec_algorithm(exec_algorithm);
         assert!(result.is_ok());

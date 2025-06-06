@@ -13,19 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+#![allow(unsafe_code)]
+
+use std::{
+    cell::{RefCell, UnsafeCell},
+    collections::HashMap,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use nautilus_model::identifiers::{ComponentId, TraderId};
+use ustr::Ustr;
 
 use crate::{
-    actor::Actor,
+    actor::{Actor, registry::get_actor_registry},
     cache::Cache,
     clock::Clock,
     enums::{ComponentState, ComponentTrigger},
 };
 
-/// Components are actors with lifecycle management capabilities.
-pub trait Component: Actor {
+/// Components have state and lifecycle management capabilities.
+pub trait Component {
     /// Returns the unique identifier for this component.
     fn component_id(&self) -> ComponentId;
 
@@ -348,4 +356,164 @@ impl ComponentState {
         };
         Ok(new_state)
     }
+}
+
+thread_local! {
+    static COMPONENT_REGISTRY: ComponentRegistry = ComponentRegistry::new();
+}
+
+/// Registry for storing components.
+pub struct ComponentRegistry {
+    components: RefCell<HashMap<Ustr, Rc<UnsafeCell<dyn Component>>>>,
+}
+
+impl Debug for ComponentRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let components_ref = self.components.borrow();
+        let keys: Vec<&Ustr> = components_ref.keys().collect();
+        f.debug_struct(stringify!(ComponentRegistry))
+            .field("components", &keys)
+            .finish()
+    }
+}
+
+impl Default for ComponentRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ComponentRegistry {
+    pub fn new() -> Self {
+        Self {
+            components: RefCell::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, id: Ustr, component: Rc<UnsafeCell<dyn Component>>) {
+        self.components.borrow_mut().insert(id, component);
+    }
+
+    pub fn get(&self, id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
+        self.components.borrow().get(id).cloned()
+    }
+}
+
+pub fn get_component_registry() -> &'static ComponentRegistry {
+    COMPONENT_REGISTRY.with(|registry| unsafe {
+        // SAFETY: We return a static reference that lives for the lifetime of the thread.
+        // Since this is thread_local storage, each thread has its own instance.
+        std::mem::transmute::<&ComponentRegistry, &'static ComponentRegistry>(registry)
+    })
+}
+
+/// Registers a component.
+pub fn register_component<T>(component: T) -> Rc<UnsafeCell<T>>
+where
+    T: Component + 'static,
+{
+    let component_id = component.component_id().inner();
+    let component_ref = Rc::new(UnsafeCell::new(component));
+
+    // Register in component registry
+    let component_trait_ref: Rc<UnsafeCell<dyn Component>> = component_ref.clone();
+    get_component_registry().insert(component_id, component_trait_ref);
+
+    component_ref
+}
+
+/// Registers a component that also implements Actor.
+pub fn register_component_actor<T>(component: T) -> Rc<UnsafeCell<T>>
+where
+    T: Component + Actor + 'static,
+{
+    let component_id = component.component_id().inner();
+    let actor_id = component.id();
+    let component_ref = Rc::new(UnsafeCell::new(component));
+
+    // Register in component registry
+    let component_trait_ref: Rc<UnsafeCell<dyn Component>> = component_ref.clone();
+    get_component_registry().insert(component_id, component_trait_ref);
+
+    // Register in actor registry
+    let actor_trait_ref: Rc<UnsafeCell<dyn Actor>> = component_ref.clone();
+    get_actor_registry().insert(actor_id, actor_trait_ref);
+
+    component_ref
+}
+
+/// Safely calls start() on a component in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the component is not found or if start() fails.
+pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(component_ref) = get_component_registry().get(id) {
+        // SAFETY: We have exclusive access to the component and are calling start() which takes &mut self
+        unsafe {
+            let component = &mut *component_ref.get();
+            component.start()
+        }
+    } else {
+        anyhow::bail!("Component '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls stop() on a component in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the component is not found or if stop() fails.
+pub fn stop_component(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(component_ref) = get_component_registry().get(id) {
+        unsafe {
+            let component = &mut *component_ref.get();
+            component.stop()
+        }
+    } else {
+        anyhow::bail!("Component '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls reset() on a component in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the component is not found or if reset() fails.
+pub fn reset_component(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(component_ref) = get_component_registry().get(id) {
+        unsafe {
+            let component = &mut *component_ref.get();
+            component.reset()
+        }
+    } else {
+        anyhow::bail!("Component '{id}' not found in global registry");
+    }
+}
+
+/// Safely calls dispose() on a component in the global registry.
+///
+/// # Errors
+///
+/// Returns an error if the component is not found or if dispose() fails.
+pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
+    if let Some(component_ref) = get_component_registry().get(id) {
+        unsafe {
+            let component = &mut *component_ref.get();
+            component.dispose()
+        }
+    } else {
+        anyhow::bail!("Component '{id}' not found in global registry");
+    }
+}
+
+pub fn get_component(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
+    get_component_registry().get(id)
+}
+
+#[cfg(test)]
+/// Clears the component registry (for test isolation).
+pub fn clear_component_registry() {
+    // SAFETY: tests should run single-threaded for component registry
+    get_component_registry().components.borrow_mut().clear();
 }
