@@ -172,6 +172,23 @@ cdef class Cache(CacheFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """
+        Set a specific venue that the cache will use for subsequent `account_for_venue` calls.
+
+        Primarily for Interactive Brokers, a multi-venue brokerage where account updates
+        are not tied to a single venue.
+
+        Parameters
+        ----------
+        venue : Venue
+            The specific venue to set.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        self._specific_venue = venue
+
     cpdef void cache_all(self):
         """
         Clears and loads the currencies, instruments, synthetics, accounts, orders, and positions.
@@ -3490,21 +3507,6 @@ cdef class Cache(CacheFacade):
         Condition.not_none(account_id, "account_id")
 
         return self._accounts.get(account_id)
-
-    cpdef void set_specific_venue(self, Venue venue):
-        """
-        Set a specific venue for the portfolio.
-        Used with Interactive Brokers as account updates are not related to a specific venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The unique venue to set.
-
-        """
-        Condition.not_none(venue, "venue")
-
-        self._specific_venue = venue
 
     cpdef Account account_for_venue(self, Venue venue):
         """
