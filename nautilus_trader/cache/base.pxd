@@ -122,6 +122,7 @@ cdef class CacheFacade:
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id)
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef Account account_for_venue(self, Venue venue)
     cpdef AccountId account_id(self, Venue venue)
     cpdef list accounts(self)
