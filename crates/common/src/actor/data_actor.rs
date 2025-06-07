@@ -51,7 +51,7 @@ use uuid::Uuid;
 use super::indicators::Indicators;
 use super::{
     Actor,
-    registry::{get_actor, get_actor_unchecked},
+    registry::{get_actor, get_actor_unchecked, try_get_actor_unchecked},
 };
 use crate::{
     cache::Cache,
@@ -400,6 +400,24 @@ pub trait DataActor:
         Ok(())
     }
 
+    /// Handles a received time event.
+    fn handle_time_event(&mut self, event: &TimeEvent) {
+        log_received(&event);
+
+        if let Err(e) = DataActor::on_time_event(self, event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received event.
+    fn handle_event(&mut self, event: &dyn Any) {
+        log_received(&event);
+
+        if let Err(e) = DataActor::on_event(self, event) {
+            log_error(&e);
+        }
+    }
+
     /// Handles a received custom data point.
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
@@ -577,24 +595,6 @@ pub trait DataActor:
         }
     }
 
-    /// Handles a received time event.
-    fn handle_time_event(&mut self, event: &TimeEvent) {
-        log_received(&event);
-
-        if let Err(e) = DataActor::on_time_event(self, event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received event.
-    fn handle_event(&mut self, event: &dyn Any) {
-        log_received(&event);
-
-        if let Err(e) = DataActor::on_event(self, event) {
-            log_error(&e);
-        }
-    }
-
     /// Handles a data response.
     fn handle_data_response(&mut self, response: &CustomDataResponse) {
         log_received(&response);
@@ -693,7 +693,11 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |quote: &QuoteTick| {
-                get_actor_unchecked::<Self>(&actor_id).handle_quote(quote);
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_quote(quote);
+                } else {
+                    log::error!("Actor {actor_id} not found for quote handling");
+                }
             },
         )));
 
@@ -714,7 +718,11 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<Self>(&actor_id).handle_instrument(instrument);
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_instrument(instrument);
+                } else {
+                    log::error!("Actor {actor_id} not found for instruments handling");
+                }
             },
         )));
 
@@ -735,7 +743,11 @@ pub trait DataActor:
 
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |instrument: &InstrumentAny| {
-                get_actor_unchecked::<Self>(&actor_id).handle_instrument(instrument);
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_instrument(instrument);
+                } else {
+                    log::error!("Actor {actor_id} not found for instrument handling");
+                }
             },
         )));
 
@@ -1493,14 +1505,24 @@ impl DataActorCore {
     pub fn clock(&mut self) -> RefMut<'_, dyn Clock> {
         self.clock
             .as_ref()
-            .expect("DataActor must be registered before calling `clock()`")
+            .unwrap_or_else(|| {
+                panic!(
+                    "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
+                    self.actor_id, self.trader_id
+                )
+            })
             .borrow_mut()
     }
 
     fn clock_ref(&self) -> Ref<'_, dyn Clock> {
         self.clock
             .as_ref()
-            .expect("DataActor must be registered before calling `clock_ref()`")
+            .unwrap_or_else(|| {
+                panic!(
+                    "DataActor {} must be registered before calling `clock_ref()` - trader_id: {:?}",
+                    self.actor_id, self.trader_id
+                )
+            })
             .borrow()
     }
 
@@ -1510,7 +1532,8 @@ impl DataActorCore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the actor has already been registered with a trader.
+    /// Returns an error if the actor has already been registered with a trader
+    /// or if the provided dependencies are invalid.
     pub fn register(
         &mut self,
         trader_id: TraderId,
@@ -1518,12 +1541,33 @@ impl DataActorCore {
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
         if let Some(existing_trader_id) = self.trader_id {
-            anyhow::bail!("DataActor already registered with trader {existing_trader_id}");
+            anyhow::bail!(
+                "DataActor {} already registered with trader {existing_trader_id}",
+                self.actor_id
+            );
+        }
+
+        // Validate clock by attempting to access it
+        {
+            let _timestamp = clock.borrow().timestamp_ns();
+        }
+
+        // Validate cache by attempting to access it
+        {
+            let _cache_borrow = cache.borrow();
         }
 
         self.trader_id = Some(trader_id);
         self.clock = Some(clock);
         self.cache = Some(cache);
+
+        // Verify complete registration
+        if !self.is_properly_registered() {
+            anyhow::bail!(
+                "DataActor {} registration incomplete - validation failed",
+                self.actor_id
+            );
+        }
 
         log::info!("Registered {} with trader {trader_id}", self.actor_id);
         Ok(())
@@ -1546,6 +1590,11 @@ impl DataActorCore {
             self.trader_id.is_some(),
             "Actor has not been registered with a Trader"
         );
+    }
+
+    /// Validates registration state without panicking.
+    fn is_properly_registered(&self) -> bool {
+        self.trader_id.is_some() && self.clock.is_some() && self.cache.is_some()
     }
 
     fn send_data_cmd(&self, command: DataCommand) {
@@ -1613,6 +1662,10 @@ impl DataActorCore {
     }
 
     /// Helper method for registering data subscriptions from the trait.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not properly registered.
     pub fn subscribe_data(
         &mut self,
         handler: ShareableMessageHandler,
@@ -1620,7 +1673,15 @@ impl DataActorCore {
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
-        self.check_registered();
+        if !self.is_properly_registered() {
+            panic!(
+                "DataActor {} is not properly registered - trader_id: {:?}, clock: {}, cache: {}",
+                self.actor_id,
+                self.trader_id,
+                self.clock.is_some(),
+                self.cache.is_some()
+            );
+        }
 
         let topic = get_custom_topic(&data_type);
         self.topic_handlers.insert(topic, handler.clone());
