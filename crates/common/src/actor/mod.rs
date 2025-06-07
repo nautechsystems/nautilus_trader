@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Actor system for event-driven message processing.
+//!
+//! This module provides the actor framework used throughout NautilusTrader for handling
+//! data processing, event management, and asynchronous message handling. Actors are
+//! lightweight components that process messages in isolation.
+
 #![allow(unsafe_code)]
 
 use std::{any::Any, fmt::Debug};

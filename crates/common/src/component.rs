@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Component system for managing stateful system entities.
+//!
+//! This module provides the component framework for managing the lifecycle and state
+//! of system entities. Components have defined states (pre-initialized, ready, running,
+//! stopped, etc.) and provide a consistent interface for state management and transitions.
+
 #![allow(unsafe_code)]
 
 use std::{
@@ -399,6 +405,7 @@ impl ComponentRegistry {
     }
 }
 
+/// Returns a reference to the global component registry.
 pub fn get_component_registry() -> &'static ComponentRegistry {
     COMPONENT_REGISTRY.with(|registry| unsafe {
         // SAFETY: We return a static reference that lives for the lifetime of the thread.
@@ -507,6 +514,7 @@ pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
     }
 }
 
+/// Returns a component from the global registry by ID.
 pub fn get_component(id: &Ustr) -> Option<Rc<UnsafeCell<dyn Component>>> {
     get_component_registry().get(id)
 }

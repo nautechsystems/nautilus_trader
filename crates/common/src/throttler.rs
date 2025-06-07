@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Message throttling and rate limiting functionality.
+//!
+//! This module provides throttling capabilities to control the rate of message processing
+//! and prevent system overload. The throttler can buffer, drop, or delay messages based
+//! on configured rate limits and time intervals.
+
 use std::{
     any::Any,
     cell::{RefCell, UnsafeCell},
