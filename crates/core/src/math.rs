@@ -31,12 +31,20 @@ pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
     (x - x1) / (x2 - x1)
 }
 
+/// Performs linear interpolation using a weight factor.
+///
+/// Given ordinates `y1` and `y2` and a weight `x1_diff`, computes the
+/// interpolated value using the formula: `y1 + x1_diff * (y2 - y1)`.
 #[inline]
 #[must_use]
 pub fn linear_weighting(y1: f64, y2: f64, x1_diff: f64) -> f64 {
     x1_diff.mul_add(y2 - y1, y1)
 }
 
+/// Finds the position for interpolation in a sorted array.
+///
+/// Returns the index of the largest element in `xs` that is less than `x`,
+/// clamped to the valid range `[0, xs.len() - 1]`.
 #[inline]
 #[must_use]
 pub fn pos_search(x: f64, xs: &[f64]) -> usize {
