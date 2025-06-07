@@ -502,6 +502,13 @@ cdef class Clock:
             then fire again after each interval. If False, the timer will
             fire after the first interval has elapsed (default behavior).
 
+        | allow_past | fire_immediately | Behavior                                                                 |
+        |------------|------------------|--------------------------------------------------------------------------|
+        | True       | True             | First event fires immediately at `start_time`, even if in the past.      |
+        | True       | False            | First event fires at `start_time` + interval, even if in the past.       |
+        | False      | True             | Raises error if `start_time` is in the past (would fire immediate past). |
+        | False      | False            | Raises error if `start_time` + interval is in the past.                  |
+
         Raises
         ------
         ValueError
