@@ -1908,7 +1908,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2028,7 +2027,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2148,7 +2146,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 
@@ -2270,7 +2267,6 @@ class TestPortfolio:
         expected_unrealized: float,
     ) -> None:
         # Arrange
-        self.portfolio.set_specific_venue(Venue("BETFAIR"))
         self.portfolio.set_use_mark_prices(True)
         self.portfolio.set_use_mark_xrates(True)
 

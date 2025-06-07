@@ -36,7 +36,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_t
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.data import what_to_show
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
+from nautilus_trader.adapters.interactive_brokers.parsing.price_conversion import ib_price_to_nautilus_price
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -366,6 +366,10 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         else:
             end_date_time = end_date_time.astimezone(ZoneInfo("UTC"))
 
+        end_date_time = (
+            end_date_time.strftime("%Y%m%d %H:%M:%S %Z") if contract.secType != "CONTFUT" else ""
+        )
+
         name = (bar_type, end_date_time)
 
         if not (request := self._requests.get(name=name)):
@@ -378,7 +382,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                     self._eclient.reqHistoricalData,
                     reqId=req_id,
                     contract=contract,
-                    endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
+                    endDateTime=end_date_time,
                     durationStr=duration,
                     barSizeSetting=bar_size_setting,
                     whatToShow=what_to_show(bar_type),
@@ -404,6 +408,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
     async def get_historical_ticks(
         self,
+        instrument_id: InstrumentId,
         contract: IBContract,
         tick_type: str,
         start_date_time: pd.Timestamp | str = "",
@@ -417,6 +422,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Parameters
         ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to request historical ticks.
         contract : IBContract
             The Interactive Brokers contract details for the instrument.
         tick_type : str
@@ -438,10 +445,12 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if isinstance(start_date_time, pd.Timestamp):
             start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+
         if isinstance(end_date_time, pd.Timestamp):
             end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
 
-        name = (str(ib_contract_to_instrument_id(contract)), tick_type)
+        name = (str(instrument_id), tick_type)
+
         if not (request := self._requests.get(name=name)):
             req_id = self._next_req_id()
             request = self._requests.add(
@@ -472,259 +481,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             self._log.info(f"Request already exist for {request}")
 
             return None
-
-    async def _process_bar_data(
-        self,
-        bar_type_str: str,
-        bar: BarData,
-        handle_revised_bars: bool,
-        historical: bool | None = False,
-    ) -> Bar | None:
-        """
-        Process received bar data and convert it into NautilusTrader's Bar format. This
-        method determines whether the bar is new or a revision of an existing bar and
-        converts the bar data to the NautilusTrader's format.
-
-        Parameters
-        ----------
-        bar_type_str : str
-            The string representation of the bar type.
-        bar : BarData
-            The bar data received from Interactive Brokers.
-        handle_revised_bars : bool
-            Indicates whether revised bars should be handled or not.
-        historical : bool | None, optional
-            Indicates whether the bar data is historical. Defaults to False.
-
-        Returns
-        -------
-        Bar | ``None``
-
-        """
-        previous_bar = self._bar_type_to_last_bar.get(bar_type_str)
-        previous_ts = 0 if not previous_bar else int(previous_bar.date)
-        current_ts = int(bar.date)
-
-        if current_ts > previous_ts:
-            is_new_bar = True
-        elif current_ts == previous_ts:
-            is_new_bar = False
-        else:
-            return None  # Out of sync
-
-        self._bar_type_to_last_bar[bar_type_str] = bar
-        bar_type: BarType = BarType.from_str(bar_type_str)
-        ts_init = self._clock.timestamp_ns()
-
-        if not handle_revised_bars:
-            if previous_bar and is_new_bar:
-                bar = previous_bar
-            else:
-                return None  # Wait for bar to close
-
-            if historical:
-                ts_init = await self._ib_bar_to_ts_init(bar, bar_type)
-
-                if ts_init >= self._clock.timestamp_ns():
-                    return None  # The bar is incomplete
-
-        # Process the bar
-        return await self._ib_bar_to_nautilus_bar(
-            bar_type=bar_type,
-            bar=bar,
-            ts_init=ts_init,
-            is_revision=not is_new_bar,
-        )
-
-    async def _convert_ib_bar_date_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
-        """
-        Convert the date from BarData to unix nanoseconds.
-
-        If the bar type's aggregation is 14 - 16, the bar date is always returned in the
-        YYYYMMDD format from IB. For all other aggregations, the bar date is returned
-        in system time.
-
-        Parameters
-        ----------
-        bar : BarData
-            The bar data containing the date to be converted.
-        bar_type : BarType
-            The bar type that specifies the aggregation level.
-
-        Returns
-        -------
-        int
-
-        """
-        if bar_type.spec.aggregation in [14, 15, 16]:
-            # Day/Week/Month bars are always returned with bar date in YYYYMMDD format
-            ts = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
-        else:
-            ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
-
-        return ts.value
-
-    async def _ib_bar_to_ts_event(self, bar: BarData, bar_type: BarType) -> int:
-        """
-        Calculate the ts_event timestamp for a bar.
-
-        This method computes the timestamp at which data event occurred, by adjusting
-        the provided bar's timestamp based on the bar type's duration. ts_event is set
-        to the start of the bar period.
-
-        Week/Month bars's date returned from IB represents ending date,
-        the start of bar period should be start of the week and month respectively
-
-        Parameters
-        ----------
-        bar : BarData
-            The bar data to be used for the calculation.
-        bar_type : BarType
-            The type of the bar, which includes information about the bar's duration.
-
-        Returns
-        -------
-        int
-
-        """
-        ts_event = 0
-
-        if bar_type.spec.aggregation in [15, 16]:
-            date_obj = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
-
-            if bar_type.spec.aggregation == 15:
-                first_day_of_week = date_obj - pd.Timedelta(days=date_obj.weekday())
-                ts_event = first_day_of_week.value
-            else:
-                first_day_of_month = date_obj.replace(day=1)
-                ts_event = first_day_of_month.value
-        else:
-            ts_event = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
-
-        return ts_event
-
-    async def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
-        """
-        Calculate the initialization timestamp for a bar.
-
-        This method computes the timestamp at which a bar is initialized, by adjusting
-        the provided bar's timestamp based on the bar type's duration. ts_init is set
-        to the end of the bar period and not the start.
-
-        Parameters
-        ----------
-        bar : BarData
-            The bar data to be used for the calculation.
-        bar_type : BarType
-            The type of the bar, which includes information about the bar's duration.
-
-        Returns
-        -------
-        int
-
-        """
-        ts = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
-
-        if bar_type.spec.aggregation in [15, 16]:
-            # Week/Month bars's date represents ending date
-            return ts
-        elif bar_type.spec.aggregation == 14:
-            # -1 to make day's bar ts_event and ts_init on the same day
-            return ts + pd.Timedelta(bar_type.spec.timedelta).value - 1
-        else:
-            return ts + pd.Timedelta(bar_type.spec.timedelta).value
-
-    async def _ib_bar_to_nautilus_bar(
-        self,
-        bar_type: BarType,
-        bar: BarData,
-        ts_init: int,
-        is_revision: bool = False,
-    ) -> Bar:
-        """
-        Convert Interactive Brokers bar data to NautilusTrader's bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The type of the bar.
-        bar : BarData
-            The bar data received from Interactive Brokers.
-        ts_init : int
-            The unix nanosecond timestamp representing the bar's initialization time.
-        is_revision : bool, optional
-            Indicates whether the bar is a revision of an existing bar. Defaults to False.
-
-        Returns
-        -------
-        Bar
-
-        """
-        instrument = self._cache.instrument(bar_type.instrument_id)
-
-        if not instrument:
-            raise ValueError(f"No cached instrument for {bar_type.instrument_id}")
-
-        ts_event = await self._ib_bar_to_ts_event(bar, bar_type)
-        # used to be _convert_ib_bar_date_to_unix_nanos
-
-        return Bar(
-            bar_type=bar_type,
-            open=instrument.make_price(bar.open),
-            high=instrument.make_price(bar.high),
-            low=instrument.make_price(bar.low),
-            close=instrument.make_price(bar.close),
-            volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
-            ts_event=ts_event,
-            ts_init=ts_init,
-            is_revision=is_revision,
-        )
-
-    async def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
-        """
-        Process received trade tick data, convert it to NautilusTrader TradeTick type,
-        and add it to the relevant request's result.
-
-        Parameters
-        ----------
-        req_id : int
-            The request identifier for which the trades are being processed.
-        ticks : list
-            A list of trade tick data received from Interactive Brokers.
-
-        """
-        if request := self._requests.get(req_id=req_id):
-            instrument_id = InstrumentId.from_str(request.name[0])
-            instrument = self._cache.instrument(instrument_id)
-
-            for tick in ticks:
-                ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
-                trade_tick = TradeTick(
-                    instrument_id=instrument_id,
-                    price=instrument.make_price(tick.price),
-                    size=instrument.make_qty(tick.size),
-                    aggressor_side=AggressorSide.NO_AGGRESSOR,
-                    trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
-                    ts_event=ts_event,
-                    ts_init=ts_event,
-                )
-                request.result.append(trade_tick)
-
-            self._end_request(req_id)
-
-    async def _handle_data(self, data: Data) -> None:
-        """
-        Handle and forward processed data to the appropriate destination. This method is
-        a generic data handler that forwards processed market data, such as bars or
-        ticks, to the DataEngine.process message bus endpoint.
-
-        Parameters
-        ----------
-        data : Data
-            The processed market data ready to be forwarded.
-
-        """
-        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     async def process_market_data_type(self, *, req_id: int, market_data_type: int) -> None:
         """
@@ -758,10 +514,18 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         instrument = self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
+        price_magnifier = (
+            self._instrument_provider.get_price_magnifier(instrument_id)
+            if self._instrument_provider
+            else 1
+        )
+        converted_bid_price = ib_price_to_nautilus_price(bid_price, price_magnifier)
+        converted_ask_price = ib_price_to_nautilus_price(ask_price, price_magnifier)
+
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
-            bid_price=instrument.make_price(bid_price),
-            ask_price=instrument.make_price(ask_price),
+            bid_price=instrument.make_price(converted_bid_price),
+            ask_price=instrument.make_price(converted_ask_price),
             bid_size=instrument.make_qty(bid_size),
             ask_size=instrument.make_qty(ask_size),
             ts_event=ts_event,
@@ -796,12 +560,19 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         instrument = self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
+        price_magnifier = (
+            self._instrument_provider.get_price_magnifier(instrument_id)
+            if self._instrument_provider
+            else 1
+        )
+        converted_price = ib_price_to_nautilus_price(price, price_magnifier)
+
         trade_tick = TradeTick(
             instrument_id=instrument_id,
-            price=instrument.make_price(price),
+            price=instrument.make_price(converted_price),
             size=instrument.make_qty(size),
             aggressor_side=AggressorSide.NO_AGGRESSOR,
-            trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
+            trade_id=generate_trade_id(ts_event=ts_event, price=converted_price, size=size),
             ts_event=ts_event,
             ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
@@ -829,12 +600,22 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         bar_type = BarType.from_str(subscription.name)
         instrument = self._cache.instrument(bar_type.instrument_id)
 
+        price_magnifier = (
+            self._instrument_provider.get_price_magnifier(bar_type.instrument_id)
+            if self._instrument_provider
+            else 1
+        )
+        converted_open = ib_price_to_nautilus_price(open_, price_magnifier)
+        converted_high = ib_price_to_nautilus_price(high, price_magnifier)
+        converted_low = ib_price_to_nautilus_price(low, price_magnifier)
+        converted_close = ib_price_to_nautilus_price(close, price_magnifier)
+
         bar = Bar(
             bar_type=bar_type,
-            open=instrument.make_price(open_),
-            high=instrument.make_price(high),
-            low=instrument.make_price(low),
-            close=instrument.make_price(close),
+            open=instrument.make_price(converted_open),
+            high=instrument.make_price(converted_high),
+            low=instrument.make_price(converted_low),
+            close=instrument.make_price(converted_close),
             volume=instrument.make_qty(0 if volume == -1 else volume),
             ts_event=pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value,
             ts_init=self._clock.timestamp_ns(),
@@ -920,12 +701,21 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
 
+            price_magnifier = (
+                self._instrument_provider.get_price_magnifier(instrument_id)
+                if self._instrument_provider
+                else 1
+            )
+
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
+                converted_bid_price = ib_price_to_nautilus_price(tick.priceBid, price_magnifier)
+                converted_ask_price = ib_price_to_nautilus_price(tick.priceAsk, price_magnifier)
+
                 quote_tick = QuoteTick(
                     instrument_id=instrument_id,
-                    bid_price=instrument.make_price(tick.priceBid),
-                    ask_price=instrument.make_price(tick.priceAsk),
+                    bid_price=instrument.make_price(converted_bid_price),
+                    ask_price=instrument.make_price(converted_ask_price),
                     bid_size=instrument.make_qty(tick.sizeBid),
                     ask_size=instrument.make_qty(tick.sizeAsk),
                     ts_event=ts_event,
@@ -996,3 +786,279 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         request.handle()
 
         return await self._await_request(request, timeout=60)
+
+    async def _process_bar_data(
+        self,
+        bar_type_str: str,
+        bar: BarData,
+        handle_revised_bars: bool,
+        historical: bool | None = False,
+    ) -> Bar | None:
+        """
+        Process received bar data and convert it into NautilusTrader's Bar format. This
+        method determines whether the bar is new or a revision of an existing bar and
+        converts the bar data to the NautilusTrader's format.
+
+        Parameters
+        ----------
+        bar_type_str : str
+            The string representation of the bar type.
+        bar : BarData
+            The bar data received from Interactive Brokers.
+        handle_revised_bars : bool
+            Indicates whether revised bars should be handled or not.
+        historical : bool | None, optional
+            Indicates whether the bar data is historical. Defaults to False.
+
+        Returns
+        -------
+        Bar | ``None``
+
+        """
+        previous_bar = self._bar_type_to_last_bar.get(bar_type_str)
+        previous_ts = 0 if not previous_bar else int(previous_bar.date)
+        current_ts = int(bar.date)
+
+        if current_ts > previous_ts:
+            is_new_bar = True
+        elif current_ts == previous_ts:
+            is_new_bar = False
+        else:
+            return None  # Out of sync
+
+        self._bar_type_to_last_bar[bar_type_str] = bar
+        bar_type: BarType = BarType.from_str(bar_type_str)
+        ts_init = self._clock.timestamp_ns()
+
+        if not handle_revised_bars:
+            if previous_bar and is_new_bar:
+                bar = previous_bar
+            else:
+                return None  # Wait for bar to close
+
+            if historical:
+                ts_init = await self._ib_bar_to_ts_init(bar, bar_type)
+
+                if ts_init >= self._clock.timestamp_ns():
+                    return None  # The bar is incomplete
+
+        # Process the bar
+        return await self._ib_bar_to_nautilus_bar(
+            bar_type=bar_type,
+            bar=bar,
+            ts_init=ts_init,
+            is_revision=not is_new_bar,
+        )
+
+    async def _process_trade_ticks(self, req_id: int, ticks: list[HistoricalTickLast]) -> None:
+        """
+        Process received trade tick data, convert it to NautilusTrader TradeTick type,
+        and add it to the relevant request's result.
+
+        Parameters
+        ----------
+        req_id : int
+            The request identifier for which the trades are being processed.
+        ticks : list
+            A list of trade tick data received from Interactive Brokers.
+
+        """
+        if request := self._requests.get(req_id=req_id):
+            instrument_id = InstrumentId.from_str(request.name[0])
+            instrument = self._cache.instrument(instrument_id)
+
+            price_magnifier = (
+                self._instrument_provider.get_price_magnifier(instrument_id)
+                if self._instrument_provider
+                else 1
+            )
+
+            for tick in ticks:
+                ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
+                converted_price = ib_price_to_nautilus_price(tick.price, price_magnifier)
+
+                trade_tick = TradeTick(
+                    instrument_id=instrument_id,
+                    price=instrument.make_price(converted_price),
+                    size=instrument.make_qty(tick.size),
+                    aggressor_side=AggressorSide.NO_AGGRESSOR,
+                    trade_id=generate_trade_id(
+                        ts_event=ts_event,
+                        price=converted_price,
+                        size=tick.size,
+                    ),
+                    ts_event=ts_event,
+                    ts_init=ts_event,
+                )
+                request.result.append(trade_tick)
+
+            self._end_request(req_id)
+
+    async def _handle_data(self, data: Data) -> None:
+        """
+        Handle and forward processed data to the appropriate destination. This method is
+        a generic data handler that forwards processed market data, such as bars or
+        ticks, to the DataEngine.process message bus endpoint.
+
+        Parameters
+        ----------
+        data : Data
+            The processed market data ready to be forwarded.
+
+        """
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
+
+    async def _ib_bar_to_nautilus_bar(
+        self,
+        bar_type: BarType,
+        bar: BarData,
+        ts_init: int,
+        is_revision: bool = False,
+    ) -> Bar:
+        """
+        Convert Interactive Brokers bar data to NautilusTrader's bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The type of the bar.
+        bar : BarData
+            The bar data received from Interactive Brokers.
+        ts_init : int
+            The unix nanosecond timestamp representing the bar's initialization time.
+        is_revision : bool, optional
+            Indicates whether the bar is a revision of an existing bar. Defaults to False.
+
+        Returns
+        -------
+        Bar
+
+        """
+        instrument = self._cache.instrument(bar_type.instrument_id)
+
+        if not instrument:
+            raise ValueError(f"No cached instrument for {bar_type.instrument_id}")
+
+        ts_event = await self._ib_bar_to_ts_event(bar, bar_type)
+        # used to be _convert_ib_bar_date_to_unix_nanos
+
+        # Apply price magnifier conversion
+        price_magnifier = (
+            self._instrument_provider.get_price_magnifier(bar_type.instrument_id)
+            if self._instrument_provider
+            else 1
+        )
+        converted_open = ib_price_to_nautilus_price(bar.open, price_magnifier)
+        converted_high = ib_price_to_nautilus_price(bar.high, price_magnifier)
+        converted_low = ib_price_to_nautilus_price(bar.low, price_magnifier)
+        converted_close = ib_price_to_nautilus_price(bar.close, price_magnifier)
+
+        return Bar(
+            bar_type=bar_type,
+            open=instrument.make_price(converted_open),
+            high=instrument.make_price(converted_high),
+            low=instrument.make_price(converted_low),
+            close=instrument.make_price(converted_close),
+            volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
+            ts_event=ts_event,
+            ts_init=ts_init,
+            is_revision=is_revision,
+        )
+
+    async def _ib_bar_to_ts_event(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Calculate the ts_event timestamp for a bar.
+
+        This method computes the timestamp at which data event occurred, by adjusting
+        the provided bar's timestamp based on the bar type's duration. ts_event is set
+        to the start of the bar period.
+
+        Week/Month bars's date returned from IB represents ending date,
+        the start of bar period should be start of the week and month respectively
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be used for the calculation.
+        bar_type : BarType
+            The type of the bar, which includes information about the bar's duration.
+
+        Returns
+        -------
+        int
+
+        """
+        ts_event = 0
+
+        if bar_type.spec.aggregation in [15, 16]:
+            date_obj = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
+
+            if bar_type.spec.aggregation == 15:
+                first_day_of_week = date_obj - pd.Timedelta(days=date_obj.weekday())
+                ts_event = first_day_of_week.value
+            else:
+                first_day_of_month = date_obj.replace(day=1)
+                ts_event = first_day_of_month.value
+        else:
+            ts_event = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+
+        return ts_event
+
+    async def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Calculate the initialization timestamp for a bar.
+
+        This method computes the timestamp at which a bar is initialized, by adjusting
+        the provided bar's timestamp based on the bar type's duration. ts_init is set
+        to the end of the bar period and not the start.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be used for the calculation.
+        bar_type : BarType
+            The type of the bar, which includes information about the bar's duration.
+
+        Returns
+        -------
+        int
+
+        """
+        ts = await self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
+
+        if bar_type.spec.aggregation in [15, 16]:
+            # Week/Month bars's date represents ending date
+            return ts
+        elif bar_type.spec.aggregation == 14:
+            # -1 to make day's bar ts_event and ts_init on the same day
+            return ts + pd.Timedelta(bar_type.spec.timedelta).value - 1
+        else:
+            return ts + pd.Timedelta(bar_type.spec.timedelta).value
+
+    async def _convert_ib_bar_date_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Convert the date from BarData to unix nanoseconds.
+
+        If the bar type's aggregation is 14 - 16, the bar date is always returned in the
+        YYYYMMDD format from IB. For all other aggregations, the bar date is returned
+        in system time.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data containing the date to be converted.
+        bar_type : BarType
+            The bar type that specifies the aggregation level.
+
+        Returns
+        -------
+        int
+
+        """
+        if bar_type.spec.aggregation in [14, 15, 16]:
+            # Day/Week/Month bars are always returned with bar date in YYYYMMDD format
+            ts = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
+        else:
+            ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
+
+        return ts.value

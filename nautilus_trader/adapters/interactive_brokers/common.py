@@ -197,6 +197,9 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
     ContractDetails class to be used internally in Nautilus for ease of
     encoding/decoding.
+
+    Reference: https://ibkrcampus.com/campus/ibkr-api-page/twsapi-ref/#contract-pub-func
+
     """
 
     contract: IBContract | None = None
@@ -204,7 +207,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     minTick: float = 0
     orderTypes: str = ""
     validExchanges: str = ""
-    priceMagnifier: float = 0
+    priceMagnifier: int = 1
     underConId: int = 0
     longName: str = ""
     contractMonth: str = ""
@@ -215,7 +218,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     tradingHours: str = ""
     liquidHours: str = ""
     evRule: str = ""
-    evMultiplier: int = 0
+    evMultiplier: float = 0
     mdSizeMultiplier: int = 1  # obsolete
     aggGroup: int = 0
     underSymbol: str = ""
@@ -237,7 +240,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     couponType: str = ""
     callable: bool = False
     putable: bool = False
-    coupon: int = 0
+    coupon: float = 0
     convertible: bool = False
     maturity: str = ""
     issueDate: str = ""
@@ -267,3 +270,18 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     )
     fundAssetType: FundAssetType = FundAssetType.NoneItem
     ineligibilityReasonList: list = None
+
+
+def dict_to_contract_details(dict_details: dict) -> IBContractDetails:
+    details_copy = dict_details.copy()
+
+    if "contract" in details_copy and isinstance(details_copy["contract"], dict):
+        details_copy["contract"] = IBContract(**details_copy["contract"])
+
+    if details_copy.get("secIdList") and isinstance(details_copy["secIdList"], dict):
+        tag_values = [
+            TagValue(tag=tag, value=value) for tag, value in details_copy["secIdList"].items()
+        ]
+        details_copy["secIdList"] = tag_values
+
+    return IBContractDetails(**details_copy)
