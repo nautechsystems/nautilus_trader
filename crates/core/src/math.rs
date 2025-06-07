@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Mathematical functions and interpolation utilities.
+//!
+//! This module provides essential mathematical operations for quantitative trading,
+//! including linear and quadratic interpolation functions commonly used in financial
+//! data processing and analysis.
+
 /// Calculates the interpolation weight between `x1` and `x2` for a value `x`.
 ///
 /// The returned weight `w` satisfies `y = (1 - w) * y1 + w * y2` when

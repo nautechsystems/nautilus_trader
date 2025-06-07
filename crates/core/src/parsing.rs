@@ -45,8 +45,6 @@ pub fn precision_from_str(s: &str) -> u8 {
 
 /// Returns the minimum increment precision inferred from the given string,
 /// ignoring trailing zeros.
-/// Returns the minimum increment precision inferred from the given string,
-/// ignoring trailing zeros.
 #[must_use]
 #[allow(clippy::cast_possible_truncation)]
 pub fn min_increment_precision_from_str(s: &str) -> u8 {
