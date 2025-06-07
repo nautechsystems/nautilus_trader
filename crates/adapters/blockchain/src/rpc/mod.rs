@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! RPC client implementations for blockchain network communication.
+//!
+//! This module provides JSON-RPC client implementations for communicating with various
+//! blockchain networks via HTTP and WebSocket connections. It includes specialized
+//! clients for different networks (Ethereum, Polygon, Arbitrum, Base) and common
+//! utilities for handling RPC requests and responses.
+
 use enum_dispatch::enum_dispatch;
 
 use crate::rpc::{

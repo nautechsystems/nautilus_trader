@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Mathematical utilities for blockchain value conversion.
+//!
+//! This module provides functions for converting large integer types (U256, I256)
+//! used in blockchain applications to floating-point values, accounting for
+//! token decimal places and precision requirements.
+
 use alloy::primitives::{I256, U256};
 
 /// Convert an alloy's I256 value to f64, accounting for token decimals.

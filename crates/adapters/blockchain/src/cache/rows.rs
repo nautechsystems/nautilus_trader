@@ -48,9 +48,12 @@ impl<'r> FromRow<'r, PgRow> for TokenRow {
     }
 }
 
+/// A data transfer object that maps database rows to block timestamp data.
 #[derive(Debug)]
 pub struct BlockTimestampRow {
+    /// The block number.
     pub number: u64,
+    /// The block timestamp.
     pub timestamp: UnixNanos,
 }
 

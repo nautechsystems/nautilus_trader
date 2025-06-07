@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Validation utilities for blockchain data types.
+//!
+//! This module provides validation functions for ensuring the correctness and integrity
+//! of blockchain-related data, particularly Ethereum addresses and other EVM-compatible
+//! blockchain identifiers.
+
 use std::str::FromStr;
 
 use alloy::primitives::Address;
