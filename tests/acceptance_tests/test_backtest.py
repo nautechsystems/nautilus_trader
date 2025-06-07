@@ -60,6 +60,7 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -78,7 +79,6 @@ from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -886,6 +886,11 @@ class TestBacktestNodeWithBacktestDataIterator:
         run_backtest(messages_with_data.append, with_data=True)
         run_backtest(messages_without_data.append, with_data=False)
 
+        assert (
+            messages_with_data[-1]
+            == "portfolio_greeks=PortfolioGreeks(pnl=-312.50, price=5,312.50, delta=30.18, gamma=-0.00, vega=-9.35, "
+            "theta=643.70, ts_event=2024-05-09T10:05:00.000000000Z, ts_init=2024-05-09T10:05:00.000000000Z)"
+        )
         assert messages_with_data == messages_without_data
 
 
@@ -916,8 +921,9 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         catalog_folder,
     )
 
-    # for saving and loading custom data greeks, use True, False then False, True below
-    stream_data, load_greeks = False, False
+    # When load_greeks is False, the streamed greeks can be saved after the backtest
+    # When load_greeks is True, greeks are loaded from the catalog
+    load_greeks = not with_data
 
     # actors = [
     #     ImportableActorConfig(
@@ -936,9 +942,9 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
             strategy_path=OptionStrategy.fully_qualified_name(),
             config_path=OptionConfig.fully_qualified_name(),
             config={
-                "future_id": InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
-                "option_id": InstrumentId.from_str(f"{option_symbols[0]}.GLBX"),
-                "option_id2": InstrumentId.from_str(f"{option_symbols[1]}.GLBX"),
+                "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+                "option_id": InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
+                "option_id2": InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
                 "load_greeks": load_greeks,
             },
         ),
@@ -955,9 +961,9 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         log_colors=True,
         log_level="WARN",
         log_level_file="WARN",
-        log_directory=log_path,  # must be the same as conftest.py
+        log_directory=log_path,
         log_file_format=None,  # "json" or None
-        log_file_name="test_logs",  # must be the same as conftest.py
+        log_file_name="test_logs",
         clear_log_file=True,
         print_config=False,
         use_pyo3=False,
@@ -973,31 +979,28 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
         logging=logging,
         # actors=actors,
         strategies=strategies,
-        streaming=(streaming if stream_data else None),
+        streaming=(streaming if not load_greeks else None),
         catalogs=catalogs,
     )
 
-    if with_data:
-        data = [
-            BacktestDataConfig(
-                data_cls=QuoteTick,
-                catalog_path=catalog.path,
-                instrument_id=InstrumentId.from_str(f"{option_symbols[0]}.GLBX"),
-            ),
-            BacktestDataConfig(
-                data_cls=QuoteTick,
-                catalog_path=catalog.path,
-                instrument_id=InstrumentId.from_str(f"{option_symbols[1]}.GLBX"),
-            ),
-            BacktestDataConfig(
-                data_cls=Bar,
-                catalog_path=catalog.path,
-                instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
-                bar_spec="1-MINUTE-LAST",
-            ),
-        ]
-    else:
-        data = []
+    data = [
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=QuoteTick,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
+        ),
+        BacktestDataConfig(
+            data_cls=Bar,
+            catalog_path=catalog.path,
+            instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            bar_spec="1-MINUTE-LAST",
+        ),
+    ]
 
     if load_greeks:
         data = [
@@ -1005,14 +1008,14 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
                 data_cls=GreeksData.fully_qualified_name(),
                 catalog_path=catalog.path,
                 client_id="GreeksDataProvider",
-                metadata={"instrument_id": "ES"},
+                # metadata={"instrument_id": "ES"}, # not used anymore, reminder on syntax
             ),
             *data,
         ]
 
     venues = [
         BacktestVenueConfig(
-            name="GLBX",
+            name="XCME",
             oms_type="NETTING",
             account_type="MARGIN",
             base_currency="USD",
@@ -1023,11 +1026,12 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
     configs = [
         BacktestRunConfig(
             engine=engine_config,
-            data=data,
+            data=data if with_data else [],
             venues=venues,
             chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
             start=start_time,
             end=end_time,
+            raise_exception=True,
         ),
     ]
 
@@ -1039,17 +1043,16 @@ def run_backtest(test_callback=None, with_data=True, log_path=None):
 
     results = node.run()
 
-    if stream_data:
+    if not load_greeks:
         catalog.convert_stream_to_data(
             results[0].instance_id,
             GreeksData,
-            mode=CatalogWriteMode.NEWFILE,
         )
 
     engine: BacktestEngine = node.get_engine(configs[0].id)
     engine.trader.generate_order_fills_report()
     engine.trader.generate_positions_report()
-    engine.trader.generate_account_report(Venue("GLBX"))
+    engine.trader.generate_account_report(Venue("XCME"))
     node.dispose()
 
 
@@ -1072,18 +1075,32 @@ class OptionStrategy(Strategy):
         self.request_instrument(self.config.option_id2)
         self.request_instrument(self.bar_type.instrument_id)
 
-        self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={
-                "duration_seconds": pd.Timedelta(minutes=1).seconds,
-                "append_data": False,
-            },
+            params={"duration_seconds": pd.Timedelta(minutes=2).seconds},
         )
+        self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
 
-        if self.config.load_greeks:
-            self.greeks.subscribe_greeks("ES")
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id,
+            params={
+                "append_data": False,
+            },  # prepending data ensures that greeks are cached and available before on_bar
+        )
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id2,
+            params={"append_data": False},
+        )
+        self.greeks.subscribe_greeks(
+            InstrumentId.from_str("ES*.XCME"),
+        )  # adds all ES greeks read from the message bus to the cache
+
+    # def on_data(self, greeks):
+    #     self.log.warning(f"{greeks=}")
+    #     self.cache.add_greeks(greeks)
 
     def on_quote_tick(self, data):
         self.user_log(data)
@@ -1094,9 +1111,6 @@ class OptionStrategy(Strategy):
         self.submit_market_order(instrument_id=self.config.future_id, quantity=1)
 
         self.start_orders_done = True
-
-    # def on_bar(self, data):
-    #     self.user_log(data)
 
     def on_bar(self, bar):
         self.user_log(
@@ -1142,6 +1156,10 @@ class OptionStrategy(Strategy):
 
     def on_stop(self):
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.config.option_id)
+        self.unsubscribe_quote_ticks(self.config.option_id2)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
 
 
 class StratTestConfig(StrategyConfig):  # type: ignore [misc]

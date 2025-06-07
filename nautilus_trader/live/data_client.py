@@ -328,6 +328,7 @@ class LiveMarketDataClient(MarketDataClient):
         clock: LiveClock,
         instrument_provider: InstrumentProvider,
         config: NautilusConfig | None = None,
+        is_sync: bool = False,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
@@ -339,9 +340,15 @@ class LiveMarketDataClient(MarketDataClient):
             clock=clock,
             config=config,
         )
-
         self._loop = loop
         self._instrument_provider = instrument_provider
+        self._is_sync = is_sync
+
+        if self._is_sync:
+            self._log.warning(
+                "Client initialized in synchronous mode. "
+                "Ensure nest_asyncio.apply() is called if running in an async environment like a jupyter notebook.",
+            )
 
     async def run_after_delay(
         self,
@@ -369,7 +376,7 @@ class LiveMarketDataClient(MarketDataClient):
         actions: Callable | None = None,
         success_msg: str | None = None,
         success_color: LogColor = LogColor.NORMAL,
-    ) -> asyncio.Task:
+    ) -> asyncio.Task | None:
         """
         Run the given coroutine with error handling and optional callback actions when
         done.
@@ -392,11 +399,41 @@ class LiveMarketDataClient(MarketDataClient):
         asyncio.Task
 
         """
-        log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task '{log_msg}'")
+        task_name = log_msg or coro.__name__
+
+        if self._is_sync:
+            self._log.debug(f"Running coroutine '{task_name}' synchronously...")
+            result = None
+            exception: BaseException | None = None
+
+            try:
+                result = asyncio.run(coro)
+            except Exception as e:
+                exception = e
+
+            self._handle_completion(
+                coro_name=task_name,
+                actions=actions,
+                success_msg=success_msg,
+                success_color=success_color,
+                exception=exception,
+            )
+
+            if exception:
+                self._log.error(f"Synchronous execution of '{task_name}' failed.")
+                return None
+            else:
+                return result
+
+        self._log.debug(f"Creating async task '{task_name}'")
+
+        if not self._loop or not self._loop.is_running():
+            self._log.error(f"Async task '{task_name}' created but event loop is not running.")
+            return None
+
         task = self._loop.create_task(
             coro,
-            name=coro.__name__,
+            name=task_name,
         )
         task.add_done_callback(
             functools.partial(
@@ -406,6 +443,7 @@ class LiveMarketDataClient(MarketDataClient):
                 success_color,
             ),
         )
+
         return task
 
     def _on_task_completed(
@@ -415,23 +453,54 @@ class LiveMarketDataClient(MarketDataClient):
         success_color: LogColor,
         task: Task,
     ) -> None:
-        e: BaseException | None = task.exception()
-        if e:
-            tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+        coro_name = task.get_name()
+        exception = None
+
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            self._log.warning(f"Task '{coro_name}' was cancelled.")
+            return
+        except Exception as e:
+            exception = e
+
+        self._handle_completion(
+            coro_name=coro_name,
+            actions=actions,
+            success_msg=success_msg,
+            success_color=success_color,
+            exception=exception,
+        )
+
+    def _handle_completion(
+        self,
+        coro_name: str,
+        actions: Callable[[], None] | None,
+        success_msg: str | None,
+        success_color: LogColor,
+        exception: BaseException | None = None,
+    ) -> None:
+        if exception:
+            tb_str = "".join(
+                traceback.format_exception(type(exception), exception, exception.__traceback__),
+            )
             self._log.error(
-                f"Error on '{task.get_name()}': {task.exception()!r}\n{tb_str}",
+                f"Error running '{coro_name}': {exception!r}\n{tb_str}",
             )
         else:
+            self._log.debug(f"Coroutine '{coro_name}' completed successfully.")
+
             if actions:
                 try:
                     actions()
                 except Exception as e:
                     self._log.exception(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
-                        e,
+                        f"Failed triggering action {getattr(actions, '__name__', 'N/A')} on '{coro_name}' success",
+                        exc_info=e,
                     )
+
             if success_msg:
-                self._log.info(success_msg, success_color)
+                self._log.info(f"{success_msg} (Color: {success_color})")
 
     def connect(self) -> None:
         """

@@ -173,8 +173,28 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
+    cpdef void subscribe(self, SubscribeData command):
+        Condition.not_none(command.data_type, "data_type")
+
+        if command.instrument_id and not self._cache.instrument(command.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {command.instrument_id} to subscribe for {command.data_type} data, "
+                "No data has been loaded for this instrument",
+            )
+            return
+
+        self._add_subscription(command.data_type)
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
+
+    cpdef void unsubscribe(self, UnsubscribeData command):
+        Condition.not_none(command.data_type, "data_type")
+
+        self._remove_subscription(command.data_type)
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
+
     cpdef void subscribe_instruments(self, SubscribeInstruments command):
         cdef Instrument instrument
+
         for instrument in self._cache.instruments(Venue(self.id.value)):
             subscribe = SubscribeInstrument(
                 instrument_id=instrument.id,
@@ -185,6 +205,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
                 params=command.params,
             )
             self.subscribe_instrument(subscribe)
+
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void subscribe_instrument(self, SubscribeInstrument command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -303,7 +325,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_instruments(self, UnsubscribeInstruments command):
         self._subscriptions_instrument.clear()
-        # Do nothing else for backtest
+        self._msgbus.send(endpoint="BacktestEngine.execute", msg=command)
 
     cpdef void unsubscribe_instrument(self, UnsubscribeInstrument command):
         Condition.not_none(command.instrument_id, "instrument_id")
@@ -369,6 +391,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void request_instrument(self, RequestInstrument request):
         cdef Instrument instrument = self._cache.instrument(request.instrument_id)
+
         if instrument is None:
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
@@ -377,6 +400,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void request_instruments(self, RequestInstruments request):
         cdef list instruments = self._cache.instruments(request.venue)
+
         if not instruments:
             self._log.error(f"Cannot find instruments")
             return

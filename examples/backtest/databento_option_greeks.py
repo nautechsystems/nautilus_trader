@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.17.0
+#       jupytext_version: 1.17.1
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -20,7 +20,6 @@
 # Note: Use the python extension jupytext to be able to open this python file in jupyter as a notebook
 
 # %%
-# from nautilus_trader.model.data import DataType
 import pandas as pd
 
 from nautilus_trader.adapters.databento.data_utils import data_path
@@ -40,6 +39,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.datetime import unix_nanos_to_iso8601
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.greeks_data import GreeksData
@@ -47,7 +47,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.config import DataCatalogConfig
 from nautilus_trader.persistence.loaders import InterestRateProvider
 from nautilus_trader.persistence.loaders import InterestRateProviderConfig
@@ -58,8 +57,9 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
+# Set the data path for Databento data
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from option_trader import DATA_PATH # personal library, use your own value here
+# DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
 catalog_folder = "options_catalog"
@@ -73,7 +73,7 @@ option_symbols = ["ESM4 P5230", "ESM4 P5250"]
 start_time = "2024-05-09T10:00"
 end_time = "2024-05-09T10:05"
 
-# a valid databento key can be entered here (or as an env variable of the same name)
+# A valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
 # db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
@@ -132,14 +132,26 @@ class OptionStrategy(Strategy):
 
         self.subscribe_quote_ticks(
             self.config.option_id,
-            params={"duration_seconds": pd.Timedelta(minutes=1).seconds},
+            params={"duration_seconds": pd.Timedelta(minutes=2).seconds},
         )
         self.subscribe_quote_ticks(self.config.option_id2)
         self.subscribe_bars(self.bar_type)
 
-        if self.config.load_greeks:
-            self.greeks.subscribe_greeks("ES")
-            # self.subscribe_data(DataType(GreeksData, metadata={"instrument_id": "ES*"}))
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id,
+            params={
+                "append_data": False,
+            },  # prepending data ensures that greeks are cached and available before on_bar
+        )
+        self.subscribe_data(
+            DataType(GreeksData),
+            instrument_id=self.config.option_id2,
+            params={"append_data": False},
+        )
+        self.greeks.subscribe_greeks(
+            InstrumentId.from_str("ES*.XCME"),
+        )  # adds all ES greeks read from the message bus to the cache
 
     def init_portfolio(self):
         self.submit_market_order(instrument_id=self.config.option_id, quantity=-10)
@@ -148,8 +160,9 @@ class OptionStrategy(Strategy):
 
         self.start_orders_done = True
 
-    # def on_data(self, data):
-    #     self.user_log(data)
+    # def on_data(self, greeks):
+    #     self.log.warning(f"{greeks=}")
+    #     self.cache.add_greeks(greeks)
 
     def on_bar(self, bar):
         self.user_log(
@@ -200,6 +213,10 @@ class OptionStrategy(Strategy):
 
     def on_stop(self):
         self.unsubscribe_bars(self.bar_type)
+        self.unsubscribe_quote_ticks(self.config.option_id)
+        self.unsubscribe_quote_ticks(self.config.option_id2)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id)
+        self.unsubscribe_data(DataType(GreeksData), instrument_id=self.config.option_id2)
 
 
 # %% [markdown]
@@ -208,10 +225,9 @@ class OptionStrategy(Strategy):
 # %%
 # BacktestEngineConfig
 
-# for saving and loading custom data greeks, use True, False then False, True below
-stream_data, load_greeks = False, False
-# stream_data, load_greeks = True, False
-# stream_data, load_greeks = False, True
+# When load_greeks is False, the streamed greeks can be saved after the backtest
+# When load_greeks is True, the greeks are loaded from the catalog
+load_greeks = False
 
 actors = [
     ImportableActorConfig(
@@ -228,9 +244,9 @@ strategies = [
         strategy_path=OptionStrategy.fully_qualified_name(),
         config_path=OptionConfig.fully_qualified_name(),
         config={
-            "future_id": InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
-            "option_id": InstrumentId.from_str(f"{option_symbols[0]}.GLBX"),
-            "option_id2": InstrumentId.from_str(f"{option_symbols[1]}.GLBX"),
+            "future_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+            "option_id": InstrumentId.from_str(f"{option_symbols[0]}.XCME"),
+            "option_id2": InstrumentId.from_str(f"{option_symbols[1]}.XCME"),
             "load_greeks": load_greeks,
         },
     ),
@@ -265,28 +281,28 @@ engine_config = BacktestEngineConfig(
     logging=logging,
     actors=actors,
     strategies=strategies,
-    streaming=(streaming if stream_data else None),
+    streaming=(streaming if not load_greeks else None),
     catalogs=catalogs,
 )
 
 # BacktestRunConfig
 
 data = [
-    # TODO using instrument_id and bar_spec only, or instrument_ids and bar_spec only, or bar_types only
+    # # TODO using instrument_id and bar_spec only, or instrument_ids and bar_spec only, or bar_types only
     BacktestDataConfig(
         data_cls=Bar,
         catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
-        # instrument_ids=[InstrumentId.from_str(f"{future_symbols[0]}.GLBX")],
+        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
+        # instrument_ids=[InstrumentId.from_str(f"{future_symbols[0]}.XCME")],
         bar_spec="1-MINUTE-LAST",
-        # bar_types=[f"{future_symbols[0]}.GLBX-1-MINUTE-LAST-EXTERNAL"],
+        # bar_types=[f"{future_symbols[0]}.XCME-1-MINUTE-LAST-EXTERNAL"],
         # start_time=start_time,
         # end_time=end_time,
     ),
     BacktestDataConfig(
         data_cls=QuoteTick,
         catalog_path=catalog.path,
-        # instrument_ids=[InstrumentId.from_str(f"{option_symbols[0]}.GLBX"), InstrumentId.from_str(f"{option_symbols[1]}.GLBX")],
+        # instrument_ids=[InstrumentId.from_str(f"{option_symbols[0]}.XCME"), InstrumentId.from_str(f"{option_symbols[1]}.XCME")],
     ),
 ]
 
@@ -297,14 +313,14 @@ if load_greeks:
             data_cls=GreeksData.fully_qualified_name(),
             catalog_path=catalog.path,
             client_id="GreeksDataProvider",
-            metadata={"instrument_id": "ES"},
+            # metadata={"instrument_id": "ES"}, # not used anymore, reminder on syntax
         ),
         *data,
     ]
 
 venues = [
     BacktestVenueConfig(
-        name="GLBX",
+        name="XCME",
         oms_type="NETTING",
         account_type="MARGIN",
         base_currency="USD",
@@ -315,11 +331,12 @@ venues = [
 configs = [
     BacktestRunConfig(
         engine=engine_config,
-        data=data,
+        data=[],  # data
         venues=venues,
         chunk_size=None,  # use None when loading custom data, else a value of 10_000 for example
         start=start_time,
         end=end_time,
+        raise_exception=True,
     ),
 ]
 
@@ -329,25 +346,11 @@ node = BacktestNode(configs=configs)
 results = node.run()
 
 # %%
-if stream_data:
+if not load_greeks:
     catalog.convert_stream_to_data(
         results[0].instance_id,
         GreeksData,
-        mode=CatalogWriteMode.NEWFILE,
     )
-
-    # other possibility, partitioning data by date (because GreeksData contains a date field)
-    # 'overwrite_or_ignore' keeps existing data intact, 'delete_matching' overwrites everything, see in pyarrow/dataset.py
-    # catalog.convert_stream_to_data(
-    #     results[0].instance_id,
-    #     GreeksData,
-    #     partitioning=["date"],
-    #     existing_data_behavior="overwrite_or_ignore",
-    # )
-
-# %%
-# catalog.consolidate_catalog()
-# catalog.consolidate_data(GreeksData, instrument_id=InstrumentId.from_str("ESM4 P5230.GLBX"))
 
 # %% [markdown]
 # ## backtest results
@@ -360,7 +363,7 @@ engine.trader.generate_order_fills_report()
 engine.trader.generate_positions_report()
 
 # %%
-engine.trader.generate_account_report(Venue("GLBX"))
+engine.trader.generate_account_report(Venue("XCME"))
 
 # %%
 node.dispose()
