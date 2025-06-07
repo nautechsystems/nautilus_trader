@@ -114,6 +114,10 @@ impl_try_from_data!(MarkPriceUpdate, MarkPriceUpdate);
 impl_try_from_data!(IndexPriceUpdate, IndexPriceUpdate);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
 
+/// Converts a vector of `Data` items to a specific variant type.
+///
+/// Filters and converts the data vector, keeping only items that can be
+/// successfully converted to the target type `T`.
 pub fn to_variant<T: TryFrom<Data>>(data: Vec<Data>) -> Vec<T> {
     data.into_iter()
         .filter_map(|d| T::try_from(d).ok())
@@ -162,6 +166,9 @@ impl GetTsInit for Data {
     }
 }
 
+/// Checks if the data slice is monotonically increasing by initialization timestamp.
+///
+/// Returns `true` if each element's `ts_init` is less than or equal to the next element's `ts_init`.
 pub fn is_monotonically_increasing_by_init<T: GetTsInit>(data: &[T]) -> bool {
     data.windows(2)
         .all(|window| window[0].ts_init() <= window[1].ts_init())
