@@ -16,6 +16,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Refactored IB adapter (#2647), thanks @faysou
 - Upgraded Cython to v3.1.1
 - Upgraded `databento` crate to v0.26.2
