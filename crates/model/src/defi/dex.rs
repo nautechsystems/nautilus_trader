@@ -15,10 +15,12 @@
 
 use std::{borrow::Cow, fmt::Display, sync::Arc};
 
-use crate::defi::{amm::Pool, chain::Chain};
-use crate::identifiers::{InstrumentId, Symbol, Venue};
-use crate::instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair};
-use crate::types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity};
+use crate::{
+    defi::{amm::Pool, chain::Chain},
+    identifiers::{InstrumentId, Symbol, Venue},
+    instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair},
+    types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
+};
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone)]
