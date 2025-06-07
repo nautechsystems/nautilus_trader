@@ -15,7 +15,6 @@
 
 import asyncio
 
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
@@ -265,4 +264,5 @@ class TradingNodeBuilder:
 
             # Temporary handling for setting specific 'venue' for portfolio
             if factory.__name__ == "InteractiveBrokersLiveExecClientFactory":
-                self._cache.set_specific_venue(IB_VENUE)
+                # We initialize a new IB venue to avoid importing from the adapter subpackage
+                self._cache.set_specific_venue(Venue("INTERACTIVE_BROKERS"))
