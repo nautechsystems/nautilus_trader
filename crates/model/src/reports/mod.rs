@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Status report types for trading operations.
+//!
+//! This module provides report types for tracking and communicating the status
+//! of various trading operations, including order fills, order status, position
+//! status, and mass status requests.
+
 pub mod fill;
 pub mod mass_status;
 pub mod order;

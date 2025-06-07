@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Trading domain model for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *model* crate provides a type-safe domain model that forms the backbone of NautilusTrader
+//! and can serve as the foundation for other algorithmic trading systems.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,

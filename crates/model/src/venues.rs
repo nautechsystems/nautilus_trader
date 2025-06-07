@@ -32,34 +32,42 @@ static XFXS_LOCK: OnceLock<Venue> = OnceLock::new();
 static XNYM_LOCK: OnceLock<Venue> = OnceLock::new();
 
 impl Venue {
+    /// Returns the CBCM (Chicago Board of Trade) venue.
     #[allow(non_snake_case)]
     pub fn CBCM() -> Self {
         *CBCM_LOCK.get_or_init(|| Self::from("CBCM"))
     }
+    /// Returns the GLBX (Globex) venue.
     #[allow(non_snake_case)]
     pub fn GLBX() -> Self {
         *GLBX_LOCK.get_or_init(|| Self::from("GLBX"))
     }
+    /// Returns the NYUM (New York Mercantile Exchange) venue.
     #[allow(non_snake_case)]
     pub fn NYUM() -> Self {
         *NYUM_LOCK.get_or_init(|| Self::from("NYUM"))
     }
+    /// Returns the XCBT (Chicago Board of Trade) venue.
     #[allow(non_snake_case)]
     pub fn XCBT() -> Self {
         *XCBT_LOCK.get_or_init(|| Self::from("XCBT"))
     }
+    /// Returns the XCEC (Chicago Mercantile Exchange Center) venue.
     #[allow(non_snake_case)]
     pub fn XCEC() -> Self {
         *XCEC_LOCK.get_or_init(|| Self::from("XCEC"))
     }
+    /// Returns the XCME (Chicago Mercantile Exchange) venue.
     #[allow(non_snake_case)]
     pub fn XCME() -> Self {
         *XCME_LOCK.get_or_init(|| Self::from("XCME"))
     }
+    /// Returns the XFXS (CME FX) venue.
     #[allow(non_snake_case)]
     pub fn XFXS() -> Self {
         *XFXS_LOCK.get_or_init(|| Self::from("XFXS"))
     }
+    /// Returns the XNYM (New York Mercantile Exchange) venue.
     #[allow(non_snake_case)]
     pub fn XNYM() -> Self {
         *XNYM_LOCK.get_or_init(|| Self::from("XNYM"))

@@ -115,6 +115,7 @@ pub enum OrderError {
     Invariant(#[from] anyhow::Error),
 }
 
+/// Converts an IndexMap with `Ustr` keys and values to `String` keys and values.
 #[must_use]
 pub fn ustr_indexmap_to_str(h: IndexMap<Ustr, Ustr>) -> IndexMap<String, String> {
     h.into_iter()
@@ -122,6 +123,7 @@ pub fn ustr_indexmap_to_str(h: IndexMap<Ustr, Ustr>) -> IndexMap<String, String>
         .collect()
 }
 
+/// Converts an IndexMap with `String` keys and values to `Ustr` keys and values.
 #[must_use]
 pub fn str_indexmap_to_ustr(h: IndexMap<String, String>) -> IndexMap<Ustr, Ustr> {
     h.into_iter()
@@ -747,6 +749,7 @@ impl OrderCore {
         });
     }
 
+    /// Returns the opposite order side.
     #[must_use]
     pub fn opposite_side(side: OrderSide) -> OrderSide {
         match side {
@@ -756,6 +759,7 @@ impl OrderCore {
         }
     }
 
+    /// Returns the order side needed to close a position.
     #[must_use]
     pub fn closing_side(side: PositionSide) -> OrderSide {
         match side {
