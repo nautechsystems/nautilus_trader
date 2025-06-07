@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! DeFi (Decentralized Finance) data models and types.
+//!
+//! This module provides core data structures for working with decentralized finance protocols,
+//! including blockchain networks, tokens, liquidity pools, swaps, and other DeFi primitives.
+
 pub mod amm;
 pub mod block;
 pub mod chain;

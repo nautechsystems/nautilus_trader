@@ -52,6 +52,7 @@ pub struct Block {
 }
 
 impl Block {
+    /// Creates a new [`Block`] instance with the specified properties.
     pub fn new(
         hash: String,
         parent_hash: String,
