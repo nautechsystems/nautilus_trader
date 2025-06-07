@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Global runtime machinery and thread-local storage.
+//!
+//! This module provides global access to shared runtime resources including clocks,
+//! message queues, and time event channels. It manages thread-local storage for
+//! system-wide components that need to be accessible across the application.
+
 use std::{
     cell::{OnceCell, RefCell},
     collections::VecDeque,
