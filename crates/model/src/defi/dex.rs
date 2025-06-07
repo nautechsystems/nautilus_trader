@@ -16,6 +16,9 @@
 use std::{borrow::Cow, fmt::Display, sync::Arc};
 
 use crate::defi::{amm::Pool, chain::Chain};
+use crate::identifiers::{InstrumentId, Symbol, Venue};
+use crate::instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair};
+use crate::types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity};
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone)]
@@ -103,5 +106,48 @@ impl Dex {
 impl Display for Dex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Dex(chain={}, name={})", self.chain, self.name)
+    }
+}
+
+impl From<Pool> for CurrencyPair {
+    fn from(p: Pool) -> Self {
+        let symbol = Symbol::from(format!("{}/{}", p.token0.symbol, p.token1.symbol));
+        let id = InstrumentId::new(symbol, Venue::from(p.dex.id()));
+
+        let size_precision = p.token0.decimals.min(FIXED_PRECISION);
+        let price_precision = p.token1.decimals.min(FIXED_PRECISION);
+
+        let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
+        let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
+
+        CurrencyPair::new(
+            id,
+            symbol,
+            Currency::from(p.token0.symbol.as_str()),
+            Currency::from(p.token1.symbol.as_str()),
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )
+    }
+}
+
+impl From<Pool> for InstrumentAny {
+    fn from(p: Pool) -> Self {
+        CurrencyPair::from(p).into_any()
     }
 }
