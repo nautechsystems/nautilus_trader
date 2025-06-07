@@ -91,9 +91,17 @@ pub trait Clock: Debug {
         allow_past: Option<bool>,
     ) -> anyhow::Result<()>;
 
-    /// Set a `Timer` to start alerting at every interval
+    /// Set a `Timer` to fire time events at every interval
     /// between start and stop time. Optional callback gets
-    /// used to handle generated event.
+    /// used to handle the generated events.
+    ///
+    /// | `allow_past` | `fire_immediately` | Behavior                                                                                |
+    /// |--------------|--------------------|-----------------------------------------------------------------------------------------|
+    /// | `true`       | `true`             | First event fires immediately at `start time`, even if start time is in the past.       |
+    /// | `true`       | `false`            | First event fires at `start_time` + interval, even if start time is in the past.        |
+    /// | `false`      | `true`             | Returns error if `start_time` is in the past (first event would be immediate but past). |
+    /// | `false`      | `false`            | Returns error if `start_time` + interval is in the past.                                |
+    ///
     /// # Errors
     ///
     /// Returns an error if `name` is invalid, `interval_ns` is not positive,
