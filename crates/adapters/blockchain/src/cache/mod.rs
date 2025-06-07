@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Caching layer for blockchain entities and domain objects.
+//!
+//! This module provides an in-memory cache with optional PostgreSQL persistence for storing
+//! and retrieving blockchain-related data such as blocks, tokens, pools, swaps, and other
+//! DeFi protocol events.
+
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,

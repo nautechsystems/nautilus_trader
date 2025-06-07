@@ -258,6 +258,7 @@ impl BlockchainDataClient {
         Ok(())
     }
 
+    /// Fetches and caches all mint events for a specific liquidity pool within the given block range.
     pub async fn sync_pool_mints(
         &self,
         dex_id: &str,
@@ -288,6 +289,7 @@ impl BlockchainDataClient {
             .await;
 
         tokio::pin!(stream);
+
         while let Some(log) = stream.next().await {
             let mint_event = dex_extended.parse_mint_event(log)?;
             let Some(timestamp) = self.cache.get_block_timestamp(mint_event.block_number) else {
@@ -342,6 +344,7 @@ impl BlockchainDataClient {
         Ok(())
     }
 
+    /// Fetches and caches all burn events for a specific liquidity pool within the given block range.
     pub async fn sync_pool_burns(
         &self,
         dex_id: &str,
@@ -372,6 +375,7 @@ impl BlockchainDataClient {
             .await;
 
         tokio::pin!(stream);
+
         while let Some(log) = stream.next().await {
             let burn_event = dex_extended.parse_burn_event(log)?;
             let Some(timestamp) = self.cache.get_block_timestamp(burn_event.block_number) else {
@@ -453,6 +457,7 @@ impl BlockchainDataClient {
             .await;
 
         tokio::pin!(pools_stream);
+
         while let Some(log) = pools_stream.next().await {
             let pool = dex.parse_pool_created_event(log)?;
             self.process_token(pool.token0.to_string()).await?;
