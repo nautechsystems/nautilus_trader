@@ -138,6 +138,7 @@ pub struct Chain {
 pub type SharedChain = Arc<Chain>;
 
 impl Chain {
+    /// Creates a new [`Chain`] instance with the specified blockchain and chain ID.
     pub fn new(name: Blockchain, chain_id: u32) -> Self {
         Self {
             chain_id,
@@ -148,7 +149,7 @@ impl Chain {
         }
     }
 
-    /// Sets the RPC url endpoint.
+    /// Sets the RPC URL endpoint.
     pub fn set_rpc_url(&mut self, rpc: String) {
         self.rpc_url = Some(rpc);
     }

@@ -53,6 +53,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Creates a new [`Transaction`] instance with the specified properties.
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         chain: Chain,

@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Hexadecimal string parsing utilities for blockchain data.
+//!
+//! This module provides functions for converting hexadecimal strings (commonly used in blockchain
+//! APIs and JSON-RPC responses) to native Rust types, with specialized support for timestamps.
+
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 
