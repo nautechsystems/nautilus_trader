@@ -24,8 +24,7 @@ The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
-from libc.stdint cimport uint64_t
-
+import warnings
 from collections import defaultdict
 from decimal import Decimal
 
@@ -33,6 +32,8 @@ from nautilus_trader.analysis import statistics
 from nautilus_trader.analysis.analyzer import PortfolioAnalyzer
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.portfolio.config import PortfolioConfig
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -212,6 +213,26 @@ cdef class Portfolio(PortfolioFacade):
         """
         self._use_mark_xrates = value
 
+    cpdef void set_specific_venue(self, Venue venue):
+        """
+        Set a specific venue for the portfolio.
+
+        Parameters
+        ----------
+        venue : Venue
+            The specific venue to set.
+
+        """
+        Condition.not_none(venue, "venue")
+
+        warnings.warn(
+            "set_specific_venue() on Portfolio is deprecated and will be removed in a future version; "
+            "call cache.set_specific_venue(venue) instead",
+            UserWarning,
+        )
+
+        self._cache.set_specific_venue(venue)
+
     cpdef void initialize_orders(self):
         """
         Initialize the portfolios orders.
@@ -227,11 +248,11 @@ cdef class Portfolio(PortfolioFacade):
 
         # Update initial (order) margins to initialize portfolio
         cdef bint initialized = True
+
         cdef:
             Order o
             list orders_open
             bint result
-
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
 
@@ -300,7 +321,6 @@ cdef class Portfolio(PortfolioFacade):
             list positions_open
             Account account
             bint result
-
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -832,7 +852,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             InstrumentId instrument_id
             Money pnl
-
         for instrument_id in instrument_ids:
             pnl = self._realized_pnls.get(instrument_id)
 
@@ -877,7 +896,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             InstrumentId instrument_id
             Money pnl
-
         for instrument_id in instrument_ids:
             pnl = self._unrealized_pnls.get(instrument_id)
 
@@ -915,6 +933,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef dict realized = self.realized_pnls(venue)
         cdef dict unrealized = self.unrealized_pnls(venue)
         cdef dict[Currency, double] total_pnls = {}
+
         cdef:
             Currency currency
             Money amount
@@ -960,6 +979,7 @@ cdef class Portfolio(PortfolioFacade):
             return {}  # Nothing to calculate
 
         cdef dict net_exposures = {}  # type: dict[Currency, float]
+
         cdef:
             Position position
             Instrument instrument
@@ -968,7 +988,6 @@ cdef class Portfolio(PortfolioFacade):
             double xrate
             double net_exposure
             double total_net_exposure
-
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
 
@@ -1182,11 +1201,11 @@ cdef class Portfolio(PortfolioFacade):
             return Money(0, instrument.get_cost_currency())
 
         cdef double net_exposure = 0.0
+
         cdef:
             Position position
             double xrate
             Money notional_value
-
         for position in positions_open:
             price = price or self._get_price(position)
 
@@ -1380,6 +1399,7 @@ cdef class Portfolio(PortfolioFacade):
             venue=None,  # Faster query filtering
             instrument_id=instrument_id,
         )
+
         cdef:
             Order o
 
@@ -1456,11 +1476,11 @@ cdef class Portfolio(PortfolioFacade):
             return Money(0, currency)
 
         cdef double total_pnl = 0.0
+
         cdef:
             Position position
             double pnl
             double xrate
-
         for position in positions:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
@@ -1546,11 +1566,11 @@ cdef class Portfolio(PortfolioFacade):
             return Money(0, currency)
 
         cdef double total_pnl = 0.0
+
         cdef:
             Position position
             double pnl
             double xrate
-
         for position in positions_open:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate

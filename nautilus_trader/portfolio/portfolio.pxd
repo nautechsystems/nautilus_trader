@@ -59,6 +59,7 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void set_use_mark_prices(self, bint value)
     cpdef void set_use_mark_xrates(self, bint value)
     cpdef void initialize_orders(self)

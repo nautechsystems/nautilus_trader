@@ -119,6 +119,7 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void cache_all(self)
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
