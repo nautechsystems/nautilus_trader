@@ -18,7 +18,7 @@ use std::{borrow::Cow, fmt::Display, sync::Arc};
 use crate::defi::{amm::Pool, chain::Chain};
 use crate::identifiers::{InstrumentId, Symbol, Venue};
 use crate::instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair};
-use crate::types::{currency::Currency, price::Price, quantity::Quantity};
+use crate::types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity};
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone)]
@@ -103,10 +103,10 @@ impl Display for Dex {
 impl From<Pool> for CurrencyPair {
     fn from(p: Pool) -> Self {
         let symbol = Symbol::from(format!("{}/{}", p.token0.symbol, p.token1.symbol));
-        let id = InstrumentId::new(symbol, Venue::from("DEFI"));
+        let id = InstrumentId::new(symbol, Venue::from(p.dex.id()));
 
-        let size_precision = p.token0.decimals;
-        let price_precision = p.token0.decimals.saturating_add(p.token1.decimals);
+        let size_precision = p.token0.decimals.min(FIXED_PRECISION);
+        let price_precision = p.token1.decimals.min(FIXED_PRECISION);
 
         let price_increment = Price::new(10f64.powi(-(price_precision as i32)), price_precision);
         let size_increment = Quantity::new(10f64.powi(-(size_precision as i32)), size_precision);
