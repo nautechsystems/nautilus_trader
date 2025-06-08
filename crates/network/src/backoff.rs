@@ -101,10 +101,26 @@ impl ExponentialBackoff {
         let jitter = rand::rng().random_range(0..=self.jitter_ms);
         let delay_with_jitter = self.delay_current + Duration::from_millis(jitter);
 
-        // Prepare the next delay
+        // Prepare the next delay with overflow protection
         let current_nanos = self.delay_current.as_nanos();
         let max_nanos = self.delay_max.as_nanos() as u64;
-        let next_nanos = (current_nanos as f64 * self.factor) as u64;
+
+        // Use checked floating point multiplication to prevent overflow
+        let next_nanos = if current_nanos > u64::MAX as u128 {
+            // Current is already at max representable value
+            max_nanos
+        } else {
+            let current_u64 = current_nanos as u64;
+            let next_f64 = current_u64 as f64 * self.factor;
+
+            // Check for overflow in the float result
+            if next_f64 > u64::MAX as f64 {
+                u64::MAX
+            } else {
+                next_f64 as u64
+            }
+        };
+
         self.delay_current = Duration::from_nanos(std::cmp::min(next_nanos, max_nanos));
 
         delay_with_jitter
