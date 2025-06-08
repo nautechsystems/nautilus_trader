@@ -17,8 +17,10 @@ use std::fmt::Display;
 
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    data::GetTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -26,7 +28,7 @@ use crate::{
 };
 
 /// Represents a token swap transaction on a decentralized exchange (DEX).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Swap {
     /// The blockchain network where the swap occurred
     pub chain: SharedChain,
@@ -95,6 +97,12 @@ impl Swap {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         self.pool.instrument_id()
+    }
+}
+
+impl GetTsInit for Swap {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
 

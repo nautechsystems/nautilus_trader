@@ -34,4 +34,6 @@ pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
 pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
+    #[cfg(feature = "defi")]
+    DeFi(nautilus_model::defi::DefiData),
 }

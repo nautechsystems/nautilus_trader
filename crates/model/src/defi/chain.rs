@@ -120,7 +120,7 @@ pub enum Blockchain {
 }
 
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     /// The blockchain network type.
     pub name: Blockchain,
