@@ -4834,6 +4834,7 @@ dependencies = [
  "indexmap 2.9.0",
  "log",
  "nautilus-core",
+ "proptest",
  "pyo3",
  "rstest",
  "rust_decimal",
