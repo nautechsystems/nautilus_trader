@@ -41,10 +41,10 @@ nautilus-persistence = { workspace = true }
 nautilus-portfolio = { workspace = true }
 nautilus-risk = { workspace = true }
 nautilus-trading = { workspace = true }
-hostname = "0.4.1"
 
 anyhow = { workspace = true }
 futures = { workspace = true }
+hostname = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 tokio = { workspace = true }

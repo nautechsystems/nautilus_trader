@@ -30,6 +30,7 @@ use std::{
     time::Duration,
 };
 
+use aws_lc_rs::hmac;
 use base64::prelude::*;
 use nautilus_common::logging::{log_task_started, log_task_stopped};
 #[cfg(feature = "python")]
@@ -39,7 +40,6 @@ use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use ring::hmac;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::stream::Mode;
 

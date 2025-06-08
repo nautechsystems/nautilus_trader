@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use base64::prelude::*;
-use hex;
-use ring::{
+use aws_lc_rs::{
     hmac,
     rand::SystemRandom,
     signature::{Ed25519KeyPair, RSA_PKCS1_SHA256, RsaKeyPair, Signature},
 };
+use base64::prelude::*;
+use hex;
 
 #[must_use]
 pub fn hmac_signature(secret: &str, data: &str) -> String {
@@ -44,7 +44,7 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
     let pem = pem::parse(private_key_pem)?;
     let private_key =
         RsaKeyPair::from_pkcs8(pem.contents()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    let mut signature = vec![0; private_key.public().modulus_len()];
+    let mut signature = vec![0; private_key.public_modulus_len()];
     let rng = SystemRandom::new();
 
     private_key

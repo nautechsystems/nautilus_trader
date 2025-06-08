@@ -60,8 +60,9 @@ ustr = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+nautilus-data = { workspace = true }
+nautilus-portfolio = { workspace = true }
+nautilus-risk = { workspace = true }
+
 criterion = { workspace = true }
 rstest = { workspace = true }
-nautilus-portfolio = { path = "../portfolio" }
-nautilus-data = { path = "../data" }
-nautilus-risk = { path = "../risk" }

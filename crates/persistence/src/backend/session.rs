@@ -25,6 +25,8 @@ use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
+use object_store::ObjectStore;
+use url::Url;
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 
@@ -81,6 +83,11 @@ impl DataBackendSession {
             chunk_size,
             runtime: Arc::new(runtime),
         }
+    }
+
+    /// Register an object store with the session context
+    pub fn register_object_store(&mut self, url: &Url, object_store: Arc<dyn ObjectStore>) {
+        self.session_ctx.register_object_store(url, object_store);
     }
 
     pub fn write_data<T: EncodeToRecordBatch>(

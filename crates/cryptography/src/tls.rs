@@ -25,5 +25,5 @@ use rustls_platform_verifier::ConfigVerifierExt;
 /// Panics if the configuration fails to load.
 pub fn create_tls_config() -> Arc<ClientConfig> {
     tracing::debug!("Loading certificates");
-    Arc::new(ClientConfig::with_platform_verifier().expect("Failed to load TLS config"))
+    Arc::new(ClientConfig::with_platform_verifier())
 }

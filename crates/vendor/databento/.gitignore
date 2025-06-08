@@ -1,0 +1,8 @@
+.idea/
+.profile/
+.vscode/
+
+target/
+Cargo.lock
+**/*.rs.bk
+*.sw[po]

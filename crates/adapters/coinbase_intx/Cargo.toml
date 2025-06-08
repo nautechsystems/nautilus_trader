@@ -50,6 +50,7 @@ nautilus-network = { workspace = true }
 
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
@@ -59,7 +60,6 @@ log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
-ring = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -75,6 +75,7 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 

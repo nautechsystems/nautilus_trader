@@ -19,16 +19,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true }
-nautilus-model = { workspace = true }
 nautilus-core = { workspace = true }
 nautilus-infrastructure = { workspace = true , features = ["postgres"] }
+nautilus-model = { workspace = true }
 
 anyhow = { workspace = true }
+clap = { workspace = true }
+dotenvy = { workspace = true }
 log = { workspace = true }
+simple_logger = { workspace = true }
 tokio = { workspace = true }
-clap = { version = "4.5.38", features = ["derive", "env"] }
-dotenvy = { version = "0.15.7" }
-simple_logger = "5.0.0"
 
 [[bin]]
 name = "nautilus"

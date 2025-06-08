@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use aws_lc_rs::hmac;
 use base64::prelude::*;
-use ring::hmac;
 use ustr::Ustr;
 
 /// Coinbase International API credentials for signing requests.

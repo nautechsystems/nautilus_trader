@@ -2,7 +2,11 @@
 resolver = "2"
 members = [
     "crates",
-    "crates/adapters/*",
+    "crates/adapters/blockchain",
+    "crates/adapters/coinbase_intx",
+    "crates/adapters/databento",
+    "crates/adapters/demo",
+    "crates/adapters/tardis",
     "crates/analysis",
     "crates/backtest",
     "crates/cli",
@@ -24,6 +28,7 @@ members = [
     "crates/system",
     "crates/testkit",
     "crates/trading",
+    "crates/vendor/databento",
 ]
 
 [workspace.package]
@@ -69,69 +74,127 @@ nautilus-coinbase-intx = { path = "crates/adapters/coinbase_intx", version = "0.
 nautilus-databento = { path = "crates/adapters/databento", version = "0.49.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.49.0" }
 
-ahash = "0.8.12"
-anyhow = "1.0.98"
-arrow = "55.1.0"  # Keep major version in line with datafusion
-async-stream = "0.3.6"
-async-trait = "0.1.88"
-base64 = "0.22.1"
-bytes = { version = "1.10.1", features = ["serde"] }
-chrono = { version = "0.4.41", features = ["serde"] }
-chrono-tz = "0.10.3"
-deranged = "=0.4.0"
-derive_builder = "0.20.2"
-enum_dispatch = "0.3.13"
-futures = "0.3.31"
-futures-util = "0.3.31"
-heck = "0.5.0"
-hex = "0.4.3"
-indexmap = { version = "2.9.0", features = ["serde"] }
-itertools = "0.14.0"
-itoa = "1.0.15"
-log = { version = "0.4.27", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-memchr = "2.7.4"
-parquet = "55.1.0"  # Keep major version in line with datafusion
-pyo3 = { version = "0.25.0", features = ["chrono", "indexmap", "rust_decimal", "serde", "smallvec"] }
-pyo3-async-runtimes = { version = "0.25.0", features = ["tokio-runtime", "tokio", "attributes"] }
-rand = "0.9.1"
-reqwest = { version = "0.12.19", features = ["blocking", "rustls-tls", "stream", "json"], default-features = false }
-ring = "0.17.14"
-rmp-serde = "1.3.0"
-rust_decimal = "1.37.1"
-rust_decimal_macros = "1.37.1"
-rustls = { version = "0.23.27", features = ["ring"] }
-semver = "1.0.25"
-serde = { version = "1.0.219", features = ["derive", "rc"] }
-serde_json = "1.0.140"
-serde_urlencoded = "0.7.1"
-sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio", "json"] }
-strum = { version = "0.27.1", features = ["derive"] }
-thiserror = "2.0.12"
-thousands = "0.2.0"
-toml = "0.8.23"
-tracing = "0.1.41"
+# Dependencies
+ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }
+alloy-primitives = { version = "1.2.0", default-features = false }
+anyhow = { version = "1.0.98", default-features = false, features = ["std"] }
+arraydeque = { version = "0.5.1", default-features = false }
+arrow = { version = "55.1.0", default-features = false, features = ["csv", "json", "ipc"] }  # Keep major version in line with datafusion
+async-compression = { version = "0.4", default-features = false, features = ["tokio", "zstd"] }
+async-stream = { version = "0.3.6", default-features = false }
+async-trait = { version = "0.1.88", default-features = false }
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
+binary-heap-plus = { version = "0.5.0", default-features = false }
+bytes = { version = "1.10.1", default-features = false, features = ["serde", "std"] }
+chrono = { version = "0.4.41", default-features = false, features = ["serde", "std", "clock"] }
+chrono-tz = { version = "0.10.3", default-features = false }
+clap = { version = "4.5.38", default-features = false, features = ["derive", "env", "std"] }
+compare = { version = "0.1.0", default-features = false }
+csv = { version = "1.3.1", default-features = false }
+dashmap = { version = "6.1.0", default-features = false }
+dbn = { version = "0.35.1", default-features = false, features = ["async", "serde"] }
+deranged = { version = "=0.4.0", default-features = false, features = ["std"] }
+derive_builder = { version = "0.20.2", default-features = false, features = ["alloc"] }
+dotenvy = { version = "0.15.7", default-features = false }
+enum_dispatch = { version = "0.3.13", default-features = false }
+evalexpr = { version = "=11.3.1", default-features = false }  # Pinned to v11.3.1 for MIT licensing
+fallible-streaming-iterator = { version = "0.1.9", default-features = false }
+flate2 = { version = "1.1.2", default-features = false }
+futures = { version = "0.3.31", default-features = false, features = ["std", "async-await"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
+heck = { version = "0.5.0", default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["std"] }
+hostname = { version = "0.4.1", default-features = false }
+http = { version = "1.2.0", default-features = false }
+implied-vol = { version = "1.0.1", default-features = false, features = ["normal-distribution"] }
+indexmap = { version = "2.9.0", default-features = false, features = ["serde", "std"] }
+itertools = { version = "0.14.0", default-features = false, features = ["use_std"] }
+itoa = { version = "1.0.15", default-features = false }
+log = { version = "0.4.27", default-features = false, features = ["std", "kv", "serde"] }
+lzma-sys = { version = "0.1.20", default-features = false }
+memchr = { version = "2.7.4", default-features = false, features = ["std"] }
+nonzero_ext = { version = "0.3.0", default-features = false }
+parquet = { version = "55.1.0", default-features = false, features = ["arrow", "async"] }  # Keep major version in line with datafusion
+pem = { version = "3.0.5", default-features = false, features = ["std"] }
+procfs = { version = "0.17.0", default-features = false }
+pyo3 = { version = "0.25.0", default-features = false, features = ["chrono", "indexmap", "rust_decimal", "serde"] }
+pyo3-async-runtimes = { version = "0.25.0", default-features = false, features = ["tokio-runtime", "tokio", "attributes"] }
+quickcheck = { version = "1", default-features = false }
+quickcheck_macros = { version = "1", default-features = false }
+rand = { version = "0.9.1", default-features = false, features = ["std", "thread_rng"] }
+regex = { version = "1.11.1", default-features = false, features = ["std", "perf"] }
+rmp-serde = { version = "1.3.0", default-features = false }
+rust_decimal = { version = "1.37.1", default-features = false, features = ["std", "serde"] }
+rust_decimal_macros = { version = "1.37.1", default-features = false }
+semver = { version = "1.0.25", default-features = false, features = ["std"] }
+serde = { version = "1.0.219", default-features = false, features = ["derive", "std", "rc"] }
+serde_json = { version = "1.0.140", default-features = false, features = ["std"] }
+serde_urlencoded = { version = "0.7.1", default-features = false }
+sha2 = { version = "0.10.8", default-features = false }
+simple_logger = { version = "5.0.0", default-features = false }
+strum = { version = "0.27.1", default-features = false, features = ["derive", "std"] }
+sysinfo = { version = "0.35.2", default-features = false, features = ["system"] }
+tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
+thiserror = { version = "2.0.12", default-features = false }
+thousands = { version = "0.2.0", default-features = false }
+time = { version = "0.3.41", default-features = false, features = ["macros", "parsing", "serde", "std"] }
+tokio = { version = "1.45.1", default-features = false, features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal", "fs"] }
+tokio-stream = { version = "0.1.17", default-features = false }
+tokio-util = { version = "0.7.14", default-features = false, features = ["io"] }
+toml = { version = "0.8.20", default-features = false, features = ["parse"] }
+tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.45.1", features = ["full"] }
-tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
-tokio-util = "0.7.14"
-ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.17.0", features = ["v4", "serde"] }
+typed-builder = { version = "0.21.0", default-features = false }
+unbounded-interval-tree = { version = "1.1.2", default-features = false }
+url = { version = "2.5.4", default-features = false }
+urlencoding = { version = "2.1.3", default-features = false }
+ustr = { version = "1.1.0", default-features = false, features = ["serde"] }
+uuid = { version = "1.17.0", default-features = false, features = ["v4", "serde", "std"] }
+webpki-roots = { version = "0.26.10", default-features = false }
 
 # dev-dependencies
-axum = "0.8.4"
-criterion = "0.5.1"
-float-cmp = "0.10.0"
-iai = "0.1.1"
-pretty_assertions = "1.4.1"
-proptest = "1.7.0"
-rstest = "0.25.0"
-tempfile = "3.20.0"
-tracing-test = "0.2.5"
-dotenvy = "0.15.7"
+axum = { version = "0.8.4", default-features = false, features = ["tokio", "http1"] }
+criterion = { version = "0.5.1", default-features = false }
+float-cmp = { version = "0.10.0", default-features = false, features = ["std"] }
+iai = { version = "0.1.1", default-features = false }
+pretty_assertions = { version = "1.4.1", default-features = false, features = ["std"] }
+proptest = { version = "1.7.0", default-features = false, features = ["std"] }
+rstest = { version = "0.25.0", default-features = false }
+tempfile = { version = "3.20.0", default-features = false }
+tracing-test = { version = "0.2.5", default-features = false }
+wiremock = { version = "0.6", default-features = false }
 
 # build-dependencies
-cbindgen = "0.29.0"
+cbindgen = { version = "0.29.0", default-features = false }
+
+# Libaries involving tls, to avoid native-tls as much as possible especially in reqwest (creates compile issue with object_store)
+alloy = { version = "1.0.9", default-features = false, features = ["sol-types", "contract"] }
+alloy-transport-http = { version = "1.0.9", default-features = false, features = ["hyper"] }
+aws-lc-rs = { version = "1.13.1", default-features = false }
+databento = { path = "crates/vendor/databento", version = "0.26.2", default-features = false, features = ["historical", "live"] }
+datafusion = { version = "47.0.0", default-features = false, features = [
+    "datetime_expressions", "parquet", "regex_expressions"
+] }
+hypersync-client = { version = "0.18.2", default-features = false }
+hypersync-schema = { version = "0.3.0", default-features = false }
+object_store = { version = "0.12.1", default-features = false, features = [
+    "aws", "azure", "gcp", "http"
+] }
+redis = { version = "0.32.0", default-features = false, features = [
+    "connection-manager",
+    "streams",
+    "tokio-comp",
+    "tokio-rustls-comp",
+    "tls-rustls",
+] }
+reqwest = { version = "0.12.19", features = ["blocking", "rustls-tls", "stream", "json"], default-features = false }
+rustls = { version = "0.23.27", default-features = false, features = ["aws_lc_rs"] }
+rustls-pemfile = { version = "2.2.0", default-features = false }
+rustls-platform-verifier = { version = "0.5.3", default-features = false }
+sqlx = { version = "0.8.6", default-features = false, features = ["postgres", "runtime-tokio", "derive"] }
+tokio-rustls = { version = "0.26.2", default-features = false }
+tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["rustls-tls-native-roots", "connect"] }
 
 [profile.dev]
 opt-level = 0

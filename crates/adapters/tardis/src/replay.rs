@@ -32,13 +32,11 @@ use nautilus_model::{
     },
     identifiers::InstrumentId,
 };
-use nautilus_serialization::{
-    arrow::{
-        bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-        book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
-        trades_to_arrow_record_batch_bytes,
-    },
-    parquet::write_batch_to_parquet,
+use nautilus_persistence::parquet::write_batch_to_parquet;
+use nautilus_serialization::arrow::{
+    bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
+    book_depth10_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
+    trades_to_arrow_record_batch_bytes,
 };
 use thousands::Separable;
 use ustr::Ustr;
@@ -431,7 +429,10 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, pat
     };
 
     let filepath = path.join(parquet_filepath_bars(bar_type, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
+    let filepath_str = filepath.to_string_lossy();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    match rt.block_on(write_batch_to_parquet(batch, &filepath_str, None, None)) {
         Ok(()) => tracing::info!("File written: {filepath:?}"),
         Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }
@@ -464,7 +465,10 @@ fn write_batch(
     path: &Path,
 ) {
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
-    match write_batch_to_parquet(batch, &filepath, None, None, None) {
+    let filepath_str = filepath.to_string_lossy();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    match rt.block_on(write_batch_to_parquet(batch, &filepath_str, None, None)) {
         Ok(()) => tracing::info!("File written: {filepath:?}"),
         Err(e) => tracing::error!("Error writing {filepath:?}: {e:?}"),
     }

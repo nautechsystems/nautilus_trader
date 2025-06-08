@@ -36,6 +36,7 @@
 
 pub mod backend;
 pub mod config;
+pub mod parquet;
 
 #[cfg(feature = "python")]
 pub mod python;

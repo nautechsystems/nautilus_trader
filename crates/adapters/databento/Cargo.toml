@@ -48,26 +48,28 @@ nautilus-system = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+databento = { workspace = true }
 dotenvy = { workspace = true, optional = true }
+fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 ustr = { workspace = true }
-databento = "0.26.2"
-fallible-streaming-iterator = "0.1.9"
-time = "0.3.41"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 

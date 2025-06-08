@@ -29,17 +29,17 @@ python = ["pyo3", "nautilus-core/python", "nautilus-common/python", "nautilus-mo
 high-precision = ["nautilus-model/high-precision"]
 
 [dependencies]
-nautilus-core = { workspace = true }
 nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
+aws-lc-rs = { workspace = true }
 hex = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-tokio = { workspace = true }
 reqwest = { workspace = true }
-ring = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }

@@ -46,42 +46,44 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-common = { workspace = true }
+nautilus-core = { workspace = true, features = ["ffi"] }
 nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 
+anyhow = { workspace = true }
+arrow = { workspace = true }
+binary-heap-plus = { workspace = true }
+chrono = { workspace = true }
+compare = { workspace = true }
+datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
-pyo3 = { workspace = true, optional = true }
-serde_json = { workspace = true }
-serde = { workspace = true }
-tokio = { workspace = true }
-anyhow = { workspace = true }
+object_store = { workspace = true }
 parquet = { workspace = true }
-binary-heap-plus = "0.5.0"
-compare = "0.1.0"
-datafusion = { version = "47.0.0", default-features = false, features = [
-  "parquet",
-  "regex_expressions",
-  "unicode_expressions",
-] }
-object_store = { version = "0.12.1", default-features = false, features = ["fs"] }
-walkdir = "2.5.0"
+pyo3 = { workspace = true, optional = true }
+regex = { workspace = true }
+reqwest = { workspace = true } # important to ensure rustls-tls is used by object_store
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+unbounded-interval-tree = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
-quickcheck = "1"
-quickcheck_macros = "1"
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.17.0"
+procfs = { workspace = true }
 
 [[bench]]
 name = "persistence"

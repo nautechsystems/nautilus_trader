@@ -1,0 +1,62 @@
+[package]
+name = "databento"
+authors = ["Databento <support@databento.com>"]
+version = "0.26.2"
+edition = "2021"
+repository = "https://github.com/databento/databento-rs"
+description = "Official Databento client library"
+license = "Apache-2.0"
+# maximum of 5
+keywords = ["real-time", "historical", "market-data", "trading", "tick-data"]
+# see https://crates.io/category_slugs
+categories = ["api-bindings", "finance"]
+
+[package.metadata.docs.rs]
+# Document all features on docs.rs
+all-features = true
+# To build locally: `RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --all-features --open`
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["historical", "live"]
+historical = [
+  "dep:async-compression",
+  "dep:futures",
+  "dep:reqwest",
+  "dep:serde",
+  "dep:tokio-util",
+  "dep:serde_json",
+  "tokio/fs"
+]
+live = ["dep:hex", "dep:sha2", "tokio/net"]
+
+[dependencies]
+dbn = { workspace = true, features = ["async", "serde"] }
+
+async-compression = { workspace = true, features = ["tokio", "zstd"], optional = true }
+# Async stream trait
+futures = { workspace = true, optional = true }
+# Used for Live authentication
+hex = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, default-features = false, features = ["json", "stream", "rustls-tls"] }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+# Used for Live authentication
+sha2 = { workspace = true, optional = true }
+thiserror = { workspace = true }
+time = { workspace = true, features = ["macros", "parsing", "serde"] }
+tokio = { workspace = true, features = ["io-util", "macros"] }
+# Stream utils
+tokio-util = { workspace = true, features = ["io"], optional = true }
+tracing = { workspace = true }
+typed-builder = { workspace = true }
+
+[dev-dependencies]
+anyhow = { workspace = true }
+async-compression = { workspace = true, features = ["tokio", "zstd"] }
+clap = { workspace = true, features = ["derive"] }
+rstest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing-subscriber = { workspace = true }
+wiremock = { workspace = true }

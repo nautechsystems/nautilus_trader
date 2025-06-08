@@ -125,28 +125,28 @@ cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest
 cargo-test:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+	cargo nextest run --workspace --exclude databento --features "python,ffi,high-precision,defi" --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	cargo nextest run --workspace --features "python,ffi,defi" --cargo-profile nextest
+	cargo nextest run --workspace --exclude databento --features "python,ffi,defi" --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
 cargo-test-debug: check-nextest
 cargo-test-debug:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi"
+	cargo nextest run --workspace --exclude databento --features "python,ffi,high-precision,defi"
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
 cargo-test-standard-precision-debug: check-nextest
 cargo-test-standard-precision-debug:
-	cargo nextest run --workspace --features "python,ffi"
+	cargo nextest run --workspace --exclude databento --features "python,ffi"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest
@@ -155,7 +155,7 @@ cargo-test-coverage:
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
 	fi
-	cargo llvm-cov nextest run --workspace
+	cargo llvm-cov nextest run --workspace --exclude databento
 
 .PHONY: cargo-bench
 cargo-bench:

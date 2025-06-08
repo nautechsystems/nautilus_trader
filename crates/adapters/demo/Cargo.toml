@@ -43,11 +43,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-network = { workspace = true, features = ["python"] }
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-model = { workspace = true }
 nautilus-data = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true, features = ["python"] }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -58,15 +58,16 @@ pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = "0.1.17"
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-tokio-stream = "0.1.17"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
+
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 

@@ -21,6 +21,7 @@ use nautilus_model::data::{
     Bar, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
 };
 use pyo3::{prelude::*, types::PyCapsule};
+use url::Url;
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
@@ -94,6 +95,41 @@ impl DataBackendSession {
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
         let query_result = slf.get_query_result();
         DataQueryResult::new(query_result, slf.chunk_size)
+    }
+
+    /// Register an object store with the session context from a URI
+    #[pyo3(name = "register_object_store_from_uri")]
+    fn register_object_store_from_uri_py(mut slf: PyRefMut<'_, Self>, uri: &str) -> PyResult<()> {
+        // Create object store from URI using the Rust implementation
+        let (object_store, _, _) =
+            crate::parquet::create_object_store_from_path(uri).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to create object store: {e}"
+                ))
+            })?;
+
+        // Parse the URI to get the base URL for registration
+        let parsed_uri = Url::parse(uri)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Invalid URI: {e}")))?;
+
+        // Register the object store with the session
+        if matches!(
+            parsed_uri.scheme(),
+            "s3" | "gs" | "gcs" | "azure" | "abfs" | "http" | "https"
+        ) {
+            // For cloud storage, register with the base URL (scheme + netloc)
+            let base_url = format!(
+                "{}://{}",
+                parsed_uri.scheme(),
+                parsed_uri.host_str().unwrap_or("")
+            );
+            let base_parsed_url = Url::parse(&base_url).map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("Invalid base URL: {e}"))
+            })?;
+            slf.register_object_store(&base_parsed_url, object_store);
+        }
+
+        Ok(())
     }
 }
 

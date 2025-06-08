@@ -19,8 +19,8 @@ use std::{
     path::Path,
 };
 
+use aws_lc_rs::digest;
 use reqwest::blocking::Client;
-use ring::digest;
 use serde_json::Value;
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
