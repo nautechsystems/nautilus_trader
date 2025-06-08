@@ -305,6 +305,10 @@ mod tests {
         }
     }
 
+    ////////////////////////////////////////////////////////////////////////////////
+    // Property-based testing
+    ////////////////////////////////////////////////////////////////////////////////
+
     #[quickcheck]
     fn prop_test(all_data: Vec<SortedNestedVec>) -> bool {
         let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
