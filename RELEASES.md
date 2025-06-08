@@ -17,6 +17,8 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
 - Added property-based testing for `TestTimer` in Rust
+- Added property-based testing for `network` crate in Rust
+- Added chaos testing with `turmoil` for socket clients in Rust
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Refactored IB adapter (#2647), thanks @faysou
 - Upgraded Cython to v3.1.1

@@ -47,6 +47,7 @@ pub mod backoff;
 pub mod fix;
 pub mod http;
 pub mod mode;
+pub mod net;
 pub mod socket;
 pub mod websocket;
 
