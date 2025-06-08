@@ -20,6 +20,7 @@ use strum::{Display, EnumString};
 
 use crate::{
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
+    identifiers::InstrumentId,
     types::Quantity,
 };
 
@@ -80,6 +81,8 @@ pub struct PoolLiquidityUpdate {
     pub tick_upper: i32,
     /// The timestamp of the liquidity update in Unix nanoseconds.
     pub timestamp: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
 }
 
 impl PoolLiquidityUpdate {
@@ -121,6 +124,13 @@ impl PoolLiquidityUpdate {
             tick_lower,
             tick_upper,
             timestamp,
+            ts_init: timestamp,
         }
+    }
+
+    /// Returns the instrument ID for this liquidity update.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        self.pool.instrument_id()
     }
 }

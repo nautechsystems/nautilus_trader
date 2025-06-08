@@ -16,8 +16,12 @@
 use std::sync::Arc;
 
 use alloy_primitives::Address;
+use nautilus_core::UnixNanos;
 
-use crate::defi::{chain::SharedChain, dex::Dex, token::Token};
+use crate::{
+    defi::{chain::SharedChain, dex::Dex, token::Token},
+    identifiers::InstrumentId,
+};
 
 /// Represents a liquidity pool in a decentralized exchange.
 #[derive(Debug, Clone)]
@@ -38,6 +42,8 @@ pub struct Pool {
     pub fee: u32,
     /// The minimum tick spacing for positions in concentrated liquidity AMMs.
     pub tick_spacing: u32,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
 }
 
 /// A thread-safe shared pointer to a `Pool`, enabling efficient reuse across multiple components.
@@ -56,6 +62,7 @@ impl Pool {
         token1: Token,
         fee: u32,
         tick_spacing: u32,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
             chain,
@@ -66,6 +73,7 @@ impl Pool {
             token1,
             fee,
             tick_spacing,
+            ts_init,
         }
     }
 
@@ -73,5 +81,12 @@ impl Pool {
     #[must_use]
     pub fn ticker(&self) -> String {
         format!("{}/{}", self.token0.symbol, self.token1.symbol)
+    }
+
+    /// Returns the instrument ID for this pool.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        // Create instrument ID from pool ticker and DEX name
+        InstrumentId::from(format!("{}.{}", self.ticker(), self.dex.name).as_str())
     }
 }
