@@ -64,3 +64,5 @@ criterion = { workspace = true }
 serde_json = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
+proptest = { workspace = true }
+turmoil = "0.6.6"
