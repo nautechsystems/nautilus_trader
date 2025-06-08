@@ -61,6 +61,7 @@ tabled = "0.20.0"
 criterion = { workspace = true }
 float-cmp = { workspace = true }
 iai = { workspace = true }
+proptest = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

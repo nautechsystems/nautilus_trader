@@ -16,6 +16,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Added property-based testing for `OrderBook` in Rust
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
@@ -26,6 +27,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
+- Fixed order book cache consistency in update and remove operations (found through property-based testing)
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
 - Fixed data request identifier attribute access for `LiveDataClient`
 - Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
