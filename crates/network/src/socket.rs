@@ -138,6 +138,11 @@ struct SocketClientInner {
 }
 
 impl SocketClientInner {
+    /// Connect to a URL with the specified configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if connection fails or configuration is invalid.
     pub async fn connect_url(
         config: SocketConfig,
         handler: Option<Arc<TcpMessageHandler>>,
@@ -216,6 +221,11 @@ impl SocketClientInner {
         })
     }
 
+    /// Establish a TLS or plain TCP connection with the server.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established.
     pub async fn tls_connect_with_server(
         url: &str,
         mode: Mode,

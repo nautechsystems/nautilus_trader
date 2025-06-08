@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Connection mode enumeration for socket clients.
+
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use strum::{AsRefStr, Display, EnumString};
@@ -57,7 +59,9 @@ impl ConnectionMode {
         }
     }
 
+    /// Load a [`ConnectionMode`] from an [`AtomicU8`] using sequential consistency ordering.
     #[inline]
+    #[must_use]
     pub fn from_atomic(value: &AtomicU8) -> Self {
         Self::from_u8(value.load(Ordering::SeqCst))
     }
