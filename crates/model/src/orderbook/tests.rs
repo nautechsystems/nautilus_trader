@@ -339,12 +339,12 @@ fn test_book_get_quantity_for_price() {
         Quantity::from("3.0"),
         0, // order_id not applicable
     );
-    book.add(bid1, 0, 0, 1.into());
-    book.add(bid2, 0, 0, 1.into());
-    book.add(bid3, 0, 0, 1.into());
-    book.add(ask1, 0, 0, 1.into());
-    book.add(ask2, 0, 0, 1.into());
-    book.add(ask3, 0, 0, 1.into());
+    book.add(bid1, 0, 1, 1.into());
+    book.add(bid2, 0, 2, 2.into());
+    book.add(bid3, 0, 3, 3.into());
+    book.add(ask1, 0, 4, 4.into());
+    book.add(ask2, 0, 5, 5.into());
+    book.add(ask3, 0, 6, 6.into());
 
     assert_eq!(
         book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
@@ -1154,7 +1154,7 @@ fn test_book_filtered_with_depth_limit() {
         book.add(
             *order,
             0,
-            ((i + bid_orders.len()) as u64).into(),
+            (i + bid_orders.len()) as u64,
             ((i + bid_orders.len()) as u64).into(),
         );
     }

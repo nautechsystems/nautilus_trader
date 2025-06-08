@@ -146,6 +146,11 @@ impl BookLadder {
                 if order.price == level.price.value {
                     // Update at current price level
                     level.update(order);
+                    debug_assert!(
+                        self.cache.contains_key(&order.order_id),
+                        "Cache should still contain order {} after update",
+                        order.order_id
+                    );
                     return;
                 }
 
@@ -154,11 +159,23 @@ impl BookLadder {
                 level.delete(&order);
                 if level.is_empty() {
                     self.levels.remove(&price);
+                    debug_assert!(
+                        !self.cache.values().any(|p| *p == price),
+                        "Cache should not contain removed price level {:?}",
+                        price
+                    );
                 }
             }
         }
 
         self.add(order);
+
+        // Validate cache consistency after update
+        debug_assert_eq!(
+            self.cache.len(),
+            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            "Cache size should equal total orders across all levels"
+        );
     }
 
     /// Deletes an order from the ladder.
@@ -170,12 +187,31 @@ impl BookLadder {
     pub fn remove(&mut self, order_id: OrderId, sequence: u64, ts_event: UnixNanos) {
         if let Some(price) = self.cache.remove(&order_id) {
             if let Some(level) = self.levels.get_mut(&price) {
+                let level_len_before = level.len();
                 level.remove_by_id(order_id, sequence, ts_event);
+                debug_assert_eq!(
+                    level.len(),
+                    level_len_before - 1,
+                    "Level should have exactly one less order after removal"
+                );
+
                 if level.is_empty() {
                     self.levels.remove(&price);
+                    debug_assert!(
+                        !self.cache.values().any(|p| *p == price),
+                        "Cache should not contain removed price level {:?}",
+                        price
+                    );
                 }
             }
         }
+
+        // Validate cache consistency after removal
+        debug_assert_eq!(
+            self.cache.len(),
+            self.levels.values().map(|level| level.len()).sum::<usize>(),
+            "Cache size should equal total orders across all levels"
+        );
     }
 
     /// Returns the total size of all orders in the ladder.
