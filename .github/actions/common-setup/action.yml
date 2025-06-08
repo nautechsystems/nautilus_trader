@@ -40,8 +40,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y curl clang git libssl-dev libssl3 make pkg-config
-        sudo apt-get install -y python3-dev libpython3-dev
+        sudo apt-get install -y curl clang git make pkg-config
         sudo apt-get install -y capnproto libcapnp-dev
 
     - name: Install mold
@@ -136,20 +135,6 @@ runs:
       run: |
         echo "PYTHON_VERSION=$(bash scripts/python-version.sh)" >> $GITHUB_ENV
 
-    - name: Cache Python site-packages
-      id: cached-site-packages
-      # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-      with:
-        path: ~/.local/lib/python${{ inputs.python-version }}/site-packages
-        key: ${{ runner.os }}-${{ inputs.python-version }}-site-packages
-        restore-keys: |
-          ${{ runner.os }}-site-packages-
-
-    - name: Install pre-commit
-      shell: bash
-      run: pip install pre-commit==4.2.0
-
     # > --------------------------------------------------
     # > UV
     - name: Get uv version from uv-version
@@ -162,19 +147,12 @@ runs:
       uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182  # 5.4.1
       with:
         version: ${{ env.UV_VERSION }}
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
 
-    - name: Set uv cache-dir
+    - name: Install pre-commit
       shell: bash
-      run: |
-        echo "UV_CACHE_DIR=$(uv cache dir)" >> $GITHUB_ENV
-
-    - name: Cached uv
-      id: cached-uv
-      # https://github.com/actions/cache
-      uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-      with:
-        path: ${{ env.UV_CACHE_DIR }}
-        key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-uv-${{ hashFiles('**/uv.lock') }}
+      run: uv tool install pre-commit==4.2.0
 
     # > --------------------------------------------------
     # > pre-commit
@@ -185,3 +163,10 @@ runs:
       with:
         path: ~/.cache/pre-commit
         key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-
+          ${{ runner.os }}-pre-commit-
+
+    - name: Optimize uv cache for CI
+      shell: bash
+      run: uv cache prune --ci
