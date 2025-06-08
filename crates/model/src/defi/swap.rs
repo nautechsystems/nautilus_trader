@@ -21,6 +21,7 @@ use nautilus_core::UnixNanos;
 use crate::{
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     enums::OrderSide,
+    identifiers::InstrumentId,
     types::{Price, Quantity},
 };
 
@@ -51,6 +52,8 @@ pub struct Swap {
     pub price: Price,
     /// The timestamp of the swap in Unix nanoseconds.
     pub timestamp: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
 }
 
 impl Swap {
@@ -84,7 +87,14 @@ impl Swap {
             side,
             quantity,
             price,
+            ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
         }
+    }
+
+    /// Returns the instrument ID for this swap.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        self.pool.instrument_id()
     }
 }
 
