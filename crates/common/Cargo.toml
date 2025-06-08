@@ -38,6 +38,7 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
 ]
+defi = ["nautilus-model/defi"]
 
 [package.metadata.docs.rs]
 all-features = true

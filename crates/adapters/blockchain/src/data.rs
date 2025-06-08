@@ -38,6 +38,7 @@ use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
+        DefiData,
         amm::{Pool, SharedPool},
         chain::{Blockchain, SharedChain},
         dex::Dex,
@@ -94,7 +95,6 @@ pub struct BlockchainDataClient {
     /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>,
     /// Channel sender for publishing data events to the AsyncRunner.
-    #[allow(dead_code)] // TODO: Add defi data to Data enum then we can use this
     data_sender: UnboundedSender<DataEvent>,
 }
 
@@ -197,7 +197,9 @@ impl BlockchainDataClient {
             .hypersync_client
             .request_blocks_stream(from_block, Some(current_block))
             .await;
+
         tokio::pin!(blocks_stream);
+
         while let Some(block) = blocks_stream.next().await {
             self.cache.add_block(block).await?;
         }
@@ -237,6 +239,7 @@ impl BlockchainDataClient {
             .await;
 
         tokio::pin!(stream);
+
         while let Some(log) = stream.next().await {
             let swap_event = dex_extended.parse_swap_event(log)?;
             let Some(timestamp) = self.cache.get_block_timestamp(swap_event.block_number) else {
@@ -266,10 +269,7 @@ impl BlockchainDataClient {
             );
             self.cache.add_swap(swap.clone()).await?;
 
-            // Publish swap data to the data engine
-            if let Err(e) = self.send_swap(&swap) {
-                tracing::error!("Failed to send swap data: {e}");
-            }
+            self.send_swap(&swap);
         }
         tracing::info!("Finished syncing pool swaps");
         Ok(())
@@ -356,7 +356,6 @@ impl BlockchainDataClient {
                 .add_pool_liquidity_update(liquidity_update.clone())
                 .await?;
 
-            // Send liquidity update data to data engine
             self.send_liquidity_update(&liquidity_update);
         }
 
@@ -550,49 +549,47 @@ impl BlockchainDataClient {
         }
     }
 
-    /// Logs blockchain data processing for now.
-    /// TODO: Implement proper data publishing once DeFi data types are added to Data enum
     fn log_blockchain_data(&self, data_type: &str, data_info: &str) {
-        tracing::info!(
+        tracing::debug!(
             "📡 Blockchain data processed: {} - {}",
             data_type,
             data_info
         );
-
-        // TODO: In the future, publish to data_sender when DeFi variants are added to Data enum
-        // let data_event = DataEvent::Data(data.into());
-        // if let Err(e) = self.data_sender.send(data_event) {
-        //     tracing::error!("Failed to send blockchain data: {e}");
-        // }
     }
 
-    /// Logs swap data processing.
-    fn send_swap(&self, swap: &Swap) -> anyhow::Result<()> {
-        self.log_blockchain_data(
-            "Swap",
-            &format!(
-                "{}@{} {} {}",
-                swap.pool.ticker(),
-                swap.price,
-                swap.side,
-                swap.quantity
-            ),
-        );
-        Ok(())
+    fn send_swap(&self, swap: &Swap) {
+        let data = DataEvent::DeFi(DefiData::Swap(swap.clone())); // TODO: Optimize clone
+        if let Err(e) = self.data_sender.send(data) {
+            tracing::error!("Failed to send blockchain data: {e}");
+        } else {
+            self.log_blockchain_data(
+                "Swap",
+                &format!(
+                    "{}@{} {} {}",
+                    swap.pool.ticker(),
+                    swap.price,
+                    swap.side,
+                    swap.quantity
+                ),
+            );
+        }
     }
 
-    /// Logs pool liquidity update data processing.
     fn send_liquidity_update(&self, update: &PoolLiquidityUpdate) {
-        // TODO: Add defi data to `Data` enum
-        self.log_blockchain_data(
-            "LiquidityUpdate",
-            &format!(
-                "{} {} liquidity={}",
-                update.pool.ticker(),
-                update.kind,
-                update.position_liquidity
-            ),
-        );
+        let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update.clone())); // TODO: Optimize clone
+        if let Err(e) = self.data_sender.send(data) {
+            tracing::error!("Failed to send blockchain data: {e}");
+        } else {
+            self.log_blockchain_data(
+                "LiquidityUpdate",
+                &format!(
+                    "{} {} liquidity={}",
+                    update.pool.ticker(),
+                    update.kind,
+                    update.position_liquidity
+                ),
+            );
+        }
     }
 
     /// Processes incoming messages from the RPC client.

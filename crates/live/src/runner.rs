@@ -106,10 +106,21 @@ impl AsyncRunner {
 
             match next_event {
                 RunnerEvent::Time(event) => self.clock.borrow().get_handler(event).run(),
-                RunnerEvent::Data(event) => match event {
-                    DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
-                    DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
-                },
+                RunnerEvent::Data(event) => {
+                    #[cfg(feature = "defi")]
+                    match event {
+                        DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
+                        DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                        DataEvent::DeFi(data) => {
+                            msgbus::send(data_engine_process, &data);
+                        }
+                    }
+                    #[cfg(not(feature = "defi"))]
+                    match event {
+                        DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
+                        DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                    }
+                }
             }
         }
     }

@@ -18,6 +18,11 @@
 //! This module provides core data structures for working with decentralized finance protocols,
 //! including blockchain networks, tokens, liquidity pools, swaps, and other DeFi primitives.
 
+use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
+
+use crate::{data::GetTsInit, identifiers::InstrumentId};
+
 pub mod amm;
 pub mod block;
 pub mod chain;
@@ -28,3 +33,55 @@ pub mod rpc;
 pub mod swap;
 pub mod token;
 pub mod transaction;
+
+/// Represents DeFi-specific data events in a decentralized exchange ecosystem.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DefiData {
+    /// A token swap transaction on a decentralized exchange.
+    Swap(swap::Swap),
+    /// A liquidity update event (mint/burn) in a DEX pool.
+    PoolLiquidityUpdate(liquidity::PoolLiquidityUpdate),
+    /// A DEX liquidity pool definition or update.
+    Pool(amm::Pool),
+}
+
+impl DefiData {
+    /// Returns the instrument ID associated with this DeFi data.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::Swap(swap) => swap.instrument_id(),
+            Self::PoolLiquidityUpdate(update) => update.instrument_id(),
+            Self::Pool(pool) => pool.instrument_id(),
+        }
+    }
+}
+
+impl GetTsInit for DefiData {
+    fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Swap(swap) => swap.ts_init,
+            Self::PoolLiquidityUpdate(update) => update.ts_init,
+            Self::Pool(pool) => pool.ts_init,
+        }
+    }
+}
+
+impl From<swap::Swap> for DefiData {
+    fn from(value: swap::Swap) -> Self {
+        Self::Swap(value)
+    }
+}
+
+impl From<liquidity::PoolLiquidityUpdate> for DefiData {
+    fn from(value: liquidity::PoolLiquidityUpdate) -> Self {
+        Self::PoolLiquidityUpdate(value)
+    }
+}
+
+impl From<amm::Pool> for DefiData {
+    fn from(value: amm::Pool) -> Self {
+        Self::Pool(value)
+    }
+}

@@ -15,6 +15,8 @@
 
 use std::{borrow::Cow, fmt::Display, sync::Arc};
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     defi::{amm::Pool, chain::Chain},
     identifiers::{InstrumentId, Symbol, Venue},
@@ -23,7 +25,7 @@ use crate::{
 };
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AmmType {
     /// Constant Product Automated Market Maker.
     CPAMM,
@@ -40,7 +42,7 @@ pub enum AmmType {
 }
 
 /// Represents a decentralized exchange (DEX) in a blockchain ecosystem.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Dex {
     /// The blockchain network where this DEX operates.
     pub chain: Chain,

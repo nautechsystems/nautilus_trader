@@ -19,11 +19,12 @@ use std::{
 };
 
 use alloy_primitives::Address;
+use serde::{Deserialize, Serialize};
 
 use crate::defi::chain::SharedChain;
 
 /// Represents a cryptocurrency token on a blockchain network.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Token {
     /// The blockchain network where this token exists.
     pub chain: SharedChain,

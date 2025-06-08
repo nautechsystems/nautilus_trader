@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use crate::{
+    data::GetTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
@@ -47,7 +48,7 @@ pub enum PoolLiquidityUpdateType {
 }
 
 /// Represents a liquidity update event in a decentralized exchange (DEX) pool.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolLiquidityUpdate {
     /// The blockchain network where the liquidity update occurred.
     pub chain: SharedChain,
@@ -132,5 +133,11 @@ impl PoolLiquidityUpdate {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         self.pool.instrument_id()
+    }
+}
+
+impl GetTsInit for PoolLiquidityUpdate {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }

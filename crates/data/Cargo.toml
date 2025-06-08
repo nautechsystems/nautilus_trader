@@ -41,6 +41,7 @@ python = [
 ]
 clock_v2 = ["nautilus-common/clock_v2"]
 high-precision = ["nautilus-model/high-precision"]
+defi = ["nautilus-model/defi"]
 
 [package.metadata.docs.rs]
 all-features = true

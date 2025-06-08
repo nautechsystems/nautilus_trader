@@ -19,9 +19,15 @@ name = "nautilus_blockchain"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = []
+default = ["defi"]
 hypersync = ["hypersync-client", "hypersync-schema"]
 python = ["pyo3", "nautilus-network/python"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-live/defi",
+  "nautilus-model/defi",
+]
 
 [package.metadata.docs.rs]
 features = ["defi", "python"]
@@ -67,24 +73,24 @@ rstest = { workspace = true }
 [[bin]]
 name = "live_blocks_rpc"
 path = "bin/watch_rpc_live_blocks.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
 
 [[bin]]
 name = "live_blocks_hypersync"
 path = "bin/watch_hypersync_live_blocks.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
 
 [[bin]]
 name = "sync_tokens_pools"
 path = "bin/sync_tokens_pools.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
 
 [[bin]]
 name = "sync_pool_events"
 path = "bin/sync_pool_events.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
 
 [[bin]]
 name = "node_test"
 path = "bin/node_test.rs"
-required-features = ["hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now

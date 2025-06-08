@@ -17,14 +17,16 @@ use std::sync::Arc;
 
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
 
 use crate::{
+    data::GetTsInit,
     defi::{chain::SharedChain, dex::Dex, token::Token},
     identifiers::InstrumentId,
 };
 
 /// Represents a liquidity pool in a decentralized exchange.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pool {
     /// The blockchain network where this pool exists.
     pub chain: SharedChain,
@@ -88,5 +90,11 @@ impl Pool {
     pub fn instrument_id(&self) -> InstrumentId {
         // Create instrument ID from pool ticker and DEX name
         InstrumentId::from(format!("{}.{}", self.ticker(), self.dex.name).as_str())
+    }
+}
+
+impl GetTsInit for Pool {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }
