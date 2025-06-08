@@ -174,16 +174,30 @@ impl Quota {
     /// This is useful mainly for [`crate::middleware::RateLimitingMiddleware`]
     /// where custom code may want to construct information based on
     /// the amount of burst balance remaining.
-    #[allow(unsafe_code)]
+    ///
+    /// # Panics
+    ///
+    /// Panics if the division result is 0 or exceeds u32::MAX.
     pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
-        // Safety assurance: As we're calling this from this crate
-        // only, and we do not allow creating a Gcra from 0
-        // parameters, this is, in fact, safe.
-        //
-        // The casts may look a little sketch, but again, they're
-        // constructed from parameters that came from the crate
-        // exactly like that.
-        let max_burst = unsafe { NonZeroU32::new_unchecked((tau.as_u64() / t.as_u64()) as u32) };
+        let t_u64 = t.as_u64();
+        let tau_u64 = tau.as_u64();
+
+        // Validate division won't be zero or overflow
+        if t_u64 == 0 {
+            panic!("Invalid GCRA parameter: t cannot be zero");
+        }
+
+        let division_result = tau_u64 / t_u64;
+        if division_result == 0 {
+            panic!("Invalid GCRA parameters: tau/t results in zero burst capacity");
+        }
+        if division_result > u32::MAX as u64 {
+            panic!("Invalid GCRA parameters: tau/t exceeds u32::MAX");
+        }
+
+        // We've verified the result is non-zero and fits in u32
+        let max_burst = NonZeroU32::new(division_result as u32)
+            .expect("Division result should be non-zero after validation");
         let replenish_1_per = t.into();
         Self {
             max_burst,

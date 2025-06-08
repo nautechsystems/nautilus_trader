@@ -71,11 +71,15 @@ pub(crate) fn process_fix_buffer(buf: &mut Vec<u8>, handler: &Arc<TcpMessageHand
                 // Search for message end
                 if let Some(end_pos) = find_message_end(&buf[idx..]) {
                     let message_end = idx + end_pos;
-                    if message_end - idx > MAX_MESSAGE_SIZE {
+                    let message_len = message_end - idx;
+
+                    // Check if message exceeds max size
+                    if message_len > MAX_MESSAGE_SIZE {
                         // Message exceeds max size, discard up to this point
                         processed_to = idx + 1;
                         continue;
                     }
+
                     let message = &buf[idx..message_end];
                     handler(message); // Pass complete message to handler
                     processed_to = message_end; // Update processed position
