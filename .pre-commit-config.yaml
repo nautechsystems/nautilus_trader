@@ -46,7 +46,8 @@ repos:
         description: Fail on hidden control or zero-width unicode characters in source
         entry: .pre-commit-hooks/check_hidden_chars.sh
         language: script
-        files: '\\.(rs|py|pyx|toml|md)$'
+        types_or: [rust, python, cython, toml, markdown, yaml, json, text]
+        files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
 
       - id: check-toml-codegen
         name: check toml-codegen
