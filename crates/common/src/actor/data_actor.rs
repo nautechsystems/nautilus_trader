@@ -596,28 +596,28 @@ pub trait DataActor:
     }
 
     /// Handles a data response.
-    fn handle_data_response(&mut self, response: &CustomDataResponse) {
-        log_received(&response);
+    fn handle_data_response(&mut self, resp: &CustomDataResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_data(response.data.as_ref()) {
+        if let Err(e) = self.on_historical_data(resp.data.as_ref()) {
             log_error(&e);
         }
     }
 
     /// Handles an instrument response.
-    fn handle_instrument_response(&mut self, response: &InstrumentResponse) {
-        log_received(&response);
+    fn handle_instrument_response(&mut self, resp: &InstrumentResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_instrument(&response.data) {
+        if let Err(e) = self.on_instrument(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles an instruments response.
-    fn handle_instruments_response(&mut self, response: &InstrumentsResponse) {
-        log_received(&response);
+    fn handle_instruments_response(&mut self, resp: &InstrumentsResponse) {
+        log_received(&resp);
 
-        for inst in &response.data {
+        for inst in &resp.data {
             if let Err(e) = self.on_instrument(inst) {
                 log_error(&e);
             }
@@ -625,37 +625,37 @@ pub trait DataActor:
     }
 
     /// Handles a book response.
-    fn handle_book_response(&mut self, response: &BookResponse) {
-        log_received(&response);
+    fn handle_book_response(&mut self, resp: &BookResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_book(&response.data) {
+        if let Err(e) = self.on_book(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a quotes response.
-    fn handle_quotes_response(&mut self, response: &QuotesResponse) {
-        log_received(&response);
+    fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_quotes(&response.data) {
+        if let Err(e) = self.on_historical_quotes(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a trades response.
-    fn handle_trades_response(&mut self, response: &TradesResponse) {
-        log_received(&response);
+    fn handle_trades_response(&mut self, resp: &TradesResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_trades(&response.data) {
+        if let Err(e) = self.on_historical_trades(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a bars response.
-    fn handle_bars_response(&mut self, response: &BarsResponse) {
-        log_received(&response);
+    fn handle_bars_response(&mut self, resp: &BarsResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_bars(&response.data) {
+        if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
         }
     }
@@ -1154,8 +1154,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &CustomDataResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_data_response(response);
+            move |resp: &CustomDataResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_data_response(resp);
             },
         )));
 
@@ -1182,8 +1182,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_instrument_response(response);
+            move |resp: &InstrumentResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instrument_response(resp);
             },
         )));
 
@@ -1216,8 +1216,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentsResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_instruments_response(response);
+            move |resp: &InstrumentsResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instruments_response(resp);
             },
         )));
 
@@ -1241,8 +1241,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &BookResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_book_response(response);
+            move |resp: &BookResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_book_response(resp);
             },
         )));
 
@@ -1268,8 +1268,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &QuotesResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_quotes_response(response);
+            move |resp: &QuotesResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_quotes_response(resp);
             },
         )));
 
@@ -1304,8 +1304,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &TradesResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_trades_response(response);
+            move |resp: &TradesResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_trades_response(resp);
             },
         )));
 
@@ -1340,8 +1340,8 @@ pub trait DataActor:
     {
         let actor_id = self.actor_id().inner();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &BarsResponse| {
-                get_actor_unchecked::<Self>(&actor_id).handle_bars_response(response);
+            move |resp: &BarsResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
             },
         )));
 
