@@ -1,3 +1,4 @@
+import ast
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
@@ -61,7 +62,7 @@ def parse_filters_expr(s: str | None):
     if not s:
         return None
 
-    def safer_eval(input_string):
+    def safer_ast.literal_eval(input_string):
         allowed_names = {"field": field}
         code = compile(input_string, "<string>", "eval")
 
@@ -69,9 +70,9 @@ def parse_filters_expr(s: str | None):
             if name not in allowed_names:
                 raise NameError(f"Use of {name} not allowed")
 
-        return eval(code, {}, allowed_names)  # noqa
+        return ast.literal_eval(code, {}, allowed_names)  # noqa
 
-    return safer_eval(s)  # Only allow use of the field object
+    return safer_ast.literal_eval(s)  # Only allow use of the field object
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
