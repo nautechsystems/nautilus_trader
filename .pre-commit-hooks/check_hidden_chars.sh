@@ -3,7 +3,7 @@
 # Ensure no hidden control or problematic unicode characters in source files
 #
 # This hook detects characters that could be used to hide malicious content:
-# - Control chars (U+0001–U+0008, U+000E–U+001F)
+# - Control chars (U+0001U+0008, U+000EU+001F)
 # - Zero-width spaces (U+200B, U+200C, U+200D)
 # - BOM (U+FEFF)
 # - Right-to-left override chars (U+202D, U+202E)
@@ -23,7 +23,7 @@ exclude_files="--exclude=*.lock --exclude=*.whl --exclude=*.egg-info --exclude=c
 
 # Check for problematic Unicode characters in all source code
 # Always check for hidden Unicode - these should never appear in legitimate source
-control_chars=$(grep -R --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]|‍|‌|​|‏|‎|⁠|⁡|⁢|⁣|⁤|⁥|⁦|⁧|⁨|⁩|￿" $exclude_dirs $exclude_files --include="*.py" --include="*.pyx" --include="*.rs" --include="*.toml" --include="*.md" --include="*.txt" --exclude="*test*" --exclude="*Test*" . || true)
+control_chars=$(grep -R --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]||||||||||||||||" $exclude_dirs $exclude_files --include="*.py" --include="*.pyx" --include="*.rs" --include="*.toml" --include="*.md" --include="*.txt" --exclude="*test*" --exclude="*Test*" . || true)
 
 # Check for suspicious long base64/hex strings, with very specific exclusions
 # Any changes to these exclusions should be carefully reviewed as they create security blind spots
