@@ -82,7 +82,7 @@ impl ExponentialMovingAverage {
     ///
     /// # Panics
     ///
-    /// Panics if `period` is not positive (> 0).
+    /// Panics if `period` is not a positive integer (> 0).
     #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         assert!(
