@@ -210,6 +210,11 @@ impl Default for MessagingSwitchboard {
 
 impl MessagingSwitchboard {
     #[must_use]
+    pub fn data_engine_queue_execute() -> MStr<Endpoint> {
+        "DataEngine.queue_execute".into()
+    }
+
+    #[must_use]
     pub fn data_engine_execute() -> MStr<Endpoint> {
         "DataEngine.execute".into()
     }

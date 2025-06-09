@@ -13,14 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{
+    cell::{OnceCell, RefCell},
+    fmt::Debug,
+    rc::Rc,
+};
 
 use futures::StreamExt;
 use nautilus_common::{
     clock::{Clock, LiveClock},
-    messages::DataEvent,
+    messages::{DataEvent, data::DataCommand},
     msgbus::{self, switchboard::MessagingSwitchboard},
-    runner::{DataQueue, RunnerEvent, set_data_event_sender, set_data_evt_queue},
+    runner::{
+        DataCommandExecutor, DataQueue, RunnerEvent, set_data_cmd_executor, set_data_evt_queue,
+    },
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -40,6 +46,64 @@ impl DataQueue for AsyncDataQueue {
     }
 }
 
+/// Asynchronous implementation of DataCommandExecutor for live environments.
+#[derive(Debug)]
+pub struct AsyncDataCommandExecutor {
+    cmd_tx: UnboundedSender<DataCommand>,
+}
+
+impl AsyncDataCommandExecutor {
+    pub fn new(cmd_tx: UnboundedSender<DataCommand>) -> Self {
+        Self { cmd_tx }
+    }
+}
+
+impl DataCommandExecutor for AsyncDataCommandExecutor {
+    fn execute(&self, command: DataCommand) {
+        if let Err(e) = self.cmd_tx.send(command) {
+            log::error!("Failed to send data command to async executor: {e}");
+        }
+    }
+}
+
+/// Sets the global data event sender.
+///
+/// This should be called by the AsyncRunner when it creates the channel.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or a sender is already set.
+pub fn set_data_event_sender(sender: UnboundedSender<DataEvent>) {
+    DATA_EVT_SENDER
+        .try_with(|s| {
+            assert!(s.set(sender).is_ok(), "Data event sender already set");
+        })
+        .expect("Should be able to access thread local storage");
+}
+
+/// Gets a cloned data event sender.
+///
+/// This allows data clients to send events directly to the AsyncRunner
+/// without going through shared mutable state.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the sender is uninitialized.
+#[must_use]
+pub fn get_data_event_sender() -> UnboundedSender<DataEvent> {
+    DATA_EVT_SENDER
+        .try_with(|s| {
+            s.get()
+                .expect("Data event sender should be initialized by AsyncRunner")
+                .clone()
+        })
+        .expect("Should be able to access thread local storage")
+}
+
+thread_local! {
+    static DATA_EVT_SENDER: OnceCell<UnboundedSender<DataEvent>> = const { OnceCell::new() };
+}
+
 pub trait Runner {
     fn run(&mut self);
 }
@@ -47,7 +111,9 @@ pub trait Runner {
 pub struct AsyncRunner {
     pub clock: Rc<RefCell<LiveClock>>,
     data_rx: UnboundedReceiver<DataEvent>,
+    cmd_rx: UnboundedReceiver<DataCommand>,
     signal_rx: UnboundedReceiver<()>,
+    signal_tx: UnboundedSender<()>,
 }
 
 impl Debug for AsyncRunner {
@@ -59,23 +125,34 @@ impl Debug for AsyncRunner {
 }
 
 impl AsyncRunner {
-    pub fn new(clock: Rc<RefCell<LiveClock>>) -> (Self, UnboundedSender<()>) {
+    pub fn new(clock: Rc<RefCell<LiveClock>>) -> Self {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
         // Set up the global data event sender for direct access
         set_data_event_sender(data_tx.clone());
 
+        // Set up the async data command executor
+        let executor = AsyncDataCommandExecutor::new(cmd_tx);
+        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+
         // Also keep the existing AsyncDataQueue for backward compatibility
         set_data_evt_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
 
-        let runner = Self {
+        Self {
             clock,
             data_rx,
+            cmd_rx,
             signal_rx,
-        };
+            signal_tx,
+        }
+    }
 
-        (runner, signal_tx)
+    /// Gets a reference to the signal sender for shutdown control.
+    #[must_use]
+    pub fn get_signal_sender(&self) -> &UnboundedSender<()> {
+        &self.signal_tx
     }
 }
 
@@ -91,12 +168,17 @@ impl AsyncRunner {
 
         let data_engine_process = MessagingSwitchboard::data_engine_process();
         let data_engine_response = MessagingSwitchboard::data_engine_response();
+        let data_engine_execute = MessagingSwitchboard::data_engine_execute();
 
         loop {
-            // Collect the next event to process, including signal events
-            let next_event = tokio::select! {
-                Some(resp) = self.data_rx.recv() => RunnerEvent::Data(resp),
-                Some(event) = time_event_stream.next() => RunnerEvent::Time(event),
+            // Collect the next message to process, including signal events
+            let next_msg = tokio::select! {
+                Some(resp) = self.data_rx.recv() => Some(RunnerEvent::Data(resp)),
+                Some(event) = time_event_stream.next() => Some(RunnerEvent::Time(event)),
+                Some(cmd) = self.cmd_rx.recv() => {
+                    msgbus::send(data_engine_execute, &cmd);
+                    None // TODO: Refactor this
+                },
                 Some(()) = self.signal_rx.recv() => {
                     tracing::info!("AsyncRunner received signal, shutting down");
                     return; // Signal to stop
@@ -104,21 +186,23 @@ impl AsyncRunner {
                 else => return, // Sentinel event ends run
             };
 
-            match next_event {
-                RunnerEvent::Time(event) => self.clock.borrow().get_handler(event).run(),
-                RunnerEvent::Data(event) => {
-                    #[cfg(feature = "defi")]
-                    match event {
-                        DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
-                        DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
-                        DataEvent::DeFi(data) => {
-                            msgbus::send(data_engine_process, &data);
+            if let Some(msg) = next_msg {
+                match msg {
+                    RunnerEvent::Time(event) => self.clock.borrow().get_handler(event).run(),
+                    RunnerEvent::Data(event) => {
+                        #[cfg(feature = "defi")]
+                        match event {
+                            DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
+                            DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                            DataEvent::DeFi(data) => {
+                                msgbus::send(data_engine_process, &data);
+                            }
                         }
-                    }
-                    #[cfg(not(feature = "defi"))]
-                    match event {
-                        DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
-                        DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                        #[cfg(not(feature = "defi"))]
+                        match event {
+                            DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
+                            DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                        }
                     }
                 }
             }

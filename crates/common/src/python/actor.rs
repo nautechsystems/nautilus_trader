@@ -642,7 +642,13 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::PyDataActor;
-    use crate::{cache::Cache, clock::TestClock, component::Component, enums::ComponentState};
+    use crate::{
+        cache::Cache,
+        clock::TestClock,
+        component::Component,
+        enums::ComponentState,
+        runner::{SyncDataCommandExecutor, set_data_cmd_executor},
+    };
 
     #[fixture]
     fn clock() -> Rc<RefCell<TestClock>> {
@@ -688,6 +694,10 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) -> PyDataActor {
+        // Set up sync data command executor for tests
+        let executor = SyncDataCommandExecutor;
+        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+
         let mut actor = PyDataActor::py_new(None).unwrap();
         actor.register(trader_id, clock, cache).unwrap();
         actor
