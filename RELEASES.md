@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Added property-based testing for `OrderBook` in Rust
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
+- Added property-based testing for `Price` and `Quantity` in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid pointer comparison issues with `ustr` string interning
