@@ -72,8 +72,7 @@ nautilus-testkit = { workspace = true }
 
 criterion = { workspace = true }
 pretty_assertions = { workspace = true }
-quickcheck = { workspace = true }
-quickcheck_macros = { workspace = true }
+proptest = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
