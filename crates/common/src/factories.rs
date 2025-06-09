@@ -71,27 +71,33 @@ impl OrderFactory {
         }
     }
 
+    /// Sets the client order ID generator count.
     pub const fn set_client_order_id_count(&mut self, count: usize) {
         self.order_id_generator.set_count(count);
     }
 
+    /// Sets the order list ID generator count.
     pub const fn set_order_list_id_count(&mut self, count: usize) {
         self.order_list_id_generator.set_count(count);
     }
 
+    /// Generates a new client order ID.
     pub fn generate_client_order_id(&mut self) -> ClientOrderId {
         self.order_id_generator.generate()
     }
 
+    /// Generates a new order list ID.
     pub fn generate_order_list_id(&mut self) -> OrderListId {
         self.order_list_id_generator.generate()
     }
 
+    /// Resets the factory by resetting all ID generators.
     pub const fn reset_factory(&mut self) {
         self.order_id_generator.reset();
         self.order_list_id_generator.reset();
     }
 
+    /// Creates a new market order.
     #[allow(clippy::too_many_arguments)]
     pub fn market(
         &mut self,

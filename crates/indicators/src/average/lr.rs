@@ -87,7 +87,7 @@ impl LinearRegression {
     ///
     /// This function panics if:
     /// `period` is zero.
-    /// `period` exceeds [`MAX_PERIOD`].
+    /// `period` exceeds `MAX_PERIOD` (16,384).
     #[must_use]
     pub fn new(period: usize) -> Self {
         assert!(

@@ -91,14 +91,16 @@ impl UUID4 {
 
     fn validate_v4(uuid: &Uuid) {
         // Validate this is a v4 UUID
-        assert!(
-            !(uuid.get_version() != Some(uuid::Version::Random)),
+        assert_eq!(
+            uuid.get_version(),
+            Some(uuid::Version::Random),
             "UUID is not version 4"
         );
 
         // Validate RFC4122 variant
-        assert!(
-            !(uuid.get_variant() != uuid::Variant::RFC4122),
+        assert_eq!(
+            uuid.get_variant(),
+            uuid::Variant::RFC4122,
             "UUID is not RFC 4122 variant"
         );
     }

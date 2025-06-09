@@ -32,10 +32,10 @@ class TestForexSessionFilter:
     @pytest.mark.parametrize(
         ("session", "expected"),
         [
-            [nautilus_pyo3.ForexSession.SYDNEY, "1970-01-01 10:00:00+10:00"],
-            [nautilus_pyo3.ForexSession.TOKYO, "1970-01-01 09:00:00+09:00"],
-            [nautilus_pyo3.ForexSession.LONDON, "1970-01-01 01:00:00+01:00"],
-            [nautilus_pyo3.ForexSession.NEW_YORK, "1969-12-31 19:00:00-05:00"],
+            [nautilus_pyo3.ForexSession.SYDNEY, "1970-01-01T10:00:00+10:00"],
+            [nautilus_pyo3.ForexSession.TOKYO, "1970-01-01T09:00:00+09:00"],
+            [nautilus_pyo3.ForexSession.LONDON, "1970-01-01T01:00:00+01:00"],
+            [nautilus_pyo3.ForexSession.NEW_YORK, "1969-12-31T19:00:00-05:00"],
         ],
     )
     def test_local_from_utc_given_various_sessions_returns_expected_datetime(
@@ -47,7 +47,7 @@ class TestForexSessionFilter:
         result = nautilus_pyo3.fx_local_from_utc(session, _UNIX_EPOCH)
 
         # Assert
-        assert str(result) == expected
+        assert result == expected
 
     @pytest.mark.parametrize(
         ("session", "expected"),

@@ -153,7 +153,7 @@ class IBTestContractStubs:
         contract_details = IBTestContractStubs.convert_contract_details_to_ib_contract_details(
             contract_details,
         )
-        return parse_instrument(contract_details=contract_details)
+        return parse_instrument(contract_details, contract_details.contract.primaryExchange)
 
     @staticmethod
     def aapl_equity_contract() -> Contract:
@@ -503,7 +503,8 @@ class IBTestContractStubs:
     @staticmethod
     def aapl_instrument() -> Equity:
         contract_details = IBTestContractStubs.aapl_equity_contract_details()
-        return IBTestContractStubs.create_instrument(contract_details)
+        instrument = IBTestContractStubs.create_instrument(contract_details)
+        return instrument
 
     @staticmethod
     def eurusd_instrument() -> CurrencyPair:

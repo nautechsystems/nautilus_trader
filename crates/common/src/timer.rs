@@ -180,7 +180,12 @@ impl From<PyObject> for TimeEventCallback {
     }
 }
 
-// SAFETY: Message handlers cannot be sent across thread boundaries
+// TimeEventCallback supports both single-threaded and async use cases:
+// - Python variant uses Arc<PyObject> for cross-thread compatibility with Python's GIL
+// - Rust variant uses Rc<dyn Fn(TimeEvent)> for efficient single-threaded callbacks
+// SAFETY: The async timer tasks only use Python callbacks, and Rust callbacks are never
+// sent across thread boundaries in practice. This unsafe implementation allows the enum
+// to be moved into async tasks while maintaining the efficient Rc for single-threaded use.
 #[allow(unsafe_code)]
 unsafe impl Send for TimeEventCallback {}
 #[allow(unsafe_code)]
@@ -251,6 +256,8 @@ pub struct TestTimer {
     pub start_time_ns: UnixNanos,
     /// The optional stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
+    /// If the timer should fire immediately at start time.
+    pub fire_immediately: bool,
     next_time_ns: UnixNanos,
     is_expired: bool,
 }
@@ -267,15 +274,23 @@ impl TestTimer {
         interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
+        fire_immediately: bool,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        let next_time_ns = if fire_immediately {
+            start_time_ns
+        } else {
+            start_time_ns + interval_ns.get()
+        };
 
         Self {
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: start_time_ns + interval_ns.get(),
+            fire_immediately,
+            next_time_ns,
             is_expired: false,
         }
     }
@@ -308,9 +323,12 @@ impl TestTimer {
     ///
     /// This allows testing of multiple time intervals within a single step.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
-        let advances = to_time_ns
-            .saturating_sub(self.next_time_ns.as_u64() - self.interval_ns.get())
-            / self.interval_ns.get();
+        // Calculate how many events should fire up to and including to_time_ns
+        let advances = if self.next_time_ns <= to_time_ns {
+            (to_time_ns.as_u64() - self.next_time_ns.as_u64()) / self.interval_ns.get() + 1
+        } else {
+            0
+        };
         self.take(advances as usize).map(|(event, _)| event)
     }
 
@@ -329,6 +347,14 @@ impl Iterator for TestTimer {
         if self.is_expired {
             None
         } else {
+            // Check if current event would exceed stop time before creating the event
+            if let Some(stop_time_ns) = self.stop_time_ns {
+                if self.next_time_ns > stop_time_ns {
+                    self.is_expired = true;
+                    return None;
+                }
+            }
+
             let item = (
                 TimeEvent {
                     name: self.name,
@@ -339,9 +365,9 @@ impl Iterator for TestTimer {
                 self.next_time_ns,
             );
 
-            // If current next event time has exceeded stop time, then expire timer
+            // Check if we should expire after this event (for repeating timers at stop boundary)
             if let Some(stop_time_ns) = self.stop_time_ns {
-                if self.next_time_ns >= stop_time_ns {
+                if self.next_time_ns == stop_time_ns {
                     self.is_expired = true;
                 }
             }
@@ -367,6 +393,8 @@ pub struct LiveTimer {
     pub start_time_ns: UnixNanos,
     /// The optional stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
+    /// If the timer should fire immediately at start time.
+    pub fire_immediately: bool,
     next_time_ns: Arc<AtomicU64>,
     callback: TimeEventCallback,
     task_handle: Option<JoinHandle<()>>,
@@ -388,8 +416,15 @@ impl LiveTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
+        fire_immediately: bool,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        let next_time_ns = if fire_immediately {
+            start_time_ns.as_u64()
+        } else {
+            start_time_ns.as_u64() + interval_ns.get()
+        };
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -397,7 +432,8 @@ impl LiveTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
+            fire_immediately,
+            next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
             callback,
             task_handle: None,
         }
@@ -417,8 +453,15 @@ impl LiveTimer {
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
         heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+        fire_immediately: bool,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
+
+        let next_time_ns = if fire_immediately {
+            start_time_ns.as_u64()
+        } else {
+            start_time_ns.as_u64() + interval_ns.get()
+        };
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -426,7 +469,8 @@ impl LiveTimer {
             interval_ns,
             start_time_ns,
             stop_time_ns,
-            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
+            fire_immediately,
+            next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
             callback,
             heap,
             task_handle: None,
@@ -578,13 +622,13 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
+    use std::{num::NonZeroU64, rc::Rc};
 
     use nautilus_core::UnixNanos;
     use rstest::*;
     use ustr::Ustr;
 
-    use super::{TestTimer, TimeEvent};
+    use super::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback};
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -593,6 +637,7 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             UnixNanos::from(1),
             None,
+            false,
         );
 
         assert!(timer.next().is_some());
@@ -608,6 +653,7 @@ mod tests {
             NonZeroU64::new(5).unwrap(),
             UnixNanos::default(),
             None,
+            false,
         );
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(1)).collect();
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(2)).collect();
@@ -624,6 +670,7 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             None,
+            false,
         );
         assert_eq!(timer.advance(UnixNanos::from(1)).count(), 1);
         assert!(!timer.is_expired);
@@ -636,6 +683,7 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(2)),
+            false,
         );
         assert_eq!(timer.advance(UnixNanos::from(2)).count(), 2);
         assert!(timer.is_expired);
@@ -648,6 +696,7 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
+            false,
         );
         assert_eq!(timer.advance(UnixNanos::from(5)).count(), 5);
         assert!(timer.is_expired);
@@ -660,6 +709,7 @@ mod tests {
             NonZeroU64::new(1).unwrap(),
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
+            false,
         );
         assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
         assert!(timer.is_expired);
@@ -672,11 +722,271 @@ mod tests {
             NonZeroU64::new(5).unwrap(),
             UnixNanos::from(0),
             None,
+            false,
         );
         let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(5)).collect();
         assert_eq!(events.len(), 1, "Expected one event at the 5 ns boundary");
 
         let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(10)).collect();
         assert_eq!(events.len(), 1, "Expected one event at the 10 ns boundary");
+    }
+
+    #[rstest]
+    fn test_test_timer_fire_immediately_true() {
+        let mut timer = TestTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(5).unwrap(),
+            UnixNanos::from(10),
+            None,
+            true, // fire_immediately = true
+        );
+
+        // With fire_immediately=true, next_time_ns should be start_time_ns
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(10));
+
+        // Advance to start time should produce an event
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(10)).collect();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].ts_event, UnixNanos::from(10));
+
+        // Next event should be at start_time + interval
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(15));
+    }
+
+    #[rstest]
+    fn test_test_timer_fire_immediately_false() {
+        let mut timer = TestTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(5).unwrap(),
+            UnixNanos::from(10),
+            None,
+            false, // fire_immediately = false
+        );
+
+        // With fire_immediately=false, next_time_ns should be start_time_ns + interval
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(15));
+
+        // Advance to start time should produce no events
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(10)).collect();
+        assert_eq!(events.len(), 0);
+
+        // Advance to first interval should produce an event
+        let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(15)).collect();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].ts_event, UnixNanos::from(15));
+    }
+
+    #[rstest]
+    fn test_live_timer_fire_immediately_field() {
+        let timer = LiveTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(1000).unwrap(),
+            UnixNanos::from(100),
+            None,
+            TimeEventCallback::Rust(Rc::new(|_| {})),
+            true, // fire_immediately = true
+        );
+
+        // Verify the field is set correctly
+        assert!(timer.fire_immediately);
+
+        // With fire_immediately=true, next_time_ns should be start_time_ns
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(100));
+    }
+
+    #[rstest]
+    fn test_live_timer_fire_immediately_false_field() {
+        let timer = LiveTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(1000).unwrap(),
+            UnixNanos::from(100),
+            None,
+            TimeEventCallback::Rust(Rc::new(|_| {})),
+            false, // fire_immediately = false
+        );
+
+        // Verify the field is set correctly
+        assert!(!timer.fire_immediately);
+
+        // With fire_immediately=false, next_time_ns should be start_time_ns + interval
+        assert_eq!(timer.next_time_ns(), UnixNanos::from(1100));
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Property-based testing
+    ////////////////////////////////////////////////////////////////////////////////
+
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    enum TimerOperation {
+        AdvanceTime(u64),
+        Cancel,
+    }
+
+    fn timer_operation_strategy() -> impl Strategy<Value = TimerOperation> {
+        prop_oneof![
+            8 => prop::num::u64::ANY.prop_map(|v| TimerOperation::AdvanceTime(v % 1000 + 1)),
+            2 => Just(TimerOperation::Cancel),
+        ]
+    }
+
+    fn timer_config_strategy() -> impl Strategy<Value = (u64, u64, Option<u64>, bool)> {
+        (
+            1u64..=100u64,                    // interval_ns (1-100)
+            0u64..=50u64,                     // start_time_ns (0-50)
+            prop::option::of(51u64..=200u64), // stop_time_ns (51-200 or None)
+            prop::bool::ANY,                  // fire_immediately
+        )
+    }
+
+    fn timer_test_strategy()
+    -> impl Strategy<Value = (Vec<TimerOperation>, (u64, u64, Option<u64>, bool))> {
+        (
+            prop::collection::vec(timer_operation_strategy(), 5..=50),
+            timer_config_strategy(),
+        )
+    }
+
+    fn test_timer_with_operations(
+        operations: Vec<TimerOperation>,
+        (interval_ns, start_time_ns, stop_time_ns, fire_immediately): (u64, u64, Option<u64>, bool),
+    ) {
+        let mut timer = TestTimer::new(
+            Ustr::from("PROP_TEST_TIMER"),
+            NonZeroU64::new(interval_ns).unwrap(),
+            UnixNanos::from(start_time_ns),
+            stop_time_ns.map(UnixNanos::from),
+            fire_immediately,
+        );
+
+        let mut current_time = start_time_ns;
+
+        for operation in operations {
+            if timer.is_expired() {
+                break;
+            }
+
+            match operation {
+                TimerOperation::AdvanceTime(delta) => {
+                    let to_time = current_time + delta;
+                    let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(to_time)).collect();
+                    current_time = to_time;
+
+                    // Verify event ordering and timing
+                    for (i, event) in events.iter().enumerate() {
+                        // Event timestamps should be in order
+                        if i > 0 {
+                            assert!(
+                                event.ts_event >= events[i - 1].ts_event,
+                                "Events should be in chronological order"
+                            );
+                        }
+
+                        // Event timestamp should be within reasonable bounds
+                        assert!(
+                            event.ts_event.as_u64() >= start_time_ns,
+                            "Event timestamp should not be before start time"
+                        );
+
+                        assert!(
+                            event.ts_event.as_u64() <= to_time,
+                            "Event timestamp should not be after advance time"
+                        );
+
+                        // If there's a stop time, event should not exceed it
+                        if let Some(stop_time_ns) = stop_time_ns {
+                            assert!(
+                                event.ts_event.as_u64() <= stop_time_ns,
+                                "Event timestamp should not exceed stop time"
+                            );
+                        }
+                    }
+                }
+                TimerOperation::Cancel => {
+                    timer.cancel();
+                    assert!(timer.is_expired(), "Timer should be expired after cancel");
+                }
+            }
+
+            // Timer invariants
+            if !timer.is_expired() {
+                // Next time should be properly spaced
+                let expected_interval_multiple = if fire_immediately {
+                    timer.next_time_ns().as_u64() >= start_time_ns
+                } else {
+                    timer.next_time_ns().as_u64() >= start_time_ns + interval_ns
+                };
+                assert!(
+                    expected_interval_multiple,
+                    "Next time should respect interval spacing"
+                );
+
+                // If timer has stop time, check if it should be considered logically expired
+                // Note: Timer only becomes actually expired when advance() or next() is called
+                if let Some(stop_time_ns) = stop_time_ns {
+                    if timer.next_time_ns().as_u64() > stop_time_ns {
+                        // The timer should expire on the next advance/iteration
+                        let mut test_timer = timer.clone();
+                        let events: Vec<TimeEvent> = test_timer
+                            .advance(UnixNanos::from(stop_time_ns + 1))
+                            .collect();
+                        assert!(
+                            events.is_empty() || test_timer.is_expired(),
+                            "Timer should not generate events beyond stop time"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Final consistency check: if timer is not expired and we haven't hit stop time,
+        // advancing far enough should eventually expire it
+        if !timer.is_expired() && stop_time_ns.is_some() {
+            let events: Vec<TimeEvent> = timer
+                .advance(UnixNanos::from(stop_time_ns.unwrap() + 1000))
+                .collect();
+            assert!(
+                timer.is_expired() || events.is_empty(),
+                "Timer should eventually expire or stop generating events"
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_timer_advance_operations((operations, config) in timer_test_strategy()) {
+            test_timer_with_operations(operations, config);
+        }
+
+        #[test]
+        fn prop_timer_interval_consistency(
+            interval_ns in 1u64..=100u64,
+            start_time_ns in 0u64..=50u64,
+            fire_immediately in prop::bool::ANY,
+            advance_count in 1usize..=20usize,
+        ) {
+            let mut timer = TestTimer::new(
+                Ustr::from("CONSISTENCY_TEST"),
+                NonZeroU64::new(interval_ns).unwrap(),
+                UnixNanos::from(start_time_ns),
+                None, // No stop time for this test
+                fire_immediately,
+            );
+
+            let mut previous_event_time = if fire_immediately { start_time_ns } else { start_time_ns + interval_ns };
+
+            for _ in 0..advance_count {
+                let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(previous_event_time)).collect();
+
+                if !events.is_empty() {
+                    // Should get exactly one event at the expected time
+                    prop_assert_eq!(events.len(), 1);
+                    prop_assert_eq!(events[0].ts_event.as_u64(), previous_event_time);
+                }
+
+                previous_event_time += interval_ns;
+            }
+        }
     }
 }

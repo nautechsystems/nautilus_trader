@@ -16,7 +16,14 @@
 use indexmap::IndexMap;
 use nautilus_core::{
     UUID4, UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{
+        IntoPyObjectNautilusExt,
+        parsing::{
+            get_optional, get_optional_parsed, get_required, get_required_parsed,
+            get_required_string,
+        },
+        to_pyruntime_err, to_pyvalue_err,
+    },
 };
 use pyo3::{
     basic::CompareOp,
@@ -464,111 +471,61 @@ impl LimitOrder {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
-        let dict = values.as_ref();
-        let trader_id = TraderId::from(dict.get_item("trader_id")?.extract::<&str>()?);
-        let strategy_id = StrategyId::from(dict.get_item("strategy_id")?.extract::<&str>()?);
-        let instrument_id = InstrumentId::from(dict.get_item("instrument_id")?.extract::<&str>()?);
+        let trader_id = TraderId::from(get_required_string(values, "trader_id")?.as_str());
+        let strategy_id = StrategyId::from(get_required_string(values, "strategy_id")?.as_str());
+        let instrument_id =
+            InstrumentId::from(get_required_string(values, "instrument_id")?.as_str());
         let client_order_id =
-            ClientOrderId::from(dict.get_item("client_order_id")?.extract::<&str>()?);
-        let order_side = dict
-            .get_item("side")?
-            .extract::<&str>()?
-            .parse::<OrderSide>()
-            .unwrap();
-        let quantity = Quantity::from(dict.get_item("quantity")?.extract::<&str>()?);
-        let price = Price::from(dict.get_item("price")?.extract::<&str>()?);
-        let time_in_force = dict
-            .get_item("time_in_force")?
-            .extract::<&str>()?
-            .parse::<TimeInForce>()
-            .unwrap();
-        let expire_time = dict
-            .get_item("expire_time_ns")
-            .map(|x| {
-                let extracted = x.extract::<u64>();
-                match extracted {
-                    Ok(item) => Some(UnixNanos::from(item)),
-                    Err(_) => None,
-                }
-            })
-            .unwrap();
-        let is_post_only = dict.get_item("is_post_only")?.extract::<bool>()?;
-        let is_reduce_only = dict.get_item("is_reduce_only")?.extract::<bool>()?;
-        let is_quote_quantity = dict.get_item("is_quote_quantity")?.extract::<bool>()?;
-        let display_qty = dict
-            .get_item("display_qty")?
-            .extract::<Option<Quantity>>()?;
-        let emulation_trigger = dict
-            .get_item("emulation_trigger")
-            .map(|x| x.extract::<&str>().unwrap().parse::<TriggerType>().ok())?;
-        let trigger_instrument_id = dict.get_item("trigger_instrument_id").map(|x| {
-            let extracted_str = x.extract::<&str>();
-            match extracted_str {
-                Ok(item) => item.parse::<InstrumentId>().ok(),
-                Err(_) => None,
-            }
+            ClientOrderId::from(get_required_string(values, "client_order_id")?.as_str());
+        let order_side = get_required_parsed(values, "side", |s| {
+            s.parse::<OrderSide>().map_err(|e| e.to_string())
         })?;
-        let contingency_type = dict
-            .get_item("contingency_type")
-            .map(|x| x.extract::<&str>().unwrap().parse::<ContingencyType>().ok())?;
-        let order_list_id = dict.get_item("order_list_id").map(|x| {
-            let extracted_str = x.extract::<&str>();
-            match extracted_str {
-                Ok(item) => Some(OrderListId::from(item)),
-                Err(_) => None,
-            }
+        let quantity = Quantity::from(get_required_string(values, "quantity")?.as_str());
+        let price = Price::from(get_required_string(values, "price")?.as_str());
+        let time_in_force = get_required_parsed(values, "time_in_force", |s| {
+            s.parse::<TimeInForce>().map_err(|e| e.to_string())
         })?;
-        let linked_order_ids = dict.get_item("linked_order_ids").map(|x| {
-            let extracted_str = x.extract::<Vec<String>>();
-            match extracted_str {
-                Ok(item) => Some(
-                    item.iter()
-                        .map(|x| ClientOrderId::from(x.as_str()))
-                        .collect(),
-                ),
-                Err(_) => None,
-            }
+        let expire_time = get_optional::<u64>(values, "expire_time_ns")?.map(UnixNanos::from);
+        let is_post_only = get_required::<bool>(values, "is_post_only")?;
+        let is_reduce_only = get_required::<bool>(values, "is_reduce_only")?;
+        let is_quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
+        let display_qty = get_optional::<Quantity>(values, "display_qty")?;
+        let emulation_trigger = get_optional_parsed(values, "emulation_trigger", |s| {
+            s.parse::<TriggerType>().map_err(|e| e.to_string())
         })?;
-        let parent_order_id = dict.get_item("parent_order_id").map(|x| {
-            let extracted_str = x.extract::<&str>();
-            match extracted_str {
-                Ok(item) => Some(ClientOrderId::from(item)),
-                Err(_) => None,
-            }
+        let trigger_instrument_id = get_optional_parsed(values, "trigger_instrument_id", |s| {
+            s.parse::<InstrumentId>().map_err(|e| e.to_string())
         })?;
-        let exec_algorithm_id = dict.get_item("exec_algorithm_id").map(|x| {
-            let extracted_str = x.extract::<&str>();
-            match extracted_str {
-                Ok(item) => Some(ExecAlgorithmId::from(item)),
-                Err(_) => None,
-            }
+        let contingency_type = get_optional_parsed(values, "contingency_type", |s| {
+            s.parse::<ContingencyType>().map_err(|e| e.to_string())
         })?;
-        let exec_algorithm_params = dict.get_item("exec_algorithm_params").map(|x| {
-            let extracted_str = x.extract::<IndexMap<String, String>>();
-            match extracted_str {
-                Ok(item) => Some(str_indexmap_to_ustr(item)),
-                Err(_) => None,
-            }
+        let order_list_id = get_optional_parsed(values, "order_list_id", |s| {
+            Ok(OrderListId::from(s.as_str()))
         })?;
-        let exec_spawn_id = dict.get_item("exec_spawn_id").map(|x| {
-            let extracted_str = x.extract::<&str>();
-            match extracted_str {
-                Ok(item) => Some(ClientOrderId::from(item)),
-                Err(_) => None,
-            }
+        let linked_order_ids =
+            get_optional::<Vec<String>>(values, "linked_order_ids")?.map(|vec| {
+                vec.iter()
+                    .map(|s| ClientOrderId::from(s.as_str()))
+                    .collect()
+            });
+        let parent_order_id = get_optional_parsed(values, "parent_order_id", |s| {
+            Ok(ClientOrderId::from(s.as_str()))
         })?;
-        let tags = dict.get_item("tags").map(|x| {
-            let extracted_str = x.extract::<Vec<String>>();
-            match extracted_str {
-                Ok(item) => Some(item.iter().map(|s| Ustr::from(s)).collect()),
-                Err(_) => None,
-            }
+        let exec_algorithm_id = get_optional_parsed(values, "exec_algorithm_id", |s| {
+            Ok(ExecAlgorithmId::from(s.as_str()))
         })?;
-        let init_id = dict
-            .get_item("init_id")
-            .map(|x| x.extract::<&str>().unwrap().parse::<UUID4>().ok())?
-            .unwrap();
-        let ts_init = dict.get_item("ts_init")?.extract::<u64>()?;
+        let exec_algorithm_params =
+            get_optional::<IndexMap<String, String>>(values, "exec_algorithm_params")?
+                .map(str_indexmap_to_ustr);
+        let exec_spawn_id = get_optional_parsed(values, "exec_spawn_id", |s| {
+            Ok(ClientOrderId::from(s.as_str()))
+        })?;
+        let tags = get_optional::<Vec<String>>(values, "tags")?
+            .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());
+        let init_id = get_required_parsed(values, "init_id", |s| {
+            s.parse::<UUID4>().map_err(|e| e.to_string())
+        })?;
+        let ts_init = get_required::<u64>(values, "ts_init")?;
 
         Self::new_checked(
             trader_id,

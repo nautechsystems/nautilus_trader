@@ -43,6 +43,7 @@ use ustr::Ustr;
 /// 7 -> skip command
 /// -8 -> get request
 /// 8 -> stop command
+#[derive(Debug)]
 pub struct BigBrainActor {
     pub pos_val: i32,
     pub neg_val: i32,

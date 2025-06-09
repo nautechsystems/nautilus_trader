@@ -46,7 +46,8 @@ repos:
         description: Fail on hidden control or zero-width unicode characters in source
         entry: .pre-commit-hooks/check_hidden_chars.sh
         language: script
-        files: '\\.(rs|py|pyx|toml|md)$'
+        types_or: [rust, python, cython, toml, markdown, yaml, json, text]
+        files: '\.(rs|py|pyx|toml|md|yml|yaml|json|sh|dockerfile)$|Dockerfile.*'
 
       - id: check-toml-codegen
         name: check toml-codegen
@@ -117,7 +118,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.12
+    rev: v0.11.13
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -163,7 +164,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.9  # uv version
+    rev: 0.7.12  # uv version
     hooks:
       - id: uv-lock
 

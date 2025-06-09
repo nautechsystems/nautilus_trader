@@ -24,7 +24,13 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-live = ["nautilus-live", "nautilus-system", "dotenvy", "tracing-subscriber", "pyo3"]
+live = [
+  "nautilus-live",
+  "nautilus-system",
+  "dotenvy",
+  "tracing-subscriber",
+  "pyo3",
+]
 python = [
   "pyo3",
   "pyo3-async-runtimes",
@@ -48,7 +54,9 @@ nautilus-system = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+databento = { workspace = true }
 dotenvy = { workspace = true, optional = true }
+fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
@@ -58,16 +66,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
+time = { workspace = true }
 ustr = { workspace = true }
-databento = "=0.26.0"
-fallible-streaming-iterator = "0.1.9"
-time = "0.3.41"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }
-criterion = { workspace = true }
 rstest = { workspace = true }
 tracing-test = { workspace = true }
 

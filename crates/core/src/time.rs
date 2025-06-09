@@ -83,6 +83,11 @@ pub fn get_atomic_clock_static() -> &'static AtomicTime {
 #[inline(always)]
 #[must_use]
 pub fn duration_since_unix_epoch() -> Duration {
+    // SAFETY: The expect() is acceptable here because:
+    // - SystemTime failure indicates catastrophic system clock issues
+    // - This would affect the entire application's ability to function
+    // - Alternative error handling would complicate all time-dependent code paths
+    // - Such failures are extremely rare in practice and indicate hardware/OS problems
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Error calling `SystemTime`")
@@ -245,10 +250,6 @@ impl AtomicTime {
     /// 3. **Visibility**: In a multi-threaded environment, other threads see the updated value
     ///    once this compare-and-exchange completes.
     ///
-    /// Note that under heavy contention (many threads calling this in tight loops), the CAS loop
-    /// may increase latency. If you need extremely high-frequency, concurrent updates, consider
-    /// using a more specialized approach or relaxing some ordering requirements.
-    ///
     /// # Panics
     ///
     /// Panics if the internal counter has reached `u64::MAX`, which would indicate the process has
@@ -268,6 +269,16 @@ impl AtomicTime {
             let next = now.max(incremented);
             // AcqRel on success ensures this new value is published,
             // Acquire on failure reloads if we lost a CAS race.
+            //
+            // Note that under heavy contention (many threads calling this in tight loops),
+            // the CAS loop may increase latency.
+            //
+            // However, in practice, the loop terminates quickly because:
+            // - System time naturally advances between iterations
+            // - Each iteration increments time by at least 1ns, preventing ABA problems
+            // - True contention requiring retry is rare in normal usage patterns
+            //
+            // The concurrent stress test (4 threads × 100k iterations) validates this approach.
             if self
                 .compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()

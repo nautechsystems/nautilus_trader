@@ -18,8 +18,9 @@ use std::{ffi::c_void, fmt::Display, ptr::null};
 /// `CVec` is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
 ///
-/// NOTE: Changing the values here may lead to undefined behavior when the
-/// memory is dropped.
+/// # Safety
+///
+/// Changing the values here may lead to undefined behavior when the memory is dropped.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct CVec {
@@ -90,6 +91,11 @@ impl Display for CVec {
 #[unsafe(no_mangle)]
 pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
+
+    // SAFETY: CVec currently only supports u8 data through FFI.
+    // The generic From<Vec<T>> implementation should only be used internally
+    // where the caller ensures proper type-matched deallocation.
+    // For FFI boundaries, we standardize on u8 to avoid type confusion.
     let data: Vec<u8> = unsafe { Vec::from_raw_parts(ptr.cast::<u8>(), len, cap) };
     drop(data); // Memory freed here
 }

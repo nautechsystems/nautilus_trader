@@ -78,7 +78,7 @@ impl SocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
-    ) -> PyResult<Bound<PyAny>> {
+    ) -> PyResult<Bound<'_, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,

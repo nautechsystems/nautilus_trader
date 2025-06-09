@@ -120,7 +120,7 @@ pub enum Blockchain {
 }
 
 /// Defines a blockchain with its unique identifiers and connection details for network interaction.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chain {
     /// The blockchain network type.
     pub name: Blockchain,
@@ -130,21 +130,26 @@ pub struct Chain {
     pub hypersync_url: String,
     /// URL endpoint for the default RPC connection.
     pub rpc_url: Option<String>,
+    /// The number of decimals for the native currency
+    pub native_currency_decimals: u8,
 }
 
+/// A thread-safe shared pointer to a `Chain`, enabling efficient reuse across multiple components.
 pub type SharedChain = Arc<Chain>;
 
 impl Chain {
+    /// Creates a new [`Chain`] instance with the specified blockchain and chain ID.
     pub fn new(name: Blockchain, chain_id: u32) -> Self {
         Self {
             chain_id,
             name,
             hypersync_url: format!("https://{}.hypersync.xyz", chain_id),
             rpc_url: None,
+            native_currency_decimals: 18, // Default to 18 for EVM chains
         }
     }
 
-    /// Sets the RPC url endpoint.
+    /// Sets the RPC URL endpoint.
     pub fn set_rpc_url(&mut self, rpc: String) {
         self.rpc_url = Some(rpc);
     }

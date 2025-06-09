@@ -65,6 +65,8 @@ use nautilus_core::{
     },
     datetime::millis_to_nanos,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
@@ -571,6 +573,17 @@ impl DataEngine {
     /// Currently supports `InstrumentAny`; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         // TODO: Eventually these could be added to the `Data` enum? process here for now
+        if let Some(data) = data.downcast_ref::<Data>() {
+            self.process_data(data.clone()); // TODO: Optimize (not necessary if we change handler)
+            return;
+        }
+
+        #[cfg(feature = "defi")]
+        if let Some(data) = data.downcast_ref::<DefiData>() {
+            self.process_defi_data(data.clone()); // TODO: Optimize (not necessary if we change handler)
+            return;
+        }
+
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument.clone());
         } else {
@@ -591,6 +604,42 @@ impl DataEngine {
             Data::IndexPriceUpdate(index_price) => self.handle_index_price(index_price),
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
         }
+    }
+
+    /// Processes DeFi-specific data events.
+    #[cfg(feature = "defi")]
+    pub fn process_defi_data(&mut self, _data: DefiData) {
+        todo!("Implement");
+        // match data {
+        //     DefiData::Swap(swap) => {
+        //         // TODO: Implement cache storage for swaps
+        //         log::info!("Processed DeFi swap: {}", swap.pool.ticker());
+        //
+        //         // Publish swap data to message bus for strategies
+        //         let topic = format!("data.defi.swap.{}", swap.instrument_id());
+        //         msgbus::publish(MStr::new(&topic), &swap as &dyn std::any::Any);
+        //     }
+        //     DefiData::PoolLiquidityUpdate(update) => {
+        //         // TODO: Implement cache storage for liquidity updates
+        //         log::info!(
+        //             "Processed DeFi liquidity update: {} {}",
+        //             update.pool.ticker(),
+        //             update.kind
+        //         );
+        //
+        //         // Publish liquidity update to message bus for strategies
+        //         let topic = format!("data.defi.liquidity.{}", update.instrument_id());
+        //         msgbus::publish(MStr::new(&topic), &update as &dyn std::any::Any);
+        //     }
+        //     DefiData::Pool(pool) => {
+        //         // TODO: Implement cache storage for pools
+        //         log::info!("Processed DeFi pool: {}", pool.ticker());
+        //
+        //         // Publish pool data to message bus for strategies
+        //         let topic = format!("data.defi.pool.{}", pool.instrument_id());
+        //         msgbus::publish(MStr::new(&topic), &pool as &dyn std::any::Any);
+        //     }
+        // }
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
@@ -851,6 +900,7 @@ impl DataEngine {
                     start_time_ns.into(),
                     None,
                     Some(callback),
+                    None,
                     None,
                 )
                 .expect(FAILED);

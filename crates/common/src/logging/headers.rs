@@ -153,30 +153,10 @@ fn bytes_to_gib(b: u64) -> f64 {
 
 #[cfg(feature = "python")]
 fn python_package_version(package: &str) -> String {
-    use nautilus_core::python::version::get_python_package_version;
-
-    get_python_package_version(package)
-}
-
-#[cfg(not(feature = "python"))]
-/// # Panics
-///
-/// Panics if the `python` feature is not enabled.
-fn python_package_version(_package: &str) -> &str {
-    panic!("`python` feature is not enabled");
+    nautilus_core::python::version::get_python_package_version(package)
 }
 
 #[cfg(feature = "python")]
 fn python_version() -> String {
-    use nautilus_core::python::version::get_python_version;
-
-    get_python_version()
-}
-
-#[cfg(not(feature = "python"))]
-/// # Panics
-///
-/// Panics if the `python` feature is not enabled.
-fn python_version() -> String {
-    panic!("`python` feature is not enabled");
+    nautilus_core::python::version::get_python_version()
 }

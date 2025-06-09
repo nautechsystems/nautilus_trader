@@ -49,7 +49,7 @@ pub fn py_tardis_normalize_symbol_str(
     Ok(normalize_symbol_str(symbol, &exchange, &instrument_type, is_inverse).to_string())
 }
 
-/// Loaded as `nautilus_pyo3.tardis`
+/// Loaded as `nautilus_pyo3.tardis`.
 ///
 /// # Errors
 ///

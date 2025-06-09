@@ -142,7 +142,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         Connect the client.
         """
         self._log.info("Connecting...")
-        self._msgbus.subscribe("data.*", handler=self.on_data)
+        self._msgbus.subscribe(f"data.*.{self.venue}.*", handler=self.on_data)
 
         # Load all instruments for venue
         for instrument in self.exchange.cache.instruments(venue=self.venue):

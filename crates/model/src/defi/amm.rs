@@ -13,17 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::defi::{chain::SharedChain, dex::Dex, token::Token};
+use std::sync::Arc;
+
+use alloy_primitives::Address;
+use nautilus_core::UnixNanos;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    data::GetTsInit,
+    defi::{chain::SharedChain, dex::Dex, token::Token},
+    identifiers::InstrumentId,
+};
 
 /// Represents a liquidity pool in a decentralized exchange.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pool {
     /// The blockchain network where this pool exists.
     pub chain: SharedChain,
     /// The decentralized exchange protocol that created and manages this pool.
     pub dex: Dex,
     /// The blockchain address of the pool smart contract.
-    pub address: String,
+    pub address: Address,
     /// The block number when this pool was created on the blockchain.
     pub creation_block: u64,
     /// The first token in the trading pair.
@@ -34,7 +44,12 @@ pub struct Pool {
     pub fee: u32,
     /// The minimum tick spacing for positions in concentrated liquidity AMMs.
     pub tick_spacing: u32,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
 }
+
+/// A thread-safe shared pointer to a `Pool`, enabling efficient reuse across multiple components.
+pub type SharedPool = Arc<Pool>;
 
 impl Pool {
     /// Creates a new [`Pool`] instance with the specified properties.
@@ -43,12 +58,13 @@ impl Pool {
     pub fn new(
         chain: SharedChain,
         dex: Dex,
-        address: String,
+        address: Address,
         creation_block: u64,
         token0: Token,
         token1: Token,
         fee: u32,
         tick_spacing: u32,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
             chain,
@@ -59,6 +75,26 @@ impl Pool {
             token1,
             fee,
             tick_spacing,
+            ts_init,
         }
+    }
+
+    /// Returns the ticker symbol for this pool as a formatted string.
+    #[must_use]
+    pub fn ticker(&self) -> String {
+        format!("{}/{}", self.token0.symbol, self.token1.symbol)
+    }
+
+    /// Returns the instrument ID for this pool.
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        // Create instrument ID from pool ticker and DEX name
+        InstrumentId::from(format!("{}.{}", self.ticker(), self.dex.name).as_str())
+    }
+}
+
+impl GetTsInit for Pool {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
     }
 }

@@ -28,7 +28,6 @@ from nautilus_trader.config import NautilusConfig
 
 
 class SymbologyMethod(Enum):
-    DATABENTO = "databento"
     IB_SIMPLIFIED = "simplified"
     IB_RAW = "raw"
 
@@ -111,9 +110,6 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
         - IB_SIMPLIFIED: Adopts a simplified symbology format specific to Interactive Brokers which uses Venue acronym.
         Instrument symbols use a cleaner notation, such as `ESZ28.CME` or `EUR/USD.IDEALPRO`.
         This format prioritizes ease of readability and usability and is default.
-        - DATABENTO: Utilizes the symbology format defined by the Databento adapter, ensuring seamless integration with
-        `DatabentoDataClient` when used alongside `InteractiveBrokersExecClientConfig`. Example notation includes
-        `ESZ8.GLBX`. Note that this symbology is only compatible with venues supported by Databento.
     build_options_chain: bool (default: None)
         Search for full option chain. Global setting for all applicable instruments.
     build_futures_chain: bool (default: None)
@@ -124,6 +120,11 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
     max_expiry_days: int (default: None)
         Filters the options_chain and futures_chain which are expiring before specified number of days.
         Global setting for all applicable instruments.
+    convert_exchange_to_mic_venue: bool (default: False)
+        Whether to convert IB exchanges to MIC venues when converting an IB contract to an instrument id.
+    symbol_to_mic_venue: dict, optional
+        A dictionary to override the default MIC venue conversion.
+        A key is a symbol prefix (for example ES for all futures and options on it), the value is the MIC venue to use.
     cache_validity_days: int (default: None)
         Default None, will request fresh pull upon starting of TradingNode [only once].
         Setting value will pull the instruments at specified interval, useful when TradingNode runs for many days.
@@ -164,6 +165,8 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
     build_futures_chain: bool | None = None
     min_expiry_days: int | None = None
     max_expiry_days: int | None = None
+    convert_exchange_to_mic_venue: bool = False
+    symbol_to_mic_venue: dict = {}
 
     cache_validity_days: int | None = None
     pickle_path: str | None = None

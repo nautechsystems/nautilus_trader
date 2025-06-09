@@ -30,6 +30,7 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 from libc.stdint cimport uint64_t
+from libc.string cimport strcmp
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport precision_from_cstr
@@ -1360,7 +1361,7 @@ cdef class Currency:
     def __eq__(self, Currency other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.code == other._mem.code
+        return strcmp(self._mem.code, other._mem.code) == 0
 
     def __hash__(self) -> int:
         return currency_hash(&self._mem)

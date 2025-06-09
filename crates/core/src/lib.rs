@@ -13,6 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core foundational types and utilities for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *core* crate is designed to be lightweight, efficient, and to provide zero-cost abstractions
+//! wherever possible. It supplies the essential building blocks used across the NautilusTrader
+//! ecosystem, including:
+//!
+//! - Time handling and atomic clock functionality
+//! - UUID generation and management
+//! - Mathematical functions and interpolation utilities
+//! - Correctness validation functions
+//! - Serialization traits and helpers
+//! - Cross-platform environment utilities
+//! - Abstractions over common collections
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,

@@ -16,11 +16,11 @@
 use std::rc::Rc;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{PyObject, PyResult, pymethods};
+use pyo3::{PyObject, PyResult, pyfunction, pymethods};
 
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
-    BusMessage, MStr, MessageBus, Topic, core::Endpoint, deregister,
+    BusMessage, MStr, Topic, core::Endpoint, deregister, get_message_bus,
     handler::ShareableMessageHandler, publish, register, send, subscribe, unsubscribe,
 };
 
@@ -47,110 +47,108 @@ impl BusMessage {
     }
 }
 
-#[pymethods]
-impl MessageBus {
-    /// Sends the `message` to the `endpoint`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `endpoint` is invalid.
-    #[pyo3(name = "send")]
-    pub fn py_send(&self, endpoint: &str, message: PyObject) -> PyResult<()> {
-        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
-        send(endpoint, &message);
-        Ok(())
-    }
+/// Sends the `message` to the `endpoint`.
+///
+/// # Errors
+///
+/// Returns an error if `endpoint` is invalid.
+#[pyfunction]
+#[pyo3(name = "msgbus_send")]
+pub fn py_msgbus_send(endpoint: &str, message: PyObject) -> PyResult<()> {
+    let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
+    send(endpoint, &message);
+    Ok(())
+}
 
-    /// Publishes the `message` to the `topic`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `topic` is invalid.
-    #[pyo3(name = "publish")]
-    #[staticmethod]
-    pub fn py_publish(topic: &str, message: PyObject) -> PyResult<()> {
-        let topic = MStr::<Topic>::topic(topic).map_err(to_pyvalue_err)?;
-        publish(topic, &message);
-        Ok(())
-    }
+/// Returns whether there are subscribers for the given `pattern`.
+#[pyfunction]
+#[pyo3(name = "msgbus_is_subscribed")]
+pub fn py_msgbus_is_subscribed(topic: &str, handler: PythonMessageHandler) -> bool {
+    let handler = ShareableMessageHandler(Rc::new(handler));
+    get_message_bus().borrow().is_subscribed(topic, handler)
+}
 
-    /// Registers the given `handler` for the `endpoint` address.
-    ///
-    /// Updates endpoint handler if already exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `endpoint` is invalid.
-    #[pyo3(name = "register")]
-    #[staticmethod]
-    pub fn py_register(endpoint: &str, handler: PythonMessageHandler) -> PyResult<()> {
-        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
-        let handler = ShareableMessageHandler(Rc::new(handler));
-        register(endpoint, handler);
-        Ok(())
-    }
+/// Returns whether there are subscribers for the given `pattern`.
+#[pyfunction]
+#[pyo3(name = "msgbus_is_registered")]
+pub fn py_msgbus_is_registered(endpoint: &str) -> bool {
+    get_message_bus().borrow().is_registered(endpoint)
+}
 
-    /// Subscribes the given `handler` to the `topic`.
-    ///
-    /// The priority for the subscription determines the ordering of
-    /// handlers receiving messages being processed, higher priority
-    /// handlers will receive messages before lower priority handlers.
-    ///
-    /// Safety: Priority should be between 0 and 255
-    ///
-    /// Updates topic handler if already exists.
-    ///
-    /// # Warnings
-    ///
-    /// Assigning priority handling is an advanced feature which *shouldn't
-    /// normally be needed by most users*. **Only assign a higher priority to the
-    /// subscription if you are certain of what you're doing**. If an inappropriate
-    /// priority is assigned then the handler may receive messages before core
-    /// system components have been able to process necessary calculations and
-    /// produce potential side effects for logically sound behavior.
-    #[pyo3(name = "subscribe")]
-    #[pyo3(signature = (topic, handler, priority=None))]
-    #[staticmethod]
-    pub fn py_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
-        let pattern = topic.into();
-        let handler = ShareableMessageHandler(Rc::new(handler));
-        subscribe(pattern, handler, priority);
-    }
+/// Publishes the `message` to the `topic`.
+///
+/// # Errors
+///
+/// Returns an error if `topic` is invalid.
+#[pyfunction]
+#[pyo3(name = "msgbus_publish")]
+pub fn py_msgbus_publish(topic: &str, message: PyObject) -> PyResult<()> {
+    let topic = MStr::<Topic>::topic(topic).map_err(to_pyvalue_err)?;
+    publish(topic, &message);
+    Ok(())
+}
 
-    /// Returns whether there are subscribers for the given `pattern`.
-    #[must_use]
-    #[pyo3(name = "is_subscribed")]
-    pub fn py_is_subscribed(&self, topic: &str, handler: PythonMessageHandler) -> bool {
-        let handler = ShareableMessageHandler(Rc::new(handler));
-        self.is_subscribed(topic, handler)
-    }
+/// Registers the given `handler` for the `endpoint` address.
+///
+/// Updates endpoint handler if already exists.
+///
+/// # Errors
+///
+/// Returns an error if `endpoint` is invalid.
+#[pyfunction]
+#[pyo3(name = "msgbus_register")]
+pub fn py_msgbus_register(endpoint: &str, handler: PythonMessageHandler) -> PyResult<()> {
+    let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
+    let handler = ShareableMessageHandler(Rc::new(handler));
+    register(endpoint, handler);
+    Ok(())
+}
 
-    /// Unsubscribes the given `handler` from the `topic`.
-    #[pyo3(name = "unsubscribe")]
-    #[staticmethod]
-    pub fn py_unsubscribe(topic: &str, handler: PythonMessageHandler) {
-        let pattern = topic.into();
-        let handler = ShareableMessageHandler(Rc::new(handler));
-        unsubscribe(pattern, handler);
-    }
+/// Subscribes the given `handler` to the `topic`.
+///
+/// The priority for the subscription determines the ordering of
+/// handlers receiving messages being processed, higher priority
+/// handlers will receive messages before lower priority handlers.
+///
+/// Safety: Priority should be between 0 and 255
+///
+/// Updates topic handler if already exists.
+///
+/// # Warnings
+///
+/// Assigning priority handling is an advanced feature which *shouldn't
+/// normally be needed by most users*. **Only assign a higher priority to the
+/// subscription if you are certain of what you're doing**. If an inappropriate
+/// priority is assigned then the handler may receive messages before core
+/// system components have been able to process necessary calculations and
+/// produce potential side effects for logically sound behavior.
+#[pyfunction]
+#[pyo3(name = "msgbus_subscribe")]
+#[pyo3(signature = (topic, handler, priority=None))]
+pub fn py_msgbus_subscribe(topic: &str, handler: PythonMessageHandler, priority: Option<u8>) {
+    let pattern = topic.into();
+    let handler = ShareableMessageHandler(Rc::new(handler));
+    subscribe(pattern, handler, priority);
+}
 
-    /// Returns whether there are subscribers for the given `pattern`.
-    #[must_use]
-    #[pyo3(name = "is_registered")]
-    pub fn py_is_registered(&self, endpoint: &str) -> bool {
-        self.is_registered(endpoint)
-    }
+/// Unsubscribes the given `handler` from the `topic`.
+#[pyfunction]
+#[pyo3(name = "msgbus_unsubscribe")]
+pub fn py_msgbus_unsubscribe(topic: &str, handler: PythonMessageHandler) {
+    let pattern = topic.into();
+    let handler = ShareableMessageHandler(Rc::new(handler));
+    unsubscribe(pattern, handler);
+}
 
-    /// Deregisters the given `handler` for the `endpoint` address.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `endpoint` is invalid.
-    #[pyo3(name = "deregister")]
-    #[staticmethod]
-    pub fn py_deregister(endpoint: &str) -> PyResult<()> {
-        let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
-        deregister(endpoint);
-        Ok(())
-    }
+/// Deregisters the given `handler` for the `endpoint` address.
+///
+/// # Errors
+///
+/// Returns an error if `endpoint` is invalid.
+#[pyfunction]
+#[pyo3(name = "msgbus_deregister")]
+pub fn py_msgbus_deregister(endpoint: &str) -> PyResult<()> {
+    let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
+    deregister(endpoint);
+    Ok(())
 }

@@ -178,6 +178,289 @@ class CustomData:
     def ts_init(self) -> int: ...
 
 ###################################################################################################
+# Actor System
+###################################################################################################
+
+class DataActor:
+    def __init__(self, config: object = None) -> None: ...
+    @property
+    def actor_id(self) -> ActorId: ...
+    @property
+    def trader_id(self) -> TraderId | None: ...
+
+    def state(self) -> ComponentState: ...
+    def is_ready(self) -> bool: ...
+    def is_running(self) -> bool: ...
+    def is_stopped(self) -> bool: ...
+    def is_disposed(self) -> bool: ...
+    def is_degraded(self) -> bool: ...
+    def is_faulted(self) -> bool: ...
+
+    def initialize(self) -> None: ...
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    def resume(self) -> None: ...
+    def reset(self) -> None: ...
+    def dispose(self) -> None: ...
+    def degrade(self) -> None: ...
+    def fault(self) -> None: ...
+
+    def register_warning_event(self, event_type: str) -> None: ...
+    def deregister_warning_event(self, event_type: str) -> None: ...
+    def shutdown_system(self, reason: str | None = None) -> None: ...
+
+    def subscribe_data(
+        self,
+        data_type: DataType,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_instruments(
+        self,
+        venue: Venue,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_quotes(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_bars(
+        self,
+        bar_type: BarType,
+        client_id: ClientId | None = None,
+        await_partial: bool = False,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: int | None = None,
+        client_id: ClientId | None = None,
+        managed: bool = False,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_book_at_interval(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        interval_ms: int,
+        depth: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_mark_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_index_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def subscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_data(
+        self,
+        data_type: DataType,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_instruments(
+        self,
+        venue: Venue,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_quotes(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_trades(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_book_at_interval(
+        self,
+        instrument_id: InstrumentId,
+        interval_ms: int,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_mark_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_index_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+    def unsubscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        ...
+
+    def request_data(
+        self,
+        data_type: DataType,
+        client_id: ClientId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_instruments(
+        self,
+        venue: Venue | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_quotes(
+        self,
+        instrument_id: InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_trades(
+        self,
+        instrument_id: InstrumentId,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+    def request_bars(
+        self,
+        bar_type: BarType,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int | None = None,
+        client_id: ClientId | None = None,
+        params: dict[str, str] | None = None,
+    ) -> str:
+        ...
+
+    def on_data(self, data: Any) -> None: ...
+    def on_quote_tick(self, tick: QuoteTick) -> None: ...
+    def on_trade_tick(self, tick: TradeTick) -> None: ...
+    def on_bar(self, bar: Bar) -> None: ...
+    def on_start(self) -> None: ...
+    def on_stop(self) -> None: ...
+
+###################################################################################################
 # Cryptography
 ###################################################################################################
 
@@ -407,7 +690,7 @@ class BarType:
     def __init__(
         self,
         instrument_id: InstrumentId,
-        bar_spec: BarSpecification,
+        spec: BarSpecification,
         aggregation_source: AggregationSource | None = None,
     ) -> None: ...
     @property
@@ -971,6 +1254,22 @@ class ContingencyType(Enum):
     OTO = "OTO"
     OUO = "OUO"
 
+class ComponentState(Enum):
+    PRE_INITIALIZED = "PRE_INITIALIZED"
+    READY = "READY"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    STOPPING = "STOPPING"
+    STOPPED = "STOPPED"
+    RESUMING = "RESUMING"
+    RESETTING = "RESETTING"
+    DISPOSING = "DISPOSING"
+    DISPOSED = "DISPOSED"
+    DEGRADING = "DEGRADING"
+    DEGRADED = "DEGRADED"
+    FAULTING = "FAULTING"
+    FAULTED = "FAULTED"
+
 class CurrencyType(Enum):
     CRYPTO = "CRYPTO"
     FIAT = "FIAT"
@@ -1151,6 +1450,13 @@ class AccountId:
     def __init__(self, value: str) -> None: ...
     @classmethod
     def from_str(cls, value: str) -> AccountId: ...
+    @property
+    def value(self) -> str: ...
+
+class ActorId:
+    def __init__(self, value: str) -> None: ...
+    @classmethod
+    def from_str(cls, value: str) -> ActorId: ...
     @property
     def value(self) -> str: ...
 
@@ -5516,7 +5822,7 @@ def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str 
 #
 # The `time_now` must be timezone-aware with its tzinfo set to a built-in `datetime.timezone`
 # (e.g. `datetime.timezone.utc`). Third-party tzinfo objects (like those from `pytz`) are not supported.
-def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> dt.datetime: ...
+def fx_local_from_utc(session: ForexSession, time_now: dt.datetime) -> str: ...
 
 # Returns the next session start time in UTC.
 #

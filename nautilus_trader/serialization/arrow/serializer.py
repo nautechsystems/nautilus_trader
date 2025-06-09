@@ -214,7 +214,7 @@ class ArrowSerializer:
                 return ArrowSerializer.rust_defined_to_record_batch([data], data_cls=data_cls)
             raise TypeError(
                 f"Cannot serialize object `{data_cls}`. Register a "
-                f"serialization method via `nautilus_trader.persistence.catalog.parquet.serializers.register_parquet()`",
+                f"serialization method via `nautilus_trader.serialization.arrow.serializer.register_arrow()`",
             )
 
         batch = delegate(data)
@@ -281,7 +281,7 @@ class ArrowSerializer:
                 return ArrowSerializer._deserialize_rust(data_cls=data_cls, table=batch)
             raise TypeError(
                 f"Cannot deserialize object `{data_cls}`. Register a "
-                f"deserialization method via `arrow.serializer.register_parquet()`",
+                f"deserialization method via `nautilus_trader.serialization.arrow.serializer.register_arrow()`",
             )
 
         return delegate(batch)

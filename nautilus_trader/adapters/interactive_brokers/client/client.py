@@ -150,6 +150,9 @@ class InteractiveBrokersClient(
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
 
+        # Instrument provider (set by data/execution clients during connection)
+        self._instrument_provider = None
+
         # Start client
         self._request_id_seq: int = 10000
 

@@ -86,7 +86,7 @@ impl WebSocketClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         py: Python<'_>,
-    ) -> PyResult<Bound<PyAny>> {
+    ) -> PyResult<Bound<'_, PyAny>> {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,

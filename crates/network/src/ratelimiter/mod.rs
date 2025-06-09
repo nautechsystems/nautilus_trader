@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor)
+//! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor).
 //!
-//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193)
+//! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193).
 pub mod clock;
 mod gcra;
 mod nanos;
@@ -136,6 +136,10 @@ impl<K: Hash + Eq + Clone> StateStore for DashMapStateStore<K> {
     }
 }
 
+/// A rate limiter that enforces different quotas per key using the GCRA algorithm.
+///
+/// This implementation allows setting different rate limits for different keys,
+/// with an optional default quota for keys that don't have specific quotas.
 pub struct RateLimiter<K, C>
 where
     C: Clock,
@@ -161,6 +165,11 @@ impl<K> RateLimiter<K, MonotonicClock>
 where
     K: Eq + Hash,
 {
+    /// Creates a new rate limiter with a base quota and keyed quotas.
+    ///
+    /// The base quota applies to all keys that don't have specific quotas.
+    /// Keyed quotas override the base quota for specific keys.
+    #[must_use]
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
         let start = MonotonicClock::now(&clock);
@@ -179,6 +188,9 @@ impl<K> RateLimiter<K, FakeRelativeClock>
 where
     K: Hash + Eq + Clone,
 {
+    /// Advances the fake clock by the specified duration.
+    ///
+    /// This is only available for testing with `FakeRelativeClock`.
     pub fn advance_clock(&self, by: Duration) {
         self.clock.advance(by);
     }
@@ -189,6 +201,7 @@ where
     K: Hash + Eq + Clone,
     C: Clock,
 {
+    /// Adds or updates a quota for a specific key.
     pub fn add_quota_for_key(&self, key: K, value: Quota) {
         self.gcra.insert(key, Gcra::new(value));
     }
@@ -207,6 +220,7 @@ where
         }
     }
 
+    /// Waits until the specified key is ready (not rate-limited).
     pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
@@ -220,6 +234,9 @@ where
         }
     }
 
+    /// Waits until all specified keys are ready (not rate-limited).
+    ///
+    /// If no keys are provided, this function returns immediately.
     pub async fn await_keys_ready(&self, keys: Option<Vec<K>>) {
         let keys = keys.unwrap_or_default();
         let tasks = keys.iter().map(|key| self.until_key_ready(key));

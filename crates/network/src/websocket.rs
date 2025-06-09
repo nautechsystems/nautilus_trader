@@ -65,14 +65,20 @@ use crate::{
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 pub type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
+/// Defines how WebSocket messages are consumed.
 #[derive(Debug, Clone)]
 pub enum Consumer {
+    /// Python-based message handler.
     #[cfg(feature = "python")]
     Python(Option<Arc<PyObject>>),
+    /// Rust-based message handler using a channel sender.
     Rust(Sender<Message>),
 }
 
 impl Consumer {
+    /// Creates a Rust-based consumer with a channel for receiving messages.
+    ///
+    /// Returns a tuple containing the consumer and a receiver for messages.
     #[must_use]
     pub fn rust_consumer() -> (Self, Receiver<Message>) {
         let (tx, rx) = mpsc::channel(100);

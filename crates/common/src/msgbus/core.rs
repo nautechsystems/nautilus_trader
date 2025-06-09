@@ -240,10 +240,6 @@ impl Hash for Subscription {
 /// A question mark matches a single character once. For example, `c?mp` matches
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
 #[derive(Debug)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
@@ -267,12 +263,10 @@ pub struct MessageBus {
     pub correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
 }
 
-// SAFETY: Message bus is not meant to be passed between threads
-#[allow(unsafe_code)]
-unsafe impl Send for MessageBus {}
-
-#[allow(unsafe_code)]
-unsafe impl Sync for MessageBus {}
+// MessageBus is designed for single-threaded use within each async runtime.
+// Thread-local storage ensures each thread gets its own instance, eliminating
+// the need for unsafe Send/Sync implementations that were previously required
+// for global static storage.
 
 impl MessageBus {
     /// Creates a new [`MessageBus`] instance.
@@ -427,7 +421,7 @@ impl MessageBus {
         })
     }
 
-    /// Register a response handler for a specific correlation ID.
+    /// Registers a response handler for a specific correlation ID.
     ///
     /// # Errors
     ///
@@ -464,7 +458,7 @@ impl MessageBus {
     //     }
     // }
 
-    /// Register message bus globally
+    /// Registers message bus for the current thread.
     pub fn register_message_bus(self) -> Rc<RefCell<MessageBus>> {
         let msgbus = Rc::new(RefCell::new(self));
         set_message_bus(msgbus.clone());

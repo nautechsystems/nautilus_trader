@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Message throttling and rate limiting functionality.
+//!
+//! This module provides throttling capabilities to control the rate of message processing
+//! and prevent system overload. The throttler can buffer, drop, or delay messages based
+//! on configured rate limits and time intervals.
+
 use std::{
     any::Any,
     cell::{RefCell, UnsafeCell},
@@ -86,7 +92,7 @@ pub struct Throttler<T, F> {
 
 impl<T, F> Actor for Throttler<T, F>
 where
-    T: 'static,
+    T: 'static + Debug,
     F: Fn(T) + 'static,
 {
     fn id(&self) -> Ustr {
@@ -118,7 +124,10 @@ where
     }
 }
 
-impl<T, F> Throttler<T, F> {
+impl<T, F> Throttler<T, F>
+where
+    T: Debug,
+{
     #[inline]
     pub fn new(
         limit: usize,
@@ -218,7 +227,7 @@ impl<T, F> Throttler<T, F> {
 
 impl<T, F> Throttler<T, F>
 where
-    T: 'static,
+    T: 'static + Debug,
     F: Fn(T) + 'static,
 {
     pub fn to_actor(self) -> Rc<UnsafeCell<Self>> {
@@ -229,11 +238,8 @@ where
             ShareableMessageHandler::from(Rc::new(process_handler) as Rc<dyn MessageHandler>),
         );
 
-        // Register actor state
-        let actor = Rc::new(UnsafeCell::new(self));
-        register_actor(actor.clone());
-
-        actor
+        // Register actor state and return the wrapped reference
+        register_actor(self)
     }
 
     #[inline]
@@ -296,7 +302,10 @@ struct ThrottlerProcess<T, F> {
     phantom_f: PhantomData<F>,
 }
 
-impl<T, F> ThrottlerProcess<T, F> {
+impl<T, F> ThrottlerProcess<T, F>
+where
+    T: Debug,
+{
     pub fn new(actor_id: Ustr) -> Self {
         let endpoint = Ustr::from(&format!("{}_process", actor_id));
         Self {
@@ -318,7 +327,7 @@ impl<T, F> ThrottlerProcess<T, F> {
 
 impl<T, F> MessageHandler for ThrottlerProcess<T, F>
 where
-    T: 'static,
+    T: 'static + Debug,
     F: Fn(T) + 'static,
 {
     fn id(&self) -> Ustr {
@@ -358,7 +367,7 @@ where
 /// Sets throttler to resume sending messages
 pub fn throttler_resume<T, F>(actor_id: Ustr) -> TimeEventCallback
 where
-    T: 'static,
+    T: 'static + Debug,
     F: Fn(T) + 'static,
 {
     let callback = Rc::new(move |_event: TimeEvent| {
@@ -714,6 +723,10 @@ mod tests {
         assert_eq!(throttler.recv_count, 7);
         assert_eq!(throttler.sent_count, 6);
     }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Property-based testing
+    ////////////////////////////////////////////////////////////////////////////////
 
     use proptest::prelude::*;
 

@@ -16,7 +16,6 @@
 use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
-use chrono_tz::Tz;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::python::common::EnumIterator;
 use pyo3::{PyTypeInfo, prelude::*, types::PyType};
@@ -110,11 +109,8 @@ impl ForexSession {
 /// Returns a `PyErr` if an error occurs during session conversion or value conversion to Python.
 #[pyfunction]
 #[pyo3(name = "fx_local_from_utc")]
-pub fn py_fx_local_from_utc(
-    session: ForexSession,
-    time_now: DateTime<Utc>,
-) -> PyResult<DateTime<Tz>> {
-    Ok(fx_local_from_utc(session, time_now))
+pub fn py_fx_local_from_utc(session: ForexSession, time_now: DateTime<Utc>) -> PyResult<String> {
+    Ok(fx_local_from_utc(session, time_now).to_rfc3339())
 }
 
 /// Returns the next session start time in UTC.

@@ -21,25 +21,30 @@ crate-type = ["rlib", "staticlib"]
 default = []
 extension-module = [
   "pyo3/extension-module",
-  "nautilus-core/extension-module",
   "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-python = ["pyo3", "nautilus-core/python", "nautilus-common/python", "nautilus-model/python"]
+python = [
+  "pyo3",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]
 high-precision = ["nautilus-model/high-precision"]
 
 [dependencies]
-nautilus-core = { workspace = true }
 nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
 hex = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-tokio = { workspace = true }
 reqwest = { workspace = true }
 ring = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }

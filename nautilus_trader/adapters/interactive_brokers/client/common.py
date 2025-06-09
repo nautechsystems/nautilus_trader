@@ -498,6 +498,9 @@ class BaseMixin:
     _port: int
     _client_id: int
     _requests: Requests
+    _instrument_provider: (
+        Any  # InteractiveBrokersInstrumentProvider | None - Will be set by data/execution client
+    )
     _subscriptions: Subscriptions
     _event_subscriptions: dict[str, Callable]
     _eclient: EClient

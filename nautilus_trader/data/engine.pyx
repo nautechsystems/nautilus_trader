@@ -184,7 +184,8 @@ cdef class DataEngine(Component):
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
         self._time_bars_skip_first_non_full_bar = config.time_bars_skip_first_non_full_bar
         self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
-        self._time_bars_origins = config.time_bars_origins or {}
+        self._time_bars_origin_offset = config.time_bars_origin_offset or {}
+        self._time_bars_build_delay = config.time_bars_build_delay
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
 
@@ -1397,7 +1398,10 @@ cdef class DataEngine(Component):
 
         if self._catalogs and update_catalog_mode is None:
             self.query_catalog(request)
-            return
+            force_client_request = request.params.get("force_client_request", False)
+
+            if not force_client_request:
+                return
 
         if client is None:
             self._log_request_warning(request)
@@ -1414,7 +1418,10 @@ cdef class DataEngine(Component):
 
         if last_timestamp:
             self.query_catalog(request)
-            return
+            force_client_request = request.params.get("force_client_request", False)
+
+            if not force_client_request:
+                return
 
         if client is None:
             self._log_request_warning(request)
@@ -2251,6 +2258,12 @@ cdef class DataEngine(Component):
 
     cpdef object _create_bar_aggregator(self, Instrument instrument, BarType bar_type):
         if bar_type.spec.is_time_aggregated():
+            # Use configured bar_build_delay, with special handling for composite bars
+            bar_build_delay = self._time_bars_build_delay
+
+            if bar_type.is_composite() and bar_type.composite().is_internally_aggregated() and bar_build_delay == 0:
+                bar_build_delay = 15  # Default for composite bars when config is 0
+
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
@@ -2260,7 +2273,8 @@ cdef class DataEngine(Component):
                 timestamp_on_close=self._time_bars_timestamp_on_close,
                 skip_first_non_full_bar=self._time_bars_skip_first_non_full_bar,
                 build_with_no_updates=self._time_bars_build_with_no_updates,
-                time_bars_origin=self._time_bars_origins.get(bar_type.spec.aggregation),
+                time_bars_origin_offset=self._time_bars_origin_offset.get(bar_type.spec.aggregation),
+                bar_build_delay=bar_build_delay,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
@@ -2291,6 +2305,7 @@ cdef class DataEngine(Component):
 
     cpdef void _start_bar_aggregator(self, MarketDataClient client, SubscribeBars command):
         cdef Instrument instrument = self._cache.instrument(command.bar_type.instrument_id)
+
         if instrument is None:
             self._log.error(
                 f"Cannot start bar aggregation: "

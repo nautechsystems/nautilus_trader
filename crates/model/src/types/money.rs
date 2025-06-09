@@ -54,8 +54,8 @@ pub type MoneyRaw = i64;
 
 /// Represents an amount of money in a specified currency denomination.
 ///
-/// - `MONEY_MAX` = {MONEY_MAX}
-/// - `MONEY_MIN` = {MONEY_MIN}
+/// - [`MONEY_MAX`] - Maximum representable money amount
+/// - [`MONEY_MIN`] - Minimum representable money amount
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -74,12 +74,15 @@ impl Money {
     ///
     /// # Errors
     ///
-    /// Returns an error if `amount` is invalid outside the representable range [{MONEY_MIN}, {MONEY_MAX}].
+    /// Returns an error if `amount` is invalid outside the representable range [MONEY_MIN, MONEY_MAX].
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
+        // SAFETY: check_in_range_inclusive_f64 already validates that amount is finite
+        // (not NaN or infinite) as part of its range validation logic, so no additional
+        // infinity checks are needed here.
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
         #[cfg(feature = "high-precision")]

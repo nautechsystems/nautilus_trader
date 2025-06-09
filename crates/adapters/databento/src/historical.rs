@@ -175,10 +175,6 @@ impl DatabentoHistoricalClient {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to get range: {e}"))?;
 
-        decoder
-            .set_upgrade_policy(dbn::VersionUpgradePolicy::UpgradeToV2)
-            .map_err(|e| anyhow::anyhow!("Failed to set upgrade policy: {e}"))?;
-
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut instruments = Vec::new();

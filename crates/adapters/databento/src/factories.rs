@@ -218,14 +218,14 @@ impl DatabentoDataClientConfigBuilder {
 
     /// Sets whether to use exchange as venue.
     #[must_use]
-    pub fn use_exchange_as_venue(mut self, use_exchange: bool) -> Self {
+    pub const fn use_exchange_as_venue(mut self, use_exchange: bool) -> Self {
         self.use_exchange_as_venue = use_exchange;
         self
     }
 
     /// Sets whether to timestamp bars on close.
     #[must_use]
-    pub fn bars_timestamp_on_close(mut self, timestamp_on_close: bool) -> Self {
+    pub const fn bars_timestamp_on_close(mut self, timestamp_on_close: bool) -> Self {
         self.bars_timestamp_on_close = timestamp_on_close;
         self
     }

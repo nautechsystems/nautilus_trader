@@ -78,18 +78,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data_client = BlockchainDataClient::new(chain, blockchain_config);
     data_client.initialize_cache_database(None).await;
 
+    // Let's use block https://etherscan.io/block/22327045 from (Apr-22-2025 08:49:47 PM +UTC)
+    let from_block = Some(22327045);
+
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
     let dex_id = univ3.id();
-    data_client.connect().await?;
+    data_client.connect(from_block).await?;
     data_client.register_exchange(univ3.clone()).await?;
-    // Lets use block https://etherscan.io/block/22327045 from (Apr-22-2025 08:49:47 PM +UTC)
-    let from_block = Some(22327045);
 
     // Main loop to keep the app running
     loop {
         tokio::select! {
             () = notify.notified() => break,
-             result = data_client.sync_exchange_pools(dex_id.as_str(), from_block) => {
+             result = data_client.sync_exchange_pools(dex_id.as_str(), from_block, None) => {
                 match result {
                     Ok(()) => {
                         // Exit after the tokens and pool are synced successfully

@@ -170,6 +170,7 @@ def get_cached_binance_spot_instrument_provider(
         account_type=account_type,
         is_testnet=is_testnet,
         config=config,
+        venue=venue,
     )
 
 

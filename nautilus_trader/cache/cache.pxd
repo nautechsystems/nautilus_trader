@@ -110,6 +110,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_strategies
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
+    cdef Venue _specific_venue
 
     cdef readonly bint has_backing
     """If the cache has a database backing.\n\n:returns: `bool`"""
@@ -118,6 +119,7 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
 
+    cpdef void set_specific_venue(self, Venue venue)
     cpdef void cache_all(self)
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)

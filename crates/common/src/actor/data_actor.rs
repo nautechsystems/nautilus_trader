@@ -17,10 +17,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
+#![allow(clippy::too_many_arguments)]
 
 use std::{
     any::{Any, TypeId},
-    cell::{RefCell, UnsafeCell},
+    cell::{Ref, RefCell, RefMut, UnsafeCell},
     collections::HashSet,
     fmt::Debug,
     num::NonZeroUsize,
@@ -39,7 +40,7 @@ use nautilus_model::{
         OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose,
     },
     enums::BookType,
-    identifiers::{ActorId, ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{ActorId, ClientId, ComponentId, InstrumentId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
@@ -48,10 +49,14 @@ use uuid::Uuid;
 
 #[cfg(feature = "indicators")]
 use super::indicators::Indicators;
-use super::{Actor, registry::get_actor_unchecked};
+use super::{
+    Actor,
+    registry::{get_actor, get_actor_unchecked, try_get_actor_unchecked},
+};
 use crate::{
     cache::Cache,
     clock::Clock,
+    component::Component,
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, REQ, SEND},
     messages::{
@@ -107,52 +112,9 @@ impl Default for DataActorConfig {
 
 type RequestCallback = Box<dyn Fn(UUID4) + Send + Sync>; // TODO: TBD
 
-impl Actor for DataActorCore {
-    fn id(&self) -> Ustr {
-        self.actor_id.inner()
-    }
-
-    fn handle(&mut self, msg: &dyn Any) {}
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-pub trait DataActor: Actor {
-    /// Returns the [`ComponentState`] of the actor.
-    fn state(&self) -> ComponentState;
-
-    /// Returns `true` if the actor is in a `Ready` state.
-    fn is_ready(&self) -> bool {
-        self.state() == ComponentState::Ready
-    }
-
-    /// Returns `true` if the actor is in a `Running` state.
-    fn is_running(&self) -> bool {
-        self.state() == ComponentState::Running
-    }
-
-    /// Returns `true` if the actor is in a `Stopped` state.
-    fn is_stopped(&self) -> bool {
-        self.state() == ComponentState::Stopped
-    }
-
-    /// Returns `true` if the actor is in a `Disposed` state.
-    fn is_disposed(&self) -> bool {
-        self.state() == ComponentState::Disposed
-    }
-
-    /// Returns `true` if the actor is in a `Degraded` state.
-    fn is_degraded(&self) -> bool {
-        self.state() == ComponentState::Degraded
-    }
-
-    /// Returns `true` if the actor is in a `Faulted` state.
-    fn is_faulted(&self) -> bool {
-        self.state() == ComponentState::Faulted
-    }
-
+pub trait DataActor:
+    Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
+{
     /// Actions to be performed when the actor state is saved.
     ///
     /// # Errors
@@ -438,11 +400,29 @@ pub trait DataActor: Actor {
         Ok(())
     }
 
+    /// Handles a received time event.
+    fn handle_time_event(&mut self, event: &TimeEvent) {
+        log_received(&event);
+
+        if let Err(e) = DataActor::on_time_event(self, event) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received event.
+    fn handle_event(&mut self, event: &dyn Any) {
+        log_received(&event);
+
+        if let Err(e) = DataActor::on_event(self, event) {
+            log_error(&e);
+        }
+    }
+
     /// Handles a received custom data point.
     fn handle_data(&mut self, data: &dyn Any) {
         log_received(&data);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&data);
             return;
         }
@@ -456,7 +436,7 @@ pub trait DataActor: Actor {
     fn handle_signal(&mut self, signal: &Signal) {
         log_received(&signal);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&signal);
             return;
         }
@@ -470,7 +450,7 @@ pub trait DataActor: Actor {
     fn handle_instrument(&mut self, instrument: &InstrumentAny) {
         log_received(&instrument);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&instrument);
             return;
         }
@@ -484,7 +464,7 @@ pub trait DataActor: Actor {
     fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
         log_received(&deltas);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&deltas);
             return;
         }
@@ -498,7 +478,7 @@ pub trait DataActor: Actor {
     fn handle_book(&mut self, book: &OrderBook) {
         log_received(&book);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&book);
             return;
         }
@@ -512,7 +492,7 @@ pub trait DataActor: Actor {
     fn handle_quote(&mut self, quote: &QuoteTick) {
         log_received(&quote);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&quote);
             return;
         }
@@ -526,7 +506,7 @@ pub trait DataActor: Actor {
     fn handle_trade(&mut self, trade: &TradeTick) {
         log_received(&trade);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&trade);
             return;
         }
@@ -540,7 +520,7 @@ pub trait DataActor: Actor {
     fn handle_bar(&mut self, bar: &Bar) {
         log_received(&bar);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&bar);
             return;
         }
@@ -554,7 +534,7 @@ pub trait DataActor: Actor {
     fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
         log_received(&mark_price);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&mark_price);
             return;
         }
@@ -568,7 +548,7 @@ pub trait DataActor: Actor {
     fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
         log_received(&index_price);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&index_price);
             return;
         }
@@ -582,7 +562,7 @@ pub trait DataActor: Actor {
     fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
         log_received(&status);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&status);
             return;
         }
@@ -596,7 +576,7 @@ pub trait DataActor: Actor {
     fn handle_instrument_close(&mut self, close: &InstrumentClose) {
         log_received(&close);
 
-        if !self.is_running() {
+        if self.not_running() {
             log_not_running(&close);
             return;
         }
@@ -615,47 +595,29 @@ pub trait DataActor: Actor {
         }
     }
 
-    /// Handles a received time event.
-    fn handle_time_event(&mut self, event: &TimeEvent) {
-        log_received(&event);
-
-        if let Err(e) = self.on_time_event(event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received event.
-    fn handle_event(&mut self, event: &dyn Any) {
-        log_received(&event);
-
-        if let Err(e) = self.on_event(event) {
-            log_error(&e);
-        }
-    }
-
     /// Handles a data response.
-    fn handle_data_response(&mut self, response: &CustomDataResponse) {
-        log_received(&response);
+    fn handle_data_response(&mut self, resp: &CustomDataResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_data(response.data.as_ref()) {
+        if let Err(e) = self.on_historical_data(resp.data.as_ref()) {
             log_error(&e);
         }
     }
 
     /// Handles an instrument response.
-    fn handle_instrument_response(&mut self, response: &InstrumentResponse) {
-        log_received(&response);
+    fn handle_instrument_response(&mut self, resp: &InstrumentResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_instrument(&response.data) {
+        if let Err(e) = self.on_instrument(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles an instruments response.
-    fn handle_instruments_response(&mut self, response: &InstrumentsResponse) {
-        log_received(&response);
+    fn handle_instruments_response(&mut self, resp: &InstrumentsResponse) {
+        log_received(&resp);
 
-        for inst in &response.data {
+        for inst in &resp.data {
             if let Err(e) = self.on_instrument(inst) {
                 log_error(&e);
             }
@@ -663,39 +625,805 @@ pub trait DataActor: Actor {
     }
 
     /// Handles a book response.
-    fn handle_book_response(&mut self, response: &BookResponse) {
-        log_received(&response);
+    fn handle_book_response(&mut self, resp: &BookResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_book(&response.data) {
+        if let Err(e) = self.on_book(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a quotes response.
-    fn handle_quotes_response(&mut self, response: &QuotesResponse) {
-        log_received(&response);
+    fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_quotes(&response.data) {
+        if let Err(e) = self.on_historical_quotes(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a trades response.
-    fn handle_trades_response(&mut self, response: &TradesResponse) {
-        log_received(&response);
+    fn handle_trades_response(&mut self, resp: &TradesResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_trades(&response.data) {
+        if let Err(e) = self.on_historical_trades(&resp.data) {
             log_error(&e);
         }
     }
 
     /// Handles a bars response.
-    fn handle_bars_response(&mut self, response: &BarsResponse) {
-        log_received(&response);
+    fn handle_bars_response(&mut self, resp: &BarsResponse) {
+        log_received(&resp);
 
-        if let Err(e) = self.on_historical_bars(&response.data) {
+        if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
         }
+    }
+
+    /// Subscribe to streaming `data_type` data.
+    fn subscribe_data(
+        &mut self,
+        data_type: DataType,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+            move |data: &dyn Any| {
+                get_actor_unchecked::<Self>(&actor_id).handle_data(data);
+            },
+        )));
+
+        DataActorCore::subscribe_data(self, handler, data_type, client_id, params);
+    }
+
+    /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
+    fn subscribe_quotes(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_quotes_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |quote: &QuoteTick| {
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_quote(quote);
+                } else {
+                    log::error!("Actor {actor_id} not found for quote handling");
+                }
+            },
+        )));
+
+        DataActorCore::subscribe_quotes(self, topic, handler, instrument_id, client_id, params);
+    }
+
+    /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
+    fn subscribe_instruments(
+        &mut self,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_instruments_topic(venue);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |instrument: &InstrumentAny| {
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_instrument(instrument);
+                } else {
+                    log::error!("Actor {actor_id} not found for instruments handling");
+                }
+            },
+        )));
+
+        DataActorCore::subscribe_instruments(self, topic, handler, venue, client_id, params);
+    }
+
+    /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
+    fn subscribe_instrument(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_instrument_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |instrument: &InstrumentAny| {
+                if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                    actor.handle_instrument(instrument);
+                } else {
+                    log::error!("Actor {actor_id} not found for instrument handling");
+                }
+            },
+        )));
+
+        DataActorCore::subscribe_instrument(self, topic, handler, instrument_id, client_id, params);
+    }
+
+    /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    fn subscribe_book_deltas(
+        &mut self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        managed: bool,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_book_deltas_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |deltas: &OrderBookDeltas| {
+                get_actor_unchecked::<Self>(&actor_id).handle_book_deltas(deltas);
+            },
+        )));
+
+        DataActorCore::subscribe_book_deltas(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            book_type,
+            depth,
+            client_id,
+            managed,
+            params,
+        );
+    }
+
+    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
+    fn subscribe_book_at_interval(
+        &mut self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<NonZeroUsize>,
+        interval_ms: NonZeroUsize,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_book_snapshots_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |book: &OrderBook| {
+                get_actor_unchecked::<Self>(&actor_id).handle_book(book);
+            },
+        )));
+
+        DataActorCore::subscribe_book_at_interval(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            book_type,
+            depth,
+            interval_ms,
+            client_id,
+            params,
+        );
+    }
+
+    /// Subscribe to streaming [`TradeTick`] data for the `instrument_id`.
+    fn subscribe_trades(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_trades_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |trade: &TradeTick| {
+                get_actor_unchecked::<Self>(&actor_id).handle_trade(trade);
+            },
+        )));
+
+        DataActorCore::subscribe_trades(self, topic, handler, instrument_id, client_id, params);
+    }
+
+    /// Subscribe to streaming [`Bar`] data for the `bar_type`.
+    fn subscribe_bars(
+        &mut self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        await_partial: bool,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_bars_topic(bar_type);
+
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
+                get_actor_unchecked::<Self>(&actor_id).handle_bar(bar);
+            })));
+
+        DataActorCore::subscribe_bars(
+            self,
+            topic,
+            handler,
+            bar_type,
+            client_id,
+            await_partial,
+            params,
+        );
+    }
+
+    /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
+    fn subscribe_mark_prices(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_mark_price_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |mark_price: &MarkPriceUpdate| {
+                get_actor_unchecked::<Self>(&actor_id).handle_mark_price(mark_price);
+            },
+        )));
+
+        DataActorCore::subscribe_mark_prices(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
+    /// Subscribe to streaming [`IndexPriceUpdate`] data for the `instrument_id`.
+    fn subscribe_index_prices(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_index_price_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |index_price: &IndexPriceUpdate| {
+                get_actor_unchecked::<Self>(&actor_id).handle_index_price(index_price);
+            },
+        )));
+
+        DataActorCore::subscribe_index_prices(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
+    /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
+    fn subscribe_instrument_status(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_instrument_status_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |status: &InstrumentStatus| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instrument_status(status);
+            },
+        )));
+
+        DataActorCore::subscribe_instrument_status(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
+    /// Subscribe to streaming [`InstrumentClose`] data for the `instrument_id`.
+    fn subscribe_instrument_close(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_instrument_close_topic(instrument_id);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |close: &InstrumentClose| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instrument_close(close);
+            },
+        )));
+
+        DataActorCore::subscribe_instrument_close(
+            self,
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
+    }
+
+    /// Unsubscribe from streaming `data_type` data.
+    fn unsubscribe_data(
+        &mut self,
+        data_type: DataType,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_data(self, data_type, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
+    fn unsubscribe_instruments(
+        &mut self,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_instruments(self, venue, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`InstrumentAny`] data for the `instrument_id`.
+    fn unsubscribe_instrument(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_instrument(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    fn unsubscribe_book_deltas(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_book_deltas(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
+    fn unsubscribe_book_at_interval(
+        &mut self,
+        instrument_id: InstrumentId,
+        interval_ms: NonZeroUsize,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_book_at_interval(
+            self,
+            instrument_id,
+            interval_ms,
+            client_id,
+            params,
+        );
+    }
+
+    /// Unsubscribe from streaming [`QuoteTick`] data for the `instrument_id`.
+    fn unsubscribe_quotes(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_quotes(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
+    fn unsubscribe_trades(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_trades(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
+    fn unsubscribe_bars(
+        &mut self,
+        bar_type: BarType,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_bars(self, bar_type, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
+    fn unsubscribe_mark_prices(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_mark_prices(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
+    fn unsubscribe_index_prices(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_index_prices(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
+    fn unsubscribe_instrument_status(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_instrument_status(self, instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
+    fn unsubscribe_instrument_close(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
+    }
+
+    /// Request historical custom data of the given `data_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_data(
+        &mut self,
+        data_type: DataType,
+        client_id: ClientId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &CustomDataResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_data_response(resp);
+            },
+        )));
+
+        DataActorCore::request_data(
+            self, data_type, client_id, start, end, limit, params, handler,
+        )
+    }
+
+    /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_instrument(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &InstrumentResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instrument_response(resp);
+            },
+        )));
+
+        DataActorCore::request_instrument(
+            self,
+            instrument_id,
+            start,
+            end,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`InstrumentsResponse`] definitions for the optional `venue`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_instruments(
+        &mut self,
+        venue: Option<Venue>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &InstrumentsResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instruments_response(resp);
+            },
+        )));
+
+        DataActorCore::request_instruments(self, venue, start, end, client_id, params, handler)
+    }
+
+    /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_book_snapshot(
+        &mut self,
+        instrument_id: InstrumentId,
+        depth: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &BookResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_book_response(resp);
+            },
+        )));
+
+        DataActorCore::request_book_snapshot(self, instrument_id, depth, client_id, params, handler)
+    }
+
+    /// Request historical [`QuoteTick`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_quotes(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &QuotesResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_quotes_response(resp);
+            },
+        )));
+
+        DataActorCore::request_quotes(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`TradeTick`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_trades(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &TradesResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_trades_response(resp);
+            },
+        )));
+
+        DataActorCore::request_trades(
+            self,
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`Bar`] data for the given `bar_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_bars(
+        &mut self,
+        bar_type: BarType,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |resp: &BarsResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
+            },
+        )));
+
+        DataActorCore::request_bars(
+            self, bar_type, start, end, limit, client_id, params, handler,
+        )
+    }
+}
+
+// Blanket implementation: any DataActor automatically implements Actor
+impl<T> Actor for T
+where
+    T: DataActor + Debug + 'static,
+{
+    fn id(&self) -> Ustr {
+        self.actor_id.inner()
+    }
+
+    fn handle(&mut self, msg: &dyn Any) {
+        // Default empty implementation - concrete actors can override if needed
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+// Blanket implementation: any DataActor automatically implements Component
+impl<T> Component for T
+where
+    T: DataActor + Debug + 'static,
+{
+    fn component_id(&self) -> ComponentId {
+        ComponentId::new(self.actor_id.inner().as_str())
+    }
+
+    fn state(&self) -> ComponentState {
+        self.state
+    }
+
+    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
+        self.state = self.state.transition(&trigger)?;
+        log::info!("{}", self.state);
+        Ok(())
+    }
+
+    fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        DataActorCore::register(self, trader_id, clock, cache)?;
+        self.initialize()
+    }
+
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        DataActor::on_start(self)
+    }
+
+    fn on_stop(&mut self) -> anyhow::Result<()> {
+        DataActor::on_stop(self)
+    }
+
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        DataActor::on_resume(self)
+    }
+
+    fn on_degrade(&mut self) -> anyhow::Result<()> {
+        DataActor::on_degrade(self)
+    }
+
+    fn on_fault(&mut self) -> anyhow::Result<()> {
+        DataActor::on_fault(self)
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        DataActor::on_reset(self)
+    }
+
+    fn on_dispose(&mut self) -> anyhow::Result<()> {
+        DataActor::on_dispose(self)
     }
 }
 
@@ -705,12 +1433,10 @@ pub struct DataActorCore {
     pub actor_id: ActorId,
     /// The actors configuration.
     pub config: DataActorConfig,
-    /// The actors clock.
-    pub clock: Rc<RefCell<dyn Clock>>,
-    /// The cache for the actor.
-    pub cache: Rc<RefCell<Cache>>,
-    state: ComponentState,
     trader_id: Option<TraderId>,
+    clock: Option<Rc<RefCell<dyn Clock>>>, // Wired up on registration
+    cache: Option<Rc<RefCell<Cache>>>,     // Wired up on registration
+    state: ComponentState,
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
@@ -730,19 +1456,9 @@ impl Debug for DataActorCore {
     }
 }
 
-impl DataActor for DataActorCore {
-    fn state(&self) -> ComponentState {
-        self.state
-    }
-}
-
 impl DataActorCore {
     /// Creates a new [`DataActorCore`] instance.
-    pub fn new(
-        config: DataActorConfig,
-        cache: Rc<RefCell<Cache>>,
-        clock: Rc<RefCell<dyn Clock>>,
-    ) -> Self {
+    pub fn new(config: DataActorConfig) -> Self {
         let actor_id = config
             .actor_id
             .unwrap_or_else(|| Self::default_actor_id(&config));
@@ -750,10 +1466,10 @@ impl DataActorCore {
         Self {
             actor_id,
             config,
-            clock,
-            cache,
-            state: ComponentState::default(),
             trader_id: None, // None until registered
+            clock: None,     // None until registered
+            cache: None,     // None until registered
+            state: ComponentState::default(),
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
@@ -763,62 +1479,110 @@ impl DataActorCore {
         }
     }
 
-    fn default_actor_id(config: &DataActorConfig) -> ActorId {
-        let memory_address = std::ptr::from_ref(config) as *const _ as usize;
-        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
-    }
-
-    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-        self.state = self.state.transition(&trigger)?;
-        log::info!("{}", self.state);
-        Ok(())
-    }
-
-    // TODO: TBD initialization flow
-
-    /// Initializes the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the initialization state transition fails.
-    pub fn initialize(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Initialize)
-    }
-
     /// Returns the trader ID this actor is registered to.
     pub fn trader_id(&self) -> Option<TraderId> {
         self.trader_id
     }
 
-    // TODO: Extract this common state logic and handling out to some component module
-    pub fn state(&self) -> ComponentState {
-        self.state
+    pub fn actor_id(&self) -> ActorId {
+        self.actor_id
+    }
+
+    fn default_actor_id(config: &DataActorConfig) -> ActorId {
+        let memory_address = std::ptr::from_ref(config) as *const _ as usize;
+        ActorId::from(format!("{}-{memory_address}", stringify!(DataActor)))
+    }
+
+    pub fn timestamp_ns(&self) -> UnixNanos {
+        self.clock_ref().timestamp_ns()
+    }
+
+    /// Returns the clock for the actor (if registered).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not been registered with a trader.
+    pub fn clock(&mut self) -> RefMut<'_, dyn Clock> {
+        self.clock
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
+                    self.actor_id, self.trader_id
+                )
+            })
+            .borrow_mut()
+    }
+
+    fn clock_ref(&self) -> Ref<'_, dyn Clock> {
+        self.clock
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "DataActor {} must be registered before calling `clock_ref()` - trader_id: {:?}",
+                    self.actor_id, self.trader_id
+                )
+            })
+            .borrow()
     }
 
     // -- REGISTRATION ----------------------------------------------------------------------------
 
+    /// Register the data actor with a trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor has already been registered with a trader
+    /// or if the provided dependencies are invalid.
+    pub fn register(
+        &mut self,
+        trader_id: TraderId,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+    ) -> anyhow::Result<()> {
+        if let Some(existing_trader_id) = self.trader_id {
+            anyhow::bail!(
+                "DataActor {} already registered with trader {existing_trader_id}",
+                self.actor_id
+            );
+        }
+
+        // Validate clock by attempting to access it
+        {
+            let _timestamp = clock.borrow().timestamp_ns();
+        }
+
+        // Validate cache by attempting to access it
+        {
+            let _cache_borrow = cache.borrow();
+        }
+
+        self.trader_id = Some(trader_id);
+        self.clock = Some(clock);
+        self.cache = Some(cache);
+
+        // Verify complete registration
+        if !self.is_properly_registered() {
+            anyhow::bail!(
+                "DataActor {} registration incomplete - validation failed",
+                self.actor_id
+            );
+        }
+
+        log::info!("Registered {} with trader {trader_id}", self.actor_id);
+        Ok(())
+    }
+
     /// Register an event type for warning log levels.
     pub fn register_warning_event(&mut self, event_type: &str) {
         self.warning_events.insert(event_type.to_string());
+        log::debug!("Registered event type '{event_type}' for warning logs")
     }
 
     /// Deregister an event type from warning log levels.
     pub fn deregister_warning_event(&mut self, event_type: &str) {
         self.warning_events.remove(event_type);
-        // TODO: Log deregistration
-    }
-
-    /// Sets the trader ID for the actor.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a trader ID has already been set.
-    pub(crate) fn set_trader_id(&mut self, trader_id: TraderId) {
-        if let Some(existing_trader_id) = self.trader_id {
-            panic!("trader_id {existing_trader_id} already set");
-        }
-
-        self.trader_id = Some(trader_id)
+        log::debug!("Deregistered event type '{event_type}' from warning logs")
     }
 
     fn check_registered(&self) {
@@ -828,8 +1592,9 @@ impl DataActorCore {
         );
     }
 
-    fn generate_ts_init(&self) -> UnixNanos {
-        self.clock.borrow().timestamp_ns()
+    /// Validates registration state without panicking.
+    fn is_properly_registered(&self) -> bool {
+        self.trader_id.is_some() && self.clock.is_some() && self.cache.is_some()
     }
 
     fn send_data_cmd(&self, command: DataCommand) {
@@ -837,154 +1602,19 @@ impl DataActorCore {
             log::info!("{CMD}{SEND} {command:?}");
         }
 
-        let endpoint = MessagingSwitchboard::data_engine_execute();
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send(endpoint, command.as_any())
     }
 
-    fn send_data_req<A: DataActor>(&self, request: RequestCommand) {
+    fn send_data_req(&self, request: RequestCommand) {
         if self.config.log_commands {
             log::info!("{REQ}{SEND} {request:?}");
         }
 
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &CustomDataResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_data_response(response);
-            },
-        )));
-
-        let msgbus = get_message_bus()
-            .borrow_mut()
-            .register_response_handler(request.request_id(), handler);
-
-        let endpoint = MessagingSwitchboard::data_engine_execute();
+        // For now, simplified approach - data requests without dynamic handlers
+        // TODO: Implement proper dynamic dispatch for response handlers
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send(endpoint, request.as_any())
-    }
-
-    /// Starts the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if starting the actor fails.
-    pub fn start(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Start)?; // -> Starting
-
-        if let Err(e) = self.on_start() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::StartCompleted)?;
-
-        Ok(())
-    }
-
-    /// Stops the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if stopping the actor fails.
-    pub fn stop(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Stop)?; // -> Stopping
-
-        if let Err(e) = self.on_stop() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::StopCompleted)?;
-
-        Ok(())
-    }
-
-    /// Resumes the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if resuming the actor fails.
-    pub fn resume(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Resume)?; // -> Resuming
-
-        if let Err(e) = self.on_stop() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::ResumeCompleted)?;
-
-        Ok(())
-    }
-
-    /// Resets the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if resetting the actor fails.
-    pub fn reset(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Reset)?; // -> Resetting
-
-        if let Err(e) = self.on_reset() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::ResetCompleted)?;
-
-        Ok(())
-    }
-
-    /// Disposes the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if disposing the actor fails.
-    pub fn dispose(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Dispose)?; // -> Disposing
-
-        if let Err(e) = self.on_dispose() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::DisposeCompleted)?;
-
-        Ok(())
-    }
-
-    /// Degrades the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if degrading the actor fails.
-    pub fn degrade(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Degrade)?; // -> Degrading
-
-        if let Err(e) = self.on_degrade() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::DegradeCompleted)?;
-
-        Ok(())
-    }
-
-    /// Faults the actor.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if faulting the actor fails.
-    pub fn fault(&mut self) -> anyhow::Result<()> {
-        self.transition_state(ComponentTrigger::Fault)?; // -> Faulting
-
-        if let Err(e) = self.on_fault() {
-            log_error(&e);
-            return Err(e); // Halt state transition
-        }
-
-        self.transition_state(ComponentTrigger::FaultCompleted)?;
-
-        Ok(())
     }
 
     /// Sends a shutdown command to the system with an optional reason.
@@ -1001,7 +1631,7 @@ impl DataActorCore {
             self.actor_id.inner(),
             reason,
             UUID4::new(),
-            self.clock.borrow().timestamp_ns(),
+            self.timestamp_ns(),
         );
 
         let endpoint = "command.system.shutdown".into();
@@ -1031,34 +1661,34 @@ impl DataActorCore {
         self.topic_handlers.get(&topic).cloned()
     }
 
-    /// Subscribe to streaming `data_type` data.
-    pub fn subscribe_data<A: DataActor>(
+    /// Helper method for registering data subscriptions from the trait.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not properly registered.
+    pub fn subscribe_data(
         &mut self,
+        handler: ShareableMessageHandler,
         data_type: DataType,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
-        self.check_registered();
+        if !self.is_properly_registered() {
+            panic!(
+                "DataActor {} is not properly registered - trader_id: {:?}, clock: {}, cache: {}",
+                self.actor_id,
+                self.trader_id,
+                self.clock.is_some(),
+                self.cache.is_some()
+            );
+        }
 
         let topic = get_custom_topic(&data_type);
-        let actor_id = self.actor_id.inner();
-        let handler = if let Some(existing_handler) = self.topic_handlers.get(&topic) {
-            existing_handler.clone()
-        } else {
-            let new_handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
-                move |data: &dyn Any| {
-                    get_actor_unchecked::<A>(&actor_id).handle_data(data);
-                },
-            )));
-
-            self.topic_handlers.insert(topic, new_handler.clone());
-            new_handler
-        };
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
+        // If no client ID specified, just subscribe to the topic
         if client_id.is_none() {
-            // If no client ID specified, just subscribe to the topic
             return;
         }
 
@@ -1067,64 +1697,76 @@ impl DataActorCore {
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
-    pub fn subscribe_instruments<A: DataActor>(
+    /// Helper method for registering quotes subscriptions from the trait.
+    pub fn subscribe_quotes(
         &mut self,
-        venue: Venue,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        self.check_registered();
-
-        let topic = get_instruments_topic(venue);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |instrument: &InstrumentAny| {
-                    get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-                },
-            )))
-        });
-
-        msgbus::subscribe_topic(topic, handler, None);
-
-        let command = SubscribeCommand::Instruments(SubscribeInstruments {
-            client_id,
-            venue,
-            command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
-    }
-
-    /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
-    pub fn subscribe_instrument<A: DataActor>(
-        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_instrument_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |instrument: &InstrumentAny| {
-                    get_actor_unchecked::<A>(&actor_id).handle_instrument(instrument);
-                },
-            )))
+        self.topic_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_topic(topic, handler, None);
+
+        let command = SubscribeCommand::Quotes(SubscribeQuotes {
+            instrument_id,
+            client_id,
+            venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
         });
 
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Helper method for registering instruments subscriptions from the trait.
+    pub fn subscribe_instruments(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        self.topic_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_topic(topic, handler, None);
+
+        let command = SubscribeCommand::Instruments(SubscribeInstruments {
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Helper method for registering instrument subscriptions from the trait.
+    pub fn subscribe_instrument(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        self.check_registered();
+
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Instrument(SubscribeInstrument {
@@ -1132,19 +1774,19 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching order book deltas published on the message bus are forwarded
-    /// to the `on_book_deltas` handler.
-    pub fn subscribe_book_deltas<A: DataActor>(
+    /// Helper method for registering book deltas subscriptions from the trait.
+    #[allow(clippy::too_many_arguments)]
+    pub fn subscribe_book_deltas(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
@@ -1154,16 +1796,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_book_deltas_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |deltas: &OrderBookDeltas| {
-                    get_actor_unchecked::<A>(&actor_id).handle_book_deltas(deltas);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookDeltas(SubscribeBookDeltas {
@@ -1172,7 +1805,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             depth,
             managed,
             params,
@@ -1181,16 +1814,11 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching order book snapshots published on the message bus are forwarded
-    /// to the `on_book` handler.
-    ///
-    /// # Warnings
-    ///
-    /// Consider subscribing to order book deltas if you need intervals less than 100 milliseconds.
-    pub fn subscribe_book_at_interval<A: DataActor>(
+    /// Helper method for registering book snapshots subscriptions from the trait.
+    pub fn subscribe_book_at_interval(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
@@ -1200,24 +1828,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        if book_type == BookType::L1_MBP && depth.is_some_and(|d| d.get() > 1) {
-            log::error!(
-                "Cannot subscribe to order book snapshots: L1 MBP book subscription depth > 1, was {:?}",
-                depth,
-            );
-            return;
-        }
-
-        let topic = get_book_snapshots_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |book: &OrderBook| {
-                    get_actor_unchecked::<A>(&actor_id).handle_book(book);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
@@ -1226,7 +1837,7 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             depth,
             interval_ms,
             params,
@@ -1235,58 +1846,18 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
-    pub fn subscribe_quotes<A: DataActor>(
+    /// Helper method for registering trades subscriptions from the trait.
+    pub fn subscribe_trades(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_quotes_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |quote: &QuoteTick| {
-                    get_actor_unchecked::<A>(&actor_id).handle_quote(quote);
-                },
-            )))
-        });
-
-        msgbus::subscribe_topic(topic, handler, None);
-
-        let command = SubscribeCommand::Quotes(SubscribeQuotes {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
-            params,
-        });
-
-        self.send_data_cmd(DataCommand::Subscribe(command));
-    }
-
-    /// Subscribe to streaming [`TradeTick`] data for the `instrument_id`.
-    pub fn subscribe_trades<A: DataActor>(
-        &mut self,
-        instrument_id: InstrumentId,
-        client_id: Option<ClientId>,
-        params: Option<IndexMap<String, String>>,
-    ) {
-        self.check_registered();
-
-        let topic = get_trades_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |trade: &TradeTick| {
-                    get_actor_unchecked::<A>(&actor_id).handle_trade(trade);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Trades(SubscribeTrades {
@@ -1294,19 +1865,18 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`Bar`] data for the `bar_type`.
-    ///
-    /// Once subscribed, any matching bar data published on the message bus is forwarded
-    /// to the `on_bar` handler.
-    pub fn subscribe_bars<A: DataActor>(
+    /// Helper method for registering bars subscriptions from the trait.
+    pub fn subscribe_bars(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         bar_type: BarType,
         client_id: Option<ClientId>,
         await_partial: bool,
@@ -1314,14 +1884,7 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_bars_topic(bar_type);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |bar: &Bar| {
-                get_actor_unchecked::<A>(&actor_id).handle_bar(bar);
-            })))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::Bars(SubscribeBars {
@@ -1329,7 +1892,7 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             await_partial,
             params,
         });
@@ -1337,28 +1900,18 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching mark price updates published on the message bus are forwarded
-    /// to the `on_mark_price` handler.
-    pub fn subscribe_mark_prices<A: DataActor>(
+    /// Helper method for registering mark prices subscriptions from the trait.
+    pub fn subscribe_mark_prices(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_mark_price_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |mark_price: &MarkPriceUpdate| {
-                    get_actor_unchecked::<A>(&actor_id).handle_mark_price(mark_price);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::MarkPrices(SubscribeMarkPrices {
@@ -1366,35 +1919,25 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`IndexPriceUpdate`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching index price updates published on the message bus are forwarded
-    /// to the `on_index_price` handler.
-    pub fn subscribe_index_prices<A: DataActor>(
+    /// Helper method for registering index prices subscriptions from the trait.
+    pub fn subscribe_index_prices(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_index_price_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |index_price: &IndexPriceUpdate| {
-                    get_actor_unchecked::<A>(&actor_id).handle_index_price(index_price);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::IndexPrices(SubscribeIndexPrices {
@@ -1402,35 +1945,25 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching bar data published on the message bus is forwarded
-    /// to the `on_bar` handler.
-    pub fn subscribe_instrument_status<A: DataActor>(
+    /// Helper method for registering instrument status subscriptions from the trait.
+    pub fn subscribe_instrument_status(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_instrument_status_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |status: &InstrumentStatus| {
-                    get_actor_unchecked::<A>(&actor_id).handle_instrument_status(status);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
@@ -1438,35 +1971,25 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Subscribe to streaming [`InstrumentClose`] data for the `instrument_id`.
-    ///
-    /// Once subscribed, any matching instrument close data published on the message bus is forwarded
-    /// to the `on_instrument_close` handler.
-    pub fn subscribe_instrument_close<A: DataActor>(
+    /// Helper method for registering instrument close subscriptions from the trait.
+    pub fn subscribe_instrument_close(
         &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
     ) {
         self.check_registered();
 
-        let topic = get_instrument_close_topic(instrument_id);
-        let actor_id = self.actor_id.inner();
-        let handler = self.get_or_create_handler_for_topic(topic, || {
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-                move |close: &InstrumentClose| {
-                    get_actor_unchecked::<A>(&actor_id).handle_instrument_close(close);
-                },
-            )))
-        });
-
+        self.topic_handlers.insert(topic, handler.clone());
         msgbus::subscribe_topic(topic, handler, None);
 
         let command = SubscribeCommand::InstrumentClose(SubscribeInstrumentClose {
@@ -1474,15 +1997,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Unsubscribe from streaming `data_type` data.
-    pub fn unsubscribe_data<A: DataActor>(
+    /// Helper method for unsubscribing from data.
+    pub fn unsubscribe_data(
         &self,
         data_type: DataType,
         client_id: Option<ClientId>,
@@ -1504,15 +2027,15 @@ impl DataActorCore {
             client_id,
             venue: None,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`Instrument`] data for the `venue`.
-    pub fn unsubscribe_instruments<A: DataActor>(
+    /// Helper method for unsubscribing from instruments.
+    pub fn unsubscribe_instruments(
         &self,
         venue: Venue,
         client_id: Option<ClientId>,
@@ -1529,15 +2052,15 @@ impl DataActorCore {
             client_id,
             venue,
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`Instrument`] definitions for the `instrument_id`.
-    pub fn unsubscribe_instrument<A: DataActor>(
+    /// Helper method for unsubscribing from instrument.
+    pub fn unsubscribe_instrument(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1555,15 +2078,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`OrderBookDeltas`] for the `instrument_id`.
-    pub fn unsubscribe_book_deltas<A: DataActor>(
+    /// Helper method for unsubscribing from book deltas.
+    pub fn unsubscribe_book_deltas(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1581,17 +2104,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
-    ///
-    /// The `interval_ms` must match a previously subscribed interval.
-    pub fn unsubscribe_book_at_interval<A: DataActor>(
+    /// Helper method for unsubscribing from book snapshots at interval.
+    pub fn unsubscribe_book_at_interval(
         &mut self,
         instrument_id: InstrumentId,
         interval_ms: NonZeroUsize,
@@ -1610,15 +2131,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`QuoteTick`] data for the `instrument_id`.
-    pub fn unsubscribe_quotes<A: DataActor>(
+    /// Helper method for unsubscribing from quotes.
+    pub fn unsubscribe_quotes(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1636,15 +2157,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
-    pub fn unsubscribe_trades<A: DataActor>(
+    /// Helper method for unsubscribing from trades.
+    pub fn unsubscribe_trades(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1662,15 +2183,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
-    pub fn unsubscribe_bars<A: DataActor>(
+    /// Helper method for unsubscribing from bars.
+    pub fn unsubscribe_bars(
         &mut self,
         bar_type: BarType,
         client_id: Option<ClientId>,
@@ -1688,15 +2209,15 @@ impl DataActorCore {
             client_id,
             venue: Some(bar_type.instrument_id().venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
-    pub fn unsubscribe_mark_prices<A: DataActor>(
+    /// Helper method for unsubscribing from mark prices.
+    pub fn unsubscribe_mark_prices(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1714,15 +2235,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
-    pub fn unsubscribe_index_prices<A: DataActor>(
+    /// Helper method for unsubscribing from index prices.
+    pub fn unsubscribe_index_prices(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1740,15 +2261,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
-    pub fn unsubscribe_instrument_status<A: DataActor>(
+    /// Helper method for unsubscribing from instrument status.
+    pub fn unsubscribe_instrument_status(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1766,15 +2287,15 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
-    pub fn unsubscribe_instrument_close<A: DataActor>(
+    /// Helper method for unsubscribing from instrument close.
+    pub fn unsubscribe_instrument_close(
         &self,
         instrument_id: InstrumentId,
         client_id: Option<ClientId>,
@@ -1792,23 +2313,19 @@ impl DataActorCore {
             client_id,
             venue: Some(instrument_id.venue),
             command_id: UUID4::new(),
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
     }
 
-    // -- REQUESTS --------------------------------------------------------------------------------
-
-    /// Request historical custom data of the given `data_type`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`CustomDataResponse`].
+    /// Helper method for requesting data.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_data<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_data(
         &self,
         data_type: DataType,
         client_id: ClientId,
@@ -1816,10 +2333,11 @@ impl DataActorCore {
         end: Option<DateTime<Utc>>,
         limit: Option<NonZeroUsize>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1827,16 +2345,9 @@ impl DataActorCore {
             client_id,
             data_type,
             request_id,
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
-
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &CustomDataResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_data_response(response);
-            },
-        )));
 
         let msgbus = get_message_bus()
             .borrow_mut()
@@ -1847,24 +2358,23 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request historical [`InstrumentResponse`] data for the given `instrument_id`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`InstrumentResponse`].
+    /// Helper method for requesting instrument.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_instrument<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_instrument(
         &self,
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1878,13 +2388,6 @@ impl DataActorCore {
             params,
         });
 
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_instrument_response(response);
-            },
-        )));
-
         let msgbus = get_message_bus()
             .borrow_mut()
             .register_response_handler(command.request_id(), handler);
@@ -1894,24 +2397,23 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request historical [`InstrumentsResponse`] definitions for the optional `venue`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`InstrumentsResponse`].
+    /// Helper method for requesting instruments.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_instruments<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_instruments(
         &self,
         venue: Option<Venue>,
         start: Option<DateTime<Utc>>,
         end: Option<DateTime<Utc>>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -1925,13 +2427,6 @@ impl DataActorCore {
             params,
         });
 
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &InstrumentsResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_instruments_response(response);
-            },
-        )));
-
         let msgbus = get_message_bus()
             .borrow_mut()
             .register_response_handler(command.request_id(), handler);
@@ -1941,19 +2436,18 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`BookResponse`].
+    /// Helper method for requesting book snapshot.
     ///
     /// # Errors
     ///
-    /// This function never returns an error.
-    pub fn request_book_snapshot<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_book_snapshot(
         &self,
         instrument_id: InstrumentId,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
@@ -1963,16 +2457,9 @@ impl DataActorCore {
             depth,
             client_id,
             request_id,
-            ts_init: self.generate_ts_init(),
+            ts_init: self.timestamp_ns(),
             params,
         });
-
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &BookResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_book_response(response);
-            },
-        )));
 
         let msgbus = get_message_bus()
             .borrow_mut()
@@ -1983,14 +2470,12 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request historical [`QuoteTick`] data for the given `instrument_id`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`QuotesResponse`].
+    /// Helper method for requesting quotes.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_quotes<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_quotes(
         &self,
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -1998,10 +2483,11 @@ impl DataActorCore {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2016,13 +2502,6 @@ impl DataActorCore {
             params,
         });
 
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &QuotesResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_quotes_response(response);
-            },
-        )));
-
         let msgbus = get_message_bus()
             .borrow_mut()
             .register_response_handler(command.request_id(), handler);
@@ -2032,14 +2511,12 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request historical [`TradeTick`] data for the given `instrument_id`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`TradesResponse`].
+    /// Helper method for requesting trades.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_trades<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_trades(
         &self,
         instrument_id: InstrumentId,
         start: Option<DateTime<Utc>>,
@@ -2047,10 +2524,11 @@ impl DataActorCore {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2065,13 +2543,6 @@ impl DataActorCore {
             params,
         });
 
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &TradesResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_trades_response(response);
-            },
-        )));
-
         let msgbus = get_message_bus()
             .borrow_mut()
             .register_response_handler(command.request_id(), handler);
@@ -2081,14 +2552,12 @@ impl DataActorCore {
         Ok(request_id)
     }
 
-    /// Request historical [`Bar`] data for the given `bar_type`.
-    ///
-    /// Returns a unique request ID to correlate subsequent [`BarsResponse`].
+    /// Helper method for requesting bars.
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided time range is invalid.
-    pub fn request_bars<A: DataActor>(
+    /// Returns an error if input parameters are invalid.
+    pub fn request_bars(
         &self,
         bar_type: BarType,
         start: Option<DateTime<Utc>>,
@@ -2096,10 +2565,11 @@ impl DataActorCore {
         limit: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         params: Option<IndexMap<String, String>>,
+        handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
 
-        let now = self.clock.borrow().utc_now();
+        let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;
 
         let request_id = UUID4::new();
@@ -2113,13 +2583,6 @@ impl DataActorCore {
             ts_init: now.into(),
             params,
         });
-
-        let actor_id = self.actor_id.inner();
-        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |response: &BarsResponse| {
-                get_actor_unchecked::<A>(&actor_id).handle_bars_response(response);
-            },
-        )));
 
         let msgbus = get_message_bus()
             .borrow_mut()

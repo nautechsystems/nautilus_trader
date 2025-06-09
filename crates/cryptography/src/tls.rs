@@ -18,7 +18,12 @@ use std::sync::Arc;
 use rustls::{self, ClientConfig};
 use rustls_platform_verifier::ConfigVerifierExt;
 
+/// Loads a TLS client configuration with certificates.
+///
+/// # Panics
+///
+/// Panics if the configuration fails to load.
 pub fn create_tls_config() -> Arc<ClientConfig> {
     tracing::debug!("Loading certificates");
-    Arc::new(ClientConfig::with_platform_verifier())
+    Arc::new(ClientConfig::with_platform_verifier().expect("Failed to load TLS config"))
 }

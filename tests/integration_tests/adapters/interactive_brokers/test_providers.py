@@ -67,7 +67,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
 @pytest.mark.asyncio()
 async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Arrange
-    instrument_id = InstrumentId.from_str("CLZ23.NYMEX")
+    instrument_id = InstrumentId.from_str("CLZ3.NYMEX")
     mock_ib_contract_calls(
         mocker=mocker,
         instrument_provider=instrument_provider,
@@ -152,7 +152,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
     instrument_provider._client.stop()
 
     # Assert
-    expected = {174230596: InstrumentId.from_str("CLZ23.NYMEX")}
+    expected = {174230596: InstrumentId.from_str("CLZ3.NYMEX")}
     assert instrument_provider.contract_id_to_instrument_id == expected
 
 
@@ -167,7 +167,7 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     )
 
     # Act
-    fx = await instrument_provider.find_with_contract_id(12087792)
+    fx = await instrument_provider.get_instrument(12087792)
     instrument_provider._client.stop()
 
     # Assert

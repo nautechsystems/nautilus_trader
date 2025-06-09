@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 8e19c7d07a1b957bfeb81bf334fa830acfe351d709746b913fe47dde9d3ba67c # shrinks to (operations, config) = ([AdvanceTime(1), AdvanceTime(1), AdvanceTime(1), AdvanceTime(1), AdvanceTime(1)], (63, 34, Some(51), false))

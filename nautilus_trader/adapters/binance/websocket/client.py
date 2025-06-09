@@ -56,6 +56,7 @@ class BinanceWebSocketClient:
     """
 
     MAX_SUBSCRIPTIONS_PER_CLIENT = 200
+    MAX_CLIENTS = 20  # Allows up to 4000 total subscriptions (20 x 200)
 
     def __init__(
         self,
@@ -140,13 +141,27 @@ class BinanceWebSocketClient:
         int
             The client ID to use for the new subscription.
 
+        Raises
+        ------
+        RuntimeError
+            If maximum number of clients and subscriptions are exceeded.
+
         """
         # Try to find an existing client with room for another subscription
         for client_id, streams in self._client_streams.items():
             if len(streams) < self.MAX_SUBSCRIPTIONS_PER_CLIENT:
                 return client_id
 
-        # If no suitable client found, create a new client ID
+        # Check if we can create a new client
+        if len(self._clients) >= self.MAX_CLIENTS:
+            max_total_streams = self.MAX_CLIENTS * self.MAX_SUBSCRIPTIONS_PER_CLIENT
+            raise RuntimeError(
+                f"Cannot create new subscription: maximum limit of {max_total_streams} "
+                f"total subscriptions ({self.MAX_CLIENTS} clients x "
+                f"{self.MAX_SUBSCRIPTIONS_PER_CLIENT} subscriptions) exceeded",
+            )
+
+        # Create a new client ID
         client_id = self._next_client_id
         self._next_client_id += 1
         self._clients[client_id] = None

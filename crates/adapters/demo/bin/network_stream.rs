@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::UnsafeCell, rc::Rc};
-
 use nautilus_common::{actor::registry::register_actor, testing::init_logger_for_testing};
 use nautilus_demo::{
     LiveRunner, big_brain_actor::BigBrainActor, http_server::start_positive_stream_http_server,
@@ -31,7 +29,6 @@ async fn main_logic() {
 
     // Initialize big brain actor
     let big_brain_actor = BigBrainActor::new();
-    let big_brain_actor = Rc::new(UnsafeCell::new(big_brain_actor));
     register_actor(big_brain_actor);
     BigBrainActor::register_message_handlers();
 

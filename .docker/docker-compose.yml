@@ -25,6 +25,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
     volumes:
       - pgadmin:/root/.pgadmin
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${PGADMIN_PORT:-5051}:80"
     networks:

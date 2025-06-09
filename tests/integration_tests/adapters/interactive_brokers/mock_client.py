@@ -63,7 +63,8 @@ class MockEClient(EClient):
     #########################################################################
 
     def reqContractDetails(self, reqId: int, contract: IBContract):
-        instrument_id = ib_contract_to_instrument_id(contract)
+        instrument_id = ib_contract_to_instrument_id(contract, contract.exchange)
+
         match instrument_id.value:
             case "AAPL.NASDAQ":
                 self._handle_task(

@@ -23,9 +23,12 @@ use std::{
 
 /// Represents a generic set-like container with members.
 pub trait SetLike {
+    /// The type of items stored in the set.
     type Item: Hash + Eq + Display + Clone;
 
+    /// Returns `true` if the set contains the specified item.
     fn contains(&self, item: &Self::Item) -> bool;
+    /// Returns `true` if the set is empty.
     fn is_empty(&self) -> bool;
 }
 
@@ -85,10 +88,14 @@ where
 
 /// Represents a generic map-like container with key-value pairs.
 pub trait MapLike {
+    /// The type of keys stored in the map.
     type Key: Hash + Eq + Display + Clone;
+    /// The type of values stored in the map.
     type Value: Debug;
 
+    /// Returns `true` if the map contains the specified key.
     fn contains_key(&self, key: &Self::Key) -> bool;
+    /// Returns `true` if the map is empty.
     fn is_empty(&self) -> bool;
 }
 

@@ -84,6 +84,11 @@ The following Databento schemas are supported by NautilusTrader:
 | STATISTICS       | `DatabentoStatistics`             |
 | STATUS           | `InstrumentStatus`                |
 
+:::warning
+NautilusTrader no longer supports Databento DBN v1 schema decoding.
+You will need to migrate historical DBN v1 data to v2 or v3 for loading.
+:::
+
 :::info
 See also the Databento [Schemas and data formats](https://databento.com/docs/schemas-and-data-formats) guide.
 :::

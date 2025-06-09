@@ -17,7 +17,7 @@ use std::sync::{Arc, RwLock};
 
 use ahash::{AHashMap, HashSet, HashSetExt};
 use databento::{
-    dbn::{self, PitSymbolMap, Record, SymbolIndex, VersionUpgradePolicy},
+    dbn::{self, PitSymbolMap, Record, SymbolIndex},
     live::Subscription,
 };
 use indexmap::IndexMap;
@@ -129,7 +129,6 @@ impl DatabentoFeedHandler {
             databento::LiveClient::builder()
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
-                .upgrade_policy(VersionUpgradePolicy::UpgradeToV2)
                 .build(),
         )
         .await?;

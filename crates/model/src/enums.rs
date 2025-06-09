@@ -22,13 +22,21 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
 use crate::enum_strum_serde;
 
+/// Provides conversion from a `u8` value to an enum type.
 pub trait FromU8 {
+    /// Converts a `u8` value to the implementing type.
+    ///
+    /// Returns `None` if the value is not a valid representation.
     fn from_u8(value: u8) -> Option<Self>
     where
         Self: Sized;
 }
 
+/// Provides conversion from a `u16` value to an enum type.
 pub trait FromU16 {
+    /// Converts a `u16` value to the implementing type.
+    ///
+    /// Returns `None` if the value is not a valid representation.
     fn from_u16(value: u16) -> Option<Self>
     where
         Self: Sized;

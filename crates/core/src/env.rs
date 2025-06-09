@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Returns the environment variable for the given `key`.
+//! Cross-platform environment variable utilities.
+//!
+//! This module provides functions for safely accessing environment variables
+//! with proper error handling.
+
+/// Returns the value of the environment variable for the given `key`.
 ///
 /// # Errors
 ///

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import warnings
-
 import msgspec
 
 from nautilus_trader.cache.config import CacheConfig

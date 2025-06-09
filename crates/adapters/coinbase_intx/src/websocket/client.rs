@@ -167,10 +167,15 @@ impl CoinbaseIntxWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())],
-            heartbeat: self.heartbeat,
-            heartbeat_msg: None,
             #[cfg(feature = "python")]
             handler: Consumer::Python(None),
+            #[cfg(not(feature = "python"))]
+            handler: {
+                let (consumer, _rx) = Consumer::rust_consumer();
+                consumer
+            },
+            heartbeat: self.heartbeat,
+            heartbeat_msg: None,
             #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),

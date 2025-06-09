@@ -25,7 +25,7 @@ pub mod live;
 
 use pyo3::prelude::*;
 
-/// Loaded as `nautilus_pyo3.databento`
+/// Loaded as `nautilus_pyo3.databento`.
 ///
 /// # Errors
 ///

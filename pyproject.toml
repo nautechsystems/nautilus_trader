@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.218.0"
+version = "1.219.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = [
     {name = "Nautech Systems", email = "info@nautechsystems.io"},
@@ -48,7 +48,7 @@ requires = [
     "setuptools>=80",
     "poetry-core>=2.0.1",
     "numpy>=1.26.4",
-    "cython==3.1.0",
+    "cython==3.1.1",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -94,12 +94,12 @@ dydx = [
     "pycryptodome>=3.20.0,<4.0.0",
 ]
 polymarket = [
-    "py-clob-client>=0.21.0,<1.0.0",
+    "py-clob-client==0.23.0,<1.0.0",  # Pinned to 0.23.0 for stability
 ]
 
 [dependency-groups]
 dev = [
-    "cython==3.1.0",
+    "cython==3.1.1",
     "setuptools>=75",
     "black>=25.1.0,<26.0.0",
     "docformatter>=1.7.7,<2.0.0",
@@ -107,7 +107,7 @@ dev = [
     "pandas-stubs>=2.2.2,<3.0.0",
     "pre-commit>=4.2.0,<5.0.0",
     "requests>=2.32.3,<3.0.0",
-    "ruff>=0.11.12,<1.0.0",
+    "ruff>=0.11.13,<1.0.0",
     "types-pytz>=2024.2,<2025.0",
     "types-requests>=2.32,<3.0",
     "types-toml>=0.10.2,<1.0.0",

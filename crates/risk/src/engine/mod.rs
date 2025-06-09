@@ -1006,7 +1006,6 @@ impl RiskEngine {
                                 instrument.id()
                             ),
                         );
-                        return;
                     }
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
