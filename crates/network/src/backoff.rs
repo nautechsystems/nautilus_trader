@@ -106,7 +106,7 @@ impl ExponentialBackoff {
         let max_nanos = self.delay_max.as_nanos() as u64;
 
         // Use checked floating point multiplication to prevent overflow
-        let next_nanos = if current_nanos > u64::MAX as u128 {
+        let next_nanos = if current_nanos > u128::from(u64::MAX) {
             // Current is already at max representable value
             max_nanos
         } else {
