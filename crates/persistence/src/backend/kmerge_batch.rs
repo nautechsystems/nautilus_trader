@@ -178,8 +178,7 @@ where
 #[cfg(test)]
 mod tests {
 
-    use quickcheck::{Arbitrary, empty_shrinker};
-    use quickcheck_macros::quickcheck;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -274,58 +273,114 @@ mod tests {
     #[derive(Debug, Clone)]
     struct SortedNestedVec(Vec<Vec<u64>>);
 
-    impl Arbitrary for SortedNestedVec {
-        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-            // Generate a random Vec<u64>
-            let mut vec: Vec<u64> = Arbitrary::arbitrary(g);
+    /// Strategy to generate nested vectors where each inner vector is sorted.
+    fn sorted_nested_vec_strategy() -> impl Strategy<Value = SortedNestedVec> {
+        // Generate a vector of u64 values, then split into sorted chunks
+        prop::collection::vec(any::<u64>(), 0..=100).prop_flat_map(|mut flat_vec| {
+            flat_vec.sort_unstable();
 
-            // Sort the vector
-            vec.sort_unstable();
-
-            // Recreate nested Vec structure by splitting the flattened_sorted_vec into sorted chunks
-            let mut nested_sorted_vec = Vec::new();
-            let mut start = 0;
-            while start < vec.len() {
-                // let chunk_size: usize = g.rng.gen_range(0, vec.len() - start + 1);
-                let chunk_size: usize = Arbitrary::arbitrary(g);
-                let chunk_size = chunk_size % (vec.len() - start + 1);
-                let end = start + chunk_size;
-                let chunk = vec[start..end].to_vec();
-                nested_sorted_vec.push(chunk);
-                start = end;
+            // Generate chunk sizes that will split the sorted vector
+            let total_len = flat_vec.len();
+            if total_len == 0 {
+                return Just(SortedNestedVec(vec![vec![]])).boxed();
             }
 
-            // Wrap the sorted nested vector in the SortedNestedVecU64 struct
-            Self(nested_sorted_vec)
-        }
+            // Generate random chunk boundaries
+            prop::collection::vec(0..=total_len, 0..=10)
+                .prop_map(move |mut boundaries| {
+                    boundaries.push(0);
+                    boundaries.push(total_len);
+                    boundaries.sort_unstable();
+                    boundaries.dedup();
 
-        // Optionally, implement the `shrink` method if you want to shrink the generated data on test failures
-        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
-            empty_shrinker()
-        }
+                    let mut nested_vec = Vec::new();
+                    for window in boundaries.windows(2) {
+                        let start = window[0];
+                        let end = window[1];
+                        nested_vec.push(flat_vec[start..end].to_vec());
+                    }
+
+                    SortedNestedVec(nested_vec)
+                })
+                .boxed()
+        })
     }
 
     ////////////////////////////////////////////////////////////////////////////////
     // Property-based testing
     ////////////////////////////////////////////////////////////////////////////////
 
-    #[quickcheck]
-    fn prop_test(all_data: Vec<SortedNestedVec>) -> bool {
-        let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
+    proptest! {
+        /// Property: K-way merge should produce the same result as sorting all data together
+        #[test]
+        fn prop_kmerge_equivalent_to_sort(
+            all_data in prop::collection::vec(sorted_nested_vec_strategy(), 0..=10)
+        ) {
+            let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
 
-        let copy_data = all_data.clone();
-        for stream in copy_data {
-            let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
-            kmerge.push_iter(input);
+            let copy_data = all_data.clone();
+            for stream in copy_data {
+                let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
+                kmerge.push_iter(input);
+            }
+            let merged_data: Vec<u64> = kmerge.collect();
+
+            let mut sorted_data: Vec<u64> = all_data
+                .into_iter()
+                .flat_map(|stream| stream.0.into_iter().flatten())
+                .collect();
+            sorted_data.sort_unstable();
+
+            prop_assert_eq!(merged_data.len(), sorted_data.len(), "Lengths should be equal");
+            prop_assert_eq!(merged_data, sorted_data, "Merged data should equal sorted data");
         }
-        let merged_data: Vec<u64> = kmerge.collect();
 
-        let mut sorted_data: Vec<u64> = all_data
-            .into_iter()
-            .flat_map(|stream| stream.0.into_iter().flatten())
-            .collect();
-        sorted_data.sort_unstable();
+        /// Property: K-way merge should preserve sortedness when inputs are sorted
+        #[test]
+        fn prop_kmerge_preserves_sort_order(
+            all_data in prop::collection::vec(sorted_nested_vec_strategy(), 1..=5)
+        ) {
+            let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
 
-        merged_data.len() == sorted_data.len() && merged_data.eq(&sorted_data)
+            for stream in all_data {
+                let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
+                kmerge.push_iter(input);
+            }
+            let merged_data: Vec<u64> = kmerge.collect();
+
+            // Check that the merged data is sorted
+            for window in merged_data.windows(2) {
+                prop_assert!(window[0] <= window[1], "Merged data should be sorted");
+            }
+        }
+
+        /// Property: Empty iterators should not affect the merge result
+        #[test]
+        fn prop_kmerge_handles_empty_iterators(
+            data in sorted_nested_vec_strategy(),
+            empty_count in 0usize..=5
+        ) {
+            let mut kmerge_with_empty: KMerge<_, u64, _> = KMerge::new(OrdComparator);
+            let mut kmerge_without_empty: KMerge<_, u64, _> = KMerge::new(OrdComparator);
+
+            // Add the actual data to both merges
+            let input_with_empty = data.0.clone().into_iter().map(std::iter::IntoIterator::into_iter);
+            let input_without_empty = data.0.into_iter().map(std::iter::IntoIterator::into_iter);
+
+            kmerge_with_empty.push_iter(input_with_empty);
+            kmerge_without_empty.push_iter(input_without_empty);
+
+            // Add empty iterators to the first merge
+            for _ in 0..empty_count {
+                let empty_vec: Vec<Vec<u64>> = vec![];
+                let empty_input = empty_vec.into_iter().map(std::iter::IntoIterator::into_iter);
+                kmerge_with_empty.push_iter(empty_input);
+            }
+
+            let result_with_empty: Vec<u64> = kmerge_with_empty.collect();
+            let result_without_empty: Vec<u64> = kmerge_without_empty.collect();
+
+            prop_assert_eq!(result_with_empty, result_without_empty, "Empty iterators should not affect result");
+        }
     }
 }
