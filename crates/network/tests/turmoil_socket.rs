@@ -20,7 +20,7 @@
 
 use std::time::Duration;
 
-use nautilus_network::{net::TcpConnector, socket::SocketConfig};
+use nautilus_network::{backoff::ExponentialBackoff, net::TcpConnector, socket::SocketConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::stream::Mode;
 use turmoil::{Builder, net};
@@ -67,6 +67,33 @@ impl<C: TcpConnector> TestSocketClient<C> {
         let n = stream.read(&mut buffer).await?;
         buffer.truncate(n);
         Ok(buffer)
+    }
+
+    async fn send_data_with_backoff(
+        &self,
+        data: &[u8],
+        backoff: &mut nautilus_network::backoff::ExponentialBackoff,
+        max_attempts: usize,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        for _attempt in 0..max_attempts {
+            match self.connect().await {
+                Ok(stream) => match self.send_data(stream, data).await {
+                    Ok(response) => {
+                        backoff.reset();
+                        return Ok(response);
+                    }
+                    Err(_) => {
+                        let delay = backoff.next_duration();
+                        tokio::time::sleep(delay).await;
+                    }
+                },
+                Err(_) => {
+                    let delay = backoff.next_duration();
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }
+        Err("Max attempts reached".into())
     }
 }
 
@@ -193,6 +220,117 @@ fn test_turmoil_socket_network_partition() {
 
         Ok(())
     });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn test_exponential_backoff_under_network_instability() {
+    let mut sim = Builder::new().build();
+
+    sim.host("server", || echo_server());
+
+    sim.client("client", async {
+        let config = SocketConfig {
+            url: "server:8080".to_string(),
+            mode: Mode::Plain,
+            suffix: b"\\r\\n".to_vec(),
+            #[cfg(feature = "python")]
+            py_handler: None,
+            heartbeat: None,
+            reconnect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(500),
+            reconnect_backoff_factor: Some(2.0),
+            reconnect_jitter_ms: Some(10),
+            certs_dir: None,
+        };
+
+        let client = TestSocketClient::new(config, TurmoilTcpConnector);
+
+        let mut backoff = ExponentialBackoff::new(
+            Duration::from_millis(50),  // initial delay
+            Duration::from_millis(500), // max delay
+            2.0,                        // factor
+            10,                         // jitter
+            true,                       // immediate first
+        )
+        .unwrap();
+
+        // Test successful communication first
+        let stream = client.connect().await.expect("Should connect");
+        let response = client
+            .send_data(stream, b"test_message")
+            .await
+            .expect("Should send data");
+        assert_eq!(response, b"test_message");
+
+        // Create network partition to test backoff
+        turmoil::partition("client", "server");
+
+        // Wait briefly
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Repair partition
+        turmoil::repair("client", "server");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Should eventually succeed with backoff (limiting attempts to prevent infinite loops)
+        let response = client
+            .send_data_with_backoff(b"after_instability", &mut backoff, 5)
+            .await
+            .expect("Should eventually succeed");
+        assert_eq!(response, b"after_instability");
+
+        Ok(())
+    });
+
+    sim.run().unwrap();
+}
+
+#[test]
+fn test_multiple_clients_concurrent() {
+    let mut sim = Builder::new().build();
+
+    sim.host("server", || echo_server());
+
+    // Test multiple clients concurrently
+    for client_id in 0..3_u32 {
+        sim.client(format!("client_{}", client_id), async move {
+            let config = SocketConfig {
+                url: "server:8080".to_string(),
+                mode: Mode::Plain,
+                suffix: b"\\r\\n".to_vec(),
+                #[cfg(feature = "python")]
+                py_handler: None,
+                heartbeat: None,
+                reconnect_timeout_ms: Some(2_000),
+                reconnect_delay_initial_ms: Some(50),
+                reconnect_delay_max_ms: Some(500),
+                reconnect_backoff_factor: Some(1.5),
+                reconnect_jitter_ms: Some(10),
+                certs_dir: None,
+            };
+
+            let client = TestSocketClient::new(config, TurmoilTcpConnector);
+
+            // Each client sends multiple requests
+            for req_id in 0..3 {
+                let message = format!("client_{}_req_{}", client_id, req_id);
+                let stream = client.connect().await.expect("Should connect");
+                let response = client
+                    .send_data(stream, message.as_bytes())
+                    .await
+                    .expect("Should send data");
+                assert_eq!(response, message.as_bytes());
+
+                // Add small delay between requests
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+
+            Ok(())
+        });
+    }
 
     sim.run().unwrap();
 }
