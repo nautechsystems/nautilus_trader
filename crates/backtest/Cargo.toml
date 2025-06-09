@@ -62,8 +62,8 @@ async-trait = { workspace = true }
 chrono = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-ustr = { workspace = true }
 rust_decimal = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

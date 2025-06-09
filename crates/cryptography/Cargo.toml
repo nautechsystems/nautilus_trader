@@ -43,8 +43,8 @@ rand = { workspace = true }
 ring = { workspace = true }
 rustls = { workspace = true }
 tracing = { workspace = true }
-rustls-platform-verifier = "0.6.0"
-pem = "3.0.5"
+pem = { workspace = true }
+rustls-platform-verifier = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
