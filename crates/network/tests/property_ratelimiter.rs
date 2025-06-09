@@ -37,8 +37,8 @@ proptest! {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero);
         let rate_limiter = RateLimiter::new_with_quota(
-            Some(quota.clone()),
-            vec![(key.clone(), quota.clone())]
+            Some(quota),
+            vec![(key.clone(), quota)]
         );
 
         let mut successful_requests = 0;
@@ -84,11 +84,11 @@ proptest! {
         let quota = Quota::per_second(rate_nonzero);
 
         let keyed_quotas: Vec<(String, Quota)> = keys.iter()
-            .map(|k| (k.clone(), quota.clone()))
+            .map(|k| (k.clone(), quota))
             .collect();
 
         let rate_limiter = RateLimiter::new_with_quota(
-            Some(quota.clone()),
+            Some(quota),
             keyed_quotas
         );
 
@@ -208,7 +208,7 @@ proptest! {
         let rate_nonzero = NonZeroU32::new(rate).unwrap();
         let quota = Quota::per_second(rate_nonzero);
         let rate_limiter = RateLimiter::<String, _>::new_with_quota(
-            Some(quota.clone()),
+            Some(quota),
             vec![]
         );
 
@@ -264,8 +264,8 @@ proptest! {
         let key_quota = Quota::per_second(NonZeroU32::new(key_rate).unwrap());
 
         let rate_limiter = RateLimiter::new_with_quota(
-            Some(default_quota.clone()),
-            vec![(key.clone(), key_quota.clone())]
+            Some(default_quota),
+            vec![(key.clone(), key_quota)]
         );
 
         // Test specific key uses its quota
@@ -283,7 +283,7 @@ proptest! {
         );
 
         // Test unknown key uses default quota
-        let unknown_key = format!("{}_unknown", key);
+        let unknown_key = format!("{key}_unknown");
         let mut default_allowed = 0;
         for _ in 0..=default_rate {
             if rate_limiter.check_key(&unknown_key).is_ok() {
@@ -312,7 +312,7 @@ proptest! {
             let quota = base_quota.allow_burst(burst_nonzero);
 
             let rate_limiter = RateLimiter::<String, _>::new_with_quota(
-                Some(quota.clone()),
+                Some(quota),
                 vec![]
             );
 
