@@ -177,23 +177,23 @@ impl Quota {
     ///
     /// # Panics
     ///
-    /// Panics if the division result is 0 or exceeds u32::MAX.
+    /// Panics if the division result is 0 or exceeds `u32::MAX`.
     pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
         let t_u64 = t.as_u64();
         let tau_u64 = tau.as_u64();
 
         // Validate division won't be zero or overflow
-        if t_u64 == 0 {
-            panic!("Invalid GCRA parameter: t cannot be zero");
-        }
+        assert!((t_u64 != 0), "Invalid GCRA parameter: t cannot be zero");
 
         let division_result = tau_u64 / t_u64;
-        if division_result == 0 {
-            panic!("Invalid GCRA parameters: tau/t results in zero burst capacity");
-        }
-        if division_result > u32::MAX as u64 {
-            panic!("Invalid GCRA parameters: tau/t exceeds u32::MAX");
-        }
+        assert!(
+            (division_result != 0),
+            "Invalid GCRA parameters: tau/t results in zero burst capacity"
+        );
+        assert!(
+            (division_result <= u64::from(u32::MAX)),
+            "Invalid GCRA parameters: tau/t exceeds u32::MAX"
+        );
 
         // We've verified the result is non-zero and fits in u32
         let max_burst = NonZeroU32::new(division_result as u32)

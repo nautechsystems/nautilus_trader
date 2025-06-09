@@ -16,7 +16,7 @@
 //! Network abstractions for dependency injection.
 //!
 //! This module provides traits and types that allow our networking components
-//! to work with both real networking (tokio::net) and simulated networking (turmoil::net)
+//! to work with both real networking (`tokio::net`) and simulated networking (`turmoil::net`)
 //! through dependency injection.
 
 use std::{future::Future, io::Result};
@@ -31,7 +31,7 @@ pub trait TcpConnector: Send + Sync {
     fn connect(&self, addr: &str) -> impl Future<Output = Result<Self::Stream>> + Send;
 }
 
-/// Production TCP connector using tokio::net.
+/// Production TCP connector using `tokio::net`.
 #[derive(Default, Clone, Debug)]
 pub struct RealTcpConnector;
 
