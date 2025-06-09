@@ -17,20 +17,39 @@
 # - Changes to exclusions should come only from trusted maintainers
 set -e
 
-# Exclude directories and file types that legitimately contain encoded data
-exclude_dirs="--exclude-dir=.git --exclude-dir=target --exclude-dir=build --exclude-dir=__pycache__ --exclude-dir=.pytest_cache --exclude-dir=.venv --exclude-dir=venv --exclude-dir=node_modules"
-exclude_files="--exclude=*.lock --exclude=*.whl --exclude=*.egg-info --exclude=check_hidden_chars.sh"
+# Get files passed by pre-commit, or all relevant files if none passed
+# Filter out this script itself to avoid detecting its own search patterns
+files_to_check=()
+for file in "$@"; do
+    if [[ "$file" != *"check_hidden_chars.sh" ]]; then
+        files_to_check+=("$file")
+    fi
+done
 
-# Check for problematic Unicode characters in all source code
+if [ ${#files_to_check[@]} -eq 0 ]; then
+    # Fallback: find all relevant files if no arguments passed
+    mapfile -t files_to_check < <(find . -type f \( -name "*.py" -o -name "*.pyx" -o -name "*.rs" -o -name "*.toml" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.sh" -o -name "Dockerfile*" \) \
+        ! -path "*/target/*" ! -path "*/build/*" ! -path "*/__pycache__/*" ! -path "*/.pytest_cache/*" \
+        ! -path "*/.venv/*" ! -path "*/venv/*" ! -path "*/node_modules/*" \
+        ! -name "*.lock" ! -name "*.whl" ! -name "*.egg-info" ! -name "check_hidden_chars.sh")
+fi
+
+# Check for problematic Unicode characters in the specified files
 # Always check for hidden Unicode - these should never appear in legitimate source
-control_chars=$(grep -R --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]|‍|‌|​|‏|‎|⁠|⁡|⁢|⁣|⁤|⁥|⁦|⁧|⁨|⁩|￿" $exclude_dirs $exclude_files --include="*.py" --include="*.pyx" --include="*.rs" --include="*.toml" --include="*.md" --include="*.txt" --exclude="*test*" --exclude="*Test*" . || true)
+control_chars=""
+if [ ${#files_to_check[@]} -gt 0 ]; then
+    control_chars=$(grep --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]|‍|‌|​|‏|‎|⁠|⁡|⁢|⁣|⁤|⁥|⁦|⁧|⁨|⁩|￿" "${files_to_check[@]}" 2>/dev/null || true)
+fi
 
 # Check for suspicious long base64/hex strings, with very specific exclusions
 # Any changes to these exclusions should be carefully reviewed as they create security blind spots
-suspicious_strings=$(grep -R --binary-files=without-match -nP "[A-Za-z0-9+/]{500,}={0,2}" $exclude_dirs --include="*.py" --include="*.pyx" --include="*.rs" --exclude="*test*" --exclude="*Test*" . | \
-    grep -v 'crates/model/src/defi/block.rs:.*"logsBloom":' | \
-    grep -v '#.*SECURITY_EXCLUSION:' | \
-    grep -v '//.*SECURITY_EXCLUSION:' || true)
+suspicious_strings=""
+if [ ${#files_to_check[@]} -gt 0 ]; then
+    suspicious_strings=$(grep --binary-files=without-match -nP "[A-Za-z0-9+/]{500,}={0,2}" "${files_to_check[@]}" 2>/dev/null | \
+        grep -v 'crates/model/src/defi/block.rs:.*"logsBloom":' | \
+        grep -v '#.*SECURITY_EXCLUSION:' | \
+        grep -v '//.*SECURITY_EXCLUSION:' || true)
+fi
 
 # Combine results
 all_matches=""
