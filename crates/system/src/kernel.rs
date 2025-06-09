@@ -40,6 +40,7 @@ use nautilus_common::{
         set_message_bus,
         switchboard::MessagingSwitchboard,
     },
+    runner::{SyncDataCommandExecutor, get_data_cmd_executor, set_data_cmd_executor},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
@@ -131,6 +132,10 @@ impl NautilusKernel {
         )));
         set_message_bus(msgbus);
 
+        // Set up default sync data command executor
+        let executor = SyncDataCommandExecutor;
+        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
         let risk_engine = RiskEngine::new(
             config.risk_engine().unwrap_or_default(),
@@ -143,11 +148,18 @@ impl NautilusKernel {
         let data_engine = DataEngine::new(clock.clone(), cache.clone(), config.data_engine());
         let data_engine = Rc::new(RefCell::new(data_engine));
 
-        // Register DataEngine execute handler
+        // Register DataEngine command execution
         let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
             move |cmd: &DataCommand| data_engine_ref.borrow_mut().execute(cmd),
+        )));
+        msgbus::register(endpoint, handler);
+
+        // Register DataEngine command queueing
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |cmd: &DataCommand| get_data_cmd_executor().borrow_mut().execute(cmd.clone()), // TODO:
         )));
         msgbus::register(endpoint, handler);
 
@@ -156,7 +168,7 @@ impl NautilusKernel {
         let endpoint = MessagingSwitchboard::data_engine_process();
         let handler =
             ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |data: &Data| {
-                data_engine_ref.borrow_mut().process_data(data.clone()); // TODO: Optimize
+                data_engine_ref.borrow_mut().process_data(data.clone()); // TODO: Optimize clone
             })));
         msgbus::register(endpoint, handler);
 

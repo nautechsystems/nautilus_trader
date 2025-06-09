@@ -25,11 +25,10 @@ use std::{
     rc::Rc,
 };
 
-use tokio::sync::mpsc::UnboundedSender;
-
 use crate::{
     clock::Clock,
     messages::{DataEvent, data::DataCommand},
+    msgbus::{self, switchboard::MessagingSwitchboard},
     timer::TimeEvent,
 };
 
@@ -61,18 +60,64 @@ pub fn set_global_clock(c: Rc<RefCell<dyn Clock>>) {
         .expect("Should be able to access thread local clock");
 }
 
-pub type DataCommandQueue = Rc<RefCell<VecDeque<DataCommand>>>;
+/// Trait for data command execution that can be implemented for both sync and async runners.
+pub trait DataCommandExecutor {
+    /// Executes a data command.
+    ///
+    /// - **Sync runners** send the command to a queue for synchronous execution.
+    /// - **Async runners** send the command to a channel for asynchronous execution.
+    fn execute(&self, command: DataCommand);
+}
 
-/// Get globally shared message bus command queue
+pub type GlobalDataCommandExecutor = Rc<RefCell<dyn DataCommandExecutor>>;
+
+/// Synchronous implementation of DataCommandExecutor for backtest environments.
+#[derive(Debug)]
+pub struct SyncDataCommandExecutor;
+
+impl DataCommandExecutor for SyncDataCommandExecutor {
+    fn execute(&self, command: DataCommand) {
+        // TODO: Placeholder, we still need to queue and drain even for sync
+        let endpoint = MessagingSwitchboard::data_engine_execute();
+        msgbus::send(endpoint, &command);
+    }
+}
+
+/// Gets the global data command executor.
+///
+/// # Panics
+///
+/// Panics if thread-local storage cannot be accessed or the executor is uninitialized.
+#[must_use]
+pub fn get_data_cmd_executor() -> GlobalDataCommandExecutor {
+    DATA_CMD_EXECUTOR
+        .try_with(|e| {
+            e.borrow()
+                .as_ref()
+                .expect("Data command executor should be initialized by runner")
+                .clone()
+        })
+        .expect("Should be able to access thread local storage")
+}
+
+/// Sets the global data command executor.
+///
+/// This should be called by the runner when it initializes.
+/// Can be called multiple times to override the executor (e.g., async overriding sync).
 ///
 /// # Panics
 ///
 /// Panics if thread-local storage cannot be accessed.
-#[must_use]
-pub fn get_data_cmd_queue() -> DataCommandQueue {
-    DATA_CMD_QUEUE
-        .try_with(std::clone::Clone::clone)
-        .expect("Should be able to access thread local storage")
+pub fn set_data_cmd_executor(executor: GlobalDataCommandExecutor) {
+    DATA_CMD_EXECUTOR
+        .try_with(|e| {
+            let mut guard = e.borrow_mut();
+            if guard.is_some() {
+                log::debug!("Overriding existing data command executor");
+            }
+            *guard = Some(executor);
+        })
+        .expect("Should be able to access thread local storage");
 }
 
 pub trait DataQueue {
@@ -127,46 +172,10 @@ pub fn send_data_event(event: DataEvent) {
     get_data_evt_queue().borrow_mut().push(event);
 }
 
-/// Sets the global data event sender.
-///
-/// This should be called by the AsyncRunner when it creates the channel.
-///
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or a sender is already set.
-pub fn set_data_event_sender(sender: UnboundedSender<DataEvent>) {
-    DATA_EVT_SENDER
-        .try_with(|s| {
-            assert!(s.set(sender).is_ok(), "Data event sender already set");
-        })
-        .expect("Should be able to access thread local storage");
-}
-
-/// Gets a cloned data event sender.
-///
-/// This allows data clients to send events directly to the AsyncRunner
-/// without going through shared mutable state.
-///
-/// # Panics
-///
-/// Panics if thread-local storage cannot be accessed or the sender is uninitialized.
-#[must_use]
-pub fn get_data_event_sender() -> UnboundedSender<DataEvent> {
-    DATA_EVT_SENDER
-        .try_with(|s| {
-            s.get()
-                .expect("Data event sender should be initialized by AsyncRunner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
 thread_local! {
     static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
     static DATA_EVT_QUEUE: OnceCell<GlobalDataQueue> = OnceCell::new();
-    static DATA_CMD_QUEUE: DataCommandQueue = Rc::new(RefCell::new(VecDeque::new()));
-    // TODO: Potentially redundant but added to simplify the abstraction layers for now
-    static DATA_EVT_SENDER: OnceCell<UnboundedSender<DataEvent>> = const { OnceCell::new() };
+    static DATA_CMD_EXECUTOR: RefCell<Option<GlobalDataCommandExecutor>> = const { RefCell::new(None) };
 }
 
 // Represents different event types for the runner.

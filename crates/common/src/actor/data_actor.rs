@@ -1602,7 +1602,7 @@ impl DataActorCore {
             log::info!("{CMD}{SEND} {command:?}");
         }
 
-        let endpoint = MessagingSwitchboard::data_engine_execute();
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send(endpoint, command.as_any())
     }
 
@@ -1613,7 +1613,7 @@ impl DataActorCore {
 
         // For now, simplified approach - data requests without dynamic handlers
         // TODO: Implement proper dynamic dispatch for response handlers
-        let endpoint = MessagingSwitchboard::data_engine_execute();
+        let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send(endpoint, request.as_any())
     }
 
