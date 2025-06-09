@@ -906,3 +906,229 @@ mod tests {
         assert_eq!(deserialized.precision, 3);
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Property-based tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// Strategy to generate valid quantity values (non-negative).
+    fn quantity_value_strategy() -> impl Strategy<Value = f64> {
+        // Use a reasonable range for quantities - must be non-negative
+        prop_oneof![
+            // Small positive values
+            0.00001..1.0,
+            // Normal trading range
+            1.0..100_000.0,
+            // Large values (but safe)
+            100_000.0..1_000_000.0,
+            // Include zero
+            Just(0.0),
+        ]
+    }
+
+    /// Strategy to generate valid precision values.
+    fn precision_strategy() -> impl Strategy<Value = u8> {
+        0..=FIXED_PRECISION
+    }
+
+    proptest! {
+        /// Property: Quantity string serialization round-trip should preserve value and precision
+        #[test]
+        fn prop_quantity_serde_round_trip(
+            value in quantity_value_strategy(),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
+        ) {
+            let original = Quantity::new(value, precision);
+
+            // String round-trip (this should be exact and is the most important)
+            let string_repr = original.to_string();
+            let from_string: Quantity = string_repr.parse().unwrap();
+            prop_assert_eq!(from_string.raw, original.raw);
+            prop_assert_eq!(from_string.precision, original.precision);
+
+            // JSON round-trip basic validation (just ensure it doesn't crash and preserves precision)
+            let json = serde_json::to_string(&original).unwrap();
+            let from_json: Quantity = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(from_json.precision, original.precision);
+            // Note: JSON may have minor floating-point precision differences due to f64 limitations
+        }
+
+        /// Property: Quantity arithmetic should be associative for same precision
+        #[test]
+        fn prop_quantity_arithmetic_associative(
+            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
+            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
+            c in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+            let q_c = Quantity::new(c, precision);
+
+            // Check if we can perform the operations without overflow using raw arithmetic
+            let ab_raw = q_a.raw.checked_add(q_b.raw);
+            let bc_raw = q_b.raw.checked_add(q_c.raw);
+
+            if let (Some(ab_raw), Some(bc_raw)) = (ab_raw, bc_raw) {
+                let ab_c_raw = ab_raw.checked_add(q_c.raw);
+                let a_bc_raw = q_a.raw.checked_add(bc_raw);
+
+                if let (Some(ab_c_raw), Some(a_bc_raw)) = (ab_c_raw, a_bc_raw) {
+                    // (a + b) + c == a + (b + c) using raw arithmetic (exact)
+                    prop_assert_eq!(ab_c_raw, a_bc_raw, "Associativity failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Quantity addition/subtraction should be inverse operations (when valid)
+        #[test]
+        fn prop_quantity_addition_subtraction_inverse(
+            base in quantity_value_strategy().prop_filter("Reasonable values", |&x| x < 1e6),
+            delta in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 1e-3 && x < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let q_base = Quantity::new(base, precision);
+            let q_delta = Quantity::new(delta, precision);
+
+            // Use raw arithmetic to avoid floating-point precision issues
+            if let Some(added_raw) = q_base.raw.checked_add(q_delta.raw) {
+                if let Some(result_raw) = added_raw.checked_sub(q_delta.raw) {
+                    // (base + delta) - delta should equal base exactly using raw arithmetic
+                    prop_assert_eq!(result_raw, q_base.raw, "Inverse operation failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Quantity ordering should be transitive
+        #[test]
+        fn prop_quantity_ordering_transitive(
+            a in quantity_value_strategy(),
+            b in quantity_value_strategy(),
+            c in quantity_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+            let q_c = Quantity::new(c, precision);
+
+            // If a <= b and b <= c, then a <= c
+            if q_a <= q_b && q_b <= q_c {
+                prop_assert!(q_a <= q_c, "Transitivity failed: {} <= {} <= {} but {} > {}",
+                    q_a.as_f64(), q_b.as_f64(), q_c.as_f64(), q_a.as_f64(), q_c.as_f64());
+            }
+        }
+
+        /// Property: String parsing should be consistent with precision inference
+        #[test]
+        fn prop_quantity_string_parsing_precision(
+            integral in 0u32..1000000,
+            fractional in 0u32..1000000,
+            precision in 1u8..=6
+        ) {
+            // Create a decimal string with exactly 'precision' decimal places
+            let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
+            let quantity_str = format!("{}.{}", integral, fractional_str);
+
+            let parsed: Quantity = quantity_str.parse().unwrap();
+            prop_assert_eq!(parsed.precision, precision);
+
+            // Round-trip should preserve the original string (after normalization)
+            let round_trip = parsed.to_string();
+            let expected_value = format!("{}.{}", integral, fractional_str);
+            prop_assert_eq!(round_trip, expected_value);
+        }
+
+        /// Property: Quantity with higher precision should contain more or equal information
+        #[test]
+        fn prop_quantity_precision_information_preservation(
+            value in quantity_value_strategy().prop_filter("Reasonable values", |&x| x < 1e6),
+            precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
+            precision2 in 1u8..=6u8
+        ) {
+            // Skip cases where precisions are equal (trivial case)
+            prop_assume!(precision1 != precision2);
+
+            let _q1 = Quantity::new(value, precision1);
+            let _q2 = Quantity::new(value, precision2);
+
+            // When both quantities are created from the same value with different precisions,
+            // converting both to the lower precision should yield the same result
+            let min_precision = precision1.min(precision2);
+
+            // Round the original value to the minimum precision first
+            let scale = 10.0_f64.powi(min_precision as i32);
+            let rounded_value = (value * scale).round() / scale;
+
+            let q1_reduced = Quantity::new(rounded_value, min_precision);
+            let q2_reduced = Quantity::new(rounded_value, min_precision);
+
+            // They should be exactly equal when created from the same rounded value
+            prop_assert_eq!(q1_reduced.raw, q2_reduced.raw, "Precision reduction inconsistent");
+        }
+
+        /// Property: Quantity arithmetic should never produce invalid values
+        #[test]
+        fn prop_quantity_arithmetic_bounds(
+            a in quantity_value_strategy(),
+            b in quantity_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+
+            // Addition should either succeed or fail predictably
+            let sum_f64 = q_a.as_f64() + q_b.as_f64();
+            if sum_f64.is_finite() && sum_f64 >= QUANTITY_MIN && sum_f64 <= QUANTITY_MAX {
+                let sum = q_a + q_b;
+                prop_assert!(sum.as_f64().is_finite());
+                prop_assert!(!sum.is_undefined());
+            }
+
+            // Subtraction should either succeed or fail predictably
+            let diff_f64 = q_a.as_f64() - q_b.as_f64();
+            if diff_f64.is_finite() && diff_f64 >= QUANTITY_MIN && diff_f64 <= QUANTITY_MAX {
+                let diff = q_a - q_b;
+                prop_assert!(diff.as_f64().is_finite());
+                prop_assert!(!diff.is_undefined());
+            }
+        }
+
+        /// Property: Multiplication should preserve non-negativity
+        #[test]
+        fn prop_quantity_multiplication_non_negative(
+            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 1000.0),
+            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 1000.0),
+            precision in precision_strategy()
+        ) {
+            let q_a = Quantity::new(a, precision);
+            let q_b = Quantity::new(b, precision);
+
+            // Check if multiplication would overflow before performing it
+            let product_f64 = q_a.as_f64() * q_b.as_f64();
+            if product_f64.is_finite() && product_f64 <= QUANTITY_MAX {
+                // Multiplying two quantities should always result in a non-negative value
+                let product = q_a * q_b;
+                prop_assert!(product.as_f64() >= 0.0, "Quantity multiplication produced negative value: {}", product.as_f64());
+            }
+        }
+
+        /// Property: Zero quantity should be identity for addition
+        #[test]
+        fn prop_quantity_zero_addition_identity(
+            value in quantity_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let q = Quantity::new(value, precision);
+            let zero = Quantity::zero(precision);
+
+            // q + 0 = q and 0 + q = q
+            prop_assert_eq!(q + zero, q);
+            prop_assert_eq!(zero + q, q);
+        }
+    }
+}

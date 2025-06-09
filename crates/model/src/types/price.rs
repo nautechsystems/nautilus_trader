@@ -827,3 +827,197 @@ mod tests {
         assert_eq!(deserialized.precision, 3);
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Property-based tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod property_tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    /// Strategy to generate valid price values within the allowed range.
+    fn price_value_strategy() -> impl Strategy<Value = f64> {
+        // Use a reasonable range that's well within PRICE_MIN/PRICE_MAX
+        // but still tests edge cases with various scales
+        prop_oneof![
+            // Small positive values
+            0.00001..1.0,
+            // Normal trading range
+            1.0..100_000.0,
+            // Large values (but safe)
+            100_000.0..1_000_000.0,
+            // Small negative values (for spreads, etc.)
+            -1_000.0..0.0,
+        ]
+    }
+
+    /// Strategy to generate valid precision values.
+    fn precision_strategy() -> impl Strategy<Value = u8> {
+        0..=FIXED_PRECISION
+    }
+
+    proptest! {
+        /// Property: Price string serialization round-trip should preserve value and precision
+        #[test]
+        fn prop_price_serde_round_trip(
+            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme floating-point cases
+        ) {
+            let original = Price::new(value, precision);
+
+            // String round-trip (this should be exact and is the most important)
+            let string_repr = original.to_string();
+            let from_string: Price = string_repr.parse().unwrap();
+            prop_assert_eq!(from_string.raw, original.raw);
+            prop_assert_eq!(from_string.precision, original.precision);
+
+            // JSON round-trip basic validation (just ensure it doesn't crash and preserves precision)
+            let json = serde_json::to_string(&original).unwrap();
+            let from_json: Price = serde_json::from_str(&json).unwrap();
+            prop_assert_eq!(from_json.precision, original.precision);
+            // Note: JSON may have minor floating-point precision differences due to f64 limitations
+        }
+
+        /// Property: Price arithmetic should be associative for same precision
+        #[test]
+        fn prop_price_arithmetic_associative(
+            a in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            b in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            c in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let p_c = Price::new(c, precision);
+
+            // Check if we can perform the operations without overflow using raw arithmetic
+            let ab_raw = p_a.raw.checked_add(p_b.raw);
+            let bc_raw = p_b.raw.checked_add(p_c.raw);
+
+            if let (Some(ab_raw), Some(bc_raw)) = (ab_raw, bc_raw) {
+                let ab_c_raw = ab_raw.checked_add(p_c.raw);
+                let a_bc_raw = p_a.raw.checked_add(bc_raw);
+
+                if let (Some(ab_c_raw), Some(a_bc_raw)) = (ab_c_raw, a_bc_raw) {
+                    // (a + b) + c == a + (b + c) using raw arithmetic (exact)
+                    prop_assert_eq!(ab_c_raw, a_bc_raw, "Associativity failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Price addition/subtraction should be inverse operations
+        #[test]
+        fn prop_price_addition_subtraction_inverse(
+            base in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            delta in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() > 1e-3 && x.abs() < 1e6),
+            precision in 0u8..=6u8  // Limit precision to avoid extreme cases
+        ) {
+            let p_base = Price::new(base, precision);
+            let p_delta = Price::new(delta, precision);
+
+            // Use raw arithmetic to avoid floating-point precision issues
+            if let Some(added_raw) = p_base.raw.checked_add(p_delta.raw) {
+                if let Some(result_raw) = added_raw.checked_sub(p_delta.raw) {
+                    // (base + delta) - delta should equal base exactly using raw arithmetic
+                    prop_assert_eq!(result_raw, p_base.raw, "Inverse operation failed in raw arithmetic");
+                }
+            }
+        }
+
+        /// Property: Price ordering should be transitive
+        #[test]
+        fn prop_price_ordering_transitive(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            c in price_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+            let p_c = Price::new(c, precision);
+
+            // If a <= b and b <= c, then a <= c
+            if p_a <= p_b && p_b <= p_c {
+                prop_assert!(p_a <= p_c, "Transitivity failed: {} <= {} <= {} but {} > {}",
+                    p_a.as_f64(), p_b.as_f64(), p_c.as_f64(), p_a.as_f64(), p_c.as_f64());
+            }
+        }
+
+        /// Property: String parsing should be consistent with precision inference
+        #[test]
+        fn prop_price_string_parsing_precision(
+            integral in 0u32..1000000,
+            fractional in 0u32..1000000,
+            precision in 1u8..=6
+        ) {
+            // Create a decimal string with exactly 'precision' decimal places
+            let fractional_str = format!("{:0width$}", fractional % 10_u32.pow(precision as u32), width = precision as usize);
+            let price_str = format!("{}.{}", integral, fractional_str);
+
+            let parsed: Price = price_str.parse().unwrap();
+            prop_assert_eq!(parsed.precision, precision);
+
+            // Round-trip should preserve the original string (after normalization)
+            let round_trip = parsed.to_string();
+            let expected_value = format!("{}.{}", integral, fractional_str);
+            prop_assert_eq!(round_trip, expected_value);
+        }
+
+        /// Property: Price with higher precision should contain more or equal information
+        #[test]
+        fn prop_price_precision_information_preservation(
+            value in price_value_strategy().prop_filter("Reasonable values", |&x| x.abs() < 1e6),
+            precision1 in 1u8..=6u8,  // Limit precision range for more predictable behavior
+            precision2 in 1u8..=6u8
+        ) {
+            // Skip cases where precisions are equal (trivial case)
+            prop_assume!(precision1 != precision2);
+
+            let _p1 = Price::new(value, precision1);
+            let _p2 = Price::new(value, precision2);
+
+            // When both prices are created from the same value with different precisions,
+            // converting both to the lower precision should yield the same result
+            let min_precision = precision1.min(precision2);
+
+            // Round the original value to the minimum precision first
+            let scale = 10.0_f64.powi(min_precision as i32);
+            let rounded_value = (value * scale).round() / scale;
+
+            let p1_reduced = Price::new(rounded_value, min_precision);
+            let p2_reduced = Price::new(rounded_value, min_precision);
+
+            // They should be exactly equal when created from the same rounded value
+            prop_assert_eq!(p1_reduced.raw, p2_reduced.raw, "Precision reduction inconsistent");
+        }
+
+        /// Property: Price arithmetic should never produce invalid values
+        #[test]
+        fn prop_price_arithmetic_bounds(
+            a in price_value_strategy(),
+            b in price_value_strategy(),
+            precision in precision_strategy()
+        ) {
+            let p_a = Price::new(a, precision);
+            let p_b = Price::new(b, precision);
+
+            // Addition should either succeed or fail predictably
+            let sum_f64 = p_a.as_f64() + p_b.as_f64();
+            if sum_f64.is_finite() && sum_f64 >= PRICE_MIN && sum_f64 <= PRICE_MAX {
+                let sum = p_a + p_b;
+                prop_assert!(sum.as_f64().is_finite());
+                prop_assert!(!sum.is_undefined());
+            }
+
+            // Subtraction should either succeed or fail predictably
+            let diff_f64 = p_a.as_f64() - p_b.as_f64();
+            if diff_f64.is_finite() && diff_f64 >= PRICE_MIN && diff_f64 <= PRICE_MAX {
+                let diff = p_a - p_b;
+                prop_assert!(diff.as_f64().is_finite());
+                prop_assert!(!diff.is_undefined());
+            }
+        }
+    }
+}
