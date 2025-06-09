@@ -46,7 +46,9 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-stream = { workspace = true }
 chrono = { workspace = true }
+csv = { workspace = true }
 derive_builder = { workspace = true }
+flate2 = { workspace = true }
 futures-util = { workspace = true }
 heck = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -63,11 +65,9 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+urlencoding = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-csv = "1.3.1"
-flate2 = "1.1.2"
-urlencoding = "2.1.3"
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

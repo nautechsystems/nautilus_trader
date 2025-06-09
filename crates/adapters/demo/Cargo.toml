@@ -63,7 +63,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-tokio-stream = "0.1.17"
+tokio-stream = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

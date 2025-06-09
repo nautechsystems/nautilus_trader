@@ -23,7 +23,6 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
-  "nautilus-execution/extension-module",
   "nautilus-model/extension-module",
   "nautilus-network/extension-module",
 ]
@@ -32,7 +31,6 @@ python = [
   "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
-  "nautilus-execution/python",
   "nautilus-model/python",
   "nautilus-network/python",
 ]
@@ -44,7 +42,6 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }
-nautilus-execution = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
 

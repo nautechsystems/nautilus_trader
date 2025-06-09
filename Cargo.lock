@@ -1529,9 +1529,9 @@ checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
 name = "bytemuck"
-version = "1.23.0"
+version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9134a6ef01ce4b366b50689c94f82c14bc72bc5d0386829828a2e2752ef7958c"
+checksum = "5c76a5792e44e4abe34d3abf15636779261d45a7450612059293d1d2cfc63422"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -4526,7 +4526,6 @@ dependencies = [
  "log",
  "nautilus-common",
  "nautilus-core",
- "nautilus-execution",
  "nautilus-model",
  "nautilus-network",
  "nautilus-testkit",
@@ -4575,8 +4574,6 @@ dependencies = [
  "rand 0.9.1",
  "regex",
  "rstest",
- "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "serde_json",
  "strum",
@@ -4723,7 +4720,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "criterion",
- "indexmap 2.9.0",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -4737,7 +4733,6 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
- "strum",
  "ustr",
  "uuid",
 ]
@@ -4793,10 +4788,8 @@ version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
  "criterion",
  "futures",
- "indexmap 2.9.0",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -4810,10 +4803,8 @@ dependencies = [
  "pyo3",
  "rstest",
  "serde",
- "strum",
  "tokio",
  "tracing",
- "ustr",
 ]
 
 [[package]]
@@ -5006,7 +4997,6 @@ dependencies = [
  "nautilus-core",
  "nautilus-data",
  "nautilus-execution",
- "nautilus-infrastructure",
  "nautilus-model",
  "nautilus-persistence",
  "nautilus-portfolio",
@@ -5014,7 +5004,6 @@ dependencies = [
  "nautilus-trading",
  "pyo3",
  "rstest",
- "tokio",
  "ustr",
 ]
 

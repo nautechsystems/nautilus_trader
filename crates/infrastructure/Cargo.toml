@@ -59,16 +59,7 @@ sqlx = { workspace = true, optional = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.31.0", features = [
-  "connection-manager",
-  "keep-alive",
-  "sentinel",
-  "streams",
-  "tokio-comp",
-  "tokio-rustls-comp",
-  "tls-rustls",
-  "tls-rustls-webpki-roots",
-], optional = true }
+redis = { workspace = true, optional = true }
 
 [dev-dependencies]
 rstest = { workspace = true }
