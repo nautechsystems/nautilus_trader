@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Real-time and static test `Clock` implementations.
+//! Real-time and static `Clock` implementations.
 
 use std::{
     collections::{BTreeMap, BinaryHeap, HashMap},
@@ -76,8 +76,9 @@ pub trait Clock: Debug {
     /// Note: Panics if the event does not have an associated handler
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2;
 
-    /// Set a `Timer` to alert at a particular time. Optional
+    /// Set a `Timer` to alert at the specified time. Optional
     /// callback gets used to handle generated events.
+    ///
     /// # Errors
     ///
     /// Returns an error if `name` is invalid, `alert_time_ns` is non-positive when not allowed,
@@ -95,12 +96,12 @@ pub trait Clock: Debug {
     /// between start and stop time. Optional callback gets
     /// used to handle the generated events.
     ///
-    /// | `allow_past` | `fire_immediately` | Behavior                                                                                |
-    /// |--------------|--------------------|-----------------------------------------------------------------------------------------|
-    /// | `true`       | `true`             | First event fires immediately at `start time`, even if start time is in the past.       |
-    /// | `true`       | `false`            | First event fires at `start_time` + interval, even if start time is in the past.        |
-    /// | `false`      | `true`             | Returns error if `start_time` is in the past (first event would be immediate but past). |
-    /// | `false`      | `false`            | Returns error if `start_time` + interval is in the past.                                |
+    /// | `allow_past` | `fire_immediately` | Behavior                                                                              |
+    /// |--------------|--------------------|---------------------------------------------------------------------------------------|
+    /// | `true`       | `true`             | First event fires immediately at start time, even if start time is in the past.       |
+    /// | `true`       | `false`            | First event fires at start_time + interval, even if start time is in the past.        |
+    /// | `false`      | `true`             | Returns error if start_time is in the past (first event would be immediate but past). |
+    /// | `false`      | `false`            | Returns error if start_time + interval is in the past.                                |
     ///
     /// # Errors
     ///
