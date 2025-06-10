@@ -18,9 +18,14 @@ import sys
 
 import msgspec
 import pandas as pd
+
+# Third-party
+import pyarrow.dataset as ds
 import pytest
 from click.testing import CliRunner
 
+# Our code
+from nautilus_trader.backtest.config import parse_filters_expr
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.backtest.node import BacktestNode
@@ -383,3 +388,167 @@ class TestBacktestConfigParsing:
 
         # Assert
         assert engine
+
+
+class TestParseFiltersExpr:
+    """
+    Test security and functionality of parse_filters_expr function.
+    """
+
+    def test_parse_filters_expr_none_input(self):
+        """
+        Test that None input returns None.
+        """
+        result = parse_filters_expr(None)
+        assert result is None
+
+    def test_parse_filters_expr_empty_string(self):
+        """
+        Test that empty string returns None.
+        """
+        result = parse_filters_expr("")
+        assert result is None
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("Currency") == "CHF"',
+            'field("Symbol") != "USD"',
+            '(field("Currency") == "CHF") | (field("Symbol") == "USD")',
+            # Mixed whitespace
+            '  field("Currency") == "CHF"  ',
+        ],
+    )
+    def test_parse_filters_expr_valid_expression(self, expr):
+        """
+        Expression should parse and return a PyArrow Expression.
+        """
+        result = parse_filters_expr(expr)
+        assert isinstance(result, ds.Expression)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'print("hello")',
+            '__import__("os").system("echo hacked")',
+            'eval("1+1")',
+            'exec("print(1)")',
+            'open("/etc/passwd")',
+            "globals()",
+            "locals()",
+            "vars()",
+            "dir()",
+            'getattr(field, "__class__")',
+            "field.__class__.__bases__[0].__subclasses__()[104]",
+            "breakpoint()",
+            "exit()",
+            "quit()",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_malicious_code(self, expr):
+        """
+        Malicious code must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'len("test")',
+            "str(123)",
+            'int("123")',
+            "list()",
+            "dict()",
+            "set()",
+            "tuple()",
+            "range(10)",
+            "enumerate([])",
+            "zip([], [])",
+            "map(str, [1, 2, 3])",
+            "filter(None, [1, 2, 3])",
+            "sum([1, 2, 3])",
+            "max([1, 2, 3])",
+            "min([1, 2, 3])",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_arbitrary_functions(self, expr):
+        """
+        Non-field function calls must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("test").__class__',
+            'field("test").__dict__',
+            'field("test").__module__',
+            "field.__doc__",
+            "field.__name__",
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_attribute_access(self, expr):
+        """
+        Attribute access on field objects is forbidden.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            '__import__("sys")',
+            '__import__("os")',
+            '__import__("subprocess")',
+            '__import__("socket")',
+            '__import__("urllib")',
+        ],
+    )
+    def test_parse_filters_expr_security_blocks_imports(self, expr):
+        """
+        Import attempts must be refused.
+        """
+        with pytest.raises(ValueError, match="is not allowed|not permitted"):
+            parse_filters_expr(expr)
+
+    @pytest.mark.parametrize(
+        "expr, is_valid",
+        [
+            ('  field("Currency") == "CHF"  ', True),
+            ('  print("hello")  ', False),
+        ],
+    )
+    def test_parse_filters_expr_whitespace_handling(self, expr, is_valid):
+        """
+        Whitespace should not affect validation semantics.
+        """
+        if is_valid:
+            assert isinstance(parse_filters_expr(expr), ds.Expression)
+        else:
+            with pytest.raises(ValueError):
+                parse_filters_expr(expr)
+
+    def test_parse_filters_expr_complex_valid_expressions(self):
+        """
+        Logical OR between multiple comparisons should be accepted.
+        """
+        expr = parse_filters_expr('(field("Currency") == "CHF") | (field("Symbol") == "USD")')
+        assert isinstance(expr, ds.Expression)
+
+    @pytest.mark.parametrize(
+        "expr",
+        [
+            'field("Currency") ==',  # Incomplete expression
+            'field("Currency" == "CHF"',  # Missing closing paren
+            'field(Currency) == "CHF"',  # Missing quotes around field name
+            '== "CHF"',  # Missing field() call
+        ],
+    )
+    def test_parse_filters_expr_invalid_syntax(self, expr):
+        """
+        Broken grammar should raise ValueError.
+        """
+        with pytest.raises(ValueError):
+            parse_filters_expr(expr)
