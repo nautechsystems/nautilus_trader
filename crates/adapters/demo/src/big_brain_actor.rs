@@ -23,7 +23,7 @@ use nautilus_common::{
     },
     msgbus::{
         handler::{MessageHandler, ShareableMessageHandler, TypedMessageHandler},
-        register, register_response_handler, send,
+        register, register_response_handler, send_any,
     },
 };
 use nautilus_core::{UUID4, UnixNanos};
@@ -118,7 +118,7 @@ pub fn negative_handler(msg: &i32) {
     };
     let cmd = DataCommand::Request(RequestCommand::Data(request));
 
-    send("data_engine".into(), &cmd);
+    send_any("data_engine".into(), &cmd);
 }
 
 /// Positive integer stream handler
@@ -145,7 +145,7 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Subscribe(SubscribeCommand::Data(data));
-        send("data_engine".into(), &cmd);
+        send_any("data_engine".into(), &cmd);
     }
 
     if big_brain_actor.pos_val > 8 {
@@ -158,6 +158,6 @@ pub fn positive_handler(msg: &i32) {
             None,
         );
         let cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Data(data));
-        send("data_engine".into(), &cmd);
+        send_any("data_engine".into(), &cmd);
     }
 }

@@ -319,7 +319,7 @@ where
     pub fn get_timer_callback(&self) -> TimeEventCallback {
         let endpoint = self.endpoint.into(); // TODO: Optimize this
         let process_callback = Rc::new(move |_event: TimeEvent| {
-            msgbus::send(endpoint, &());
+            msgbus::send_any(endpoint, &());
         });
         TimeEventCallback::Rust(process_callback)
     }
@@ -349,7 +349,7 @@ where
 
                 // Send message to throttler process endpoint to resume
                 let process_callback = Rc::new(move |_event: TimeEvent| {
-                    msgbus::send(endpoint, &());
+                    msgbus::send_any(endpoint, &());
                 });
                 throttler.set_timer(Some(TimeEventCallback::Rust(process_callback)));
                 return;

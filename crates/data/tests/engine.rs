@@ -1105,7 +1105,7 @@ fn test_process_instrument(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Instrument(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
     let topic = switchboard::get_instrument_topic(audusd_sim.id());
@@ -1148,7 +1148,7 @@ fn test_process_book_delta(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let delta = stub_delta();
     let handler = get_message_saving_handler::<OrderBookDeltas>(None);
@@ -1187,7 +1187,7 @@ fn test_process_book_deltas(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     // TODO: Using FFI API wrapper temporarily until Cython gone
     let deltas = OrderBookDeltas_API::new(stub_deltas());
@@ -1228,7 +1228,7 @@ fn test_process_book_depth10(
     let cmd = DataCommand::Subscribe(SubscribeCommand::BookDepth10(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let depth = stub_depth10();
     let handler = get_message_saving_handler::<OrderBookDepth10>(None);
@@ -1265,7 +1265,7 @@ fn test_process_quote_tick(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Quotes(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let quote = QuoteTick::default();
     let handler = get_message_saving_handler::<QuoteTick>(None);
@@ -1303,7 +1303,7 @@ fn test_process_trade_tick(
     let cmd = DataCommand::Subscribe(SubscribeCommand::Trades(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let trade = TradeTick::default();
     let handler = get_message_saving_handler::<TradeTick>(None);
@@ -1341,7 +1341,7 @@ fn test_process_mark_price(
     let cmd = DataCommand::Subscribe(SubscribeCommand::MarkPrices(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let mark_price = MarkPriceUpdate::new(
         audusd_sim.id,
@@ -1395,7 +1395,7 @@ fn test_process_index_price(
     let cmd = DataCommand::Subscribe(SubscribeCommand::IndexPrices(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let index_price = IndexPriceUpdate::new(
         audusd_sim.id,
@@ -1444,7 +1444,7 @@ fn test_process_bar(data_engine: Rc<RefCell<DataEngine>>, data_client: DataClien
     let cmd = DataCommand::Subscribe(SubscribeCommand::Bars(sub));
 
     let endpoint = MessagingSwitchboard::data_engine_execute();
-    msgbus::send(endpoint, &cmd as &dyn Any);
+    msgbus::send_any(endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<Bar>(None);
     let topic = switchboard::get_bars_topic(bar.bar_type);

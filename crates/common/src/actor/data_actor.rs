@@ -1603,7 +1603,7 @@ impl DataActorCore {
         }
 
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send(endpoint, command.as_any())
+        msgbus::send_any(endpoint, command.as_any())
     }
 
     fn send_data_req(&self, request: RequestCommand) {
@@ -1614,7 +1614,7 @@ impl DataActorCore {
         // For now, simplified approach - data requests without dynamic handlers
         // TODO: Implement proper dynamic dispatch for response handlers
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
-        msgbus::send(endpoint, request.as_any())
+        msgbus::send_any(endpoint, request.as_any())
     }
 
     /// Sends a shutdown command to the system with an optional reason.
@@ -1635,7 +1635,7 @@ impl DataActorCore {
         );
 
         let endpoint = "command.system.shutdown".into();
-        msgbus::send(endpoint, command.as_any());
+        msgbus::send_any(endpoint, command.as_any());
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------

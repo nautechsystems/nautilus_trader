@@ -104,7 +104,7 @@ impl LiveRunner {
                 }
                 message = self.message_stream.next() => {
                     if let Some(message) = message {
-                        msgbus::send(endpoint, &message);
+                        msgbus::send_any(endpoint, &message);
                     }
                 }
             }

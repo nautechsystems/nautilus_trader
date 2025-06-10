@@ -176,7 +176,7 @@ impl AsyncRunner {
                 Some(resp) = self.data_rx.recv() => Some(RunnerEvent::Data(resp)),
                 Some(event) = time_event_stream.next() => Some(RunnerEvent::Time(event)),
                 Some(cmd) = self.cmd_rx.recv() => {
-                    msgbus::send(data_engine_execute, &cmd);
+                    msgbus::send_any(data_engine_execute, &cmd);
                     None // TODO: Refactor this
                 },
                 Some(()) = self.signal_rx.recv() => {
@@ -192,16 +192,20 @@ impl AsyncRunner {
                     RunnerEvent::Data(event) => {
                         #[cfg(feature = "defi")]
                         match event {
-                            DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
-                            DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                            DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
+                            DataEvent::Response(resp) => {
+                                msgbus::send_any(data_engine_response, &resp)
+                            }
                             DataEvent::DeFi(data) => {
-                                msgbus::send(data_engine_process, &data);
+                                msgbus::send_any(data_engine_process, &data);
                             }
                         }
                         #[cfg(not(feature = "defi"))]
                         match event {
-                            DataEvent::Data(data) => msgbus::send(data_engine_process, &data),
-                            DataEvent::Response(resp) => msgbus::send(data_engine_response, &resp),
+                            DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
+                            DataEvent::Response(resp) => {
+                                msgbus::send_any(data_engine_response, &resp)
+                            }
                         }
                     }
                 }

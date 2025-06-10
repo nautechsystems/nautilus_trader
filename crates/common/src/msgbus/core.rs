@@ -44,8 +44,7 @@ fn check_fully_qualified_string(value: &Ustr, key: &str) -> anyhow::Result<()> {
     )
 }
 
-/// Pattern is a string pattern for a subscription with special characters
-/// for pattern matching.
+/// Pattern is a string pattern for a subscription with special characters for pattern matching.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern;
 
