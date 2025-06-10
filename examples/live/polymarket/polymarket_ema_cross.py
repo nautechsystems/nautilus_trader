@@ -29,6 +29,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import TimeInForce
@@ -38,10 +39,10 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# Example: New York Knicks to win 2025 NBA Finals
+# will-the-indiana-pacers-win-the-2025-nba-finals
 # https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
-condition_id = "0xb3af306795f672a0bcaf4bd529ffa8343e88949bc74b098ccd2a0238ce676cd3"
-token_id = "3642309182816755995211647069086230404892359515361325090555875625429003317932"
+condition_id = "0xf2a89afeddff5315e37211b0b0e4e93ed167fba2694cd35c252672d0aca73711"
+token_id = "5044658213116494392261893544497225363846217319105609804585534197935770239191"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),
@@ -71,6 +72,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
     ),
+    risk_engine=LiveRiskEngineConfig(bypass=True),  # WIP: Improve risk engine integration
     # cache=CacheConfig(
     #     # database=DatabaseConfig(),  # <-- Recommend Redis cache backing for Polymarket
     #     encoding="msgpack",

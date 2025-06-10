@@ -30,6 +30,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
@@ -50,15 +51,10 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
-# World Series Champion 2025
-# https://polymarket.com/event/world-series-champion-2025/will-the-new-york-mets-win-the-2025-world-series
-# condition_id = "0xf4472853ab134236dbfe4cd5f83fcbc60f62767b2a474a1c0b0ed3190d813084"
-# token_id = "25143473975747606484038304917293813549571262015788668262095587119656373441253"
-
-# will-the-new-york-knicks-win-the-2025-nba-finals
+# will-the-indiana-pacers-win-the-2025-nba-finals
 # https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
-condition_id = "0xb3af306795f672a0bcaf4bd529ffa8343e88949bc74b098ccd2a0238ce676cd3"
-token_id = "3642309182816755995211647069086230404892359515361325090555875625429003317932"
+condition_id = "0xf2a89afeddff5315e37211b0b0e4e93ed167fba2694cd35c252672d0aca73711"
+token_id = "5044658213116494392261893544497225363846217319105609804585534197935770239191"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),
@@ -85,7 +81,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
     ),
-    # risk_engine=LiveRiskEngineConfig(bypass=True),
+    risk_engine=LiveRiskEngineConfig(bypass=True),  # WIP: Improve risk engine integration
     cache=CacheConfig(
         # database=DatabaseConfig(),  # <-- Recommend Redis cache backing for Polymarket
         encoding="msgpack",
@@ -112,6 +108,7 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
             ws_connection_delay_secs=5,
             compute_effective_deltas=True,
+            # signature_type=2,
         ),
     },
     exec_clients={
@@ -123,6 +120,7 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
             log_raw_ws_messages=False,
+            # signature_type=2,
         ),
     },
     timeout_connection=60.0,
