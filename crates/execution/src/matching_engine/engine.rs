@@ -2152,7 +2152,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     fn generate_order_accepted(&self, order: &mut OrderAny, venue_order_id: VenueOrderId) {
@@ -2172,7 +2172,7 @@ impl OrderMatchingEngine {
             ts_now,
             false,
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2203,7 +2203,7 @@ impl OrderMatchingEngine {
             venue_order_id,
             account_id,
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2231,7 +2231,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             Some(account_id),
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     fn generate_order_updated(
@@ -2257,7 +2257,7 @@ impl OrderMatchingEngine {
             price,
             trigger_price,
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");
@@ -2277,7 +2277,7 @@ impl OrderMatchingEngine {
             Some(venue_order_id),
             order.account_id(),
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -2294,7 +2294,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
@@ -2311,7 +2311,7 @@ impl OrderMatchingEngine {
             order.venue_order_id(),
             order.account_id(),
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2351,7 +2351,7 @@ impl OrderMatchingEngine {
             venue_position_id,
             Some(commission),
         ));
-        msgbus::send("ExecEngine.process".into(), &event as &dyn Any);
+        msgbus::send_any("ExecEngine.process".into(), &event as &dyn Any);
 
         // TODO remove this when execution engine msgbus handlers are correctly set
         order.apply(event).expect("Failed to apply order event");

@@ -79,7 +79,7 @@ impl DataCommandExecutor for SyncDataCommandExecutor {
     fn execute(&self, command: DataCommand) {
         // TODO: Placeholder, we still need to queue and drain even for sync
         let endpoint = MessagingSwitchboard::data_engine_execute();
-        msgbus::send(endpoint, &command);
+        msgbus::send_any(endpoint, &command);
     }
 }
 

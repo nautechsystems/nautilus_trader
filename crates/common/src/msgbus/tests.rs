@@ -127,7 +127,7 @@ fn test_endpoint_send() {
     assert!(!check_handler_was_called(handler.clone()));
 
     // Send a message to the endpoint
-    msgbus::send(endpoint, &"Test Message");
+    msgbus::send_any(endpoint, &"Test Message");
     assert!(check_handler_was_called(handler));
 }
 

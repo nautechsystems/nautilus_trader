@@ -405,31 +405,31 @@ impl BaseExecutionClient {
 
     fn send_account_state(&self, account_state: AccountState) {
         let endpoint = "Portfolio.update_account".into();
-        msgbus::send(endpoint, &account_state as &dyn Any);
+        msgbus::send_any(endpoint, &account_state as &dyn Any);
     }
 
     fn send_order_event(&self, event: OrderEventAny) {
         let endpoint = "ExecEngine.process".into();
-        msgbus::send(endpoint, &event as &dyn Any);
+        msgbus::send_any(endpoint, &event as &dyn Any);
     }
 
     fn send_mass_status_report(&self, report: ExecutionMassStatus) {
         let endpoint = "ExecEngine.reconcile_mass_status".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_order_status_report(&self, report: OrderStatusReport) {
         let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_fill_report(&self, report: FillReport) {
         let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 
     fn send_position_report(&self, report: PositionStatusReport) {
         let endpoint = "ExecEngine.reconcile_report".into();
-        msgbus::send(endpoint, &report as &dyn Any);
+        msgbus::send_any(endpoint, &report as &dyn Any);
     }
 }
