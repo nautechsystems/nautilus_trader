@@ -25,7 +25,7 @@ use nautilus_common::{
     messages::{DataEvent, data::DataCommand},
     msgbus::{self, switchboard::MessagingSwitchboard},
     runner::{
-        DataCommandExecutor, DataQueue, RunnerEvent, set_data_cmd_executor, set_data_evt_queue,
+        DataCommandSender, DataQueue, RunnerEvent, set_data_cmd_sender, set_data_event_queue,
     },
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -46,22 +46,22 @@ impl DataQueue for AsyncDataQueue {
     }
 }
 
-/// Asynchronous implementation of DataCommandExecutor for live environments.
+/// Asynchronous implementation of DataCommandSender for live environments.
 #[derive(Debug)]
-pub struct AsyncDataCommandExecutor {
+pub struct AsyncDataCommandSender {
     cmd_tx: UnboundedSender<DataCommand>,
 }
 
-impl AsyncDataCommandExecutor {
+impl AsyncDataCommandSender {
     pub fn new(cmd_tx: UnboundedSender<DataCommand>) -> Self {
         Self { cmd_tx }
     }
 }
 
-impl DataCommandExecutor for AsyncDataCommandExecutor {
+impl DataCommandSender for AsyncDataCommandSender {
     fn execute(&self, command: DataCommand) {
         if let Err(e) = self.cmd_tx.send(command) {
-            log::error!("Failed to send data command to async executor: {e}");
+            log::error!("Failed to send data command: {e}");
         }
     }
 }
@@ -73,7 +73,7 @@ impl DataCommandExecutor for AsyncDataCommandExecutor {
 /// # Panics
 ///
 /// Panics if thread-local storage cannot be accessed or a sender is already set.
-pub fn set_data_event_sender(sender: UnboundedSender<DataEvent>) {
+pub fn set_data_evt_sender(sender: UnboundedSender<DataEvent>) {
     DATA_EVT_SENDER
         .try_with(|s| {
             assert!(s.set(sender).is_ok(), "Data event sender already set");
@@ -130,15 +130,11 @@ impl AsyncRunner {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
-        // Set up the global data event sender for direct access
-        set_data_event_sender(data_tx.clone());
+        set_data_evt_sender(data_tx.clone());
+        set_data_cmd_sender(Rc::new(RefCell::new(AsyncDataCommandSender::new(cmd_tx))));
 
-        // Set up the async data command executor
-        let executor = AsyncDataCommandExecutor::new(cmd_tx);
-        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
-
-        // Also keep the existing AsyncDataQueue for backward compatibility
-        set_data_evt_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
+        // TODO: Deprecated and can be removed?
+        set_data_event_queue(Rc::new(RefCell::new(AsyncDataQueue(data_tx))));
 
         Self {
             clock,
@@ -149,10 +145,11 @@ impl AsyncRunner {
         }
     }
 
-    /// Gets a reference to the signal sender for shutdown control.
-    #[must_use]
-    pub fn get_signal_sender(&self) -> &UnboundedSender<()> {
-        &self.signal_tx
+    /// Stops the runner with an internal shutdown signal.
+    pub fn stop(&self) {
+        if let Err(e) = self.signal_tx.send(()) {
+            log::error!("Failed to send shutdown signal: {e}");
+        }
     }
 }
 

@@ -86,7 +86,7 @@ use crate::{
         },
     },
     signal::Signal,
-    timer::TimeEvent,
+    timer::{TimeEvent, TimeEventCallback},
 };
 
 /// Common configuration for [`DataActor`] based components.
@@ -1394,7 +1394,20 @@ where
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        DataActorCore::register(self, trader_id, clock, cache)?;
+        DataActorCore::register(self, trader_id, clock.clone(), cache)?;
+
+        // Register default time event handler for this actor
+        let actor_id = self.actor_id().inner();
+        let callback = TimeEventCallback::Rust(Rc::new(move |event: TimeEvent| {
+            if let Some(actor) = try_get_actor_unchecked::<Self>(&actor_id) {
+                actor.handle_time_event(&event);
+            } else {
+                log::error!("Actor {actor_id} not found for time event handling");
+            }
+        }));
+
+        clock.borrow_mut().register_default_handler(callback);
+
         self.initialize()
     }
 

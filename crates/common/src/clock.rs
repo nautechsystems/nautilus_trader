@@ -71,13 +71,13 @@ pub trait Clock: Debug {
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: TimeEventCallback);
 
-    /// Get handler for [`TimeEvent`]
+    /// Get handler for [`TimeEvent`].
     ///
     /// Note: Panics if the event does not have an associated handler
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2;
 
-    /// Set a `Timer` to alert at the specified time. Optional
-    /// callback gets used to handle generated events.
+    /// Set a `Timer` to alert at the specified time.
+    /// Optional callback gets used to handle generated events.
     ///
     /// # Errors
     ///

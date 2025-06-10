@@ -65,7 +65,7 @@ use crate::{
             get_mark_price_topic, get_quotes_topic, get_trades_topic,
         },
     },
-    runner::{SyncDataCommandExecutor, set_data_cmd_executor},
+    runner::{SyncDataCommandSender, set_data_cmd_sender},
     testing::init_logger_for_testing,
     timer::TimeEvent,
 };
@@ -274,9 +274,9 @@ fn register_data_actor(
     cache: Rc<RefCell<Cache>>,
     trader_id: TraderId,
 ) -> Ustr {
-    // Set up sync data command executor for tests
-    let executor = SyncDataCommandExecutor;
-    set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+    // Set up sync data command sender for tests
+    let sender = SyncDataCommandSender;
+    set_data_cmd_sender(Rc::new(RefCell::new(sender)));
 
     let config = DataActorConfig::default();
     // Ensure clean message bus state for this actor's subscriptions

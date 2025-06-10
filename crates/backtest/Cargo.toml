@@ -40,7 +40,7 @@ python = [
   "nautilus-execution/python",
   "nautilus-model/python",
 ]
-"clock_v2" = []
+clock_v2 = []
 
 [package.metadata.docs.rs]
 all-features = true

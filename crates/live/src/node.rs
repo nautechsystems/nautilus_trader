@@ -158,9 +158,7 @@ impl LiveNode {
                 match result {
                     Ok(()) => {
                         log::info!("Received SIGINT, shutting down");
-                        if let Err(e) = self.runner.get_signal_sender().send(()) {
-                            log::error!("Failed to send shutdown signal: {e}");
-                        }
+                        self.runner.stop();
                         // Give the AsyncRunner a moment to process the shutdown signal
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     }
