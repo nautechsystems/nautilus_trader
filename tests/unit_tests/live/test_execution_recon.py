@@ -40,6 +40,7 @@ from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
@@ -543,3 +544,113 @@ class TestLiveExecutionReconciliation:
         assert order.last_trade_id == TradeId("1")
         assert order.quantity == Quantity.from_int(10_000)
         assert order.filled_qty == Quantity.from_int(5_000)
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_state_with_cached_order_and_different_fill_data(self):
+        # Arrange: Create a cached order with a fill
+        venue_order_id = VenueOrderId("1")
+        client_order_id = ClientOrderId("O-123456")
+
+        # Create and cache an order with an initial fill
+        order = self.order_factory.market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10_000),
+            client_order_id=client_order_id,
+        )
+
+        # Submit and accept the order
+        submitted = TestEventStubs.order_submitted(order, account_id=self.account_id)
+        order.apply(submitted)
+        self.cache.add_order(order, position_id=None)
+
+        accepted = TestEventStubs.order_accepted(
+            order,
+            account_id=self.account_id,
+            venue_order_id=venue_order_id,
+        )
+        order.apply(accepted)
+        self.cache.update_order(order)
+
+        # Apply an initial fill with specific data
+        initial_fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S-1"),
+            last_qty=Quantity.from_int(5_000),
+            last_px=Price.from_str("1.00000"),
+            liquidity_side=LiquiditySide.MAKER,
+            trade_id=TradeId("TRADE-1"),
+        )
+        order.apply(initial_fill)
+        self.cache.update_order(order)
+
+        # Now create a broker report with different fill data for the same trade_id
+        order_report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.PARTIALLY_FILLED,
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(5_000),
+            avg_px=Decimal("1.00000"),
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_triggered=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        # Fill report with DIFFERENT data than cached (different price, commission, liquidity)
+        fill_report = FillReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            venue_position_id=None,
+            trade_id=TradeId("TRADE-1"),  # Same trade_id as cached fill
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(5_000),
+            last_px=Price.from_str("1.00100"),  # Different price
+            commission=Money(10.0, USD),  # Different commission
+            liquidity_side=LiquiditySide.TAKER,  # Different liquidity side
+            report_id=UUID4(),
+            ts_event=1000,  # Different timestamp
+            ts_init=0,
+        )
+
+        self.client.add_order_status_report(order_report)
+        self.client.add_fill_reports(venue_order_id, [fill_report])
+
+        # Act
+        result = await self.exec_engine.reconcile_state()
+
+        # Assert: Reconciliation should succeed despite different fill data
+        assert result
+
+        # The order should still exist and maintain its cached state
+        cached_order = self.cache.order(client_order_id)
+        assert cached_order is not None
+        assert cached_order.status == OrderStatus.PARTIALLY_FILLED
+        assert cached_order.filled_qty == Quantity.from_int(5_000)
+
+        # The cached fill data should remain unchanged (not updated with broker data)
+        # This ensures we don't corrupt the order state
+        fill_events = [
+            event
+            for event in cached_order.events
+            if hasattr(event, "trade_id") and event.trade_id == TradeId("TRADE-1")
+        ]
+        assert len(fill_events) == 1
+        cached_fill_event = fill_events[0]
+
+        # Verify the cached data is preserved (original values, not broker values)
+        assert cached_fill_event.last_px == Price.from_str("1.00000")  # Original price
+        # Note: commission is calculated automatically by TestEventStubs, so we just check it exists
+        assert cached_fill_event.commission is not None
+        assert cached_fill_event.liquidity_side == LiquiditySide.MAKER  # Original liquidity
