@@ -21,6 +21,7 @@ use std::{
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::Environment,
+    timer::TimeEvent,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
@@ -162,6 +163,19 @@ impl DataActor for DatabentoSubscriberActor {
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
+        let start = self.clock().timestamp_ns();
+        self.clock()
+            .set_timer_ns(
+                "TEST-TIMER-01",
+                1_000_000_000,
+                start,
+                None,
+                None,
+                Some(true),
+                Some(false),
+            )
+            .expect("Error setting timer");
+
         log::info!("Databento subscriber actor started successfully");
         Ok(())
     }
@@ -185,6 +199,11 @@ impl DataActor for DatabentoSubscriberActor {
         }
 
         log::info!("Databento subscriber actor stopped successfully");
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        log::info!("Received time event: {event:?}");
         Ok(())
     }
 

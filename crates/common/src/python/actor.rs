@@ -647,7 +647,7 @@ mod tests {
         clock::TestClock,
         component::Component,
         enums::ComponentState,
-        runner::{SyncDataCommandExecutor, set_data_cmd_executor},
+        runner::{SyncDataCommandSender, set_data_cmd_sender},
     };
 
     #[fixture]
@@ -694,9 +694,9 @@ mod tests {
         cache: Rc<RefCell<Cache>>,
         trader_id: TraderId,
     ) -> PyDataActor {
-        // Set up sync data command executor for tests
-        let executor = SyncDataCommandExecutor;
-        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+        // Set up sync data command sender for tests
+        let sender = SyncDataCommandSender;
+        set_data_cmd_sender(Rc::new(RefCell::new(sender)));
 
         let mut actor = PyDataActor::py_new(None).unwrap();
         actor.register(trader_id, clock, cache).unwrap();

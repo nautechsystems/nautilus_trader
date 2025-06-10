@@ -40,7 +40,7 @@ use nautilus_common::{
         set_message_bus,
         switchboard::MessagingSwitchboard,
     },
-    runner::{SyncDataCommandExecutor, get_data_cmd_executor, set_data_cmd_executor},
+    runner::{SyncDataCommandSender, get_data_cmd_sender, set_data_cmd_sender},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
@@ -132,9 +132,8 @@ impl NautilusKernel {
         )));
         set_message_bus(msgbus);
 
-        // Set up default sync data command executor
-        let executor = SyncDataCommandExecutor;
-        set_data_cmd_executor(Rc::new(RefCell::new(executor)));
+        // Set up default sync data command sender
+        set_data_cmd_sender(Rc::new(RefCell::new(SyncDataCommandSender)));
 
         let portfolio = Portfolio::new(cache.clone(), clock.clone(), config.portfolio());
         let risk_engine = RiskEngine::new(
@@ -159,7 +158,7 @@ impl NautilusKernel {
         // Register DataEngine command queueing
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
-            move |cmd: &DataCommand| get_data_cmd_executor().borrow_mut().execute(cmd.clone()), // TODO:
+            move |cmd: &DataCommand| get_data_cmd_sender().borrow_mut().execute(cmd.clone()), // TODO:
         )));
         msgbus::register(endpoint, handler);
 
