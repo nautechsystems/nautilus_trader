@@ -1080,23 +1080,25 @@ class LiveExecutionEngine(ExecutionEngine):
         instrument: Instrument,
     ) -> bool:
         if report.trade_id in order.trade_ids:
-            # Fill already applied, but check if data is consistent
-            cached_fill = self._get_cached_fill_for_trade_id(order, report.trade_id)
+            # Fill already applied; check if data is consistent.
+            # An existing fill may be sourced from the cache on start,
+            # or may exist in-memory when a reconciliation is triggered.
+            existing_fill = self._get_existing_fill_for_trade_id(order, report.trade_id)
 
-            if cached_fill is not None:
-                if self._fill_reports_differ(cached_fill, report):
+            if existing_fill:
+                if not self._fill_reports_equal(existing_fill, report):
                     self._log.warning(
-                        f"Fill report data differs from cached data for trade_id {report.trade_id}. "
-                        f"Cached: qty={cached_fill.last_qty}, px={cached_fill.last_px}, "
-                        f"commission={cached_fill.commission}, liquidity={cached_fill.liquidity_side}, "
-                        f"ts_event={cached_fill.ts_event}. "
+                        f"Fill report data differs from existing data for trade_id {report.trade_id}. "
+                        f"Existing: qty={existing_fill.last_qty}, px={existing_fill.last_px}, "
+                        f"commission={existing_fill.commission}, liquidity={existing_fill.liquidity_side}, "
+                        f"ts_event={existing_fill.ts_event}. "
                         f"Broker: qty={report.last_qty}, px={report.last_px}, "
                         f"commission={report.commission}, liquidity={report.liquidity_side}, "
                         f"ts_event={report.ts_event}. "
-                        f"Continuing reconciliation with cached data to avoid state corruption.",
+                        f"Continuing reconciliation with existing data to avoid state corruption",
                     )
 
-            return True  # Fill already applied, continue with cached data
+            return True  # Fill already applied, continue with existing data
 
         try:
             self._generate_order_filled(order, report, instrument)
@@ -1111,53 +1113,24 @@ class LiveExecutionEngine(ExecutionEngine):
             )
         return True
 
-    def _get_cached_fill_for_trade_id(self, order: Order, trade_id: TradeId) -> OrderFilled | None:
-        """
-        Get the cached OrderFilled event for the given trade_id from the order's events.
-
-        Parameters
-        ----------
-        order : Order
-            The order to search for the fill event.
-        trade_id : TradeId
-            The trade ID to search for.
-
-        Returns
-        -------
-        OrderFilled | None
-            The cached OrderFilled event if found, else None.
-
-        """
+    def _get_existing_fill_for_trade_id(
+        self,
+        order: Order,
+        trade_id: TradeId,
+    ) -> OrderFilled | None:
         for event in order.events:
             if isinstance(event, OrderFilled) and event.trade_id == trade_id:
                 return event
 
         return None
 
-    def _fill_reports_differ(self, cached_fill: OrderFilled, report: FillReport) -> bool:
-        """
-        Check if the cached fill data differs from the broker's fill report.
-
-        Parameters
-        ----------
-        cached_fill : OrderFilled
-            The cached OrderFilled event.
-        report : FillReport
-            The broker's fill report.
-
-        Returns
-        -------
-        bool
-            True if the data differs, else False.
-
-        """
-        # Compare key fields that could differ
+    def _fill_reports_equal(self, cached_fill: OrderFilled, report: FillReport) -> bool:
         return (
-            cached_fill.last_qty != report.last_qty
-            or cached_fill.last_px != report.last_px
-            or cached_fill.commission != report.commission
-            or cached_fill.liquidity_side != report.liquidity_side
-            or cached_fill.ts_event != report.ts_event
+            cached_fill.last_qty == report.last_qty
+            and cached_fill.last_px == report.last_px
+            and cached_fill.commission == report.commission
+            and cached_fill.liquidity_side == report.liquidity_side
+            and cached_fill.ts_event == report.ts_event
         )
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
