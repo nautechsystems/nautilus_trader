@@ -2123,13 +2123,13 @@ cdef class DataEngine(Component):
         return self._handle_aggregated_bars_aux(ticks, params)
 
     cdef dict _handle_aggregated_bars_aux(self, list ticks, dict params):
-        result = {}
+        cdef dict result = {}
 
         if len(ticks) == 0:
             self._log.warning("_handle_aggregated_bars: No data to aggregate")
             return result
 
-        bars_result = {}
+        cdef dict bars_result = {}
 
         if params["include_external_data"]:
             if params["bars_market_data_type"] == "quote_ticks":
@@ -2161,7 +2161,7 @@ cdef class DataEngine(Component):
                     self._bar_aggregators[bar_type.standard()] = aggregator
 
             aggregated_bars = []
-            handler = lambda bar: aggregated_bars.append(bar)
+            handler = aggregated_bars.append
 
             if params["bars_market_data_type"] == "quote_ticks" and not bar_type.is_composite():
                 aggregator.start_batch_update(handler, ticks[0].ts_event)

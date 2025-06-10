@@ -103,7 +103,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef str _timer_name
     cdef bint _is_left_open
     cdef bint _timestamp_on_close
-    cdef bint _skip_first_non_full_bar
+    cdef bint _skip_first_build_and_send
     cdef bint _build_with_no_updates
     cdef int _bar_build_delay
     cdef bint _add_delay
@@ -124,4 +124,4 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self)
     cdef void _batch_pre_update(self, uint64_t time_ns)
     cdef void _batch_post_update(self, uint64_t time_ns)
-    cpdef void _build_bar(self, TimeEvent event)
+    cpdef void _callback_build_bar(self, TimeEvent event)

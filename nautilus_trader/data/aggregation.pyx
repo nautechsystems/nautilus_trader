@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Callable
 
+import numpy as np
 import pandas as pd
 
 from cpython.datetime cimport timedelta
@@ -318,9 +319,13 @@ cdef class BarAggregator:
     def _start_batch_time(self, uint64_t time_ns):
         pass
 
-    def stop_batch_update(self) -> None:
+    def stop_batch_update(self, uint64_t time_ns) -> None:
+        self._stop_batch_update()
         self._batch_mode = False
         self._handler = self._handler_backup
+
+    def _stop_batch_update(self) -> None:
+        pass
 
     def set_await_partial(self, bint value):
         self._await_partial = value
@@ -733,7 +738,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._clock = clock
 
         self._time_bars_origin_offset = time_bars_origin_offset
-        self._skip_first_non_full_bar = skip_first_non_full_bar
+        self._skip_first_build_and_send = skip_first_non_full_bar
         self._timestamp_on_close = timestamp_on_close
         self._build_with_no_updates = build_with_no_updates
         self._bar_build_delay = bar_build_delay
@@ -834,6 +839,9 @@ cdef class TimeBarAggregator(BarAggregator):
         cdef int step = self.bar_type.spec.step
         cdef BarAggregation aggregation = self.bar_type.spec.aggregation
 
+        cdef uint64_t inner_div
+        cdef uint64_t inner_mod
+
         if aggregation != BarAggregation.MONTH:
             if aggregation == BarAggregation.MILLISECOND:
                 start_time = now.floor(freq="s")
@@ -854,8 +862,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 )
 
             start_time += self._time_bars_origin_offset - self.interval
-            while start_time < now:
-                start_time += self.interval
+
+            # The following formula means: while start_time < now: start_time += self.interval
+            inner_div = (now - start_time).value // pd.Timedelta(self.interval).value
+            inner_mod = (now - start_time).value % pd.Timedelta(self.interval).value
+            start_time += (inner_div + np.sign(inner_mod)) * self.interval
         else:
             start_time = ((now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
                           + self._time_bars_origin_offset - pd.DateOffset(months=step))
@@ -932,7 +943,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 interval=self.interval,
                 start_time=start_time,
                 stop_time=None,
-                callback=self._build_bar,
+                callback=self._callback_build_bar,
                 fire_immediately=True,
                 allow_past=True
             )
@@ -941,7 +952,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._clock.set_time_alert(
                 name=self._timer_name,
                 alert_time=start_time,
-                callback=self._build_bar,
+                callback=self._callback_build_bar,
                 override=True,
             )
 
@@ -954,9 +965,9 @@ cdef class TimeBarAggregator(BarAggregator):
         self._clock.cancel_timer(self._timer_name)
 
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init):
-        if self._skip_first_non_full_bar:
+        if self._skip_first_build_and_send:
             self._builder.reset()
-            self._skip_first_non_full_bar = False
+            self._skip_first_build_and_send = False
         # TODO: Test this behavior
         elif not self._build_with_no_updates and self._builder.count == 0:
             pass
@@ -984,6 +995,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 self._batch_open_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) - pd.DateOffset(months=step))
 
             self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) + pd.DateOffset(months=step))
+
+    def _stop_batch_update(self, uint64_t time_ns) -> None:
+        pass
 
     cdef void _batch_pre_update(self, uint64_t time_ns):
         if time_ns > self._batch_next_close_ns and self._builder.initialized:
@@ -1059,7 +1073,7 @@ cdef class TimeBarAggregator(BarAggregator):
         if self._batch_next_close_ns != 0:
             self._batch_post_update(ts_init)
 
-    cpdef void _build_bar(self, TimeEvent event):
+    cpdef void _callback_build_bar(self, TimeEvent event):
         cdef int step = self.bar_type.spec.step
 
         if self.bar_type.spec.aggregation != BarAggregation.MONTH:
@@ -1071,7 +1085,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._clock.set_time_alert(
                 name=self._timer_name,
                 alert_time=alert_time,
-                callback=self._build_bar,
+                callback=self._callback_build_bar,
                 override=True,
             )
 
