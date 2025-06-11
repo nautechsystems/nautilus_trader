@@ -197,6 +197,21 @@ uv sync --all-extras
 The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 :::
 
+5. Set environment variables for PyO3 compilation (Linux and macOS only):
+
+```bash
+# Set the library path for the Python interpreter (in this case Python 3.13.4)
+export LD_LIBRARY_PATH="$HOME/.local/share/uv/python/cpython-3.13.4-linux-x86_64-gnu/lib:$LD_LIBRARY_PATH"
+
+# Set the Python executable path for PyO3
+export PYO3_PYTHON=$(pwd)/.venv/bin/python
+```
+
+:::note
+Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
+Use `uv python list` to find the exact path for your Python installation.
+:::
+
 ## From GitHub Release
 
 To install a binary wheel from GitHub, first navigate to the [latest release](https://github.com/nautechsystems/nautilus_trader/releases/latest).

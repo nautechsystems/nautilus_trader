@@ -351,9 +351,24 @@ It's possible to install from source using pip if you first install the build de
     uv sync --all-extras
     ```
 
-> [!NOTE]
->
-> The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
+    > [!NOTE]
+    >
+    > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
+
+6. Set environment variables for PyO3 compilation (Linux and macOS only):
+
+    ```bash
+    # Set the library path for the Python interpreter (in this case Python 3.13.4)
+    export LD_LIBRARY_PATH="$HOME/.local/share/uv/python/cpython-3.13.4-linux-x86_64-gnu/lib:$LD_LIBRARY_PATH"
+
+    # Set the Python executable path for PyO3
+    export PYO3_PYTHON=$(pwd)/.venv/bin/python
+    ```
+
+    > [!NOTE]
+    >
+    > Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
+    > Use `uv python list` to find the exact path for your Python installation.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
@@ -464,6 +479,8 @@ Thank you for considering contributing to NautilusTrader! We welcome any and all
 the project. If you have an idea for an enhancement or a bug fix, the first step is to open an [issue](https://github.com/nautechsystems/nautilus_trader/issues)
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
+
+Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project’s roadmap to understand what’s in and out of scope.
 
 Once you're ready to start working on your contribution, make sure to follow the guidelines
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)
