@@ -6,11 +6,11 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 .PHONY: install
 install:
-	BUILD_MODE=release uv sync --active --all-groups --all-extras
+	BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug uv sync --active --all-groups --all-extras
+	BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:
