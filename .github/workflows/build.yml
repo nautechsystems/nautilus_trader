@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, nightly, develop]
   pull_request:
-    branches: [develop]
+    branches: ['*']
 
 jobs:
   pre-commit:
