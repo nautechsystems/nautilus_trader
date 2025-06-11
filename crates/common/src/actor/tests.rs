@@ -276,7 +276,7 @@ fn register_data_actor(
 ) -> Ustr {
     // Set up sync data command sender for tests
     let sender = SyncDataCommandSender;
-    set_data_cmd_sender(Rc::new(RefCell::new(sender)));
+    set_data_cmd_sender(Arc::new(sender));
 
     let config = DataActorConfig::default();
     // Ensure clean message bus state for this actor's subscriptions

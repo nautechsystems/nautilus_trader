@@ -400,6 +400,8 @@ pub struct LiveTimer {
     task_handle: Option<JoinHandle<()>>,
     #[cfg(feature = "clock_v2")]
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+    #[cfg(feature = "clock_v2")]
+    sender: Option<Arc<dyn crate::runner::TimeEventSender>>,
 }
 
 impl LiveTimer {
@@ -427,6 +429,7 @@ impl LiveTimer {
         };
 
         log::debug!("Creating timer '{name}'");
+
         Self {
             name,
             interval_ns,
@@ -444,6 +447,7 @@ impl LiveTimer {
     /// # Panics
     ///
     /// Panics if `name` is not a valid string.
+    #[allow(clippy::too_many_arguments)]
     #[must_use]
     #[cfg(feature = "clock_v2")]
     pub fn new(
@@ -454,6 +458,7 @@ impl LiveTimer {
         callback: TimeEventCallback,
         heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
         fire_immediately: bool,
+        sender: Option<Arc<dyn crate::runner::TimeEventSender>>,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
 
@@ -464,6 +469,7 @@ impl LiveTimer {
         };
 
         log::debug!("Creating timer '{name}'");
+
         Self {
             name,
             interval_ns,
@@ -474,6 +480,7 @@ impl LiveTimer {
             callback,
             heap,
             task_handle: None,
+            sender,
         }
     }
 
@@ -530,6 +537,8 @@ impl LiveTimer {
 
         #[cfg(feature = "clock_v2")]
         let heap = self.heap.clone();
+        #[cfg(feature = "clock_v2")]
+        let sender = self.sender.clone();
 
         let rt = get_runtime();
         let handle = rt.spawn(async move {
@@ -563,7 +572,14 @@ impl LiveTimer {
                 #[cfg(feature = "clock_v2")]
                 {
                     let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
-                    heap.lock().await.push(event);
+                    let handler = TimeEventHandlerV2::new(event, callback.clone());
+
+                    if let Some(ref sender) = sender {
+                        sender.send(handler);
+                    } else if let Some(sender) = crate::runner::try_get_time_event_sender() {
+                        sender.send(handler);
+                    }
+                    // If no sender available, silently drop the event (e.g., in tests)
                 }
 
                 // Prepare next time interval
@@ -622,10 +638,16 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "clock_v2")]
+    use std::collections::BinaryHeap;
+    #[cfg(feature = "clock_v2")]
+    use std::sync::Arc;
     use std::{num::NonZeroU64, rc::Rc};
 
     use nautilus_core::UnixNanos;
     use rstest::*;
+    #[cfg(feature = "clock_v2")]
+    use tokio::sync::Mutex;
     use ustr::Ustr;
 
     use super::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback};
@@ -778,6 +800,7 @@ mod tests {
 
     #[rstest]
     fn test_live_timer_fire_immediately_field() {
+        #[cfg(not(feature = "clock_v2"))]
         let timer = LiveTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1000).unwrap(),
@@ -785,6 +808,18 @@ mod tests {
             None,
             TimeEventCallback::Rust(Rc::new(|_| {})),
             true, // fire_immediately = true
+        );
+
+        #[cfg(feature = "clock_v2")]
+        let timer = LiveTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(1000).unwrap(),
+            UnixNanos::from(100),
+            None,
+            TimeEventCallback::Rust(Rc::new(|_| {})),
+            Arc::new(Mutex::new(BinaryHeap::new())),
+            true, // fire_immediately = true
+            None, // time_event_sender
         );
 
         // Verify the field is set correctly
@@ -796,6 +831,7 @@ mod tests {
 
     #[rstest]
     fn test_live_timer_fire_immediately_false_field() {
+        #[cfg(not(feature = "clock_v2"))]
         let timer = LiveTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1000).unwrap(),
@@ -803,6 +839,18 @@ mod tests {
             None,
             TimeEventCallback::Rust(Rc::new(|_| {})),
             false, // fire_immediately = false
+        );
+
+        #[cfg(feature = "clock_v2")]
+        let timer = LiveTimer::new(
+            Ustr::from("TEST_TIMER"),
+            NonZeroU64::new(1000).unwrap(),
+            UnixNanos::from(100),
+            None,
+            TimeEventCallback::Rust(Rc::new(|_| {})),
+            Arc::new(Mutex::new(BinaryHeap::new())),
+            false, // fire_immediately = false
+            None,  // time_event_sender
         );
 
         // Verify the field is set correctly

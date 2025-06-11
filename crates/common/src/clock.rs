@@ -34,6 +34,8 @@ use nautilus_core::{
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
+#[cfg(feature = "clock_v2")]
+use crate::runner::get_time_event_sender;
 use crate::timer::{
     LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2, create_valid_interval,
 };
@@ -504,6 +506,8 @@ pub struct LiveClock {
     pub heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
     #[allow(dead_code)]
     callbacks: HashMap<Ustr, TimeEventCallback>,
+    #[cfg(feature = "clock_v2")]
+    time_event_sender: Option<std::sync::Arc<dyn crate::runner::TimeEventSender>>,
 }
 
 impl LiveClock {
@@ -516,6 +520,8 @@ impl LiveClock {
             default_callback: None,
             heap: Arc::new(Mutex::new(BinaryHeap::new())),
             callbacks: HashMap::new(),
+            #[cfg(feature = "clock_v2")]
+            time_event_sender: std::panic::catch_unwind(crate::runner::get_time_event_sender).ok(),
         }
     }
 
@@ -692,6 +698,7 @@ impl Clock for LiveClock {
             callback,
             self.heap.clone(),
             false,
+            Some(get_time_event_sender()),
         );
 
         timer.start();
@@ -778,6 +785,7 @@ impl Clock for LiveClock {
             callback,
             self.heap.clone(),
             fire_immediately,
+            Some(get_time_event_sender()),
         );
         timer.start();
 
@@ -812,6 +820,11 @@ impl Clock for LiveClock {
         self.timers = HashMap::new();
         self.heap = Arc::new(Mutex::new(BinaryHeap::new()));
         self.callbacks = HashMap::new();
+        #[cfg(feature = "clock_v2")]
+        {
+            self.time_event_sender =
+                std::panic::catch_unwind(crate::runner::get_time_event_sender).ok();
+        }
     }
 }
 

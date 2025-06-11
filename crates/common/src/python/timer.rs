@@ -194,7 +194,6 @@ mod tests {
     };
     use pyo3::prelude::*;
     use tokio::time::Duration;
-    use ustr::Ustr; // Import required (due feature gating)
 
     use crate::{
         testing::wait_until,
@@ -207,9 +206,23 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "clock_v2")]
+    #[derive(Debug)]
+    struct TestTimeEventSender;
+
+    #[cfg(feature = "clock_v2")]
+    impl crate::runner::TimeEventSender for TestTimeEventSender {
+        fn send(&self, _handler: crate::timer::TimeEventHandlerV2) {
+            // Test implementation - just ignore the events
+        }
+    }
+
     #[tokio::test]
     async fn test_live_timer_starts_and_stops() {
         pyo3::prepare_freethreaded_python();
+
+        #[cfg(feature = "clock_v2")]
+        crate::runner::set_time_event_sender(Arc::new(TestTimeEventSender));
 
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
@@ -224,7 +237,7 @@ mod tests {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             None,
@@ -233,21 +246,21 @@ mod tests {
         );
 
         #[cfg(feature = "clock_v2")]
-        let (_heap, mut timer) = {
+        let mut timer = {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            (
-                heap.clone(),
-                LiveTimer::new(
-                    "TEST_TIMER".into(),
-                    interval_ns,
-                    start_time,
-                    None,
-                    callback,
-                    heap,
-                    false,
-                ),
+            let test_sender = Arc::new(TestTimeEventSender);
+            LiveTimer::new(
+                "TEST_TIMER".into(),
+                interval_ns,
+                start_time,
+                None,
+                callback,
+                heap,
+                false,
+                Some(test_sender),
             )
         };
+
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -263,6 +276,9 @@ mod tests {
     async fn test_live_timer_with_stop_time() {
         pyo3::prepare_freethreaded_python();
 
+        #[cfg(feature = "clock_v2")]
+        crate::runner::set_time_event_sender(Arc::new(TestTimeEventSender));
+
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
             let callable = callable.into_py_any_unwrap(py);
@@ -277,7 +293,7 @@ mod tests {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             Some(stop_time),
@@ -288,6 +304,7 @@ mod tests {
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
+            let test_sender = Arc::new(TestTimeEventSender);
             (
                 heap.clone(),
                 LiveTimer::new(
@@ -298,6 +315,7 @@ mod tests {
                     callback,
                     heap,
                     false,
+                    Some(test_sender),
                 ),
             )
         };
@@ -316,6 +334,9 @@ mod tests {
     async fn test_live_timer_with_zero_interval_and_immediate_stop_time() {
         pyo3::prepare_freethreaded_python();
 
+        #[cfg(feature = "clock_v2")]
+        crate::runner::set_time_event_sender(Arc::new(TestTimeEventSender));
+
         let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction!(receive_event, py).unwrap();
             let callable = callable.into_py_any_unwrap(py);
@@ -330,7 +351,7 @@ mod tests {
 
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
+            "TEST_TIMER".into(),
             interval_ns,
             start_time,
             Some(stop_time),
@@ -341,6 +362,7 @@ mod tests {
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
+            let test_sender = Arc::new(TestTimeEventSender);
             (
                 heap.clone(),
                 LiveTimer::new(
@@ -351,6 +373,7 @@ mod tests {
                     callback,
                     heap,
                     false,
+                    Some(test_sender),
                 ),
             )
         };
