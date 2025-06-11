@@ -320,7 +320,7 @@ cdef class BarAggregator:
         pass
 
     def stop_batch_update(self, uint64_t time_ns) -> None:
-        self._stop_batch_update()
+        self._stop_batch_update(time_ns)
         self._batch_mode = False
         self._handler = self._handler_backup
 
