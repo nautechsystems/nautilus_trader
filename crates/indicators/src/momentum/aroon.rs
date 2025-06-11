@@ -103,10 +103,13 @@ impl AroonOscillator {
     /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize) -> Self {
-        assert!(period > 0, "period must be > 0");
+        assert!(
+            period > 0,
+            "AroonOscillator: period must be > 0 (received {period})"
+        );
         assert!(
             period <= MAX_PERIOD,
-            "period ({period}) exceeds MAX_PERIOD ({MAX_PERIOD})"
+            "AroonOscillator: period must be ≤ {MAX_PERIOD} (received {period})"
         );
 
         Self {
