@@ -472,6 +472,7 @@ if __name__ == "__main__":
     print_env_var_if_exists("CFLAGS")
     print_env_var_if_exists("LDFLAGS")
     print_env_var_if_exists("LD_LIBRARY_PATH")
+    print_env_var_if_exists("PYO3_PYTHON")
     print_env_var_if_exists("RUSTFLAGS")
     print_env_var_if_exists("DRY_RUN")
 
