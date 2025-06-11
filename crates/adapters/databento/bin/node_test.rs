@@ -163,11 +163,24 @@ impl DataActor for DatabentoSubscriberActor {
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
+        // TODO: Need to create a nicer API with `set_timer` method
         let start = self.clock().timestamp_ns();
         self.clock()
             .set_timer_ns(
-                "TEST-TIMER-01",
+                "TEST-TIMER-1-SECOND",
                 1_000_000_000,
+                start,
+                None,
+                None,
+                Some(true),
+                Some(false),
+            )
+            .expect("Error setting timer");
+
+        self.clock()
+            .set_timer_ns(
+                "TEST-TIMER-2-SECOND",
+                2_000_000_000,
                 start,
                 None,
                 None,

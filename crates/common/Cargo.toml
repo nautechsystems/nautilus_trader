@@ -30,7 +30,7 @@ ffi = [
   "nautilus-core/ffi",
   "nautilus-model/ffi",
 ]
-"clock_v2" = []
+clock_v2 = []
 indicators = ["nautilus-indicators"]
 python = [
   "pyo3",

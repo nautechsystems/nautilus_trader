@@ -86,7 +86,7 @@ impl LiveNode {
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new(name, config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
+        let runner = AsyncRunner::new();
 
         log::info!("LiveNode built successfully with kernel config");
 
@@ -412,7 +412,7 @@ impl LiveNodeBuilder {
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
         let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
+        let runner = AsyncRunner::new();
 
         // Create and register data clients
         for (name, factory) in self.data_client_factories {

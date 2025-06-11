@@ -26,26 +26,25 @@ use std::{
 use ahash::AHashMap;
 use databento::live::Subscription;
 use indexmap::IndexMap;
-use nautilus_common::messages::{
-    DataEvent,
-    data::{
-        RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
-        SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
-        UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+use nautilus_common::{
+    messages::{
+        DataEvent,
+        data::{
+            RequestBars, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBookDeltas,
+            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
+            UnsubscribeInstrumentStatus, UnsubscribeQuotes, UnsubscribeTrades,
+        },
     },
+    runner::get_data_event_sender,
 };
 use nautilus_core::time::AtomicTime;
 use nautilus_data::client::DataClient;
-use nautilus_live::runner::get_data_event_sender;
 use nautilus_model::{
     enums::BarAggregation,
     identifiers::{ClientId, Symbol, Venue},
     instruments::Instrument,
 };
-use tokio::{
-    sync::mpsc::{self, UnboundedSender},
-    task::JoinHandle,
-};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -106,7 +105,7 @@ pub struct DatabentoDataClient {
     /// Data loader for venue-to-dataset mapping.
     loader: DatabentoDataLoader,
     /// Feed handler command senders per dataset.
-    cmd_channels: Arc<Mutex<AHashMap<String, mpsc::UnboundedSender<LiveCommand>>>>,
+    cmd_channels: Arc<Mutex<AHashMap<String, tokio::sync::mpsc::UnboundedSender<LiveCommand>>>>,
     /// Task handles for lifecycle management.
     task_handles: Arc<Mutex<Vec<JoinHandle<()>>>>,
     /// Cancellation token for graceful shutdown.
@@ -115,8 +114,8 @@ pub struct DatabentoDataClient {
     publisher_venue_map: Arc<IndexMap<PublisherId, Venue>>,
     /// Symbol to venue mapping (for caching).
     symbol_venue_map: Arc<RwLock<AHashMap<Symbol, Venue>>>,
-    /// Data event sender for forwarding data to `AsyncRunner`.
-    data_sender: UnboundedSender<DataEvent>,
+    /// Data event sender for forwarding data to the async runner.
+    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
 impl DatabentoDataClient {
@@ -150,7 +149,6 @@ impl DatabentoDataClient {
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
-        // Get the data event sender for forwarding data to AsyncRunner
         let data_sender = get_data_event_sender();
 
         Ok(Self {
@@ -219,9 +217,9 @@ impl DatabentoDataClient {
     fn initialize_live_feed(
         &self,
         dataset: String,
-    ) -> anyhow::Result<mpsc::UnboundedSender<LiveCommand>> {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let (msg_tx, msg_rx) = mpsc::channel(1000);
+    ) -> anyhow::Result<tokio::sync::mpsc::UnboundedSender<LiveCommand>> {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(1000);
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.config.api_key.clone(),
