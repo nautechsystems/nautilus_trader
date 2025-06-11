@@ -10,6 +10,11 @@
 #ifdef __SIZEOF_INT128__
     typedef __uint128_t uint128_t;
     typedef __int128_t int128_t;
+#elif defined(_MSC_VER)
+    // MSVC doesn't support 128-bit integers, use 64-bit fallbacks
+    typedef uint64_t uint128_t;
+    typedef int64_t int128_t;
+    #undef HIGH_PRECISION
 #endif
 
 #define DEPTH10_LEN 10

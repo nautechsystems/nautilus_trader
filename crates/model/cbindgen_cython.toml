@@ -4,6 +4,7 @@ includes = []
 sys_includes = ["stdint.h", "Python.h"]
 no_includes = true
 tab_width = 4
+after_includes = "\n#ifdef __SIZEOF_INT128__\n    typedef __uint128_t uint128_t;\n    typedef __int128_t int128_t;\n#elif defined(_MSC_VER)\n    // MSVC doesn't support 128-bit integers, use 64-bit fallbacks\n    typedef uint64_t uint128_t;\n    typedef int64_t int128_t;\n    #undef HIGH_PRECISION\n#endif"
 
 [defines]
 "feature = high-precision" = "HIGH_PRECISION"
