@@ -351,9 +351,9 @@ It's possible to install from source using pip if you first install the build de
     uv sync --all-extras
     ```
 
-    > [!NOTE]
-    >
-    > The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
+> [!NOTE]
+>
+> The `--depth 1` flag fetches just the latest commit for a faster, lightweight clone.
 
 6. Set environment variables for PyO3 compilation (Linux and macOS only):
 
@@ -365,10 +365,10 @@ It's possible to install from source using pip if you first install the build de
     export PYO3_PYTHON=$(pwd)/.venv/bin/python
     ```
 
-    > [!NOTE]
-    >
-    > Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
-    > Use `uv python list` to find the exact path for your Python installation.
+> [!NOTE]
+>
+> Adjust the Python version and architecture in the `LD_LIBRARY_PATH` to match your system.
+> Use `uv python list` to find the exact path for your Python installation.
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
 
