@@ -26,8 +26,10 @@ Released on TBD (UTC).
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid pointer comparison issues with `ustr` string interning
 - Refactored IB adapter (#2647), thanks @faysou
+- Refined signal serialization and tests (#2705), thanks @faysou
 - Upgraded Cython to v3.1.2
 - Upgraded `databento` crate to v0.27.0
+- Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
@@ -39,7 +41,7 @@ Released on TBD (UTC).
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
-- Fixed RSI indicator bug
+- Fixed last value updating for RSI indicator (#2703), thanks @barlaw
 
 ### Documentation Updates
 None
