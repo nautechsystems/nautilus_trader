@@ -275,6 +275,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             else Quantity.from_str(str(ib_order.filledQuantity))
         )
 
+        # Handle case where total_qty is zero (can happen in bracket orders)
+        # This prevents the ValueError in OrderStatusReport constructor
+        if total_qty.as_double() <= 0.0:
+            self._log.warning(
+                f"Order {ib_order.orderRef} has zero or negative quantity ({total_qty}). "
+                f"This typically indicates a bracket order child that should be cancelled.",
+            )
+            # Use minimum valid quantity for the report
+            total_qty = instrument.make_qty(
+                instrument.min_quantity.as_double() if instrument.min_quantity else 1.0,
+            )
+
         if total_qty.as_double() > filled_qty.as_double() > 0:
             order_status = OrderStatus.PARTIALLY_FILLED
         else:
@@ -471,6 +483,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if order.is_post_only:
             raise ValueError("`post_only` not supported by Interactive Brokers")
 
+        # Check for zero quantity which can occur in bracket orders when parent order
+        # is partially filled and child orders need to be updated
+        if order.quantity.as_double() <= 0.0:
+            raise ValueError(
+                f"Cannot transform order with zero or negative quantity: {order.quantity}. "
+                f"Order should be cancelled instead.",
+            )
+
         ib_order = IBOrder()
         time_in_force = order.time_in_force
         price_magnifier = self.instrument_provider.get_price_magnifier(order.instrument_id)
@@ -617,6 +637,26 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
         self._log.info(f"Nautilus order status is {nautilus_order.status_string()}")
+
+        # Check if the modification would result in zero quantity
+        # This can happen in bracket orders when parent order is partially filled
+        if command.quantity and command.quantity.as_double() <= 0.0:
+            self._log.warning(
+                f"Cannot modify order {command.client_order_id} to zero quantity. "
+                f"Cancelling order instead.",
+            )
+            # Cancel the order instead of modifying to zero quantity
+            cancel_command = CancelOrder(
+                trader_id=command.trader_id,
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                command_id=command.command_id,
+                ts_init=command.ts_init,
+            )
+            await self._cancel_order(cancel_command)
+            return
 
         try:
             ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)

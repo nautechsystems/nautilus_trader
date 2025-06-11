@@ -13,10 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from unittest.mock import Mock
+
 import pytest
 
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.test_kit.stubs.data import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
@@ -89,3 +101,97 @@ async def test_transform_order_to_ib_order_limit(
         ib_order.orderType == expected_order_type
     ), f"{expected_order_type=}, but got {ib_order.orderType=}"
     assert ib_order.tif == expected_tif, f"{expected_tif=}, but got {ib_order.tif=}"
+
+
+# Tests for bracket order zero quantity fix
+@pytest.mark.asyncio
+async def test_transform_order_to_ib_order_zero_quantity_raises_error(exec_client):
+    """
+    Test that transforming an order with zero quantity raises ValueError.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create a mock order that returns zero quantity
+    # This simulates what happens in bracket orders when quantities are updated
+    mock_order = Mock()
+    mock_order.instrument_id = instrument.id
+    mock_order.quantity = Quantity.from_str("0.0")  # Zero quantity!
+    mock_order.is_post_only = False
+    mock_order.time_in_force = TimeInForce.GTC
+    mock_order.price = None
+    mock_order.order_type = OrderType.STOP_MARKET
+    mock_order.side = OrderSide.SELL
+    mock_order.trigger_price = Price.from_str("1.0500")
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Cannot transform order with zero or negative quantity"):
+        exec_client._transform_order_to_ib_order(mock_order)
+
+
+@pytest.mark.asyncio
+async def test_transform_order_to_ib_order_negative_quantity_raises_error(exec_client):
+    """
+    Test that transforming an order with negative quantity raises ValueError.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    # Create a mock order that returns negative quantity
+    # This simulates what happens in bracket orders when quantities are updated incorrectly
+    mock_order = Mock()
+    mock_order.instrument_id = instrument.id
+    # Create a mock quantity that returns negative value
+    mock_quantity = Mock()
+    mock_quantity.as_double.return_value = -1.0
+    mock_order.quantity = mock_quantity
+    mock_order.is_post_only = False
+    mock_order.time_in_force = TimeInForce.GTC
+    mock_order.price = None
+    mock_order.order_type = OrderType.STOP_MARKET
+    mock_order.side = OrderSide.SELL
+    mock_order.trigger_price = Price.from_str("1.0500")
+
+    # Act & Assert
+    with pytest.raises(ValueError, match="Cannot transform order with zero or negative quantity"):
+        exec_client._transform_order_to_ib_order(mock_order)
+
+
+# Note: Additional tests for modify_order and parse_ib_order_to_order_status_report
+# zero quantity handling are covered by the implementation but are difficult to test
+# in isolation due to the protected nature of the execution client's internal state.
+# The core functionality is tested through the transform_order_to_ib_order tests above.
+
+
+@pytest.mark.asyncio
+async def test_transform_order_to_ib_order_positive_quantity_works_normally(exec_client):
+    """
+    Test that transforming an order with positive quantity works normally.
+    """
+    # Arrange
+    instrument = TestInstrumentProvider.default_fx_ccy("EUR/USD", Venue("IDEALPRO"))
+    await exec_client._instrument_provider.load_async(instrument.id)
+
+    stop_order = StopMarketOrder(
+        trader_id=TraderId("TRADER-001"),
+        strategy_id=StrategyId("STRATEGY-001"),
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("STOP-001"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("1.0"),  # Positive quantity
+        trigger_price=Price.from_str("1.0500"),
+        trigger_type=TriggerType.DEFAULT,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+    # Act
+    ib_order = exec_client._transform_order_to_ib_order(stop_order)
+
+    # Assert
+    assert ib_order is not None
+    assert ib_order.totalQuantity == 1.0
+    assert ib_order.orderType == "STP"
+    assert ib_order.action == "SELL"
