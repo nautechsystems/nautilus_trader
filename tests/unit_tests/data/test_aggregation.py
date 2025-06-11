@@ -2187,6 +2187,41 @@ class TestTimeBarAggregator:
         tick2: QuoteTick | TradeTick | None,
         time_shift: pd.Timedelta,
     ):
+        """
+        Test TimeBarAggregator timer functionality with comprehensive bar specification
+        coverage.
+
+        This parameterized test validates that the TimeBarAggregator correctly:
+
+        1. **Timer Scheduling**: Calculates and schedules the next bar close times accurately for various
+           time-based bar specifications (milliseconds, seconds, minutes, hours, days, weeks).
+
+        2. **Time Origin Offset Handling**: Properly applies time_bars_origin_offset to shift bar
+           boundaries while maintaining correct intervals for all supported time units.
+
+        3. **Bar Generation Logic**: Generates bars at the exact expected timestamps when timer events
+           fire, regardless of when ticks arrive (before, at, or after bar boundaries).
+
+        4. **Price Type Support**: Handles different price types (BID, ASK, MID, LAST) with appropriate
+           tick types (QuoteTick for BID/ASK/MID, TradeTick for LAST).
+
+        5. **Edge Case Handling**: Correctly processes scenarios with:
+           - No ticks received (empty bars with zero volume)
+           - Ticks arriving before the first bar boundary
+           - Ticks arriving exactly at bar boundaries
+           - Various time shifts and origin offsets
+
+        6. **Bar Content Accuracy**: Ensures generated bars have correct OHLCV data, timestamps
+           (ts_event, ts_init), and metadata (bar_type, aggregation_source).
+
+        7. **Timer Progression**: Verifies that after each bar is generated, the aggregator correctly
+           calculates the next bar close time, maintaining consistent intervals.
+
+        The test uses a comprehensive parameter matrix covering different time units, offset scenarios,
+        and tick combinations to ensure the TimeBarAggregator behaves consistently across all supported
+        time-based bar specifications in live trading mode.
+
+        """
         # Arrange
         start_time_ns = (pd.Timestamp(1990, 1, 1) + time_shift).value
 
@@ -2291,6 +2326,10 @@ class TestTimeBarAggregator:
         tick2: QuoteTick | TradeTick | None,
         time_shift: pd.Timedelta,
     ):
+        """
+        Same as test_instantiate_and_update_timer_with_various_bar_specs, only for
+        MONTH.
+        """
         # Arrange
         start_time_ns = (pd.Timestamp(1990, 1, 1) + time_shift).value
 
