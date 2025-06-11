@@ -46,6 +46,41 @@ As we progress on the top priorities, we also plan to focus on the following enh
 - Enhance the backtesting engine with additional features.
 - Enhance order book execution dynamics with additional features, including user order interactions, persistent book changes, and expanded microstructure simulations.
 
+## Open-source scope
+
+The NautilusTrader open-source project is purpose-built to empower individual and
+small team quantitative traders, enabling strategy research and live trading with efficiency and
+reliability on a single node. By explicitly defining what is *in* and *out* of scope,
+we set clear expectations, focus community efforts, and support a sustainable open-source ecosystem.
+
+### In scope
+
+- High-performance single-node backtesting that accurately simulates live trading conditions.
+- Live trading on single-node infrastructure for streamlined research-to-production workflows.
+- Community-contributed integrations for additional trading venues and data providers:
+  - Should first be proposed and discussed via GitHub or Discord.
+  - Must align with NautilusTrader's professional, performance-focused, and high-reliability philosophy.
+  - Must adhere closely to existing Rust-based adapter implementation patterns.
+
+### Out of scope
+
+- UI dashboards or visualizers: the focus remains strictly on the core trading engine.
+- Distributed or massively parallel backtesting orchestration.
+  While externally orchestrated workflows are technically compatible, a built-in distributed runner is beyond the project’s current scope.
+- Integrated hyper-parameter optimization or built-in AI/ML tooling. Users can integrate their own optimization frameworks tailored to their needs.
+- Additional external integrations not explicitly listed as in scope.
+
+### Long-term commitment
+
+NautilusTrader is an open-core project. All core trading engine
+features land in the public repository first, and we are committed to
+continually widening the feature set and improving documentation so that the
+community can rely on a modern, high-performance, battle-tested platform.
+
+Feedback and contributions from users directly influence the roadmap; as
+real-world requirements evolve, we will steadily raise the ceiling of what can
+be achieved with the open-source codebase.
+
 ## NautilusTrader v2.0 and Beyond
 
 - **Achieving Stable Status**: While NautilusTrader is already successfully used in production, v2.0 represents a significant milestone toward establishing a stable API.
