@@ -188,6 +188,7 @@ cdef class AccountBalance:
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values)
+    cpdef AccountBalance copy(self)
     cpdef dict to_dict(self)
 
 
@@ -203,6 +204,7 @@ cdef class MarginBalance:
 
     @staticmethod
     cdef MarginBalance from_dict_c(dict values)
+    cpdef MarginBalance copy(self)
     cpdef dict to_dict(self)
 
 
