@@ -49,8 +49,9 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
+# Set the data path for Databento data
 # import nautilus_trader.adapters.databento.data_utils as db_data_utils
-# from option_trader import DATA_PATH # personal library, use your own value here
+# DATA_PATH = "/path/to/your/data"  # Use your own value here
 # db_data_utils.DATA_PATH = DATA_PATH
 
 catalog_folder = "historical_bars_catalog"
@@ -63,7 +64,7 @@ future_symbols = ["ESU4"]
 start_time = "2024-07-01T23:40"
 end_time = "2024-07-02T00:10"
 
-# a valid databento key can be entered here (or as an env variable of the same name)
+# A valid databento key can be entered here (or as an env variable of the same name)
 # DATABENTO_API_KEY = None
 # db_data_utils.init_databento_client(DATABENTO_API_KEY)
 
@@ -127,6 +128,7 @@ class TestHistoricalAggStrategy(Strategy):
         self.bar_type_3 = BarType.from_str(f"{symbol_id}-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
 
         self.request_instrument(symbol_id)
+        # self.subscribe_instruments(symbol_id.venue)
 
         # registering bar types with indicators, request_aggregated_bars below will update both indicators
         # self.register_indicator_for_bars(self.external_bar_type, self.external_sma)
@@ -241,7 +243,7 @@ strategies = [
         strategy_path=TestHistoricalAggStrategy.fully_qualified_name(),
         config_path=TestHistoricalAggConfig.fully_qualified_name(),
         config={
-            "symbol_id": InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
+            "symbol_id": InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
             "historical_start_delay": historical_start_delay,
             "historical_end_delay": historical_end_delay,
         },
@@ -289,7 +291,7 @@ data = [
     BacktestDataConfig(
         data_cls=Bar,
         catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
+        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
         bar_spec="1-MINUTE-LAST",
         start_time="2024-07-01T23:40",
         end_time="2024-07-02T00:10",
@@ -297,14 +299,14 @@ data = [
     BacktestDataConfig(
         data_cls=QuoteTick,
         catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
+        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
         start_time="2024-07-01T23:58",
         end_time="2024-07-02T00:02",
     ),
     BacktestDataConfig(
         data_cls=TradeTick,
         catalog_path=catalog.path,
-        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
+        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.XCME"),
         start_time="2024-07-01T23:58",
         end_time="2024-07-02T00:02",
     ),
@@ -312,7 +314,7 @@ data = [
 
 venues = [
     BacktestVenueConfig(
-        name="GLBX",
+        name="XCME",
         oms_type="NETTING",
         account_type="MARGIN",
         base_currency="USD",

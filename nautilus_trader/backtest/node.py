@@ -29,14 +29,19 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FeeModel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.node_builder import BacktestNodeBuilder
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import LogGuard
 from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.component import is_logging_initialized
+from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import ImportableActorConfig
+from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -44,6 +49,7 @@ from nautilus_trader.core.datetime import max_date
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -59,6 +65,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
+from nautilus_trader.persistence.config import DataCatalogConfig
 
 
 class BacktestNode:
@@ -81,16 +88,19 @@ class BacktestNode:
 
     def __init__(self, configs: list[BacktestRunConfig]) -> None:
         PyCondition.not_none(configs, "configs")
-        PyCondition.not_empty(configs, "configs")
+        # PyCondition.not_empty(configs, "configs")
         PyCondition.is_true(
             all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )
         self._validate_configs(configs)
 
-        self._configs: list[BacktestRunConfig] = configs
+        self._configs: dict[str, BacktestRunConfig] = {config.id: config for config in configs}
         self._engines: dict[str, BacktestEngine] = {}
         self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
+        self._builders: dict[str, BacktestNodeBuilder] = {}
+        self._data_client_factories: dict[str, type[LiveDataClientFactory]] = {}
+        self._download_actor: Actor | None = None
 
     @property
     def configs(self) -> list[BacktestRunConfig]:
@@ -102,7 +112,7 @@ class BacktestNode:
         list[BacktestRunConfig]
 
         """
-        return self._configs
+        return list(self._configs.values())
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
@@ -196,6 +206,30 @@ class BacktestNode:
                             f"No order book data available for {venue} with book type {venue_config.book_type}",
                         )
 
+    def add_data_client_factory(self, name: str, factory: type[LiveDataClientFactory]) -> None:
+        """
+        Add the given data client factory to the node.
+
+        Parameters
+        ----------
+        name : str
+            The name of the client factory.
+        factory : type[LiveDataClientFactory]
+            The factory class to add.
+
+        Raises
+        ------
+        ValueError
+            If `name` is not a valid string.
+        KeyError
+            If `name` has already been added.
+
+        """
+        if not issubclass(factory, LiveDataClientFactory):
+            raise ValueError(f"Factory was not of type `LiveDataClientFactory`, was {factory}")
+
+        self._data_client_factories[name] = factory
+
     def build(self) -> None:
         """
         Can be optionally run before a backtest to build backtest engines for all
@@ -205,33 +239,119 @@ class BacktestNode:
         any type of information.
 
         """
-        for config in self._configs:
+        for config in self._configs.values():
             try:
                 if config.id in self._engines:
                     # Only create an engine if one doesn't already exist for this config
                     continue
 
-                self._create_engine(
-                    run_config_id=config.id,
-                    config=config.engine,
-                    venue_configs=config.venues,
-                    data_configs=config.data,
-                )
+                self._create_engine(config.id)
             except Exception as e:
                 if config.raise_exception:
                     raise e
 
                 self.log_backtest_exception(e, config)
 
-    def _create_engine(
+    def setup_download_engine(
         self,
-        run_config_id: str,
-        config: BacktestEngineConfig,
-        venue_configs: list[BacktestVenueConfig],
-        data_configs: list[BacktestDataConfig],
-    ) -> BacktestEngine:
+        catalog_config: DataCatalogConfig,
+        data_clients: dict[str, type[LiveDataClientConfig]],
+    ) -> None:
+        """
+        Set up a backtest engine for downloading data.
+
+        Creates a dedicated backtest engine with an actor for data downloading purposes.
+
+        Parameters
+        ----------
+        catalog_config : DataCatalogConfig
+            The configuration for the data catalog.
+        data_clients : dict[str, LiveDataClientConfig]
+            The data client configurations.
+
+        """
+        actors = [
+            ImportableActorConfig(
+                actor_path=Actor.fully_qualified_name(),
+                config_path=ActorConfig.fully_qualified_name(),
+                config={},
+            ),
+        ]
+        engine_config = BacktestEngineConfig(
+            actors=actors,
+            catalogs=[catalog_config],
+        )
+        config = BacktestRunConfig(
+            engine=engine_config,
+            data=[],
+            venues=[],
+            raise_exception=True,
+            data_clients=data_clients,
+        )
+        self._configs["download"] = config
+        self._create_engine("download")
+        self._download_actor = self._engines["download"].kernel._trader.actors()[0]
+
+    def download_data(
+        self,
+        request_function: str,
+        **kwargs,
+    ) -> None:
+        """
+        Download data using the specified request function.
+
+        Parameters
+        ----------
+        request_function : str
+            The name of the request function to use. Must be one of:
+            "request_instrument", "request_data", "request_bars",
+            "request_quote_ticks", or "request_trade_ticks".
+        **kwargs
+            Additional keyword arguments to pass to the request function.
+
+        Notes
+        -----
+        This method requires `setup_download_engine` to be called first.
+        The method automatically sets `update_catalog=True` and adds a
+        subscription name to bypass the data engine.
+
+        """
+        if not self._download_actor:
+            print("Download actor not initialized, please call BacktestNode.setup_download first.")
+            return
+
+        compatible_request_functions = [
+            "request_instrument",
+            "request_data",
+            "request_bars",
+            "request_quote_ticks",
+            "request_trade_ticks",
+        ]
+
+        if request_function not in compatible_request_functions:
+            self._engines["download"].logger.error(
+                f"{request_function} not supported by BacktestNode.download_data. "
+                f"Please use one of {compatible_request_functions}.",
+            )
+
+        self._download_actor.clock.set_time(pd.Timestamp.utcnow().value)
+
+        kwargs["update_catalog"] = True
+        params = kwargs.get("params", {})
+        params["subscription_name"] = "download"
+        kwargs["params"] = params
+
+        function = getattr(self._download_actor, request_function)
+        function(**kwargs)
+
+    def _create_engine(self, run_config_id: str) -> BacktestEngine:
+        run_config = self._configs[run_config_id]
+        engine_config = run_config.engine
+        venue_configs = run_config.venues
+        data_configs = run_config.data
+
         # Build the backtest engine
-        engine = BacktestEngine(config=config)
+        engine = BacktestEngine(config=engine_config)
         self._engines[run_config_id] = engine
 
         # Assign the global logging system guard to keep it alive for
@@ -241,39 +361,46 @@ class BacktestNode:
         if log_guard:
             self._log_guard = log_guard
 
+        # Create a builder for this engine
+        builder = BacktestNodeBuilder(
+            engine=engine,
+            logger=engine.logger,
+        )
+        self._builders[run_config_id] = builder
+
         # Add venues (must be added prior to instruments)
-        for config in venue_configs:
+        for venue_config in venue_configs:
             engine.add_venue(
-                venue=Venue(config.name),
-                oms_type=OmsType[config.oms_type],
-                account_type=AccountType[config.account_type],
-                base_currency=get_base_currency(config),
-                starting_balances=get_starting_balances(config),
-                default_leverage=Decimal(config.default_leverage),
-                leverages=get_leverages(config),
-                book_type=book_type_from_str(config.book_type),
-                routing=config.routing,
-                modules=[ActorFactory.create(module) for module in (config.modules or [])],
-                fill_model=get_fill_model(config),
-                fee_model=get_fee_model(config),
-                latency_model=get_latency_model(config),
-                frozen_account=config.frozen_account,
-                reject_stop_orders=config.reject_stop_orders,
-                support_gtd_orders=config.support_gtd_orders,
-                support_contingent_orders=config.support_contingent_orders,
-                use_position_ids=config.use_position_ids,
-                use_random_ids=config.use_random_ids,
-                use_reduce_only=config.use_reduce_only,
-                bar_execution=config.bar_execution,
-                bar_adaptive_high_low_ordering=config.bar_adaptive_high_low_ordering,
-                trade_execution=config.trade_execution,
+                venue=Venue(venue_config.name),
+                oms_type=OmsType[venue_config.oms_type],
+                account_type=AccountType[venue_config.account_type],
+                base_currency=get_base_currency(venue_config),
+                starting_balances=get_starting_balances(venue_config),
+                default_leverage=Decimal(venue_config.default_leverage),
+                leverages=get_leverages(venue_config),
+                book_type=book_type_from_str(venue_config.book_type),
+                routing=venue_config.routing,
+                modules=[ActorFactory.create(module) for module in (venue_config.modules or [])],
+                fill_model=get_fill_model(venue_config),
+                fee_model=get_fee_model(venue_config),
+                latency_model=get_latency_model(venue_config),
+                frozen_account=venue_config.frozen_account,
+                reject_stop_orders=venue_config.reject_stop_orders,
+                support_gtd_orders=venue_config.support_gtd_orders,
+                support_contingent_orders=venue_config.support_contingent_orders,
+                use_position_ids=venue_config.use_position_ids,
+                use_random_ids=venue_config.use_random_ids,
+                use_reduce_only=venue_config.use_reduce_only,
+                bar_execution=venue_config.bar_execution,
+                bar_adaptive_high_low_ordering=venue_config.bar_adaptive_high_low_ordering,
+                trade_execution=venue_config.trade_execution,
             )
 
         # Add instruments
-        for config in data_configs:
-            if is_nautilus_class(config.data_type):
-                catalog = self.load_catalog(config)
-                used_instrument_ids = get_instrument_ids(config)
+        for data_config in data_configs:
+            if is_nautilus_class(data_config.data_type):
+                catalog = self.load_catalog(data_config)
+                used_instrument_ids = get_instrument_ids(data_config)
 
                 # None to query all instruments
                 instruments = catalog.instruments(
@@ -284,7 +411,25 @@ class BacktestNode:
                     if instrument.id not in engine.cache.instrument_ids():
                         engine.add_instrument(instrument)
 
+        self._build_data_clients(run_config_id)
+
         return engine
+
+    def _build_data_clients(self, run_config_id: str):
+        engine = self._engines[run_config_id]
+        config = self._configs[run_config_id]
+
+        if config.data_clients:
+            builder = self._builders.get(run_config_id)
+
+            if not builder:
+                return
+
+            for name, factory in self._data_client_factories.items():
+                builder.add_data_client_factory(name, factory)
+
+            builder.build_data_clients(config.data_clients)
+            engine.set_default_market_data_client()
 
     def run(self) -> list[BacktestResult]:
         """
@@ -300,7 +445,7 @@ class BacktestNode:
         self.build()
         results: list[BacktestResult] = []
 
-        for config in self._configs:
+        for config in self._configs.values():
             try:
                 result = self._run(
                     run_config_id=config.id,
@@ -528,7 +673,7 @@ class BacktestNode:
                 sort=True,  # Already sorted from backend
             )
 
-    def log_backtest_exception(self, e: Exception, config: BacktestRunConfig):
+    def log_backtest_exception(self, e: Exception, config: BacktestRunConfig) -> None:
         # Broad catch all prevents a single backtest run from halting
         # the execution of the other backtests (such as a zero balance exception).
         if not is_logging_initialized():
