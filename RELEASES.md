@@ -39,6 +39,7 @@ Released on TBD (UTC).
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
+- Fixed RSI indicator bug
 
 ### Documentation Updates
 None
