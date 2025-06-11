@@ -99,6 +99,7 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
             ws_connection_delay_secs=5,
             compute_effective_deltas=True,
+            # signature_type=2,
         ),
     },
     exec_clients={
@@ -109,7 +110,8 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
-            log_raw_ws_messages=True,
+            # log_raw_ws_messages=True,
+            # signature_type=2,
         ),
     },
     timeout_connection=60.0,

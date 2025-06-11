@@ -119,7 +119,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             generate_order_history_from_trades=False,
-            log_raw_ws_messages=False,
+            # log_raw_ws_messages=True,
             # signature_type=2,
         ),
     },

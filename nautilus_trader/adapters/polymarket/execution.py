@@ -948,7 +948,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             if self._config.log_raw_ws_messages:
-                self._log.debug(
+                self._log.info(
                     str(json.dumps(msgspec.json.decode(raw), indent=4)),
                     color=LogColor.MAGENTA,
                 )
