@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
 
 ### Fixes
+- Fixed `AccountBalance` mutation in `AccountState` events (#2701), thanks for reporting @DeirhX
 - Fixed order book cache consistency in update and remove operations (found through property-based testing)
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
 - Fixed data request identifier attribute access for `LiveDataClient`
