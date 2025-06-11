@@ -2112,8 +2112,8 @@ class TestTimeBarAggregator:
                     instrument_id=AUDUSD_SIM.id,
                     price=Price.from_str("1.00005"),
                     size=Quantity.from_int(2),
-                    ts_event=expected1.value - 1,
-                    ts_init=expected1.value - 1,
+                    ts_event=expected1.value - 1000,
+                    ts_init=expected1.value - 1000,
                     aggressor_side=AggressorSide.BUYER,
                     trade_id=TradeId("123457"),
                 )
@@ -2132,8 +2132,8 @@ class TestTimeBarAggregator:
                     instrument_id=AUDUSD_SIM.id,
                     price=Price.from_str("0.99999"),
                     size=Quantity.from_int(1),
-                    ts_event=expected2.value - 1,
-                    ts_init=expected2.value - 1,
+                    ts_event=expected2.value - 1000,
+                    ts_init=expected2.value - 1000,
                     aggressor_side=AggressorSide.SELLER,
                     trade_id=TradeId("123459"),
                 )
