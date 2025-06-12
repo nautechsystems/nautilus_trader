@@ -46,6 +46,7 @@ uuid = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 iai = { workspace = true }
+proptest = { workspace = true }
 rstest = { workspace = true }
 
 [build-dependencies]

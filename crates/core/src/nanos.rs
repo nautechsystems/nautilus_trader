@@ -873,4 +873,225 @@ mod tests {
         let nanos = UnixNanos::from(u64::MAX);
         let _ = nanos.as_i64(); // Should panic
     }
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Property-based testing
+    ////////////////////////////////////////////////////////////////////////////////
+
+    use proptest::prelude::*;
+
+    fn unix_nanos_strategy() -> impl Strategy<Value = UnixNanos> {
+        prop_oneof![
+            // Small values
+            0u64..1_000_000u64,
+            // Medium values (microseconds range)
+            1_000_000u64..1_000_000_000_000u64,
+            // Large values (nanoseconds since 1970, but safe for arithmetic)
+            1_000_000_000_000u64..=i64::MAX as u64,
+            // Edge cases
+            Just(0u64),
+            Just(1u64),
+            Just(1_000_000_000u64),             // 1 second in nanos
+            Just(1_000_000_000_000u64),         // ~2001 timestamp
+            Just(1_700_000_000_000_000_000u64), // ~2023 timestamp
+            Just((i64::MAX / 2) as u64),        // Safe for doubling
+        ]
+        .prop_map(UnixNanos::from)
+    }
+
+    fn unix_nanos_pair_strategy() -> impl Strategy<Value = (UnixNanos, UnixNanos)> {
+        (unix_nanos_strategy(), unix_nanos_strategy())
+    }
+
+    proptest! {
+        #[test]
+        fn prop_unix_nanos_construction_roundtrip(value in 0u64..=i64::MAX as u64) {
+            let nanos = UnixNanos::from(value);
+            prop_assert_eq!(nanos.as_u64(), value);
+            prop_assert_eq!(nanos.as_f64(), value as f64);
+
+            // Test i64 conversion only for values within i64 range
+            if i64::try_from(value).is_ok() {
+                prop_assert_eq!(nanos.as_i64(), value as i64);
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_addition_commutative(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // Addition should be commutative when no overflow occurs
+            if let (Some(sum1), Some(sum2)) = (
+                nanos1.checked_add(nanos2.as_u64()),
+                nanos2.checked_add(nanos1.as_u64())
+            ) {
+                prop_assert_eq!(sum1, sum2, "Addition should be commutative");
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_addition_associative(
+            nanos1 in unix_nanos_strategy(),
+            nanos2 in unix_nanos_strategy(),
+            nanos3 in unix_nanos_strategy(),
+        ) {
+            // Addition should be associative when no overflow occurs
+            if let (Some(sum1), Some(sum2)) = (
+                nanos1.as_u64().checked_add(nanos2.as_u64()),
+                nanos2.as_u64().checked_add(nanos3.as_u64())
+            ) {
+                if let (Some(left), Some(right)) = (
+                    sum1.checked_add(nanos3.as_u64()),
+                    nanos1.as_u64().checked_add(sum2)
+                ) {
+                    let left_result = UnixNanos::from(left);
+                    let right_result = UnixNanos::from(right);
+                    prop_assert_eq!(left_result, right_result, "Addition should be associative");
+                }
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_subtraction_inverse(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // Subtraction should be the inverse of addition when no underflow occurs
+            if let Some(sum) = nanos1.checked_add(nanos2.as_u64()) {
+                let diff = sum - nanos2;
+                prop_assert_eq!(diff, nanos1, "Subtraction should be inverse of addition");
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_zero_identity(nanos in unix_nanos_strategy()) {
+            // Zero should be additive identity
+            let zero = UnixNanos::default();
+            prop_assert_eq!(nanos + zero, nanos, "Zero should be additive identity");
+            prop_assert_eq!(zero + nanos, nanos, "Zero should be additive identity (commutative)");
+            prop_assert!(zero.is_zero(), "Zero should be recognized as zero");
+        }
+
+        #[test]
+        fn prop_unix_nanos_ordering_consistency(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // Ordering operations should be consistent
+            let eq = nanos1 == nanos2;
+            let lt = nanos1 < nanos2;
+            let gt = nanos1 > nanos2;
+            let le = nanos1 <= nanos2;
+            let ge = nanos1 >= nanos2;
+
+            // Exactly one of eq, lt, gt should be true
+            let exclusive_count = [eq, lt, gt].iter().filter(|&&x| x).count();
+            prop_assert_eq!(exclusive_count, 1, "Exactly one of ==, <, > should be true");
+
+            // Consistency checks
+            prop_assert_eq!(le, eq || lt, "<= should equal == || <");
+            prop_assert_eq!(ge, eq || gt, ">= should equal == || >");
+            prop_assert_eq!(lt, nanos2 > nanos1, "< should be symmetric with >");
+            prop_assert_eq!(le, nanos2 >= nanos1, "<= should be symmetric with >=");
+        }
+
+        #[test]
+        fn prop_unix_nanos_string_roundtrip(nanos in unix_nanos_strategy()) {
+            // String serialization should round-trip correctly
+            let string_repr = nanos.to_string();
+            let parsed = UnixNanos::from_str(&string_repr);
+            prop_assert!(parsed.is_ok(), "String parsing should succeed for valid UnixNanos");
+            if let Ok(parsed_nanos) = parsed {
+                prop_assert_eq!(parsed_nanos, nanos, "String should round-trip exactly");
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_datetime_conversion(nanos in unix_nanos_strategy()) {
+            // DateTime conversion should be consistent (only test values within i64 range)
+            if i64::try_from(nanos.as_u64()).is_ok() {
+                let datetime = nanos.to_datetime_utc();
+                let converted_back = UnixNanos::from(datetime);
+                prop_assert_eq!(converted_back, nanos, "DateTime conversion should round-trip");
+
+                // RFC3339 string should also round-trip for valid dates
+                let rfc3339 = nanos.to_rfc3339();
+                if let Ok(parsed_from_rfc3339) = UnixNanos::from_str(&rfc3339) {
+                    prop_assert_eq!(parsed_from_rfc3339, nanos, "RFC3339 string should round-trip");
+                }
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_duration_since(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // duration_since should be consistent with comparison and arithmetic
+            let duration = nanos1.duration_since(&nanos2);
+
+            if nanos1 >= nanos2 {
+                // If nanos1 >= nanos2, duration should be Some and equal to difference
+                prop_assert!(duration.is_some(), "Duration should be Some when first >= second");
+                if let Some(dur) = duration {
+                    prop_assert_eq!(dur, nanos1.as_u64() - nanos2.as_u64(),
+                        "Duration should equal the difference");
+                    prop_assert_eq!(nanos2 + dur, nanos1.as_u64(),
+                        "second + duration should equal first");
+                }
+            } else {
+                // If nanos1 < nanos2, duration should be None
+                prop_assert!(duration.is_none(), "Duration should be None when first < second");
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_checked_arithmetic(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // Checked arithmetic should be consistent with regular arithmetic when no overflow/underflow
+            let checked_add = nanos1.checked_add(nanos2.as_u64());
+            let checked_sub = nanos1.checked_sub(nanos2.as_u64());
+
+            // If checked_add succeeds, regular addition should produce the same result
+            if let Some(sum) = checked_add {
+                if nanos1.as_u64().checked_add(nanos2.as_u64()).is_some() {
+                    prop_assert_eq!(sum, nanos1 + nanos2, "Checked add should match regular add when no overflow");
+                }
+            }
+
+            // If checked_sub succeeds, regular subtraction should produce the same result
+            if let Some(diff) = checked_sub {
+                if nanos1.as_u64() >= nanos2.as_u64() {
+                    prop_assert_eq!(diff, nanos1 - nanos2, "Checked sub should match regular sub when no underflow");
+                }
+            }
+        }
+
+        #[test]
+        fn prop_unix_nanos_saturating_arithmetic(
+            (nanos1, nanos2) in unix_nanos_pair_strategy()
+        ) {
+            // Saturating arithmetic should never panic and produce reasonable results
+            let sat_add = nanos1.saturating_add_ns(nanos2.as_u64());
+            let sat_sub = nanos1.saturating_sub_ns(nanos2.as_u64());
+
+            // Saturating add should be >= both operands
+            prop_assert!(sat_add >= nanos1, "Saturating add result should be >= first operand");
+            prop_assert!(sat_add.as_u64() >= nanos2.as_u64(), "Saturating add result should be >= second operand");
+
+            // Saturating sub should be <= first operand
+            prop_assert!(sat_sub <= nanos1, "Saturating sub result should be <= first operand");
+
+            // If no overflow/underflow would occur, saturating should match checked
+            if let Some(checked_sum) = nanos1.checked_add(nanos2.as_u64()) {
+                prop_assert_eq!(sat_add, checked_sum, "Saturating add should match checked add when no overflow");
+            } else {
+                prop_assert_eq!(sat_add, UnixNanos::from(u64::MAX), "Saturating add should be MAX on overflow");
+            }
+
+            if let Some(checked_diff) = nanos1.checked_sub(nanos2.as_u64()) {
+                prop_assert_eq!(sat_sub, checked_diff, "Saturating sub should match checked sub when no underflow");
+            } else {
+                prop_assert_eq!(sat_sub, UnixNanos::default(), "Saturating sub should be zero on underflow");
+            }
+        }
+    }
 }
