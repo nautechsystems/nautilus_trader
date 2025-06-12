@@ -133,7 +133,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
     def _connect_socket_safe(self) -> None:
         try:
             self._eclient.conn.connect()
-        except:
+        except Exception:
             raise ConnectionError("Failed to connect to TWS/Gateway.")
 
     async def _send_version_info(self) -> None:
