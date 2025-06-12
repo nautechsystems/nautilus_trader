@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! # Platform
+//! Test utilities and data management for [NautilusTrader](http://nautilustrader.io).
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! The *testkit* crate provides comprehensive testing utilities including test data management,
+//! file handling, and common testing patterns. This crate supports robust testing workflows
+//! across the entire NautilusTrader ecosystem with automated data downloads and validation:
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! - **Test data management**: Automated downloading and caching of test datasets.
+//! - **File utilities**: File integrity verification with SHA-256 checksums.
+//! - **Path resolution**: Platform-agnostic test data path management.
+//! - **Precision handling**: Support for both 64-bit and 128-bit precision test data.
+//! - **Common patterns**: Reusable test utilities and helper functions.
 //!
 //! # Feature flags
 //!
