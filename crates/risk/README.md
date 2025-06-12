@@ -5,6 +5,18 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-risk.svg)](https://crates.io/crates/nautilus-risk)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
+Risk engine for [NautilusTrader](http://nautilustrader.io).
+
+The `nautilus-risk` crate provides comprehensive risk management capabilities including pre-trade
+order validation, position sizing calculations, and trading controls. This system ensures
+trading operations remain within defined risk parameters and regulatory constraints:
+
+- **Risk engine**: Central risk management orchestration with configurable trading states.
+- **Order validation**: Pre-trade checks for price, quantity, notional limits, and market conditions.
+- **Position sizing**: Fixed-risk position sizing calculations with commission and exchange rate support.
+- **Trading controls**: Rate limiting, balance validation, and exposure management.
+- **Account protection**: Multi-currency balance checks and margin requirement validation.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
@@ -14,6 +26,15 @@ and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+
+## Feature flags
+
+This crate provides feature flags to control source code inclusion during compilation,
+depending on the intended use case, i.e. whether to provide Python bindings
+for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+or as part of a Rust only build.
+
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 ## Documentation
 
