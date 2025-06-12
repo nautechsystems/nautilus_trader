@@ -19,7 +19,6 @@ crate-type = ["rlib", "cdylib"]
 
 [features]
 default = ["live"]
-clock_v2 = ["nautilus-common/clock_v2"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
@@ -86,4 +85,4 @@ required-features = ["python"]
 [[bin]]
 name = "databento-node-test"
 path = "bin/node_test.rs"
-required-features = ["live", "clock_v2"]
+required-features = ["live"]

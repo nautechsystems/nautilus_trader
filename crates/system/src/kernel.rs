@@ -233,7 +233,7 @@ impl NautilusKernel {
                 Rc::new(RefCell::new(test_clock))
             }
             Environment::Live | Environment::Sandbox => {
-                let live_clock = LiveClock::new();
+                let live_clock = LiveClock::default();
                 Rc::new(RefCell::new(live_clock))
             }
         }

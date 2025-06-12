@@ -34,10 +34,12 @@ use nautilus_core::{
 use tokio::sync::Mutex;
 use ustr::Ustr;
 
-#[cfg(feature = "clock_v2")]
-use crate::runner::get_time_event_sender;
-use crate::timer::{
-    LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2, create_valid_interval,
+use crate::{
+    runner::{TimeEventSender, get_time_event_sender},
+    timer::{
+        LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2,
+        create_valid_interval,
+    },
 };
 
 /// Represents a type of clock.
@@ -146,7 +148,7 @@ pub struct TestClock {
     timers: BTreeMap<Ustr, TestTimer>,
     default_callback: Option<TimeEventCallback>,
     callbacks: HashMap<Ustr, TimeEventCallback>,
-    heap: BinaryHeap<TimeEvent>,
+    heap: BinaryHeap<TimeEvent>, // TODO: Deprecated - move to global time event heap
 }
 
 impl TestClock {
@@ -503,31 +505,21 @@ pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
     default_callback: Option<TimeEventCallback>,
-    pub heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
-    #[allow(dead_code)]
     callbacks: HashMap<Ustr, TimeEventCallback>,
-    #[cfg(feature = "clock_v2")]
-    time_event_sender: Option<std::sync::Arc<dyn crate::runner::TimeEventSender>>,
+    sender: Option<Arc<dyn TimeEventSender>>,
 }
 
 impl LiveClock {
     /// Creates a new [`LiveClock`] instance.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(sender: Option<Arc<dyn TimeEventSender>>) -> Self {
         Self {
             time: get_atomic_clock_realtime(),
             timers: HashMap::new(),
             default_callback: None,
-            heap: Arc::new(Mutex::new(BinaryHeap::new())),
             callbacks: HashMap::new(),
-            #[cfg(feature = "clock_v2")]
-            time_event_sender: std::panic::catch_unwind(crate::runner::get_time_event_sender).ok(),
+            sender,
         }
-    }
-
-    #[must_use]
-    pub fn get_event_stream(&self) -> TimeEventStream {
-        TimeEventStream::new(self.heap.clone())
     }
 
     #[must_use]
@@ -544,7 +536,7 @@ impl LiveClock {
 impl Default for LiveClock {
     /// Creates a new default [`LiveClock`] instance.
     fn default() -> Self {
-        Self::new()
+        Self::new(Some(get_time_event_sender()))
     }
 }
 
@@ -595,25 +587,18 @@ impl Clock for LiveClock {
     /// # Panics
     ///
     /// This function panics if:
-    /// - The `clock_v2` feature is not enabled.
     /// - The event does not have an associated handler (see trait documentation).
     #[allow(unused_variables)]
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
-        #[cfg(not(feature = "clock_v2"))]
-        panic!("Cannot get live clock handler without 'clock_v2' feature");
-
         // Get the callback from either the event-specific callbacks or default callback
-        #[cfg(feature = "clock_v2")]
-        {
-            let callback = self
-                .callbacks
-                .get(&event.name)
-                .cloned()
-                .or_else(|| self.default_callback.clone())
-                .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
+        let callback = self
+            .callbacks
+            .get(&event.name)
+            .cloned()
+            .or_else(|| self.default_callback.clone())
+            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
 
-            TimeEventHandlerV2::new(event, callback)
-        }
+        TimeEventHandlerV2::new(event, callback)
     }
 
     fn set_time_alert_ns(
@@ -634,14 +619,6 @@ impl Clock for LiveClock {
                 | self.default_callback.is_some(),
             "No callbacks provided",
         )?;
-
-        #[cfg(feature = "clock_v2")]
-        {
-            match callback.clone() {
-                Some(callback) => self.callbacks.insert(name, callback),
-                None => None,
-            };
-        }
 
         let callback = match callback {
             Some(callback) => callback,
@@ -679,7 +656,6 @@ impl Clock for LiveClock {
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
 
-        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             name,
             interval_ns,
@@ -687,18 +663,7 @@ impl Clock for LiveClock {
             Some(alert_time_ns),
             callback,
             false,
-        );
-
-        #[cfg(feature = "clock_v2")]
-        let mut timer = LiveTimer::new(
-            name,
-            interval_ns,
-            ts_now,
-            Some(alert_time_ns),
-            callback,
-            self.heap.clone(),
-            false,
-            Some(get_time_event_sender()),
+            self.sender.clone(),
         );
 
         timer.start();
@@ -735,10 +700,7 @@ impl Clock for LiveClock {
             None => self.default_callback.clone().unwrap(),
         };
 
-        #[cfg(feature = "clock_v2")]
-        {
-            self.callbacks.insert(name, callback.clone());
-        }
+        self.callbacks.insert(name, callback.clone());
 
         let mut start_time_ns = start_time_ns;
         let ts_now = self.get_time_ns();
@@ -766,7 +728,6 @@ impl Clock for LiveClock {
 
         let interval_ns = create_valid_interval(interval_ns);
 
-        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             name,
             interval_ns,
@@ -774,18 +735,7 @@ impl Clock for LiveClock {
             stop_time_ns,
             callback,
             fire_immediately,
-        );
-
-        #[cfg(feature = "clock_v2")]
-        let mut timer = LiveTimer::new(
-            name,
-            interval_ns,
-            start_time_ns,
-            stop_time_ns,
-            callback,
-            self.heap.clone(),
-            fire_immediately,
-            Some(get_time_event_sender()),
+            self.sender.clone(),
         );
         timer.start();
 
@@ -817,14 +767,8 @@ impl Clock for LiveClock {
     }
 
     fn reset(&mut self) {
-        self.timers = HashMap::new();
-        self.heap = Arc::new(Mutex::new(BinaryHeap::new()));
-        self.callbacks = HashMap::new();
-        #[cfg(feature = "clock_v2")]
-        {
-            self.time_event_sender =
-                std::panic::catch_unwind(crate::runner::get_time_event_sender).ok();
-        }
+        self.timers.clear();
+        self.callbacks.clear();
     }
 }
 
