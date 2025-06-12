@@ -23,10 +23,12 @@ Released on TBD (UTC).
 - Added property-based testing for `network` crate in Rust
 - Added property-based testing for `Price` and `Quantity` in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
+- Consolidated the clocks and timers v2 feature from @twitu
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid pointer comparison issues with `ustr` string interning
 - Refactored IB adapter (#2647), thanks @faysou
 - Refined signal serialization and tests (#2705), thanks @faysou
+- Refined CI/CD and build system (#2707), thanks @stastnypremysl
 - Upgraded Cython to v3.1.2
 - Upgraded `databento` crate to v0.27.0
 - Upgraded `datafusion` crate to v48.0.0

@@ -15,14 +15,6 @@
 
 //! Real-time and test timers for use with `Clock` implementations.
 
-#[rustfmt::skip]
-#[cfg(feature = "clock_v2")]
-use std::collections::BinaryHeap;
-
-#[rustfmt::skip]
-#[cfg(feature = "clock_v2")]
-use tokio::sync::Mutex;
-
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -48,7 +40,7 @@ use tokio::{
 };
 use ustr::Ustr;
 
-use crate::runtime::get_runtime;
+use crate::{runner::TimeEventSender, runtime::get_runtime};
 
 /// Creates a valid nanoseconds interval that is guaranteed to be positive.
 ///
@@ -398,10 +390,7 @@ pub struct LiveTimer {
     next_time_ns: Arc<AtomicU64>,
     callback: TimeEventCallback,
     task_handle: Option<JoinHandle<()>>,
-    #[cfg(feature = "clock_v2")]
-    heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
-    #[cfg(feature = "clock_v2")]
-    sender: Option<Arc<dyn crate::runner::TimeEventSender>>,
+    sender: Option<Arc<dyn TimeEventSender>>,
 }
 
 impl LiveTimer {
@@ -410,55 +399,16 @@ impl LiveTimer {
     /// # Panics
     ///
     /// Panics if `name` is not a valid string.
-    #[must_use]
-    #[cfg(not(feature = "clock_v2"))]
-    pub fn new(
-        name: Ustr,
-        interval_ns: NonZeroU64,
-        start_time_ns: UnixNanos,
-        stop_time_ns: Option<UnixNanos>,
-        callback: TimeEventCallback,
-        fire_immediately: bool,
-    ) -> Self {
-        check_valid_string(name, stringify!(name)).expect(FAILED);
-
-        let next_time_ns = if fire_immediately {
-            start_time_ns.as_u64()
-        } else {
-            start_time_ns.as_u64() + interval_ns.get()
-        };
-
-        log::debug!("Creating timer '{name}'");
-
-        Self {
-            name,
-            interval_ns,
-            start_time_ns,
-            stop_time_ns,
-            fire_immediately,
-            next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
-            callback,
-            task_handle: None,
-        }
-    }
-
-    /// Creates a new [`LiveTimer`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `name` is not a valid string.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    #[cfg(feature = "clock_v2")]
     pub fn new(
         name: Ustr,
         interval_ns: NonZeroU64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
-        heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
         fire_immediately: bool,
-        sender: Option<Arc<dyn crate::runner::TimeEventSender>>,
+        sender: Option<Arc<dyn TimeEventSender>>,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
 
@@ -478,7 +428,6 @@ impl LiveTimer {
             fire_immediately,
             next_time_ns: Arc::new(AtomicU64::new(next_time_ns)),
             callback,
-            heap,
             task_handle: None,
             sender,
         }
@@ -507,6 +456,10 @@ impl LiveTimer {
     ///
     /// Time events will begin triggering at the specified intervals.
     /// The generated events are handled by the provided callback function.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Rust-based callback system active and no time event sender has been set.
     #[allow(unused_variables)] // callback is used
     pub fn start(&mut self) {
         let event_name = self.name;
@@ -522,9 +475,7 @@ impl LiveTimer {
         let mut next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
         if next_time_ns <= now_ns {
             log::warn!(
-                "Timer '{}' alert time {} was in the past, adjusted to current time for immediate fire",
-                event_name,
-                next_time_ns,
+                "Timer '{event_name}' alert time {next_time_ns} was in the past, adjusted to current time for immediate fire"
             );
             next_time_ns = now_ns.into();
             self.next_time_ns
@@ -535,9 +486,6 @@ impl LiveTimer {
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
         let next_time_atomic = self.next_time_ns.clone();
 
-        #[cfg(feature = "clock_v2")]
-        let heap = self.heap.clone();
-        #[cfg(feature = "clock_v2")]
         let sender = self.sender.clone();
 
         let rt = get_runtime();
@@ -558,28 +506,20 @@ impl LiveTimer {
                 timer.tick().await;
                 let now_ns = clock.get_time_ns();
 
-                #[cfg(feature = "python")]
-                {
-                    match callback {
-                        TimeEventCallback::Python(ref callback) => {
-                            call_python_with_time_event(event_name, next_time_ns, now_ns, callback);
-                        }
-                        // Note: Clock v1 style path should not be called with Rust callback
-                        TimeEventCallback::Rust(_) => {}
+                let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+
+                match callback {
+                    #[cfg(feature = "python")]
+                    TimeEventCallback::Python(ref callback) => {
+                        call_python_with_time_event(event, callback);
                     }
-                }
-
-                #[cfg(feature = "clock_v2")]
-                {
-                    let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
-                    let handler = TimeEventHandlerV2::new(event, callback.clone());
-
-                    if let Some(ref sender) = sender {
-                        sender.send(handler);
-                    } else if let Some(sender) = crate::runner::try_get_time_event_sender() {
+                    TimeEventCallback::Rust(_) => {
+                        let sender = sender
+                            .as_ref()
+                            .expect("timer event sender was unset for Rust callback system");
+                        let handler = TimeEventHandlerV2::new(event, callback.clone());
                         sender.send(handler);
                     }
-                    // If no sender available, silently drop the event (e.g., in tests)
                 }
 
                 // Prepare next time interval
@@ -610,18 +550,12 @@ impl LiveTimer {
 }
 
 #[cfg(feature = "python")]
-fn call_python_with_time_event(
-    name: Ustr,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-    callback: &PyObject,
-) {
+fn call_python_with_time_event(event: TimeEvent, callback: &PyObject) {
     use nautilus_core::python::IntoPyObjectNautilusExt;
     use pyo3::types::PyCapsule;
 
     Python::with_gil(|py| {
         // Create new time event
-        let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
         let capsule: PyObject = PyCapsule::new(py, event, None)
             .expect("Error creating `PyCapsule`")
             .into_py_any_unwrap(py);
@@ -638,16 +572,10 @@ fn call_python_with_time_event(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "clock_v2")]
-    use std::collections::BinaryHeap;
-    #[cfg(feature = "clock_v2")]
-    use std::sync::Arc;
     use std::{num::NonZeroU64, rc::Rc};
 
     use nautilus_core::UnixNanos;
     use rstest::*;
-    #[cfg(feature = "clock_v2")]
-    use tokio::sync::Mutex;
     use ustr::Ustr;
 
     use super::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback};
@@ -800,24 +728,12 @@ mod tests {
 
     #[rstest]
     fn test_live_timer_fire_immediately_field() {
-        #[cfg(not(feature = "clock_v2"))]
         let timer = LiveTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1000).unwrap(),
             UnixNanos::from(100),
             None,
             TimeEventCallback::Rust(Rc::new(|_| {})),
-            true, // fire_immediately = true
-        );
-
-        #[cfg(feature = "clock_v2")]
-        let timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
-            NonZeroU64::new(1000).unwrap(),
-            UnixNanos::from(100),
-            None,
-            TimeEventCallback::Rust(Rc::new(|_| {})),
-            Arc::new(Mutex::new(BinaryHeap::new())),
             true, // fire_immediately = true
             None, // time_event_sender
         );
@@ -831,24 +747,12 @@ mod tests {
 
     #[rstest]
     fn test_live_timer_fire_immediately_false_field() {
-        #[cfg(not(feature = "clock_v2"))]
         let timer = LiveTimer::new(
             Ustr::from("TEST_TIMER"),
             NonZeroU64::new(1000).unwrap(),
             UnixNanos::from(100),
             None,
             TimeEventCallback::Rust(Rc::new(|_| {})),
-            false, // fire_immediately = false
-        );
-
-        #[cfg(feature = "clock_v2")]
-        let timer = LiveTimer::new(
-            Ustr::from("TEST_TIMER"),
-            NonZeroU64::new(1000).unwrap(),
-            UnixNanos::from(100),
-            None,
-            TimeEventCallback::Rust(Rc::new(|_| {})),
-            Arc::new(Mutex::new(BinaryHeap::new())),
             false, // fire_immediately = false
             None,  // time_event_sender
         );

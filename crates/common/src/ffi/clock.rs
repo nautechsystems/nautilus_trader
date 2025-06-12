@@ -305,7 +305,8 @@ impl DerefMut for LiveClock_API {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn live_clock_new() -> LiveClock_API {
-    LiveClock_API(Box::default())
+    // Initialize a live clock without a time event sender
+    LiveClock_API(Box::new(LiveClock::new(None)))
 }
 
 #[unsafe(no_mangle)]
