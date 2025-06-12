@@ -203,7 +203,7 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into token table: {e}"))
     }
 
-    /// Persists a token swap transaction event to the pool_swap table.
+    /// Persists a token swap transaction event to the `pool_swap` table.
     pub async fn add_swap(&self, chain_id: u32, swap: &Swap) -> anyhow::Result<()> {
         sqlx::query(
             r"
@@ -231,7 +231,7 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into pool_swap table: {e}"))
     }
 
-    /// Persists a liquidity position change (mint/burn) event to the pool_liquidity table.
+    /// Persists a liquidity position change (mint/burn) event to the `pool_liquidity` table.
     pub async fn add_pool_liquidity_update(
         &self,
         chain_id: u32,

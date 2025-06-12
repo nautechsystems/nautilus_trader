@@ -537,19 +537,19 @@ impl Component for Trader {
     }
 
     fn on_start(&mut self) -> anyhow::Result<()> {
-        Trader::on_start(self)
+        Self::on_start(self)
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        Trader::on_stop(self)
+        Self::on_stop(self)
     }
 
     fn on_reset(&mut self) -> anyhow::Result<()> {
-        Trader::on_reset(self)
+        Self::on_reset(self)
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
-        Trader::on_dispose(self)
+        Self::on_dispose(self)
     }
 }
 

@@ -44,7 +44,7 @@ impl BurnEvent {
     /// Creates a new [`BurnEvent`] instance with the specified parameters.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         block_number: u64,
         transaction_hash: String,
         transaction_index: u32,

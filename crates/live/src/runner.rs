@@ -26,14 +26,15 @@ use nautilus_common::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-/// Asynchronous implementation of DataCommandSender for live environments.
+/// Asynchronous implementation of `DataCommandSender` for live environments.
 #[derive(Debug)]
 pub struct AsyncDataCommandSender {
     cmd_tx: UnboundedSender<DataCommand>,
 }
 
 impl AsyncDataCommandSender {
-    pub fn new(cmd_tx: UnboundedSender<DataCommand>) -> Self {
+    #[must_use]
+    pub const fn new(cmd_tx: UnboundedSender<DataCommand>) -> Self {
         Self { cmd_tx }
     }
 }
@@ -46,21 +47,23 @@ impl DataCommandSender for AsyncDataCommandSender {
     }
 }
 
-/// Asynchronous implementation of TimeEventSender for live environments.
+/// Asynchronous implementation of `TimeEventSender` for live environments.
 #[derive(Debug, Clone)]
 pub struct AsyncTimeEventSender {
     time_tx: UnboundedSender<TimeEventHandlerV2>,
 }
 
 impl AsyncTimeEventSender {
-    pub fn new(time_tx: UnboundedSender<TimeEventHandlerV2>) -> Self {
+    #[must_use]
+    pub const fn new(time_tx: UnboundedSender<TimeEventHandlerV2>) -> Self {
         Self { time_tx }
     }
 
     /// Gets a clone of the underlying channel sender for async use.
     ///
     /// This allows async contexts to get a direct channel sender that
-    /// can be moved into async tasks without RefCell borrowing issues.
+    /// can be moved into async tasks without `RefCell` borrowing issues.
+    #[must_use]
     pub fn get_channel_sender(&self) -> UnboundedSender<TimeEventHandlerV2> {
         self.time_tx.clone()
     }
@@ -99,15 +102,16 @@ impl Debug for AsyncRunner {
 }
 
 impl AsyncRunner {
+    #[must_use]
     pub fn new() -> Self {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandlerV2>();
         let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
 
-        set_time_event_sender(Arc::new(AsyncTimeEventSender::new(time_tx.clone())));
-        set_data_event_sender(data_tx.clone());
-        set_data_cmd_sender(Arc::new(AsyncDataCommandSender::new(cmd_tx.clone())));
+        set_time_event_sender(Arc::new(AsyncTimeEventSender::new(time_tx)));
+        set_data_event_sender(data_tx);
+        set_data_cmd_sender(Arc::new(AsyncDataCommandSender::new(cmd_tx)));
 
         Self {
             data_rx,
@@ -162,7 +166,7 @@ impl AsyncRunner {
                         match event {
                             DataEvent::Data(data) => msgbus::send_any(data_engine_process, &data),
                             DataEvent::Response(resp) => {
-                                msgbus::send_any(data_engine_response, &resp)
+                                msgbus::send_any(data_engine_response, &resp);
                             }
                             DataEvent::DeFi(data) => {
                                 msgbus::send_any(data_engine_process, &data);
