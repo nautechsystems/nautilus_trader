@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Network functionality for NautilusTrader.
+//! Network functionality for [NautilusTrader](http://nautilustrader.io).
 //!
 //! The *network* crate provides networking components including HTTP, WebSocket, and raw TCP socket
 //! clients, rate limiting, backoff strategies, and socket TLS utilities for connecting to
