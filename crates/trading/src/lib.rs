@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! # Platform
+//! Trading strategy machinery and orchestration [NautilusTrader](http://nautilustrader.io).
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! The *trading* crate provides core trading orchestration capabilities including component
+//! lifecycle management, strategy coordination, and market session utilities. This crate serves
+//! as the central coordination layer between trading strategies, execution systems, and market data:
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! - **Trader orchestration**: Central coordination of trading components and lifecycle management.
+//! - **Component management**: Registration, state tracking, and control of actors and strategies.
+//! - **Forex sessions**: Market session time calculations and timezone handling.
+//! - **Strategy coordination**: Integration layer for algorithmic trading strategies.
+//! - **System integration**: Bridge between kernel and trading component subsystems.
 //!
 //! # Feature flags
 //!

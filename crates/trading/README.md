@@ -5,6 +5,18 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-trading.svg)](https://crates.io/crates/nautilus-trading)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
+Trading strategy machinery and orchestration for [NautilusTrader](http://nautilustrader.io).
+
+The *trading* crate provides core trading orchestration capabilities including component
+lifecycle management, strategy coordination, and market session utilities. This crate serves
+as the central coordination layer between trading strategies, execution systems, and market data:
+
+- **Trader orchestration**: Central coordination of trading components and lifecycle management.
+- **Component management**: Registration, state tracking, and control of actors and strategies.
+- **Strategy coordination**: Integration layer for algorithmic trading strategies.
+- **System integration**: Bridge between kernel and trading component subsystems.
+- **Forex sessions**: Market session time calculations and timezone handling.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
