@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added support for data download during backtest (#2652), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
 - Added missing serialization mappings for some instruments (#2702), thanks @faysou
@@ -27,12 +28,13 @@ Released on TBD (UTC).
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid pointer comparison issues with `ustr` string interning
 - Refactored IB adapter (#2647), thanks @faysou
+- Refactored data catalog (#2652), thanks @faysou
 - Refined signal serialization and tests (#2705), thanks @faysou
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
 - Upgraded Cython to v3.1.2
 - Upgraded `databento` crate to v0.27.0
 - Upgraded `datafusion` crate to v48.0.0
-- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.0
+- Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
 
 ### Fixes
 - Fixed `AccountBalance` mutation in `AccountState` events (#2701), thanks for reporting @DeirhX
