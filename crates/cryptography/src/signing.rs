@@ -21,6 +21,11 @@ use ring::{
     signature::{Ed25519KeyPair, RSA_PKCS1_SHA256, RsaKeyPair, Signature},
 };
 
+/// Generates an HMAC-SHA256 signature for the given data using the provided secret.
+///
+/// This function creates a cryptographic hash-based message authentication code (HMAC)
+/// using SHA-256 as the underlying hash function. The resulting signature is returned
+/// as a lowercase hexadecimal string.
 #[must_use]
 pub fn hmac_signature(secret: &str, data: &str) -> String {
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
