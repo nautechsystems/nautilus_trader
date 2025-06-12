@@ -62,6 +62,12 @@ use nautilus_model::{
 
 use crate::client::ExecutionClient;
 
+/// Central execution engine responsible for orchestrating order routing and execution.
+///
+/// The execution engine manages the entire order lifecycle from submission to completion,
+/// handling routing to appropriate execution clients, position management, and event
+/// processing. It supports multiple execution venues through registered clients and
+/// provides sophisticated order management capabilities.
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -83,6 +89,7 @@ impl Debug for ExecutionEngine {
 }
 
 impl ExecutionEngine {
+    /// Creates a new [`ExecutionEngine`] instance.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
@@ -103,31 +110,37 @@ impl ExecutionEngine {
     }
 
     #[must_use]
+    /// Returns the position ID count for the specified strategy.
     pub fn position_id_count(&self, strategy_id: StrategyId) -> usize {
         self.pos_id_generator.count(strategy_id)
     }
 
     #[must_use]
+    /// Checks the integrity of cached execution data.
     pub fn check_integrity(&self) -> bool {
         self.cache.borrow_mut().check_integrity()
     }
 
     #[must_use]
+    /// Returns true if all registered execution clients are connected.
     pub fn check_connected(&self) -> bool {
         self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
+    /// Returns true if all registered execution clients are disconnected.
     pub fn check_disconnected(&self) -> bool {
         self.clients.values().all(|c| !c.is_connected())
     }
 
     #[must_use]
+    /// Checks for residual positions and orders in the cache.
     pub fn check_residuals(&self) -> bool {
         self.cache.borrow().check_residuals()
     }
 
     #[must_use]
+    /// Returns the set of instruments that have external order claims.
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
         self.external_order_claims.keys().copied().collect()
     }
@@ -152,12 +165,14 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Registers a default execution client for fallback routing.
     pub fn register_default_client(&mut self, client: Rc<dyn ExecutionClient>) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
 
     #[must_use]
+    /// Returns the execution client registered with the given ID.
     pub fn get_client(&self, client_id: &ClientId) -> Option<Rc<dyn ExecutionClient>> {
         self.clients.get(client_id).cloned()
     }
@@ -244,14 +259,17 @@ impl ExecutionEngine {
         Ok(())
     }
 
+    /// Flushes the database to persist all cached data.
     pub fn flush_db(&self) {
         self.cache.borrow_mut().flush_db();
     }
 
+    /// Processes an order event, updating internal state and routing as needed.
     pub fn process(&mut self, event: &OrderEventAny) {
         self.handle_event(event);
     }
 
+    /// Executes a trading command by routing it to the appropriate execution client.
     pub fn execute(&self, command: &TradingCommand) {
         self.execute_command(command);
     }
