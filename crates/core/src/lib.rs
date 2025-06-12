@@ -19,13 +19,13 @@
 //! wherever possible. It supplies the essential building blocks used across the NautilusTrader
 //! ecosystem, including:
 //!
-//! - Time handling and atomic clock functionality
-//! - UUID generation and management
-//! - Mathematical functions and interpolation utilities
-//! - Correctness validation functions
-//! - Serialization traits and helpers
-//! - Cross-platform environment utilities
-//! - Abstractions over common collections
+//! - Time handling and atomic clock functionality.
+//! - UUID generation and management.
+//! - Mathematical functions and interpolation utilities.
+//! - Correctness validation functions.
+//! - Serialization traits and helpers.
+//! - Cross-platform environment utilities.
+//! - Abstractions over common collections.
 //!
 //! # Platform
 //!
