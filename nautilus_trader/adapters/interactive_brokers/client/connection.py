@@ -66,14 +66,16 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
                 f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
                 f"with client id: {self._client_id}.",
             )
+        except ConnectionError:
+            self._log.info("Connection failed.")
+        except asyncio.TimeoutError:
+            self._log.info("Connection timeout.")
         except asyncio.CancelledError:
             self._log.info("Connection cancelled.")
-            await self._disconnect()
         except Exception as e:
             self._log.exception("Connection failed", e)
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
-            await self._handle_reconnect()
 
     async def _disconnect(self) -> None:
         """
@@ -122,7 +124,13 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
         self._log.info(
             f"Connecting to {self._host}:{self._port} with client id: {self._client_id}",
         )
-        await asyncio.to_thread(self._eclient.conn.connect)
+        await asyncio.to_thread(self._connect_socket_safe)
+
+    def _connect_socket_safe(self) -> None:
+        try:
+            self._eclient.conn.connect()
+        except:
+            raise ConnectionError("Failed to connect to TWS/Gateway.")
 
     async def _send_version_info(self) -> None:
         """
