@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Backtesting engine and infrastructure for [NautilusTrader](http://nautilustrader.io).
+//! Backtest engine for [NautilusTrader](http://nautilustrader.io).
 //!
 //! The *backtest* crate provides a comprehensive event-driven backtesting framework that allows
 //! quantitative traders to test and validate trading strategies on historical data with high
