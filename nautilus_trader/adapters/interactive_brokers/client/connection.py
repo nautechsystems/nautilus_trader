@@ -68,8 +68,12 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
         except ConnectionError:
             self._log.info("Connection failed.")
+            if self._eclient.wrapper:
+                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
         except asyncio.TimeoutError:
             self._log.info("Connection timeout.")
+            if self._eclient.wrapper:
+                self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
         except asyncio.CancelledError:
             self._log.info("Connection cancelled.")
         except Exception as e:
