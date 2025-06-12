@@ -201,11 +201,11 @@ class InteractiveBrokersClient(
                 self._start_connection_watchdog()
 
                 self._is_client_ready.set()
-                self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
+                self._log.debug("`_is_client_ready` set by `_start_async`", LogColor.BLUE)
                 self._connection_attempts = 0
 
             except TimeoutError:
-                self._log.error("Client failed to initialize. Connection timeout.")
+                self._log.error("Client failed to initialize; connection timeout")
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
@@ -261,7 +261,7 @@ class InteractiveBrokersClient(
 
         if self._is_client_ready.is_set():
             self._is_client_ready.clear()
-            self._log.debug("`_is_client_ready` unset by `_stop_async`.", LogColor.BLUE)
+            self._log.debug("`_is_client_ready` unset by `_stop_async`", LogColor.BLUE)
 
         # Cancel tasks
         tasks = [
@@ -351,7 +351,7 @@ class InteractiveBrokersClient(
             if not self._is_client_ready.is_set():
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
         except TimeoutError as e:
-            self._log.error(f"Client is not ready. {e}")
+            self._log.error(f"Client is not ready: {e}")
 
     async def _run_connection_watchdog(self) -> None:
         """
@@ -367,9 +367,7 @@ class InteractiveBrokersClient(
                 await asyncio.sleep(1)
 
                 if not self._is_ib_connected.is_set() or not self._eclient.isConnected():
-                    self._log.error(
-                        "Connection watchdog detects connection lost.",
-                    )
+                    self._log.error("Connection watchdog detects connection lost")
                     await self._handle_disconnection()
         except asyncio.CancelledError:
             self._log.debug("Client connection watchdog task was canceled.")
@@ -382,7 +380,7 @@ class InteractiveBrokersClient(
             self._degrade()
 
         if self._is_ib_connected.is_set():
-            self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`.", LogColor.BLUE)
+            self._log.debug("`_is_ib_connected` unset by `_handle_disconnection`", LogColor.BLUE)
             self._is_ib_connected.clear()
 
         await asyncio.sleep(5)
@@ -521,7 +519,7 @@ class InteractiveBrokersClient(
 
             return default_value
         except ConnectionError as e:
-            self._log.error(f"Connection error during {request}. Ending request.")
+            self._log.error(f"Connection error during {request}; ending request")
             self._end_request(request.req_id, success=False, exception=e)
 
             return default_value
@@ -563,7 +561,7 @@ class InteractiveBrokersClient(
         Continuously read messages from TWS/Gateway and then put them in the internal
         message queue for processing.
         """
-        self._log.debug("Client TWS incoming message reader started.")
+        self._log.debug("Client TWS incoming message reader started")
         buf = b""
 
         try:
@@ -579,29 +577,28 @@ class InteractiveBrokersClient(
                         # Place msg in the internal queue for processing
                         self._loop.call_soon_threadsafe(self._internal_msg_queue.put_nowait, msg)
                     else:
-                        self._log.debug("More incoming packets are needed.")
+                        self._log.debug("More incoming packets are needed")
                         break
         except asyncio.CancelledError:
-            self._log.debug("Client TWS incoming message reader was cancelled.")
+            self._log.debug("Client TWS incoming message reader was cancelled")
         except Exception as e:
             self._log.exception("Unhandled exception in Client TWS incoming message reader", e)
         finally:
             if self._is_ib_connected.is_set() and not self.is_disposed:
                 self._log.debug(
-                    "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`.",
+                    "`_is_ib_connected` unset by `_run_tws_incoming_msg_reader`",
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
 
-            self._log.debug("Client TWS incoming message reader stopped.")
+            self._log.debug("Client TWS incoming message reader stopped")
 
     async def _run_internal_msg_queue_processor(self) -> None:
         """
         Continuously process messages from the internal incoming message queue.
         """
-        self._log.debug(
-            "Client internal message queue processor started.",
-        )
+        self._log.debug("Client internal message queue processor started")
+
         try:
             while (
                 self._eclient.conn and self._eclient.conn.isConnected()
@@ -622,7 +619,7 @@ class InteractiveBrokersClient(
                 )
             )
         finally:
-            self._log.debug("Internal message queue processor stopped.")
+            self._log.debug("Internal message queue processor stopped")
 
     async def _process_message(self, msg: str) -> bool:
         """
@@ -687,7 +684,7 @@ class InteractiveBrokersClient(
                 )
             )
         finally:
-            self._log.debug("Handler task processor stopped.")
+            self._log.debug("Handler task processor stopped")
 
     def submit_to_msg_handler_queue(self, task: Callable[..., Any]) -> None:
         """
