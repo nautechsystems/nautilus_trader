@@ -39,6 +39,12 @@ use nautilus_data::client::DataClient;
 use nautilus_model::identifiers::{ClientId, Venue};
 
 #[derive(Debug)]
+/// Data client implementation for backtesting market data operations.
+///
+/// The `BacktestDataClient` provides a data client interface specifically designed
+/// for backtesting environments. It handles market data subscriptions and requests
+/// during backtesting, coordinating with the backtesting engine to provide
+/// historical data replay functionality.
 pub struct BacktestDataClient {
     pub client_id: ClientId,
     pub venue: Venue,
