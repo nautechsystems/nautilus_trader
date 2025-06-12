@@ -5,9 +5,22 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-live.svg)](https://crates.io/crates/nautilus-live)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
-providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
+Live system node for [NautilusTrader](http://nautilustrader.io).
+
+The *live* crate provides high-level abstractions and infrastructure for running live trading
+systems, including data streaming, execution management, and system lifecycle handling.
+It builds on top of the system kernel to provide simplified interfaces for live deployment:
+
+- `LiveNode` High-level abstraction for live system nodes.
+- `LiveNodeConfig` Configuration for live node deployment.
+- `AsyncRunner` for managing system real-time data flow.
+
+## Platform
+
+[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+algorithmic trading platform, providing quantitative traders with the ability to backtest
+portfolios of automated trading strategies on historical data with an event-driven engine,
+and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.

@@ -13,23 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! System-level components and orchestration for NautilusTrader.
+//! System-level components and orchestration for [NautilusTrader](http://nautilustrader.io).
 //!
-//! This crate provides the core system architecture for orchestrating trading systems,
+//! The *system* crate provides the core system architecture for orchestrating trading systems,
 //! including the kernel that manages all engines, configuration management,
-//! and system-level factories for creating components.
+//! and system-level factories for creating components:
 //!
-//! The main components include:
-//! - [`NautilusKernel`] - Core system orchestrator managing engines and components.
-//! - [`NautilusKernelConfig`] - Configuration for kernel initialization.
+//! - `NautilusKernel` - Core system orchestrator managing engines and components.
+//! - `NautilusKernelConfig` - Configuration for kernel initialization.
 //! - System builders and factories for component creation.
 //!
-//! [`NautilusKernel`]: kernel::NautilusKernel
+//! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
