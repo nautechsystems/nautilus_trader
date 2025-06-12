@@ -76,8 +76,8 @@ if IS_LINUX:
     os.environ["LDSHARED"] = "clang -shared"
 
 if IS_MACOS and IS_ARM64:
-    os.environ["CFLAGS"] = "-arch arm64"
-    os.environ["LDFLAGS"] = "-arch arm64 -w"
+    os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -arch arm64"
+    os.environ["LDFLAGS"] = f"{os.environ.get('LDFLAGS', '')} -arch arm64 -w"
 
 if IS_LINUX and IS_ARM64:
     os.environ["CFLAGS"] = f"{os.environ.get('CFLAGS', '')} -fPIC"
