@@ -13,6 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Backtesting engine and infrastructure for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *backtest* crate provides a comprehensive event-driven backtesting framework that allows
+//! quantitative traders to test and validate trading strategies on historical data with high
+//! fidelity market simulation. The system replicates real market conditions including:
+//!
+//! - Event-driven backtesting engine with simulated exchanges.
+//! - Market data replay with configurable latency and fill models.
+//! - Order matching engines with realistic execution simulation.
+//! - Multi-venue and multi-asset backtesting capabilities.
+//! - Comprehensive configuration and state management.
+//! - Integration with live trading systems for seamless deployment.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
