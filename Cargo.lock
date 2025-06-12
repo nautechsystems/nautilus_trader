@@ -4459,6 +4459,7 @@ dependencies = [
  "heck",
  "iai",
  "indexmap 2.9.0",
+ "proptest",
  "pyo3",
  "rand 0.9.1",
  "rmp-serde",

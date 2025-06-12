@@ -19,14 +19,15 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
+- Added property-based testing for `Price`, `Quantity`, `Money` value types in Rust
+- Added property-based testing for `UnixNanos` in Rust
 - Added property-based testing for `OrderBook` in Rust
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
-- Added property-based testing for `Price`, `Quantity`, `Money` value types in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
 - Consolidated the clocks and timers v2 feature from @twitu
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
-- Improved `Currency` equality to use `strcmp` to avoid pointer comparison issues with `ustr` string interning
+- Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652), thanks @faysou
 - Refined signal serialization and tests (#2705), thanks @faysou
