@@ -142,6 +142,13 @@ cargo-test: check-nextest
 cargo-test:
 	cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
 
+.PHONY: cargo-test-lib
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
+cargo-test-lib: check-nextest
+cargo-test-lib:
+	cargo nextest run --lib --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
