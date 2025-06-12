@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! SQL database model definitions and schemas.
+
 pub mod accounts;
 pub mod data;
 pub mod enums;
