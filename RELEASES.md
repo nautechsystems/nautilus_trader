@@ -22,7 +22,7 @@ Released on TBD (UTC).
 - Added property-based testing for `OrderBook` in Rust
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
-- Added property-based testing for `Price` and `Quantity` in Rust
+- Added property-based testing for `Price`, `Quantity`, `Money` value types in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
 - Consolidated the clocks and timers v2 feature from @twitu
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
