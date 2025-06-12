@@ -1,3 +1,4 @@
+// -------------------------------------------------------------------------------------------------
 //  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
@@ -10,6 +11,7 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
+// -------------------------------------------------------------------------------------------------
 
 use arraydeque::{ArrayDeque, Wrapping};
 use std::fmt::{Debug, Display};
@@ -75,6 +77,12 @@ impl Indicator for CommodityChannelIndex {
 }
 
 impl CommodityChannelIndex {
+    /// Creates a new [`CommodityChannelIndex`] instance.
+    ///
+    /// # Panics
+    ///
+    /// * If `period` is less than or equal to 0.
+    /// * If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
         assert!(period > 0, "CommodityChannelIndex: period must be > 0");
