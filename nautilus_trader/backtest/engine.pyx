@@ -88,7 +88,9 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport SubscribeData
+from nautilus_trader.data.messages cimport SubscribeInstruments
 from nautilus_trader.data.messages cimport UnsubscribeData
+from nautilus_trader.data.messages cimport UnsubscribeInstruments
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport CustomData
@@ -740,13 +742,16 @@ cdef class BacktestEngine:
                 self._backtest_subscription_names.add(f"{data_point.bar_type}")
             elif data_type in (QuoteTick, TradeTick):
                 self._backtest_subscription_names.add(f"{data_type.__name__}.{data_point.instrument_id}")
+            elif data_type is CustomData:
+                self._backtest_subscription_names.add(f"{type(data_point.data).__name__}.{getattr(data_point.data, 'instrument_id', None)}")
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
     cpdef void _handle_data_command(self, DataCommand command):
-        if command.data_type.type not in [Bar, QuoteTick, TradeTick]:
+        if not(command.data_type.type in [Bar, QuoteTick, TradeTick]
+               or type(command) not in [SubscribeData, UnsubscribeData, SubscribeInstruments, UnsubscribeInstruments]):
             return
 
         if isinstance(command, SubscribeData):
@@ -769,8 +774,7 @@ cdef class BacktestEngine:
         if subscription_name in self._data_requests or subscription_name in self._backtest_subscription_names:
             return
 
-        self._log.debug(f"_handle_subscribe {duration_seconds=}")
-        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
+        self._log.debug(f"Subscribing to {subscription_name} from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_seconds=}")
         self._data_requests[subscription_name] = request
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=request)
 
@@ -784,12 +788,19 @@ cdef class BacktestEngine:
             return
 
         self._log.debug(f"Received subscribe {subscription_name} data from {unix_nanos_to_dt(data[0].ts_init)} to {unix_nanos_to_dt(data[-1].ts_init)}")
-
         cdef bint append_data = response.params.get("append_data", True)
         self._data_iterator.add_data(subscription_name, data, append_data)
 
     cpdef void _handle_unsubscribe(self, UnsubscribeData command):
-        cdef str subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}" if command.data_type.type != Bar else f"{command.bar_type}"
+        cdef str subscription_name = ""
+
+        if command.data_type.type is Bar:
+            subscription_name = f"{command.bar_type}"
+        elif type(command) is UnsubscribeInstruments:
+            subscription_name = "subscribe_instruments"
+        else:
+            subscription_name = f"{command.data_type.type.__name__}.{command.instrument_id}"
+
         self._log.debug(f"Unsubscribing {subscription_name}")
         self._data_iterator.remove_data(subscription_name)
         self._data_requests.pop(subscription_name, None)
@@ -807,8 +818,8 @@ cdef class BacktestEngine:
         cdef object duration_seconds = request.params.get("duration_seconds")
         cdef uint64_t end_time = min(start_time + duration_seconds * 1e9, self._end_ns) if duration_seconds else self._end_ns
 
-        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}")
-        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time))
+        self._log.debug(f"Renewing {request.data_type.type.__name__} data from {unix_nanos_to_dt(start_time)} to {unix_nanos_to_dt(end_time)}, {duration_seconds=}")
+        cdef RequestData new_request = request.with_dates(unix_nanos_to_dt(start_time), unix_nanos_to_dt(end_time), last_ts_init)
         self._kernel._msgbus.request(endpoint="DataEngine.request", request=new_request)
 
     def dump_pickled_data(self) -> bytes:
@@ -1657,6 +1668,16 @@ cdef class BacktestEngine:
                 clock=self._kernel.clock,
             )
             self._kernel.data_engine.register_client(client)
+
+    def set_default_market_data_client(self) -> None:
+        cdef ClientId client_id = ClientId("backtest_default_client")
+        client = BacktestMarketDataClient(
+            client_id=client_id,
+            msgbus=self._kernel.msgbus,
+            cache=self._kernel.cache,
+            clock=self._kernel.clock,
+        )
+        self._kernel.data_engine.register_client(client)
 
 
 cdef class BacktestDataIterator:

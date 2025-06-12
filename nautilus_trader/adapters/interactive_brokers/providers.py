@@ -197,7 +197,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
-        force_reload: bool = False,
+        force_instrument_update: bool = False,
     ) -> None:
         # Parse and load Instrument IDs
         if self._load_ids_on_start:
@@ -207,7 +207,10 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             ]
 
             for instrument_id in typed_instrument_ids:
-                await self.load_async(instrument_id, force_reload=force_reload)
+                await self.load_async(
+                    instrument_id,
+                    force_instrument_update=force_instrument_update,
+                )
 
         # Load IBContracts
         if self._load_contracts_on_start:
@@ -215,16 +218,16 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 (IBContract(**c) if isinstance(c, dict) else c)
                 for c in self._load_contracts_on_start
             ]:
-                await self.load_async(contract, force_reload=force_reload)
+                await self.load_async(contract, force_instrument_update=force_instrument_update)
 
         for instrument_id in instrument_ids:
-            await self.load_async(instrument_id, force_reload=force_reload)
+            await self.load_async(instrument_id, force_instrument_update=force_instrument_update)
 
     async def load_async(
         self,
         instrument_id: InstrumentId | IBContract,
         filters: dict | None = None,
-        force_reload: bool = False,
+        force_instrument_update: bool = False,
     ) -> None:
         """
         Search and load the instrument for the given IBContract. It is important that
@@ -236,7 +239,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             InteractiveBroker's Contract.
         filters : dict, optional
             Not applicable in this case.
-        force_reload : bool, optional
+        force_instrument_update : bool, optional
             Whether to reload instrument from IB if it's already cached.
 
         """
@@ -245,7 +248,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         if isinstance(instrument_id, InstrumentId):
             venue = instrument_id.venue.value
 
-            if await self.fetch_instrument_id(instrument_id, force_reload):
+            if await self.fetch_instrument_id(instrument_id, force_instrument_update):
                 return
         elif isinstance(instrument_id, IBContract):
             contract = instrument_id
@@ -257,7 +260,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             return
 
         if contract_details:
-            self._process_contract_details(contract_details, venue, force_reload)
+            self._process_contract_details(contract_details, venue, force_instrument_update)
         else:
             self._log.error(
                 f"Unable to resolve contract details for {instrument_id!r}. "
@@ -268,7 +271,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
     async def fetch_instrument_id(
         self,
         instrument_id: InstrumentId,
-        force_reload: bool = False,
+        force_instrument_update: bool = False,
     ) -> bool:
         if instrument_id in self.contract:
             return True
@@ -276,7 +279,9 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         venue = instrument_id.venue.value
 
         # We try to quickly build the contract details if they are already present in an instrument
-        if (instrument := self._client._cache.instrument(instrument_id)) and not force_reload:
+        if (
+            instrument := self._client._cache.instrument(instrument_id)
+        ) and not force_instrument_update:
             if instrument.info and instrument.info.get("contract"):
                 converted_contract_details = dict_to_contract_details(instrument.info)
                 self._process_contract_details([converted_contract_details], venue)
@@ -297,7 +302,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                 contract_details: list = await self.get_contract_details(contract)
 
                 if contract_details:
-                    self._process_contract_details(contract_details, venue, force_reload)
+                    self._process_contract_details(contract_details, venue, force_instrument_update)
                     return True
         except ValueError as e:
             self._log.error(str(e))
@@ -308,7 +313,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         contract_details: list[ContractDetails],
         venue: str,
-        force_reload: bool = False,
+        force_instrument_update: bool = False,
     ) -> None:
         for details in copy.deepcopy(contract_details):
             details.contract = IBContract(**details.contract.__dict__)
@@ -335,7 +340,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
             self.add(instrument)
 
-            if not self._client._cache.instrument(instrument.id) or force_reload:
+            if not self._client._cache.instrument(instrument.id) or force_instrument_update:
                 self._client._cache.add_instrument(instrument)
 
             self.contract[instrument.id] = details.contract
