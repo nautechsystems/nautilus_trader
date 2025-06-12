@@ -13,6 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Technical analysis indicators for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *indicators* crate provides a comprehensive collection of technical analysis indicators
+//! for quantitative trading and market research. This includes a wide variety of indicators
+//! organized by category, with a unified trait-based architecture for consistent usage:
+//!
+//! - **Moving averages**: SMA, EMA, DEMA, HMA, WMA, VWAP, adaptive averages, and linear regression.
+//! - **Momentum indicators**: RSI, MACD, Aroon, Bollinger Bands, CCI, Stochastics, and rate of change.
+//! - **Volatility indicators**: ATR, Donchian Channels, Keltner Channels, and volatility ratios.
+//! - **Ratio analysis**: Efficiency ratios and spread analysis for relative performance.
+//! - **Order book indicators**: Book imbalance ratio for analyzing market microstructure.
+//! - **Common indicator trait**: Unified interface supporting bars, quotes, trades, and order book data.
+//!
+//! All indicators are designed for high-performance real-time processing with bounded memory
+//! usage and efficient circular buffer implementations. The crate supports both Rust-native
+//! usage and Python integration for strategy development and backtesting.
+//!
 //! # Platform
 //!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
