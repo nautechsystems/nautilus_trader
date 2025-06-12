@@ -13,12 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Debug, Display};
+
 use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
-use std::fmt::{Debug, Display};
 
 use crate::indicator::Indicator;
 

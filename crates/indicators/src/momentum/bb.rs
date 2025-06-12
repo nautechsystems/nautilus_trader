@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::VecDeque;
-use std::fmt::{Debug, Display};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+};
 
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
