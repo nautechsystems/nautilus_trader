@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Execution client implementations for trading venue connectivity.
+
 use nautilus_common::messages::execution::{
     BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
     GenerateOrderStatusReport, GeneratePositionReports, ModifyOrder, QueryOrder, SubmitOrder,
