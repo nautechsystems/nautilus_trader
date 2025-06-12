@@ -13,10 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data engine and market data processing for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *data* crate provides a comprehensive framework for handling market data ingestion,
+//! processing, and aggregation within the NautilusTrader ecosystem. This includes real-time
+//! data streaming, historical data management, and various aggregation methodologies:
+//!
+//! - High-performance data engine for orchestrating data operations.
+//! - Data client infrastructure for connecting to market data providers.
+//! - Bar aggregation machinery supporting tick, volume, value, and time-based aggregation.
+//! - Order book management and delta processing capabilities.
+//! - Subscription management and data request handling.
+//! - Configurable data routing and processing pipelines.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!

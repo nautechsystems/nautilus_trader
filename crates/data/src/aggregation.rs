@@ -883,6 +883,12 @@ impl<H: FnMut(Bar)> Debug for TimeBarAggregator<H> {
 }
 
 #[derive(Clone, Debug)]
+/// Callback wrapper for time-based bar aggregation events.
+///
+/// This struct provides a bridge between timer events and time bar aggregation,
+/// allowing bars to be automatically built and emitted at regular time intervals.
+/// It holds a reference to a `TimeBarAggregator` and triggers bar creation when
+/// timer events occur.
 pub struct NewBarCallback<H: FnMut(Bar)> {
     aggregator: Rc<RefCell<TimeBarAggregator<H>>>,
 }
