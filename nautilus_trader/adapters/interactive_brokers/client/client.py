@@ -199,15 +199,16 @@ class InteractiveBrokersClient(
                 # seconds, so we wait for it here.
                 await asyncio.wait_for(self._is_ib_connected.wait(), 15)
                 self._start_connection_watchdog()
+
+                self._is_client_ready.set()
+                self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
+                self._connection_attempts = 0
+
             except TimeoutError:
                 self._log.error("Client failed to initialize. Connection timeout.")
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
                 self._stop()
-
-        self._is_client_ready.set()
-        self._log.debug("`_is_client_ready` set by `_start_async`.", LogColor.BLUE)
-        self._connection_attempts = 0
 
     def _start_tws_incoming_msg_reader(self) -> None:
         """
@@ -274,6 +275,7 @@ class InteractiveBrokersClient(
                 task.cancel()
 
         try:
+            tasks = [t for t in tasks if t is not None]
             await asyncio.gather(*tasks, return_exceptions=True)
             self._log.info("All tasks canceled successfully.")
         except Exception as e:
@@ -446,21 +448,16 @@ class InteractiveBrokersClient(
             The asyncio Task that has been completed.
 
         """
-        if task.exception():
-            self._log.error(
-                f"Error on '{task.get_name()}': {task.exception()!r}",
-            )
-        else:
-            if actions:
-                try:
-                    actions()
-                except Exception as e:
-                    self._log.exception(
-                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
-                        e,
-                    )
-            if success:
-                self._log.info(success, LogColor.GREEN)
+        if actions:
+            try:
+                actions()
+            except Exception as e:
+                self._log.exception(
+                    f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                    e,
+                )
+        if success:
+            self._log.info(success, LogColor.GREEN)
 
     def subscribe_event(self, name: str, handler: Callable) -> None:
         """

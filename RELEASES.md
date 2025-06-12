@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
 - Fixed last value updating for RSI indicator (#2703), thanks @barlaw
+- Fixed IBKR reconnection problems
 
 ### Documentation Updates
 None

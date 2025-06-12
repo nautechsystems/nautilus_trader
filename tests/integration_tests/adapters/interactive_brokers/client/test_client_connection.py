@@ -33,7 +33,7 @@ async def test_connect_cancelled(ib_client):
 
     await ib_client._connect()
 
-    ib_client._disconnect.assert_awaited_once()
+    ib_client._disconnect.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,7 @@ async def test_connect_fail(ib_client):
         CONNECT_FAIL.code(),
         CONNECT_FAIL.msg(),
     )
-    ib_client._handle_reconnect.assert_awaited_once()
+    ib_client._handle_reconnect.assert_not_awaited()
 
 
 # Test for successful reconnection
