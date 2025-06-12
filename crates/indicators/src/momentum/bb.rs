@@ -104,8 +104,8 @@ impl BollingerBands {
     ///
     /// # Panics
     ///
-    /// * If `period` is `0` or greater than [`MAX_PERIOD`].
-    /// * If `k` is *not finite* or *≤ 0*.
+    /// - If `period` is `0` or greater than `MAX_PERIOD`.
+    /// - If `k` is *not finite* or *≤ 0*.
     #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         assert!(
