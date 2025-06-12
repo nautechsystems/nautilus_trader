@@ -69,7 +69,7 @@ impl WeightedMovingAverage {
     ///
     /// # Errors
     ///
-    /// Returns an erro if **any** of the validation rules fails:
+    /// Returns an error if **any** of the validation rules fails:
     /// - `period` must be **positive**.
     /// - `weights` must be **exactly** `period` elements long.
     /// - `weights` must contain at least one non-zero value (∑wᵢ > ε).
