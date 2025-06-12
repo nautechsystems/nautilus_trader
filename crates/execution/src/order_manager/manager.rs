@@ -37,6 +37,12 @@ use nautilus_model::{
     types::Quantity,
 };
 
+/// Manages the lifecycle and state of orders with contingency handling.
+///
+/// The order manager is responsible for managing local order state, handling
+/// contingent orders (OTO, OCO, OUO), and coordinating with emulation and
+/// execution systems. It tracks order commands and manages complex order
+/// relationships for advanced order types.
 pub struct OrderManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -56,6 +62,7 @@ impl Debug for OrderManager {
 }
 
 impl OrderManager {
+    /// Creates a new [`OrderManager`] instance.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
@@ -88,15 +95,18 @@ impl OrderManager {
     // }
 
     #[must_use]
+    /// Returns a copy of all cached submit order commands.
     pub fn get_submit_order_commands(&self) -> HashMap<ClientOrderId, SubmitOrder> {
         self.submit_order_commands.clone()
     }
 
+    /// Caches a submit order command for later processing.
     pub fn cache_submit_order_command(&mut self, command: SubmitOrder) {
         self.submit_order_commands
             .insert(command.order.client_order_id(), command);
     }
 
+    /// Removes and returns a cached submit order command.
     pub fn pop_submit_order_command(
         &mut self,
         client_order_id: ClientOrderId,
@@ -104,10 +114,12 @@ impl OrderManager {
         self.submit_order_commands.remove(&client_order_id)
     }
 
+    /// Resets the order manager by clearing all cached commands.
     pub fn reset(&mut self) {
         self.submit_order_commands.clear();
     }
 
+    /// Cancels an order if it's not already pending cancellation or closed.
     pub fn cancel_order(&mut self, order: &OrderAny) {
         if self
             .cache
@@ -129,6 +141,7 @@ impl OrderManager {
         // }
     }
 
+    /// Modifies the quantity of an existing order.
     pub const fn modify_order_quantity(&mut self, order: &mut OrderAny, new_quantity: Quantity) {
         // if let Some(handler) = &self.modify_order_handler {
         //     handler.handle_modify_order(order, new_quantity);
@@ -180,11 +193,13 @@ impl OrderManager {
     }
 
     #[must_use]
+    /// Returns true if the order manager should manage the given order.
     pub fn should_manage_order(&self, order: &OrderAny) -> bool {
         self.active_local && order.is_active_local()
     }
 
     // Event Handlers
+    /// Handles an order event by routing it to the appropriate handler method.
     pub fn handle_event(&mut self, event: OrderEventAny) {
         match event {
             OrderEventAny::Rejected(event) => self.handle_order_rejected(event),
@@ -196,6 +211,7 @@ impl OrderManager {
         }
     }
 
+    /// Handles an order rejected event and manages any contingent orders.
     pub fn handle_order_rejected(&mut self, rejected: OrderRejected) {
         let cloned_order = self
             .cache

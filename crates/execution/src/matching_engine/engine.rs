@@ -114,6 +114,7 @@ impl Debug for OrderMatchingEngine {
 }
 
 impl OrderMatchingEngine {
+    /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument: InstrumentAny,
@@ -172,6 +173,11 @@ impl OrderMatchingEngine {
         }
     }
 
+    /// Resets the matching engine to its initial state.
+    ///
+    /// Clears the order book, execution state, cached data, and resets all
+    /// internal components. This is typically used for backtesting scenarios
+    /// where the engine needs to be reset between test runs.
     pub fn reset(&mut self) {
         self.book.clear(0, UnixNanos::default());
         self.execution_bar_types.clear();
@@ -187,36 +193,43 @@ impl OrderMatchingEngine {
         log::info!("Reset {}", self.instrument.id());
     }
 
+    /// Sets the fill model for the matching engine.
     pub const fn set_fill_model(&mut self, fill_model: FillModel) {
         self.fill_model = fill_model;
     }
 
     #[must_use]
+    /// Returns the best bid price from the order book.
     pub fn best_bid_price(&self) -> Option<Price> {
         self.book.best_bid_price()
     }
 
     #[must_use]
+    /// Returns the best ask price from the order book.
     pub fn best_ask_price(&self) -> Option<Price> {
         self.book.best_ask_price()
     }
 
     #[must_use]
+    /// Returns a reference to the internal order book.
     pub const fn get_book(&self) -> &OrderBook {
         &self.book
     }
 
     #[must_use]
+    /// Returns all open bid orders managed by the matching core.
     pub const fn get_open_bid_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_bid()
     }
 
     #[must_use]
+    /// Returns all open ask orders managed by the matching core.
     pub const fn get_open_ask_orders(&self) -> &[PassiveOrderAny] {
         self.core.get_orders_ask()
     }
 
     #[must_use]
+    /// Returns all open orders from both bid and ask sides.
     pub fn get_open_orders(&self) -> Vec<PassiveOrderAny> {
         // Get orders from both open bid orders and open ask orders
         let mut orders = Vec::new();
@@ -226,6 +239,7 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
+    /// Returns true if an order with the given client order ID exists in the matching engine.
     pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.core.order_exists(client_order_id)
     }
