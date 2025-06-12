@@ -22,6 +22,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use chrono::{DateTime, Utc};
@@ -71,7 +72,7 @@ pub trait Clock: Debug {
     /// Returns the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// Register a default event handler for the clock. If a `Timer`
+    /// Register a default event handler for the clock. If a timer
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: TimeEventCallback);
 
@@ -80,12 +81,47 @@ pub trait Clock: Debug {
     /// Note: Panics if the event does not have an associated handler
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2;
 
-    /// Set a `Timer` to alert at the specified time.
-    /// Optional callback gets used to handle generated events.
+    /// Set a timer to alert at the specified time.
+    ///
+    /// See [`Clock::set_time_alert_ns`] for flag semantics.
+    ///
+    /// # Callback
+    ///
+    /// - `callback`: Some, then callback handles the time event.
+    /// - `callback`: None, then the clock’s default time event callback is used.
     ///
     /// # Errors
     ///
-    /// Returns an error if `name` is invalid, `alert_time_ns` is non-positive when not allowed,
+    /// Returns an error if `name` is invalid, `alert_time` is in the past when not allowed,
+    /// or any predicate check fails.
+    #[allow(clippy::too_many_arguments)]
+    fn set_time_alert(
+        &mut self,
+        name: &str,
+        alert_time: DateTime<Utc>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.set_time_alert_ns(name, alert_time.into(), callback, allow_past)
+    }
+
+    /// Set a timer to alert at the specified time.
+    ///
+    /// # Flags
+    ///
+    /// | `allow_past` | Behavior                                                                                |
+    /// |--------------|-----------------------------------------------------------------------------------------|
+    /// | `true`       | If alert time is **in the past**, the alert fires immediately; otherwise at alert time. |
+    /// | `false`      | Returns an error if alert time is earlier than now.                                 |
+    ///
+    /// # Callback
+    ///
+    /// - `callback`: Some, then callback handles the time event.
+    /// - `callback`: None, then the clock’s default time event callback is used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` is invalid, `alert_time_ns` is earlier than now when not allowed,
     /// or any predicate check fails.
     #[allow(clippy::too_many_arguments)]
     fn set_time_alert_ns(
@@ -96,16 +132,56 @@ pub trait Clock: Debug {
         allow_past: Option<bool>,
     ) -> anyhow::Result<()>;
 
-    /// Set a `Timer` to fire time events at every interval
-    /// between start and stop time. Optional callback gets
-    /// used to handle the generated events.
+    /// Set a timer to fire time events at every interval between start and stop time.
+    ///
+    /// See [`Clock::set_timer_ns`] for flag semantics.
+    ///
+    /// # Callback
+    ///
+    /// - `callback`: Some, then callback handles the time event.
+    /// - `callback`: None, then the clock’s default time event callback is used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `name` is invalid, `interval` is not positive,
+    /// or if any predicate check fails.
+    #[allow(clippy::too_many_arguments)]
+    fn set_timer(
+        &mut self,
+        name: &str,
+        interval: Duration,
+        start_time: DateTime<Utc>,
+        stop_time: Option<DateTime<Utc>>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        self.set_timer_ns(
+            name,
+            interval.as_nanos() as u64,
+            start_time.into(),
+            stop_time.map(UnixNanos::from),
+            callback,
+            allow_past,
+            fire_immediately,
+        )
+    }
+
+    /// Set a timer to fire time events at every interval between start and stop time.
+    ///
+    /// # Flags
     ///
     /// | `allow_past` | `fire_immediately` | Behavior                                                                              |
     /// |--------------|--------------------|---------------------------------------------------------------------------------------|
     /// | `true`       | `true`             | First event fires immediately at start time, even if start time is in the past.       |
-    /// | `true`       | `false`            | First event fires at start_time + interval, even if start time is in the past.        |
-    /// | `false`      | `true`             | Returns error if start_time is in the past (first event would be immediate but past). |
-    /// | `false`      | `false`            | Returns error if start_time + interval is in the past.                                |
+    /// | `true`       | `false`            | First event fires at start time + interval, even if start time is in the past.        |
+    /// | `false`      | `true`             | Returns error if start time is in the past (first event would be immediate but past). |
+    /// | `false`      | `false`            | Returns error if start time + interval is in the past.                                |
+    ///
+    /// # Callback
+    ///
+    /// - `callback`: Some, then callback handles the time event.
+    /// - `callback`: None, then the clock’s default time event callback is used.
     ///
     /// # Errors
     ///
@@ -1418,5 +1494,127 @@ mod tests {
 
         assert_eq!(test_clock.timer_count(), 0);
         assert_eq!(test_clock.timestamp_ns(), UnixNanos::default()); // Time reset to zero
+    }
+
+    #[rstest]
+    fn test_set_time_alert_default_impl(mut test_clock: TestClock) {
+        let current_time = test_clock.utc_now();
+        let alert_time = current_time + chrono::Duration::seconds(1);
+
+        // Test the default implementation that delegates to set_time_alert_ns
+        test_clock
+            .set_time_alert("alert_test", alert_time, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_names(), vec!["alert_test"]);
+
+        // Verify the timer is set for the correct time
+        let expected_ns = UnixNanos::from(alert_time);
+        let next_time = test_clock.next_time_ns("alert_test").unwrap();
+
+        // Should be very close (within a few nanoseconds due to conversion)
+        let diff = if next_time >= expected_ns {
+            next_time.as_u64() - expected_ns.as_u64()
+        } else {
+            expected_ns.as_u64() - next_time.as_u64()
+        };
+        assert!(
+            diff < 1000,
+            "Timer should be set within 1 microsecond of expected time"
+        );
+    }
+
+    #[rstest]
+    fn test_set_timer_default_impl(mut test_clock: TestClock) {
+        let current_time = test_clock.utc_now();
+        let start_time = current_time + chrono::Duration::seconds(1);
+        let interval = Duration::from_millis(500);
+
+        // Test the default implementation that delegates to set_timer_ns
+        test_clock
+            .set_timer("timer_test", interval, start_time, None, None, None, None)
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_names(), vec!["timer_test"]);
+
+        // Advance time and verify timer fires at correct intervals
+        let start_ns = UnixNanos::from(start_time);
+        let interval_ns = interval.as_nanos() as u64;
+
+        let events = test_clock.advance_time(start_ns + interval_ns * 3, true);
+        assert_eq!(events.len(), 3); // Should fire 3 times
+
+        // Verify timing
+        assert_eq!(*events[0].ts_event, *start_ns + interval_ns);
+        assert_eq!(*events[1].ts_event, *start_ns + interval_ns * 2);
+        assert_eq!(*events[2].ts_event, *start_ns + interval_ns * 3);
+    }
+
+    #[rstest]
+    fn test_set_timer_with_stop_time_default_impl(mut test_clock: TestClock) {
+        let current_time = test_clock.utc_now();
+        let start_time = current_time + chrono::Duration::seconds(1);
+        let stop_time = current_time + chrono::Duration::seconds(3);
+        let interval = Duration::from_secs(1);
+
+        // Test with stop time
+        test_clock
+            .set_timer(
+                "timer_with_stop",
+                interval,
+                start_time,
+                Some(stop_time),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(test_clock.timer_count(), 1);
+
+        // Advance beyond stop time
+        let stop_ns = UnixNanos::from(stop_time);
+        let events = test_clock.advance_time(stop_ns + 1000, true);
+
+        // Should fire twice: at start_time + 1s and start_time + 2s, but not at start_time + 3s since that would be at stop_time
+        assert_eq!(events.len(), 2);
+
+        let start_ns = UnixNanos::from(start_time);
+        let interval_ns = interval.as_nanos() as u64;
+        assert_eq!(*events[0].ts_event, *start_ns + interval_ns);
+        assert_eq!(*events[1].ts_event, *start_ns + interval_ns * 2);
+    }
+
+    #[rstest]
+    fn test_set_timer_fire_immediately_default_impl(mut test_clock: TestClock) {
+        let current_time = test_clock.utc_now();
+        let start_time = current_time + chrono::Duration::seconds(1);
+        let interval = Duration::from_millis(500);
+
+        // Test with fire_immediately=true
+        test_clock
+            .set_timer(
+                "immediate_timer",
+                interval,
+                start_time,
+                None,
+                None,
+                None,
+                Some(true),
+            )
+            .unwrap();
+
+        let start_ns = UnixNanos::from(start_time);
+        let interval_ns = interval.as_nanos() as u64;
+
+        // Advance to start time + 1 interval
+        let events = test_clock.advance_time(start_ns + interval_ns, true);
+
+        // Should fire immediately at start_time, then again at start_time + interval
+        assert_eq!(events.len(), 2);
+        assert_eq!(*events[0].ts_event, *start_ns); // Immediate fire
+        assert_eq!(*events[1].ts_event, *start_ns + interval_ns); // Regular interval
     }
 }
