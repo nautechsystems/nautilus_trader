@@ -5,6 +5,18 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-testkit.svg)](https://crates.io/crates/nautilus-testkit)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
+Test utilities and data management for [NautilusTrader](http://nautilustrader.io).
+
+The *testkit* crate provides comprehensive testing utilities including test data management,
+file handling, and common testing patterns. This crate supports robust testing workflows
+across the entire NautilusTrader ecosystem with automated data downloads and validation:
+
+- **Test data management**: Automated downloading and caching of test datasets.
+- **File utilities**: File integrity verification with SHA-256 checksums.
+- **Path resolution**: Platform-agnostic test data path management.
+- **Precision handling**: Support for both 64-bit and 128-bit precision test data.
+- **Common patterns**: Reusable test utilities and helper functions.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
