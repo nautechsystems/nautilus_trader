@@ -92,11 +92,7 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
 
         let fields = Fields::deserialize(deserializer)?;
 
-        let variables = fields
-            .components
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let variables = fields.components.iter().map(ToString::to_string).collect();
 
         let operator_tree =
             evalexpr::build_operator_tree(&fields.formula).map_err(serde::de::Error::custom)?;
@@ -136,10 +132,7 @@ impl SyntheticInstrument {
         let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
         // Extract variables from the component instruments
-        let variables: Vec<String> = components
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let variables: Vec<String> = components.iter().map(ToString::to_string).collect();
 
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 

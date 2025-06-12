@@ -23,7 +23,7 @@ pub fn extract_transaction_hash(
 ) -> anyhow::Result<String> {
     log.transaction_hash
         .as_ref()
-        .map(|hash| hash.to_string())
+        .map(ToString::to_string)
         .ok_or_else(|| anyhow::anyhow!("Missing transaction hash in the log"))
 }
 

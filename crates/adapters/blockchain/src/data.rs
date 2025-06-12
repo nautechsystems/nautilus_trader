@@ -94,7 +94,7 @@ pub struct BlockchainDataClient {
     hypersync_client: HyperSyncClient,
     /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>,
-    /// Channel sender for publishing data events to the AsyncRunner.
+    /// Channel sender for publishing data events to the `AsyncRunner`.
     data_sender: UnboundedSender<DataEvent>,
 }
 
@@ -224,7 +224,7 @@ impl BlockchainDataClient {
             pool.ticker(),
             dex_extended.name,
             from_block,
-            to_block.map_or("".to_string(), |block| format!(" to {block}"))
+            to_block.map_or(String::new(), |block| format!(" to {block}"))
         );
         let swap_event_signature = dex_extended.swap_created_event.as_ref();
         let stream = self
@@ -291,7 +291,7 @@ impl BlockchainDataClient {
             "Syncing pool mints for {} on Dex {} from block {from_block}{}",
             pool.ticker(),
             dex_extended.name,
-            to_block.map_or("".to_string(), |block| format!(" to {block}"))
+            to_block.map_or(String::new(), |block| format!(" to {block}"))
         );
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let stream = self
@@ -379,7 +379,7 @@ impl BlockchainDataClient {
             "Syncing pool burns for {} on Dex {} from block {from_block}{}",
             pool.ticker(),
             dex_extended.name,
-            to_block.map_or("".to_string(), |block| format!(" to {block}"))
+            to_block.map_or(String::new(), |block| format!(" to {block}"))
         );
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
         let stream = self
@@ -462,7 +462,7 @@ impl BlockchainDataClient {
         let from_block = from_block.unwrap_or(0);
         tracing::info!(
             "Syncing Dex exchange pools for {dex_id} from block {from_block}{}",
-            to_block.map_or("".to_string(), |block| format!(" to {block}"))
+            to_block.map_or(String::new(), |block| format!(" to {block}"))
         );
         let dex = self.get_dex(dex_id)?.clone();
         let factory_address = dex.factory.as_ref();
@@ -644,7 +644,7 @@ impl BlockchainDataClient {
     }
 
     fn get_pool(&self, pool_address: &str) -> anyhow::Result<&SharedPool> {
-        let pool_address = validate_address(&pool_address)?;
+        let pool_address = validate_address(pool_address)?;
         match self.cache.get_pool(&pool_address) {
             Some(pool) => Ok(pool),
             None => anyhow::bail!("Pool {pool_address} is not registered"),

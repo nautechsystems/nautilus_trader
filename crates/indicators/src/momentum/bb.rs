@@ -233,7 +233,7 @@ mod tests {
         }
 
         assert!(bb_10.initialized());
-        assert_eq!(bb_10.upper, 9.884_458_228_895_101);
+        assert_eq!(bb_10.upper, 9.884_458_228_895_1);
         assert_eq!(bb_10.middle, 9.676_666_666_666_666);
         assert_eq!(bb_10.lower, 9.468_875_104_438_231);
     }
@@ -276,14 +276,17 @@ mod tests {
         let mut bb = BollingerBands::new(3, 1.0, None);
 
         for v in 1..=6 {
-            bb.update_raw(v as f64, v as f64, v as f64);
+            bb.update_raw(f64::from(v), f64::from(v), f64::from(v));
         }
 
         let expected_mid: f64 = (4.0 + 5.0 + 6.0) / 3.0;
-        let variance = ((4.0 - expected_mid) * (4.0 - expected_mid)
-            + (5.0 - expected_mid) * (5.0 - expected_mid)
-            + (6.0 - expected_mid) * (6.0 - expected_mid))
-            / 3.0;
+        let variance = (6.0 - expected_mid).mul_add(
+            6.0 - expected_mid,
+            (4.0 - expected_mid).mul_add(
+                4.0 - expected_mid,
+                (5.0 - expected_mid) * (5.0 - expected_mid),
+            ),
+        ) / 3.0;
         let expected_std = variance.sqrt();
 
         assert!((bb.middle - expected_mid).abs() < 1e-12);
