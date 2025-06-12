@@ -5,6 +5,18 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-serialization.svg)](https://crates.io/crates/nautilus-serialization)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
+Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
+
+The *serialization* crate provides comprehensive data serialization capabilities for converting
+trading data between different formats including Apache Arrow, Parquet, and custom schemas.
+This enables efficient data storage, retrieval, and interoperability across different systems:
+
+- **Apache Arrow integration**: Schema definitions and encoding/decoding for market data types.
+- **Parquet file operations**: High-performance columnar storage for historical data analysis.
+- **Record batch processing**: Efficient batch operations for time-series data.
+- **Schema management**: Type-safe schema definitions with metadata preservation.
+- **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
+
 ## Platform
 
 [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
@@ -14,6 +26,16 @@ and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+
+## Feature flags
+
+This crate provides feature flags to control source code inclusion during compilation,
+depending on the intended use case, i.e. whether to provide Python bindings
+for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
+or as part of a Rust only build.
+
+- `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `high-precision`: Enables [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation#precision-mode) to use 128-bit value types.
 
 ## Documentation
 

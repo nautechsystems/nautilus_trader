@@ -13,15 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! # Platform
+//! Data serialization and format conversion for [NautilusTrader](http://nautilustrader.io).
 //!
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
+//! The *serialization* crate provides comprehensive data serialization capabilities for converting
+//! trading data between different formats including Apache Arrow, Parquet, and custom schemas.
+//! This enables efficient data storage, retrieval, and interoperability across different systems:
 //!
-//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
-//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
+//! - **Apache Arrow integration**: Schema definitions and encoding/decoding for market data types.
+//! - **Parquet file operations**: High-performance columnar storage for historical data analysis.
+//! - **Record batch processing**: Efficient batch operations for time-series data.
+//! - **Schema management**: Type-safe schema definitions with metadata preservation.
+//! - **Cross-format conversion**: Seamless data interchange between Arrow, Parquet, and native types.
 //!
 //! # Feature flags
 //!
