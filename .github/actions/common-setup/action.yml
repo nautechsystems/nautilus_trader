@@ -86,9 +86,14 @@ runs:
       shell: bash
       run: |
         echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+
+        # Based on GitHub Actions runner constraints
+        # and Nautilus Trader uncompressed package final size (~1 GiB)
+        echo "SCCACHE_CACHE_SIZE=4G" >> $GITHUB_ENV
         echo "SCCACHE_IDLE_TIMEOUT=0" >> $GITHUB_ENV
         echo "SCCACHE_DIRECT=true" >> $GITHUB_ENV
         echo "SCCACHE_CACHE_MULTIARCH=1" >> $GITHUB_ENV
+
         echo "CARGO_INCREMENTAL=0" >> $GITHUB_ENV
 
     - name: Set sccache env vars (non-Windows)
