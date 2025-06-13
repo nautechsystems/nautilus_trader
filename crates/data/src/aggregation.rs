@@ -1005,7 +1005,7 @@ where
                 .set_timer_ns(
                     &self.timer_name,
                     self.interval_ns.as_u64(),
-                    start_time_ns,
+                    Some(start_time_ns),
                     None,
                     Some(callback.into()),
                     None,
