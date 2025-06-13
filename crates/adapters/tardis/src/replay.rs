@@ -17,6 +17,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use anyhow::Context;
@@ -48,6 +49,20 @@ use crate::{
     machine::{TardisMachineClient, types::InstrumentMiniInfo},
     parse::{normalize_instrument_id, parse_instrument_id},
 };
+
+static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+/// Retrieves a reference to a globally shared Tokio runtime.
+/// The runtime is lazily initialized on the first call and reused thereafter.
+///
+/// # Panics
+///
+/// Panics if the runtime could not be created, which typically indicates
+/// an inability to spawn threads or allocate necessary resources.
+pub fn get_runtime() -> &'static tokio::runtime::Runtime {
+    RUNTIME
+        .get_or_init(|| tokio::runtime::Runtime::new().expect("Failed to initialize tokio runtime"))
+}
 
 struct DateCursor {
     /// Cursor date UTC.
@@ -473,7 +488,7 @@ fn write_batch(
     let filepath = path.join(parquet_filepath(typename, instrument_id, date));
     let filepath_str = filepath.to_string_lossy();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = get_runtime();
     match rt.block_on(write_batch_to_parquet(
         batch,
         &filepath_str,
