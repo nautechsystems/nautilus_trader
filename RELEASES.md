@@ -26,7 +26,9 @@ Released on TBD (UTC).
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
+- Ported data catalog refactor to Rust (#2681), thanks @faysou
 - Consolidated the clocks and timers v2 feature from @twitu
+- Confirmed parity between Cython and Rust indicators (#2700, #2710), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
@@ -59,6 +61,7 @@ Released on TBD (UTC).
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
 - Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
 - Fixed gateway/TWS reconnect process for IBKR (#2710), thanks @bartlaw
+- Fixed Interactive Brokers options chain issue (#2711), thanks @FGU1
 
 ### Documentation Updates
 None
