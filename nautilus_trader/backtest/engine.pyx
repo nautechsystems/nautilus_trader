@@ -373,9 +373,9 @@ cdef class BacktestEngine:
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
-        Return the global logging systems log guard.
+        Return the global logging subsystems log guard.
 
-        May return ``None`` if the logging system was already initialized.
+        May return ``None`` if the logging subsystem was already initialized.
 
         Returns
         -------

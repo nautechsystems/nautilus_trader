@@ -57,12 +57,12 @@ pub fn logging_is_initialized() -> bool {
     LOGGING_INITIALIZED.load(Ordering::Relaxed)
 }
 
-/// Sets the logging system to bypass mode.
+/// Sets the logging subsystem to bypass mode.
 pub fn logging_set_bypass() {
     LOGGING_BYPASSED.store(true, Ordering::Relaxed);
 }
 
-/// Shuts down the logging system.
+/// Shuts down the logging subsystem.
 pub fn logging_shutdown() {
     // Flush any buffered logs and mark logging as uninitialized
     log::logger().flush();
