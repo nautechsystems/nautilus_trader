@@ -96,7 +96,7 @@ mod tests {
     fn test_blockchain_data_client_config_creation() {
         let chain = Arc::new(chains::ETHEREUM.clone());
         let config = BlockchainDataClientConfig::new(
-            chain.clone(),
+            chain,
             "https://eth-mainnet.example.com".to_string(),
             None,
             None,
