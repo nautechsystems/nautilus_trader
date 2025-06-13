@@ -48,10 +48,9 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::{data::Data, identifiers::TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
-use nautilus_trading::trader::Trader;
 use ustr::Ustr;
 
-use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
+use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig, trader::Trader};
 
 /// Core Nautilus system kernel.
 ///

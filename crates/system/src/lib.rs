@@ -54,6 +54,10 @@ pub mod builder;
 pub mod config;
 pub mod factories;
 pub mod kernel;
+pub mod trader;
 
 // Re-exports
+pub use builder::NautilusKernelBuilder;
 pub use config::NautilusKernelConfig;
+pub use factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
+pub use kernel::NautilusKernel;
