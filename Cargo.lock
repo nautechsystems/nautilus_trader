@@ -4743,7 +4743,9 @@ name = "nautilus-persistence"
 version = "0.49.0"
 dependencies = [
  "anyhow",
+ "arrow",
  "binary-heap-plus",
+ "chrono",
  "compare",
  "criterion",
  "datafusion",
@@ -4768,7 +4770,8 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
- "walkdir",
+ "unbounded-interval-tree",
+ "url",
 ]
 
 [[package]]
@@ -4882,6 +4885,7 @@ dependencies = [
  "heck",
  "nautilus-core",
  "nautilus-model",
+ "nautilus-persistence",
  "nautilus-serialization",
  "nautilus-testkit",
  "pyo3",
@@ -8042,6 +8046,15 @@ name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
+
+[[package]]
+name = "unbounded-interval-tree"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fac967d0ba617b6fd7f558750a2924a7086998ae52524b75aba74a719c11264"
+dependencies = [
+ "rand 0.8.5",
+]
 
 [[package]]
 name = "unicode-bidi"
