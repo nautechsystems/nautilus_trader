@@ -17,23 +17,7 @@ use std::{cmp::max, sync::Arc};
 
 use alloy::primitives::U256;
 use futures_util::StreamExt;
-use nautilus_common::{
-    messages::{
-        DataEvent,
-        data::{
-            RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-            SubscribeBookSnapshots, SubscribeCustomData, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-            UnsubscribeCustomData, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
-        },
-    },
-    runner::get_data_event_sender,
-};
+use nautilus_common::{messages::DataEvent, runner::get_data_event_sender};
 use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
@@ -84,6 +68,8 @@ use crate::{
 pub struct BlockchainDataClient {
     /// The blockchain being targeted by this client instance.
     pub chain: SharedChain,
+    /// The configuration for the data client.
+    pub config: BlockchainAdapterConfig,
     /// Local cache for blockchain entities.
     cache: BlockchainCache,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -115,7 +101,7 @@ impl BlockchainDataClient {
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         let hypersync_client = HyperSyncClient::new(chain.clone(), hypersync_tx);
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
-            config.http_rpc_url,
+            config.http_rpc_url.clone(),
             config.rpc_requests_per_second,
         ));
         let erc20_contract = Erc20Contract::new(http_rpc_client);
@@ -124,6 +110,7 @@ impl BlockchainDataClient {
 
         Self {
             chain,
+            config,
             cache,
             rpc_client,
             tokens: erc20_contract,
@@ -166,23 +153,6 @@ impl BlockchainDataClient {
         self.cache
             .initialize_database(pg_connect_options.into())
             .await;
-    }
-
-    /// Establishes connections to the data providers and cache, then starts block syncing.
-    pub async fn connect(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
-        let from_block = from_block.unwrap_or(0);
-        if let Some(ref mut rpc_client) = self.rpc_client {
-            rpc_client.connect().await?;
-        }
-        self.cache.connect(from_block).await?;
-        self.sync_blocks(from_block).await?;
-        Ok(())
-    }
-
-    /// Gracefully disconnects from all data providers.
-    pub fn disconnect(&mut self) -> anyhow::Result<()> {
-        self.hypersync_client.disconnect();
-        Ok(())
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
@@ -684,199 +654,44 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
-    async fn connect(&self) -> anyhow::Result<()> {
-        // Note: The current implementation has connect() taking &mut self,
-        // but the trait requires &self. For now, we'll log the intent.
-        tracing::info!("Connecting blockchain data client for {}", self.chain.name);
-        // TODO: This should call self.connect() but requires refactoring the mutable reference
+    /// Establishes connections to the data providers and cache, then starts block syncing.
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        let from_block = self.config.from_block.unwrap_or(0);
+
+        tracing::info!(
+            "Connecting blockchain data client for {} from block {from_block}",
+            self.chain.name
+        );
+
+        if let Some(ref mut rpc_client) = self.rpc_client {
+            rpc_client.connect().await?;
+        }
+
+        self.cache.connect(from_block).await?;
+        self.sync_blocks(from_block).await?;
+
         Ok(())
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
-        // Note: Same issue as connect() - the implementation needs &mut self
+    /// Gracefully disconnects from all data providers.
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             "Disconnecting blockchain data client for {}",
             self.chain.name
         );
-        // TODO: This should call self.disconnect() but requires refactoring the mutable reference
+
+        self.hypersync_client.disconnect();
+
         Ok(())
     }
 
     fn is_connected(&self) -> bool {
+        // TODO: Improve connection detection
         // For now, we'll assume connected if we have either RPC or HyperSync configured
         self.rpc_client.is_some() || true // HyperSync is always available
     }
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
-    }
-
-    // Subscription methods - blockchain clients don't support traditional market data subscriptions
-    // but we implement them as no-ops for trait compliance
-
-    fn subscribe(&mut self, _cmd: &SubscribeCustomData) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support custom data subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_instruments(&mut self, _cmd: &SubscribeInstruments) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_instrument(&mut self, _cmd: &SubscribeInstrument) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_instrument_status(
-        &mut self,
-        _cmd: &SubscribeInstrumentStatus,
-    ) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument status subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_instrument_close(
-        &mut self,
-        _cmd: &SubscribeInstrumentClose,
-    ) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument close subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_quotes(&mut self, _cmd: &SubscribeQuotes) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support quote subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_trades(&mut self, _cmd: &SubscribeTrades) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support trade subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, _cmd: &SubscribeBars) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support bar subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_book_snapshots(&mut self, _cmd: &SubscribeBookSnapshots) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support book snapshot subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_book_deltas(&mut self, _cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support book delta subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_book_depth10(&mut self, _cmd: &SubscribeBookDepth10) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support book depth subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_index_prices(&mut self, _cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support index price subscriptions");
-        Ok(())
-    }
-
-    fn subscribe_mark_prices(&mut self, _cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support mark price subscriptions");
-        Ok(())
-    }
-
-    // Unsubscription methods - all no-ops for blockchain client
-
-    fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_instrument_status(
-        &mut self,
-        _cmd: &UnsubscribeInstrumentStatus,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_instrument_close(
-        &mut self,
-        _cmd: &UnsubscribeInstrumentClose,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_quotes(&mut self, _cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, _cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_book_snapshots(
-        &mut self,
-        _cmd: &UnsubscribeBookSnapshots,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_book_deltas(&mut self, _cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_book_depth10(&mut self, _cmd: &UnsubscribeBookDepth10) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    // Request methods - also no-ops for blockchain client since it doesn't provide traditional market data
-
-    fn request_instruments(&self, _request: &RequestInstruments) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument requests");
-        Ok(())
-    }
-
-    fn request_instrument(&self, _request: &RequestInstrument) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support instrument requests");
-        Ok(())
-    }
-
-    fn request_quotes(&self, _request: &RequestQuotes) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support quote requests");
-        Ok(())
-    }
-
-    fn request_trades(&self, _request: &RequestTrades) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support trade requests");
-        Ok(())
-    }
-
-    fn request_bars(&self, _request: &RequestBars) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support bar requests");
-        Ok(())
-    }
-
-    fn request_book_snapshot(&self, _request: &RequestBookSnapshot) -> anyhow::Result<()> {
-        tracing::warn!("Blockchain client doesn't support book snapshot requests");
-        Ok(())
     }
 }
