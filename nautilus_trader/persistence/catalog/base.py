@@ -54,7 +54,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     @classmethod
     @abstractmethod
-    def from_uri(cls, uri: str) -> BaseDataCatalog:
+    def from_uri(cls, uri: str, storage_options: dict[str, str] | None = None) -> BaseDataCatalog:
         raise NotImplementedError
 
     # -- QUERIES -----------------------------------------------------------------------------------

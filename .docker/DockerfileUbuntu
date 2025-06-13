@@ -1,0 +1,72 @@
+# Dockerfile to reproduce locally an environment similar to what is run on the github runner
+#
+# From nautilus project's root folder:
+#
+# Build the image:
+# docker build -f .docker/DockerfileUbuntu -t nautilus-dev .
+#
+# Run interactively with local directory mounted:
+# docker run --rm -itv "$(pwd)":/workspace nautilus-dev bash
+#
+# Or run the default entrypoint:
+# docker run --rm -itv "$(pwd)":/workspace nautilus-dev
+#
+# Remove the image
+# docker image rm nautilus-dev
+
+FROM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV BUILD_MODE=release
+ENV RUST_BACKTRACE=1
+ENV CARGO_INCREMENTAL=1
+ENV CC="clang"
+ENV CXX="clang++"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    clang \
+    git \
+    pkg-config \
+    make \
+    capnproto \
+    libcapnp-dev \
+    gcc-aarch64-linux-gnu \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install mold linker
+RUN curl -L https://github.com/rui314/mold/releases/download/v2.35.1/mold-2.35.1-x86_64-linux.tar.gz | tar -xz -C /usr/local --strip-components=1
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
+
+# Install Python 3.13
+RUN uv python install
+
+# Set working directory
+WORKDIR /workspace
+
+# Copy only necessary files for dependency setup
+# The actual source code will be mounted as a volume
+COPY ../scripts/rust-toolchain.sh scripts/
+COPY ../Cargo.toml Cargo.lock pyproject.toml rust-toolchain.toml ./
+
+# Set up Rust toolchain based on project requirements
+RUN bash scripts/rust-toolchain.sh > /tmp/toolchain.txt && \
+    TOOLCHAIN=$(cat /tmp/toolchain.txt) && \
+    rustup toolchain install $TOOLCHAIN && \
+    rustup default $TOOLCHAIN && \
+    rustup component add clippy rustfmt
+
+# Copy and set up entrypoint script for interactive development
+COPY .docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -25,6 +25,8 @@ use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
+use object_store::ObjectStore;
+use url::Url;
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 
@@ -81,6 +83,42 @@ impl DataBackendSession {
             chunk_size,
             runtime: Arc::new(runtime),
         }
+    }
+
+    /// Register an object store with the session context
+    pub fn register_object_store(&mut self, url: &Url, object_store: Arc<dyn ObjectStore>) {
+        self.session_ctx.register_object_store(url, object_store);
+    }
+
+    /// Register an object store with the session context from a URI with optional storage options
+    pub fn register_object_store_from_uri(
+        &mut self,
+        uri: &str,
+        storage_options: Option<std::collections::HashMap<String, String>>,
+    ) -> anyhow::Result<()> {
+        // Create object store from URI using the Rust implementation
+        let (object_store, _, _) =
+            crate::parquet::create_object_store_from_path(uri, storage_options)?;
+
+        // Parse the URI to get the base URL for registration
+        let parsed_uri = Url::parse(uri)?;
+
+        // Register the object store with the session
+        if matches!(
+            parsed_uri.scheme(),
+            "s3" | "gs" | "gcs" | "azure" | "abfs" | "http" | "https"
+        ) {
+            // For cloud storage, register with the base URL (scheme + netloc)
+            let base_url = format!(
+                "{}://{}",
+                parsed_uri.scheme(),
+                parsed_uri.host_str().unwrap_or("")
+            );
+            let base_parsed_url = Url::parse(&base_url)?;
+            self.register_object_store(&base_parsed_url, object_store);
+        }
+
+        Ok(())
     }
 
     pub fn write_data<T: EncodeToRecordBatch>(
