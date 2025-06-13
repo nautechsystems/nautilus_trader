@@ -1,4 +1,3 @@
-// -------------------------------------------------------------------------------------------------
 //  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
 //  https://nautechsystems.io
 //
@@ -11,12 +10,9 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
-// -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use arraydeque::{ArrayDeque, Wrapping};
+use std::fmt::{Debug, Display};
 
 use nautilus_model::data::Bar;
 
@@ -24,6 +20,8 @@ use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
 };
+
+pub const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -40,7 +38,7 @@ pub struct CommodityChannelIndex {
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     mad: f64,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for CommodityChannelIndex {
@@ -77,15 +75,20 @@ impl Indicator for CommodityChannelIndex {
 }
 
 impl CommodityChannelIndex {
-    /// Creates a new [`CommodityChannelIndex`] instance.
     #[must_use]
     pub fn new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(period > 0, "CommodityChannelIndex: period must be > 0");
+        assert!(
+            period <= MAX_PERIOD,
+            "CommodityChannelIndex: period exceeds MAX_PERIOD"
+        );
+
         Self {
             period,
             scalar,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
-            prices: VecDeque::with_capacity(period),
+            prices: ArrayDeque::new(),
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             has_inputs: false,
             initialized: false,
@@ -95,11 +98,17 @@ impl CommodityChannelIndex {
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
         let typical_price = (high + low + close) / 3.0;
-        self.prices.push_back(typical_price);
-        self.ma.update_raw(typical_price);
-        self.mad = fast_mad_with_mean(self.prices.clone(), self.ma.value());
 
-        if self.ma.initialized() {
+        if self.prices.len() == self.period {
+            let _ = self.prices.pop_front();
+        }
+        let _ = self.prices.push_back(typical_price);
+
+        self.ma.update_raw(typical_price);
+
+        self.mad = fast_mad_with_mean(self.prices.iter().copied(), self.ma.value());
+
+        if self.ma.initialized() && self.mad != 0.0 {
             self.value = (typical_price - self.ma.value()) / (self.scalar * self.mad);
         }
 
@@ -112,18 +121,19 @@ impl CommodityChannelIndex {
     }
 }
 
-fn fast_mad_with_mean(values: VecDeque<f64>, mean: f64) -> f64 {
-    if values.is_empty() {
-        return 0.0;
+pub fn fast_mad_with_mean<I>(values: I, mean: f64) -> f64
+where
+    I: IntoIterator<Item = f64>,
+{
+    let mut acc = 0.0_f64;
+    let mut count = 0_usize;
+
+    for v in values {
+        acc += (v - mean).abs();
+        count += 1;
     }
 
-    let mut mad: f64 = 0.0;
-    for v in values.clone() {
-        let dev = (v - mean).abs();
-        mad += dev;
-    }
-
-    mad / values.len() as f64
+    if count == 0 { 0.0 } else { acc / count as f64 }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -176,8 +186,9 @@ mod tests {
         cci_10.update_raw(1.00030, 0.90020, 1.00020);
         cci_10.update_raw(1.00010, 0.90010, 1.00010);
         cci_10.update_raw(1.00000, 0.90000, 1.00000);
-        assert_eq!(cci_10.value, -0.898_406_374_501_630_1);
+        assert_eq!(cci_10.value, -0.976_190_476_190_006_1);
     }
+
     #[rstest]
     fn test_initialized_with_required_input(mut cci_10: CommodityChannelIndex) {
         for i in 1..10 {
