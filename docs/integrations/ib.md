@@ -159,7 +159,8 @@ for_loading_instrument_range = IBContract(
 )
 ```
 
-> **Note**: The `secType` and `symbol` should be specified for the Underlying Contract.
+> **Note**: The `secType` and `symbol` should be specified for the Underlying Contract.\
+> To specify an options exchange other than the underlying's, use the `options_chain_exchange` parameter.
 
 Some more examples of building IBContracts:
 
