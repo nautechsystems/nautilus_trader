@@ -14,13 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::defi::{
-    amm::Pool,
-    block::Block,
-    chain::{Chain, SharedChain},
-    dex::Dex,
-    liquidity::PoolLiquidityUpdate,
-    swap::Swap,
-    token::Token,
+    Block, Chain, Dex, Pool, PoolLiquidityUpdate, SharedChain, Swap, Token,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 

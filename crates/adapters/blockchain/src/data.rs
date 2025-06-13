@@ -22,13 +22,8 @@ use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
-        DefiData,
-        amm::{Pool, SharedPool},
-        chain::{Blockchain, SharedChain},
-        dex::Dex,
-        liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
-        swap::Swap,
-        token::Token,
+        Blockchain, DefiData, Dex, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain,
+        SharedPool, Swap, Token,
     },
     identifiers::{ClientId, Venue},
     types::{Quantity, fixed::FIXED_PRECISION},

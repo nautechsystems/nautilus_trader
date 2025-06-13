@@ -29,12 +29,7 @@ use nautilus_common::{
 use nautilus_core::env::get_env_var;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    defi::{
-        amm::Pool,
-        chain::{Blockchain, Chain, chains},
-        liquidity::PoolLiquidityUpdate,
-        swap::Swap,
-    },
+    defi::{Blockchain, Chain, Pool, PoolLiquidityUpdate, Swap, chain::chains},
     identifiers::{ClientId, TraderId},
 };
 

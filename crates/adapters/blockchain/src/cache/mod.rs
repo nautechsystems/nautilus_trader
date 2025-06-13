@@ -27,12 +27,7 @@ use std::{
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    amm::{Pool, SharedPool},
-    block::Block,
-    chain::SharedChain,
-    liquidity::PoolLiquidityUpdate,
-    swap::Swap,
-    token::Token,
+    Block, Pool, PoolLiquidityUpdate, SharedChain, SharedPool, Swap, Token,
 };
 use sqlx::postgres::PgConnectOptions;
 

@@ -399,4 +399,47 @@ mod tests {
             "https://42161.hypersync.xyz"
         );
     }
+
+    #[rstest]
+    fn test_chain_constructor() {
+        let chain = Chain::new(Blockchain::Polygon, 137);
+
+        assert_eq!(chain.name, Blockchain::Polygon);
+        assert_eq!(chain.chain_id, 137);
+        assert_eq!(chain.hypersync_url, "https://137.hypersync.xyz");
+        assert!(chain.rpc_url.is_none());
+        assert_eq!(chain.native_currency_decimals, 18);
+    }
+
+    #[rstest]
+    fn test_chain_set_rpc_url() {
+        let mut chain = Chain::new(Blockchain::Ethereum, 1);
+        assert!(chain.rpc_url.is_none());
+
+        let rpc_url = "https://mainnet.infura.io/v3/YOUR-PROJECT-ID".to_string();
+        chain.set_rpc_url(rpc_url.clone());
+
+        assert_eq!(chain.rpc_url, Some(rpc_url));
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_id_valid() {
+        // Test some known chain IDs
+        assert!(Chain::from_chain_id(1).is_some()); // Ethereum
+        assert!(Chain::from_chain_id(137).is_some()); // Polygon
+        assert!(Chain::from_chain_id(42161).is_some()); // Arbitrum
+        assert!(Chain::from_chain_id(8453).is_some()); // Base
+
+        // Verify specific chain
+        let eth_chain = Chain::from_chain_id(1).unwrap();
+        assert_eq!(eth_chain.name, Blockchain::Ethereum);
+        assert_eq!(eth_chain.chain_id, 1);
+    }
+
+    #[rstest]
+    fn test_chain_from_chain_id_invalid() {
+        // Test unknown chain ID
+        assert!(Chain::from_chain_id(999999).is_none());
+        assert!(Chain::from_chain_id(0).is_none());
+    }
 }
