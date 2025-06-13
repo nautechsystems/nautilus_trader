@@ -15,18 +15,23 @@
 
 use std::sync::Arc;
 
-use nautilus_blockchain::{config::BlockchainAdapterConfig, data::BlockchainDataClient, exchanges};
+use nautilus_blockchain::{
+    config::BlockchainDataClientConfig, data::BlockchainDataClient, exchanges,
+};
 use nautilus_common::logging::{
     logger::{Logger, LoggerConfig},
     writer::FileWriterConfig,
 };
 use nautilus_core::{UUID4, env::get_env_var};
 use nautilus_data::DataClient;
+use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
 };
 use tokio::sync::Notify;
+
+// Run with `cargo run -p nautilus-blockchain --bin sync_token_pool --features hypersync,python`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,6 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         LoggerConfig::default(),
         FileWriterConfig::new(None, None, None, None),
     )?;
+
+    let _ = AsyncRunner::default(); // Needed for live channels
 
     // Setup graceful shutdown with signal handling in different task
     let notify = Arc::new(Notify::new());
@@ -72,15 +79,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(_) => chains::ETHEREUM.clone(), // default
     };
-
     let chain = Arc::new(chain);
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     // Let's use block https://etherscan.io/block/22327045 from (Apr-22-2025 08:49:47 PM +UTC)
     let from_block = Some(22327045);
-    let blockchain_config =
-        BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true, from_block);
+    let blockchain_config = BlockchainDataClientConfig::new(
+        chain.clone(),
+        http_rpc_url,
+        Some(3), // RPC requests per second
+        None,    // WSS RPC URL
+        true,    // Use hypersync for live data
+        from_block,
+    );
 
-    let mut data_client = BlockchainDataClient::new(chain, blockchain_config);
+    let mut data_client = BlockchainDataClient::new(blockchain_config);
     data_client.initialize_cache_database(None).await;
 
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();

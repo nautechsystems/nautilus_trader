@@ -13,10 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Configuration for blockchain adapter connections.
+use std::sync::Arc;
+
+use nautilus_model::defi::chain::Chain;
+
+/// Configuration for blockchain data clients.
 #[derive(Debug, Clone)]
-pub struct BlockchainAdapterConfig {
-    /// Determines if the adapter should use Hypersync for live data streaming.
+pub struct BlockchainDataClientConfig {
+    /// The blockchain chain configuration.
+    pub chain: Arc<Chain>,
+    /// Determines if the client should use Hypersync for live data streaming.
     pub use_hypersync_for_live_data: bool,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
@@ -28,10 +34,11 @@ pub struct BlockchainAdapterConfig {
     pub from_block: Option<u64>,
 }
 
-impl BlockchainAdapterConfig {
-    /// Creates a new [`BlockchainAdapterConfig`] instance.
+impl BlockchainDataClientConfig {
+    /// Creates a new [`BlockchainDataClientConfig`] instance.
     #[must_use]
     pub const fn new(
+        chain: Arc<Chain>,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
         wss_rpc_url: Option<String>,
@@ -39,6 +46,7 @@ impl BlockchainAdapterConfig {
         from_block: Option<u64>,
     ) -> Self {
         Self {
+            chain,
             use_hypersync_for_live_data,
             http_rpc_url,
             rpc_requests_per_second,

@@ -32,7 +32,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     cache::BlockchainCache,
-    config::BlockchainAdapterConfig,
+    config::BlockchainDataClientConfig,
     contracts::erc20::Erc20Contract,
     events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
@@ -64,7 +64,7 @@ pub struct BlockchainDataClient {
     /// The blockchain being targeted by this client instance.
     pub chain: SharedChain,
     /// The configuration for the data client.
-    pub config: BlockchainAdapterConfig,
+    pub config: BlockchainDataClientConfig,
     /// Local cache for blockchain entities.
     cache: BlockchainCache,
     /// Optional WebSocket RPC client for direct blockchain node communication.
@@ -80,13 +80,14 @@ pub struct BlockchainDataClient {
 }
 
 impl BlockchainDataClient {
-    /// Creates a new [`BlockchainDataClient`] instance for the specified chain and configuration.
+    /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
     ///
     /// # Panics
     ///
     /// Panics if `use_hypersync_for_live_data` is false and `wss_rpc_url` is `None` in the provided config.
     #[must_use]
-    pub fn new(chain: SharedChain, config: BlockchainAdapterConfig) -> Self {
+    pub fn new(config: BlockchainDataClientConfig) -> Self {
+        let chain = config.chain.clone();
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
             Some(Self::initialize_rpc_client(chain.name, wss_rpc_url))
@@ -151,13 +152,23 @@ impl BlockchainDataClient {
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
-    pub async fn sync_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
+    pub async fn sync_blocks(&mut self, from_block: Option<u64>) -> anyhow::Result<()> {
+        let from_block = match from_block {
+            Some(b) => b,
+            None => {
+                tracing::warn!("Skipping blocks sync: `from_block` not supplied");
+                return Ok(());
+            }
+        };
+
         let from_block = match self.cache.last_cached_block_number() {
             None => from_block,
             Some(cached_block_number) => max(from_block, cached_block_number + 1),
         };
+
         let current_block = self.hypersync_client.current_block().await;
         tracing::info!("Syncing blocks from {from_block} to {current_block}");
+
         let blocks_stream = self
             .hypersync_client
             .request_blocks_stream(from_block, Some(current_block))
@@ -168,6 +179,7 @@ impl BlockchainDataClient {
         while let Some(block) = blocks_stream.next().await {
             self.cache.add_block(block).await?;
         }
+
         tracing::info!("Finished syncing blocks");
         Ok(())
     }
@@ -429,6 +441,7 @@ impl BlockchainDataClient {
             "Syncing Dex exchange pools for {dex_id} from block {from_block}{}",
             to_block.map_or(String::new(), |block| format!(" to {block}"))
         );
+
         let dex = self.get_dex(dex_id)?.clone();
         let factory_address = dex.factory.as_ref();
         let pair_created_event_signature = dex.pool_created_event.as_ref();
@@ -651,19 +664,15 @@ impl DataClient for BlockchainDataClient {
 
     /// Establishes connections to the data providers and cache, then starts block syncing.
     async fn connect(&mut self) -> anyhow::Result<()> {
-        let from_block = self.config.from_block.unwrap_or(0);
-
-        tracing::info!(
-            "Connecting blockchain data client for {} from block {from_block}",
-            self.chain.name
-        );
+        tracing::info!("Connecting blockchain data client for {}", self.chain.name);
 
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
         }
 
+        let from_block = self.config.from_block.unwrap_or(0);
         self.cache.connect(from_block).await?;
-        self.sync_blocks(from_block).await?;
+        self.sync_blocks(self.config.from_block).await?;
 
         Ok(())
     }

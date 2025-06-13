@@ -15,18 +15,21 @@
 
 use std::sync::Arc;
 
-use nautilus_blockchain::{config::BlockchainAdapterConfig, data::BlockchainDataClient};
+use nautilus_blockchain::{config::BlockchainDataClientConfig, data::BlockchainDataClient};
 use nautilus_common::logging::{
     logger::{Logger, LoggerConfig},
     writer::FileWriterConfig,
 };
 use nautilus_core::{UUID4, env::get_env_var};
 use nautilus_data::DataClient;
+use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
 };
 use tokio::sync::Notify;
+
+// Run with `cargo run -p nautilus-blockchain --bin live_blocks_hypersync --features hypersync,python`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,6 +41,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         LoggerConfig::default(),
         FileWriterConfig::new(None, None, None, None),
     )?;
+
+    let _ = AsyncRunner::default(); // Needed for live channels
 
     // Setup graceful shutdown with signal handling in different task
     let notify = Arc::new(Notify::new());
@@ -75,10 +80,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain = Arc::new(chain);
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
-    let blockchain_config =
-        BlockchainAdapterConfig::new(http_rpc_url, None, Some(wss_rpc_url), false, None);
+    let blockchain_config = BlockchainDataClientConfig::new(
+        chain.clone(),
+        http_rpc_url,
+        None, // RPC requests per second
+        Some(wss_rpc_url),
+        false, // Don't use hypersync for live data
+        None,  // from_block
+    );
 
-    let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_config);
+    let mut data_client = BlockchainDataClient::new(blockchain_config);
 
     data_client.connect().await?;
     data_client.subscribe_blocks().await;
