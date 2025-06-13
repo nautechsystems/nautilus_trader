@@ -466,11 +466,11 @@ impl NautilusKernel {
     #[allow(clippy::await_holding_refcell_ref)]
     async fn connect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut data_engine = self.data_engine.borrow_mut();
-        let data_adapters = data_engine.get_clients_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().connect());
+        for adapter in data_adapters.iter_mut() {
+            futures.push(adapter.connect());
         }
 
         let results = join_all(futures).await;
@@ -487,11 +487,11 @@ impl NautilusKernel {
     #[allow(clippy::await_holding_refcell_ref)]
     async fn disconnect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut data_engine = self.data_engine.borrow_mut();
-        let data_adapters = data_engine.get_clients_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().disconnect());
+        for adapter in data_adapters.iter_mut() {
+            futures.push(adapter.disconnect());
         }
 
         let results = join_all(futures).await;

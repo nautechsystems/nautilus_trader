@@ -24,6 +24,8 @@ pub struct BlockchainAdapterConfig {
     pub rpc_requests_per_second: Option<u32>,
     /// The WebSocket secure URL for the blockchain RPC endpoint.
     pub wss_rpc_url: Option<String>,
+    /// The block from which to sync historical data.
+    pub from_block: Option<u64>,
 }
 
 impl BlockchainAdapterConfig {
@@ -34,12 +36,14 @@ impl BlockchainAdapterConfig {
         rpc_requests_per_second: Option<u32>,
         wss_rpc_url: Option<String>,
         use_hypersync_for_live_data: bool,
+        from_block: Option<u64>,
     ) -> Self {
         Self {
             use_hypersync_for_live_data,
             http_rpc_url,
             rpc_requests_per_second,
             wss_rpc_url,
+            from_block,
         }
     }
 }

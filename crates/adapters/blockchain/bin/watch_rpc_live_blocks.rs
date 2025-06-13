@@ -21,6 +21,7 @@ use nautilus_common::logging::{
     writer::FileWriterConfig,
 };
 use nautilus_core::{UUID4, env::get_env_var};
+use nautilus_data::DataClient;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
@@ -75,18 +76,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     let blockchain_config =
-        BlockchainAdapterConfig::new(http_rpc_url, None, Some(wss_rpc_url), false);
+        BlockchainAdapterConfig::new(http_rpc_url, None, Some(wss_rpc_url), false, None);
+
     let mut data_client = BlockchainDataClient::new(chain.clone(), blockchain_config);
-    data_client.connect(None).await?;
+
+    data_client.connect().await?;
     data_client.subscribe_blocks().await;
 
-    // Main loop to keep the app running
     loop {
         tokio::select! {
             () = notify.notified() => break,
             () = data_client.process_rpc_message() => {}
         }
     }
-    data_client.disconnect()?;
+
+    data_client.disconnect().await?;
     Ok(())
 }

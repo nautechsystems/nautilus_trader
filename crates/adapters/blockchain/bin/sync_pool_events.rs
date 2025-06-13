@@ -21,6 +21,7 @@ use nautilus_common::logging::{
     writer::FileWriterConfig,
 };
 use nautilus_core::{UUID4, env::get_env_var};
+use nautilus_data::DataClient;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
@@ -30,7 +31,7 @@ use tokio::sync::Notify;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    // Setup logger
+
     let _logger_guard = Logger::init_with_config(
         TraderId::default(),
         UUID4::new(),
@@ -71,9 +72,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(_) => chains::ETHEREUM.clone(), // default
     };
+
+    // WETH/USDC Uniswap V3 pool
+    let weth_usdc_pool = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640";
+    let pool_creation_block = 12376729;
+    let from_block = Some(22550000);
+
     let chain = Arc::new(chain);
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
-    let blockchain_config = BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true);
+    let blockchain_config =
+        BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true, from_block);
 
     let mut data_client = BlockchainDataClient::new(chain, blockchain_config);
     data_client.initialize_cache_database(None).await;
@@ -81,12 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
     let dex_id = univ3.id();
 
-    // WETH/USDC Uniswap V3 pool
-    let weth_usdc_pool = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640";
-    let pool_creation_block = 12376729;
-    let from_block = Some(22550000);
-
-    data_client.connect(from_block).await?;
+    data_client.connect().await?;
     data_client.register_exchange(univ3.clone()).await?;
 
     // Main loop to keep the app running
@@ -120,6 +123,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => break,
         }
     }
-    data_client.disconnect()?;
+
+    data_client.disconnect().await?;
     Ok(())
 }

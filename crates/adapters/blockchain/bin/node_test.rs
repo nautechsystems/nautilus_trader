@@ -81,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None, // HyperSync URL not needed for this test
         wss_rpc_url,
         false, // Don't cache locally for this test
+        None,  // TODO: From beginning of available data?
     );
 
     let client_factory = BlockchainDataClientFactory::new();

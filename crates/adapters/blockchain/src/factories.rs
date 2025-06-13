@@ -126,6 +126,7 @@ mod tests {
             None,
             None,
             false,
+            None,
         );
         let chain = Arc::new(chains::ETHEREUM.clone());
 
