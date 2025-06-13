@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Consolidated the clocks and timers v2 feature from @twitu
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
+- Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652), thanks @faysou
 - Refined signal serialization and tests (#2705), thanks @faysou
