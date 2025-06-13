@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use arraydeque::{ArrayDeque, Wrapping};
 use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{

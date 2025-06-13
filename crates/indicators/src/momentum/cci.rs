@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use arraydeque::{ArrayDeque, Wrapping};
 use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::{
@@ -23,7 +23,7 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
-pub const MAX_PERIOD: usize = 1_024;
+const MAX_PERIOD: usize = 1024;
 
 #[repr(C)]
 #[derive(Debug)]
