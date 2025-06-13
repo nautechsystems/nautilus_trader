@@ -159,12 +159,10 @@ impl DataActor for DatabentoSubscriberActor {
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
-        let start = self.clock().utc_now();
-
         self.clock().set_timer(
             "TEST-TIMER-1-SECOND",
             Duration::from_secs(1),
-            start,
+            None,
             None,
             None,
             Some(true),
@@ -174,7 +172,7 @@ impl DataActor for DatabentoSubscriberActor {
         self.clock().set_timer(
             "TEST-TIMER-2-SECOND",
             Duration::from_secs(2),
-            start,
+            None,
             None,
             None,
             Some(true),

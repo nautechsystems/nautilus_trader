@@ -192,10 +192,8 @@ pub unsafe extern "C" fn test_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
-    let stop_time_ns = match stop_time_ns.into() {
-        0 => None,
-        _ => Some(stop_time_ns),
-    };
+    let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
+    let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {
@@ -430,11 +428,8 @@ pub unsafe extern "C" fn live_clock_set_timer(
     assert!(!callback_ptr.is_null());
 
     let name = unsafe { cstr_as_str(name_ptr) };
-    let stop_time_ns = match stop_time_ns.into() {
-        0 => None,
-        _ => Some(stop_time_ns),
-    };
-
+    let start_time_ns = (start_time_ns != 0).then_some(start_time_ns);
+    let stop_time_ns = (stop_time_ns != 0).then_some(stop_time_ns);
     let callback = if callback_ptr == unsafe { ffi::Py_None() } {
         None
     } else {

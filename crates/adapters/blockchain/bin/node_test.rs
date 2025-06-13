@@ -171,12 +171,10 @@ impl DataActor for BlockchainSubscriberActor {
             // The actual subscription logic would be handled by the BlockchainDataClient
         }
 
-        let start = self.clock().utc_now(); // TODO: Make start optional
-
         self.clock().set_timer(
             "TEST-TIMER-1-SECOND",
             Duration::from_secs(1),
-            start,
+            None,
             None,
             None,
             Some(true),
@@ -186,7 +184,7 @@ impl DataActor for BlockchainSubscriberActor {
         self.clock().set_timer(
             "TEST-TIMER-2-SECOND",
             Duration::from_secs(2),
-            start,
+            None,
             None,
             None,
             Some(true),

@@ -897,7 +897,7 @@ impl DataEngine {
                 .set_timer_ns(
                     &timer_name,
                     interval_ns,
-                    start_time_ns.into(),
+                    Some(start_time_ns.into()),
                     None,
                     Some(callback),
                     None,

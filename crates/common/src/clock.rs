@@ -150,7 +150,7 @@ pub trait Clock: Debug {
         &mut self,
         name: &str,
         interval: Duration,
-        start_time: DateTime<Utc>,
+        start_time: Option<DateTime<Utc>>,
         stop_time: Option<DateTime<Utc>>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
@@ -159,7 +159,7 @@ pub trait Clock: Debug {
         self.set_timer_ns(
             name,
             interval.as_nanos() as u64,
-            start_time.into(),
+            start_time.map(UnixNanos::from),
             stop_time.map(UnixNanos::from),
             callback,
             allow_past,
@@ -192,7 +192,7 @@ pub trait Clock: Debug {
         &mut self,
         name: &str,
         interval_ns: u64,
-        start_time_ns: UnixNanos,
+        start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
@@ -474,7 +474,7 @@ impl Clock for TestClock {
         &mut self,
         name: &str,
         interval_ns: u64,
-        start_time_ns: UnixNanos,
+        start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
@@ -496,7 +496,7 @@ impl Clock for TestClock {
             None => None,
         };
 
-        let mut start_time_ns = start_time_ns;
+        let mut start_time_ns = start_time_ns.unwrap_or_default();
         let ts_now = self.get_time_ns();
 
         if start_time_ns == 0 {
@@ -754,7 +754,7 @@ impl Clock for LiveClock {
         &mut self,
         name: &str,
         interval_ns: u64,
-        start_time_ns: UnixNanos,
+        start_time_ns: Option<UnixNanos>,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<TimeEventCallback>,
         allow_past: Option<bool>,
@@ -778,7 +778,7 @@ impl Clock for LiveClock {
 
         self.callbacks.insert(name, callback.clone());
 
-        let mut start_time_ns = start_time_ns;
+        let mut start_time_ns = start_time_ns.unwrap_or_default();
         let ts_now = self.get_time_ns();
 
         if start_time_ns == 0 {
@@ -970,7 +970,7 @@ mod tests {
     fn test_time_advancement(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("test_timer", 1000, start_time, None, None, None, None)
+            .set_timer_ns("test_timer", 1000, Some(start_time), None, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2500).into(), true);
         assert_eq!(events.len(), 2);
@@ -1020,10 +1020,10 @@ mod tests {
     fn test_multiple_timers(mut test_clock: TestClock) {
         let start_time = test_clock.timestamp_ns();
         test_clock
-            .set_timer_ns("timer1", 1000, start_time, None, None, None, None)
+            .set_timer_ns("timer1", 1000, Some(start_time), None, None, None, None)
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 2000, start_time, None, None, None, None)
+            .set_timer_ns("timer2", 2000, Some(start_time), None, None, None, None)
             .unwrap();
         let events = test_clock.advance_time((*start_time + 2000).into(), true);
         assert_eq!(events.len(), 3);
@@ -1081,7 +1081,7 @@ mod tests {
         let result = test_clock.set_timer_ns(
             "invalid_timer",
             100,
-            start_time,
+            Some(start_time),
             Some(stop_time),
             None,
             None,
@@ -1105,7 +1105,7 @@ mod tests {
             .set_timer_ns(
                 "fire_immediately_timer",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1132,7 +1132,7 @@ mod tests {
             .set_timer_ns(
                 "normal_timer",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1159,7 +1159,7 @@ mod tests {
             .set_timer_ns(
                 "default_timer",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1183,7 +1183,7 @@ mod tests {
             .set_timer_ns(
                 "zero_start_timer",
                 interval_ns,
-                0.into(),
+                None,
                 None,
                 None,
                 None,
@@ -1211,7 +1211,7 @@ mod tests {
             .set_timer_ns(
                 "immediate_timer",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1224,7 +1224,7 @@ mod tests {
             .set_timer_ns(
                 "normal_timer",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1252,12 +1252,27 @@ mod tests {
 
         // Set first timer
         test_clock
-            .set_timer_ns("collision_timer", 1000, start_time, None, None, None, None)
+            .set_timer_ns(
+                "collision_timer",
+                1000,
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         // Setting timer with same name should overwrite the existing one
-        let result =
-            test_clock.set_timer_ns("collision_timer", 2000, start_time, None, None, None, None);
+        let result = test_clock.set_timer_ns(
+            "collision_timer",
+            2000,
+            Some(start_time),
+            None,
+            None,
+            None,
+            None,
+        );
 
         assert!(result.is_ok());
         // Should still only have one timer (overwritten)
@@ -1275,7 +1290,7 @@ mod tests {
 
         // Attempt to set timer with zero interval should fail
         let result =
-            test_clock.set_timer_ns("zero_interval", 0, start_time, None, None, None, None);
+            test_clock.set_timer_ns("zero_interval", 0, Some(start_time), None, None, None, None);
 
         assert!(result.is_err());
         assert_eq!(test_clock.timer_count(), 0);
@@ -1286,7 +1301,7 @@ mod tests {
         let start_time = test_clock.timestamp_ns();
 
         // Attempt to set timer with empty name should fail
-        let result = test_clock.set_timer_ns("", 1000, start_time, None, None, None, None);
+        let result = test_clock.set_timer_ns("", 1000, Some(start_time), None, None, None, None);
 
         assert!(result.is_err());
         assert_eq!(test_clock.timer_count(), 0);
@@ -1302,7 +1317,7 @@ mod tests {
             .set_timer_ns(
                 "exact_stop",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 Some(stop_time.into()),
                 None,
                 None,
@@ -1327,7 +1342,7 @@ mod tests {
             .set_timer_ns(
                 "exact_advance",
                 interval_ns,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
@@ -1357,7 +1372,7 @@ mod tests {
         let result = test_clock.set_timer_ns(
             "bar_timer",
             interval_ns,
-            bar_start_time,
+            Some(bar_start_time),
             None,
             None,
             Some(false), // allow_past = false
@@ -1386,7 +1401,7 @@ mod tests {
         let result = test_clock.set_timer_ns(
             "past_event_timer",
             interval_ns,
-            past_start_time,
+            Some(past_start_time),
             None,
             None,
             Some(false), // allow_past = false
@@ -1415,7 +1430,7 @@ mod tests {
         let result = test_clock.set_timer_ns(
             "immediate_past_timer",
             interval_ns,
-            past_start_time,
+            Some(past_start_time),
             None,
             None,
             Some(false), // allow_past = false
@@ -1437,7 +1452,15 @@ mod tests {
         let start_time = test_clock.timestamp_ns();
 
         test_clock
-            .set_timer_ns("cancel_test", 1000, start_time, None, None, None, None)
+            .set_timer_ns(
+                "cancel_test",
+                1000,
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 1);
@@ -1454,17 +1477,15 @@ mod tests {
 
     #[rstest]
     fn test_cancel_all_timers(mut test_clock: TestClock) {
-        let start_time = test_clock.timestamp_ns();
-
         // Create multiple timers
         test_clock
-            .set_timer_ns("timer1", 1000, start_time, None, None, None, None)
+            .set_timer_ns("timer1", 1000, None, None, None, None, None)
             .unwrap();
         test_clock
-            .set_timer_ns("timer2", 1500, start_time, None, None, None, None)
+            .set_timer_ns("timer2", 1500, None, None, None, None, None)
             .unwrap();
         test_clock
-            .set_timer_ns("timer3", 2000, start_time, None, None, None, None)
+            .set_timer_ns("timer3", 2000, None, None, None, None, None)
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 3);
@@ -1475,16 +1496,14 @@ mod tests {
         assert_eq!(test_clock.timer_count(), 0);
 
         // Advance time - should get no events
-        let events = test_clock.advance_time((start_time + 5000).into(), true);
+        let events = test_clock.advance_time(5000.into(), true);
         assert_eq!(events.len(), 0);
     }
 
     #[rstest]
     fn test_clock_reset_clears_timers(mut test_clock: TestClock) {
-        let start_time = test_clock.timestamp_ns();
-
         test_clock
-            .set_timer_ns("reset_test", 1000, start_time, None, None, None, None)
+            .set_timer_ns("reset_test", 1000, None, None, None, None, None)
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 1);
@@ -1533,7 +1552,15 @@ mod tests {
 
         // Test the default implementation that delegates to set_timer_ns
         test_clock
-            .set_timer("timer_test", interval, start_time, None, None, None, None)
+            .set_timer(
+                "timer_test",
+                interval,
+                Some(start_time),
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         assert_eq!(test_clock.timer_count(), 1);
@@ -1564,7 +1591,7 @@ mod tests {
             .set_timer(
                 "timer_with_stop",
                 interval,
-                start_time,
+                Some(start_time),
                 Some(stop_time),
                 None,
                 None,
@@ -1598,7 +1625,7 @@ mod tests {
             .set_timer(
                 "immediate_timer",
                 interval,
-                start_time,
+                Some(start_time),
                 None,
                 None,
                 None,
