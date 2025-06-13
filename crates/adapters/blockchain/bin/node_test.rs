@@ -16,11 +16,11 @@
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
+    time::Duration,
 };
 
 use nautilus_blockchain::{
-    config::BlockchainAdapterConfig,
-    factories::{BlockchainClientConfig, BlockchainDataClientFactory},
+    config::BlockchainDataClientConfig, factories::BlockchainDataClientFactory,
 };
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
@@ -60,27 +60,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             chains::ETHEREUM.clone()
         }
     };
-
-    let chain = Arc::new(chain);
-    println!("   - Using chain: {}", chain.name);
-
-    // Try to get RPC URLs from environment, fallback to test values if not available
-    let http_rpc_url = get_env_var("RPC_HTTP_URL").unwrap_or_else(|_| {
-        println!("⚠️  RPC_HTTP_URL not found, using placeholder");
-        "https://eth-mainnet.example.com".to_string()
-    });
-    let wss_rpc_url = get_env_var("RPC_WSS_URL").ok();
-
-    let blockchain_config = BlockchainAdapterConfig::new(
-        http_rpc_url,
-        None, // HyperSync URL not needed for this test
-        wss_rpc_url,
-        false, // Don't cache locally for this test
-        None,  // TODO: From beginning of available data?
-    );
+    let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
+    let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
 
     let client_factory = BlockchainDataClientFactory::new();
-    let client_config = BlockchainClientConfig::new(blockchain_config, chain.clone());
+    let client_config = BlockchainDataClientConfig::new(
+        Arc::new(chain),
+        http_rpc_url,
+        None, // RPC requests per second
+        Some(wss_rpc_url),
+        false, // Don't use hypersync for live data
+        None,  // from_block
+    );
 
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
         .with_load_state(false)
@@ -179,6 +170,28 @@ impl DataActor for BlockchainSubscriberActor {
             // They monitor blockchain events rather than traditional market data subscriptions
             // The actual subscription logic would be handled by the BlockchainDataClient
         }
+
+        let start = self.clock().utc_now(); // TODO: Make start optional
+
+        self.clock().set_timer(
+            "TEST-TIMER-1-SECOND",
+            Duration::from_secs(1),
+            start,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
+
+        self.clock().set_timer(
+            "TEST-TIMER-2-SECOND",
+            Duration::from_secs(2),
+            start,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
 
         log::info!("Blockchain subscriber actor started successfully");
         Ok(())
