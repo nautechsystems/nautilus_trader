@@ -97,6 +97,8 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Search for full option chain
     build_futures_chain: bool (default: None)
         Search for full futures chain
+    options_chain_exchange: str (default : None)
+        optional exchange for options chain, in place of underlying exchange
     min_expiry_days: int (default: None)
         Filters the options_chain and futures_chain which are expiring after number of days specified.
     max_expiry_days: int (default: None)
@@ -156,6 +158,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     # nautilus specific parameters
     build_futures_chain: bool | None = None
     build_options_chain: bool | None = None
+    options_chain_exchange: str | None = None
     min_expiry_days: int | None = None
     max_expiry_days: int | None = None
 
