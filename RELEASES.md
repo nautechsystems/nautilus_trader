@@ -53,6 +53,7 @@ Released on TBD (UTC).
 - Fixed pending update hot cache cleanup for Betfair execution client
 - Fixed order book snapshots unsubscribe for Tardis data client
 - Fixed Arrow schema registration for `BinanceBar`
+- Fixed gRPC server shutdown warning when running dYdX integration tests
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
 - Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
