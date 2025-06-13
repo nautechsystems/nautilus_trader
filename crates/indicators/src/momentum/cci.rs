@@ -81,8 +81,8 @@ impl CommodityChannelIndex {
     ///
     /// # Panics
     ///
-    /// * If `period` is less than or equal to 0.
-    /// * If `period` exceeds `MAX_PERIOD`.
+    /// - If `period` is less than or equal to 0.
+    /// - If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
         assert!(period > 0, "CommodityChannelIndex: period must be > 0");

@@ -103,8 +103,8 @@ pub trait StateStore {
     /// The closure parameter takes the old value (`None` if this is the first measurement) of the
     /// state store at the key's location, checks if the request an be accommodated and:
     ///
-    /// * If the request is rate-limited, returns `Err(E)`.
-    /// * If the request can make it through, returns `Ok(T)` (an arbitrary positive return
+    /// - If the request is rate-limited, returns `Err(E)`.
+    /// - If the request can make it through, returns `Ok(T)` (an arbitrary positive return
     ///   value) and the updated state.
     ///
     /// It is `measure_and_replace`'s job then to safely replace the value at the key - it must
