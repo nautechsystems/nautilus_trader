@@ -43,6 +43,11 @@ Released on TBD (UTC).
 - Fixed order status report generation for Polymarket where `venue_order_id` was unbounded
 - Fixed data request identifier attribute access for `LiveDataClient`
 - Fixed `generate_order_modify_rejected` typo in Binance execution client (#2682), thanks for reporting @etiennepar
+- Fixed order book depth handling in subscriptions for Binance
+- Fixed potential `IndexError` with empty bars requests for Binance
+- Fixed GTD-GTC time in force conversion for Binance
+- Fixed incorrect logging of trigger type for Binance
+- Fixed trade ticks unsubscribe for Binance which was not differentiating aggregated trades
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou

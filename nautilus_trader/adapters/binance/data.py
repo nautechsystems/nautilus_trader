@@ -387,9 +387,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if not command.depth:
-            # Reasonable default for full book, which works for Spot and Futures
-            depth = 1000
+        # Use the depth requested on the command, otherwise fall back to the
+        # Binance maximum (1000). Note that a depth of ``0`` means *full book*
+        # in NautilusTrader semantics, which we translate to 1000; the maximum
+        # value accepted by the Binance partial book snapshot endpoint.
+        depth: int = command.depth if command.depth else 1000
 
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
@@ -400,7 +402,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 )
                 return
             await self._ws_client.subscribe_partial_book_depth(
-                symbol=command.vinstrument_id.symbol.value,
+                symbol=command.instrument_id.symbol.value,
                 depth=depth,
                 speed=update_speed,
             )
@@ -504,7 +506,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_book_ticker(command.instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, command: UnsubscribeTradeTicks) -> None:
-        await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
+        if self._use_agg_trade_ticks:
+            await self._ws_client.unsubscribe_agg_trades(command.instrument_id.symbol.value)
+        else:
+            await self._ws_client.unsubscribe_trades(command.instrument_id.symbol.value)
 
     async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
         if not command.bar_type.spec.is_time_aggregated():
@@ -594,7 +599,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
         self._handle_trade_ticks(request.instrument_id, ticks, request.id, request.params)
 
-    async def _request_bars(self, request: RequestBars) -> None:
+    async def _request_bars(self, request: RequestBars) -> None:  # noqa: C901 (too complex)
         if request.bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
                 f"Cannot request {request.bar_type} bars: "
@@ -665,6 +670,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 end_time_ms=end_time_ms,
                 limit=request.limit if request.limit > 0 else None,
             )
+
+        # Binance always returns the *last* bar as an unfinished / partial bar
+        # which we publish separately from the historical series.  When the
+        # query returned no data we avoid raising ``IndexError`` by checking
+        # for an empty collection first.
+        if not bars:
+            self._log.warning(
+                f"No bars returned for {request.bar_type} between "
+                f"{request.start} and {request.end}",
+            )
+            return
 
         partial: Bar = bars.pop()
         self._handle_bars(request.bar_type, bars, partial, request.id, request.params)
