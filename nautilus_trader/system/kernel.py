@@ -173,7 +173,7 @@ class NautilusKernel:
 
         register_component_clock(self._instance_id, self._clock)
 
-        # Initialize logging system
+        # Initialize logging subsystem
         self._log_guard: nautilus_pyo3.LogGuard | LogGuard | None = None
         logging: LoggingConfig = config.logging or LoggingConfig()
 
@@ -953,9 +953,9 @@ class NautilusKernel:
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
-        Return the global logging systems log guard.
+        Return the global logging subsystems log guard.
 
-        May return ``None`` if the logging system was already initialized.
+        May return ``None`` if the logging subsystem was already initialized.
 
         Returns
         -------

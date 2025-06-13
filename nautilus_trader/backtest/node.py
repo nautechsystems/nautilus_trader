@@ -116,7 +116,7 @@ class BacktestNode:
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """
-        Return the global logging systems log guard.
+        Return the global logging subsystems log guard.
 
         May return ``None`` if no internal engines are initialized yet.
 
@@ -354,7 +354,7 @@ class BacktestNode:
         engine = BacktestEngine(config=engine_config)
         self._engines[run_config_id] = engine
 
-        # Assign the global logging system guard to keep it alive for
+        # Assign the global logging subsystem guard to keep it alive for
         # the duration of the nodes runs.
         log_guard = engine.kernel.get_log_guard()
 

@@ -18,7 +18,7 @@ use std::{
     env,
     fmt::Display,
     str::FromStr,
-    sync::{atomic::Ordering, mpsc::SendError},
+    sync::{OnceLock, atomic::Ordering, mpsc::SendError},
 };
 
 use indexmap::IndexMap;
@@ -43,6 +43,9 @@ use crate::{
 };
 
 const LOGGING: &str = "logging";
+
+/// Global log sender which allows multiple log guards per process.
+static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
 #[cfg_attr(
     feature = "python",
@@ -156,7 +159,7 @@ pub struct Logger {
 }
 
 /// Represents a type of log event.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum LogEvent {
     /// A log line event.
     Log(LogLine),
@@ -377,41 +380,36 @@ impl Logger {
             config: config.clone(),
         };
 
+        set_boxed_logger(Box::new(logger))?;
+
+        LOGGER_TX.set(tx.clone()).ok(); // Intended as a future feature: not yet used
+
         let print_config = config.print_config;
         if print_config {
             println!("STATIC_MAX_LEVEL={STATIC_MAX_LEVEL}");
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let handle: Option<std::thread::JoinHandle<()>>;
-        match set_boxed_logger(Box::new(logger)) {
-            Ok(()) => {
-                handle = Some(
-                    std::thread::Builder::new()
-                        .name(LOGGING.to_string())
-                        .spawn(move || {
-                            Self::handle_messages(
-                                trader_id.to_string(),
-                                instance_id.to_string(),
-                                config,
-                                file_config,
-                                rx,
-                            );
-                        })?,
+        let handle = std::thread::Builder::new()
+            .name(LOGGING.to_string())
+            .spawn(move || {
+                Self::handle_messages(
+                    trader_id.to_string(),
+                    instance_id.to_string(),
+                    config,
+                    file_config,
+                    rx,
                 );
+            })?;
 
-                let max_level = log::LevelFilter::Trace;
-                set_max_level(max_level);
-                if print_config {
-                    println!("Logger set as `log` implementation with max level {max_level}");
-                }
-            }
-            Err(e) => {
-                anyhow::bail!("Cannot initialize logger because of error: {e}");
-            }
+        let max_level = log::LevelFilter::Trace;
+        set_max_level(max_level);
+
+        if print_config {
+            println!("Logger set as `log` implementation with max level {max_level}");
         }
 
-        Ok(LogGuard::new(handle, Some(tx)))
+        Ok(LogGuard::new(Some(handle), Some(tx)))
     }
 
     fn handle_messages(
@@ -424,7 +422,7 @@ impl Logger {
         let LoggerConfig {
             stdout_level,
             fileout_level,
-            ref component_level,
+            component_level,
             is_colored,
             print_config: _,
         } = config;
@@ -439,18 +437,19 @@ impl Logger {
         let mut file_writer_opt = if fileout_level == LevelFilter::Off {
             None
         } else {
-            FileWriter::new(trader_id, instance_id, file_config, fileout_level)
+            FileWriter::new(
+                trader_id.clone(),
+                instance_id.clone(),
+                file_config.clone(),
+                fileout_level,
+            )
         };
 
         // Continue to receive and handle log events until channel is hung up
         while let Ok(event) = rx.recv() {
             match event {
                 LogEvent::Log(line) => {
-                    let component_level = component_level.get(&line.component);
-
-                    // Check if the component exists in level_filters,
-                    // and if its level is greater than event.level.
-                    if let Some(&filter_level) = component_level {
+                    if let Some(&filter_level) = component_level.get(&line.component) {
                         if line.level > filter_level {
                             continue;
                         }
@@ -500,6 +499,7 @@ impl Logger {
                     if let Some(ref mut file_writer) = file_writer_opt {
                         file_writer.flush();
                     }
+
                     break;
                 }
             }
@@ -560,13 +560,18 @@ impl Default for LogGuard {
 
 impl Drop for LogGuard {
     fn drop(&mut self) {
+        // Dropping a `LogGuard` should not shutdown the global logger when
+        // other parts of the process may still need it. Flush any buffered messages
+        // so that the caller’s logs are persisted, but we leave the logger thread
+        // running for the remainder of the process lifetime.
+
         if let Some(tx) = self.tx.take() {
-            let _ = tx.send(LogEvent::Close);
+            let _ = tx.send(LogEvent::Flush);
         }
 
-        if let Some(handle) = self.handle.take() {
-            handle.join().expect("Error joining logging handle");
-        }
+        // Drop the thread handle (if we own it) without joining to keep the
+        // global logger alive for the remainder of the process.
+        self.handle.take();
     }
 }
 

@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
 - Refactored data catalog (#2652), thanks @faysou
+- Refined logging subsystem lifecycle management and introduce global log sender
 - Refined signal serialization and tests (#2705), thanks @faysou
 - Refined CI/CD and build system (#2707), thanks @stastnypremysl
 - Upgraded Cython to v3.1.2
@@ -1682,7 +1683,7 @@ Released on 25th February 2024 (UTC).
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
 - Fixed `LiveClock` timer behavior for small intervals causing next time to be less than now (timer then would not run)
 - Fixed log level filtering for `log_level_file` (bug introduced in v1.187.0), thanks @twitu
-- Fixed logging `print_config` config option (was not being passed through to the logging system)
+- Fixed logging `print_config` config option (was not being passed through to the logging subsystem)
 - Fixed logging timestamps for backtesting (static clock was not being incrementally set to individual `TimeEvent` timestamps)
 - Fixed account balance updates (fills from zero quantity `NETTING` positions will generate account balance updates)
 - Fixed `MessageBus` publishable types collection type (needed to be `tuple` not `set`)
@@ -1703,7 +1704,7 @@ Released on 25th February 2024 (UTC).
 Released on 9th February 2024 (UTC).
 
 ### Enhancements
-- Refined logging system module and writers in Rust, thanks @ayush-sb and @twitu
+- Refined logging subsystem module and writers in Rust, thanks @ayush-sb and @twitu
 - Improved Interactive Brokers adapter symbology and parsing with a `strict_symbology` config option, thanks @rsmb7z and @fhill2
 
 ### Breaking Changes
@@ -1761,7 +1762,7 @@ Released on 22nd January 2024 (UTC).
 
 ### Enhancements
 - Added `LogLevel.OFF` (matches the Rust `tracing` log levels)
-- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging system
+- Added `init_logging` function with sensible defaults to initialize the Rust implemented logging subsystem
 - Updated Binance Futures enum members for `BinanceFuturesContractType` and `BinanceFuturesPositionUpdateReason`
 - Improved log header using the `sysinfo` crate (adds swap space metrics and a PID identifier)
 - Removed Python dependency on `psutil`
