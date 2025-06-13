@@ -192,14 +192,24 @@ class ParquetDataCatalog(BaseDataCatalog):
         return cls.from_uri(os.environ[_NAUTILUS_PATH] + "/catalog")
 
     @classmethod
-    def from_uri(cls, uri: str) -> ParquetDataCatalog:
+    def from_uri(
+        cls,
+        uri: str,
+        storage_options: dict[str, str] | None = None,
+    ) -> ParquetDataCatalog:
         """
-        Create a data catalog instance from the given `uri`.
+        Create a data catalog instance from the given `uri` with optional storage
+        options.
 
         Parameters
         ----------
         uri : str
             The URI string for the backing path.
+        storage_options : dict[str, str], optional
+            Storage-specific configuration options.
+            For S3: endpoint_url, region, access_key_id, secret_access_key, session_token, etc.
+            For GCS: service_account_path, service_account_key, project_id, etc.
+            For Azure: account_name, account_key, sas_token, etc.
 
         Returns
         -------
@@ -213,9 +223,15 @@ class ParquetDataCatalog(BaseDataCatalog):
         parsed = infer_storage_options(uri)
         path = parsed.pop("path")
         protocol = parsed.pop("protocol")
-        storage_options = parsed.copy()
 
-        return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
+        # Merge parsed storage options with provided storage options
+        # Provided storage options take precedence
+        merged_storage_options = parsed.copy()
+
+        if storage_options:
+            merged_storage_options.update(storage_options)
+
+        return cls(path=path, fs_protocol=protocol, fs_storage_options=merged_storage_options)
 
     # -- WRITING ----------------------------------------------------------------------------------
 
@@ -741,7 +757,7 @@ class ParquetDataCatalog(BaseDataCatalog):
           DataType.
 
         """
-        if self.fs_protocol == "file" and data_cls in (
+        if data_cls in (
             OrderBookDelta,
             OrderBookDeltas,
             OrderBookDepth10,
@@ -859,27 +875,29 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         Notes
         -----
-        - This method only works with the 'file' protocol.
         - It maps the data class to the appropriate NautilusDataType for the Rust backend.
         - The method filters files by directory structure and filename patterns before adding
           them to the session.
         - Each file is added with a SQL query that includes the specified filters.
+        - Supports various object store backends including local files, AWS S3, Google Cloud Storage,
+          Azure Blob Storage, and HTTP/WebDAV servers.
 
         Raises
         ------
-        AssertionError
-            If the filesystem protocol is not 'file'.
         RuntimeError
             If the data class is not supported by the Rust backend.
 
         """
-        assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
         files = self._query_files(data_cls, instrument_ids, bar_types, start, end)
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
             session = DataBackendSession()
+
+        # Register object store with the session for non-file protocols
+        if self.fs_protocol != "file":
+            self._register_object_store_with_session(session)
 
         for idx, file in enumerate(files):
             table = f"{file_prefix}_{idx}"
@@ -890,9 +908,74 @@ class ParquetDataCatalog(BaseDataCatalog):
                 end=end,
                 where=where,
             )
-            session.add_file(data_type, table, str(file), query)
+
+            # Convert file path to URI format for object store compatibility
+            file_uri = file
+
+            if self.fs_protocol != "file" and "://" not in file:
+                # Convert relative paths to full URIs based on protocol
+                if self.fs_protocol == "s3":
+                    file_uri = f"s3://{file}"
+                elif self.fs_protocol in ("gcs", "gs"):
+                    file_uri = f"gs://{file}"
+                elif self.fs_protocol in ("azure", "abfs"):
+                    file_uri = f"azure://{file}"
+                elif self.fs_protocol in ("http", "https"):
+                    file_uri = f"{self.fs_protocol}://{file}"
+                # Add more protocols as needed
+            elif self.fs_protocol == "file" and not file.startswith("file://"):
+                # For local files, DataFusion can handle both absolute paths and file:// URIs
+                # We'll keep the original path format for compatibility
+                file_uri = file
+
+            session.add_file(data_type, table, file_uri, query)
 
         return session
+
+    def _register_object_store_with_session(self, session: DataBackendSession) -> None:
+        """
+        Register object store with the DataFusion session for cloud storage access.
+
+        This method creates and registers appropriate object store instances based on the
+        filesystem protocol, enabling DataFusion to access cloud storage directly.
+
+        Parameters
+        ----------
+        session : DataBackendSession
+            The DataFusion session to register the object store with.
+
+        """
+        # Convert the catalog path to a URI for object store registration
+        if "://" not in self.path:
+            # Convert local-style paths to proper URIs based on protocol
+            if self.fs_protocol == "s3":
+                catalog_uri = f"s3://{self.path}"
+            elif self.fs_protocol in ("gcs", "gs"):
+                catalog_uri = f"gs://{self.path}"
+            elif self.fs_protocol in ("azure", "abfs"):
+                catalog_uri = f"azure://{self.path}"
+            elif self.fs_protocol in ("http", "https"):
+                catalog_uri = f"{self.fs_protocol}://{self.path}"
+            else:
+                # For unknown protocols, assume it's already a valid URI
+                catalog_uri = self.path
+        else:
+            catalog_uri = self.path
+
+        try:
+            # Register object store using the Rust implementation with storage options
+            session.register_object_store_from_uri(catalog_uri, self.fs_storage_options)
+
+        except Exception as e:
+            # Log the error but don't fail - DataFusion might still work with built-in support
+            import warnings
+
+            warnings.warn(
+                f"Failed to register object store for {catalog_uri}: {e}. "
+                f"Falling back to DataFusion's built-in object store support.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     @staticmethod
     def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
@@ -988,7 +1071,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: TimestampLike | None = None,
     ):
         file_prefix = class_to_filename(data_cls)
-        glob_path = f"{self.path}/data/{file_prefix}/**/*.parquet"
+        # Remove trailing slash from path to avoid double slashes
+        base_path = self.path.rstrip("/")
+        glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
         files: list[str] = self.fs.glob(glob_path)
         instrument_ids = instrument_ids or bar_types
 
@@ -1157,7 +1242,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_id: str | None = None,
     ) -> str:
         file_prefix = class_to_filename(data_cls)
-        directory = f"{self.path}/data/{file_prefix}"
+        # Remove trailing slash from path to avoid double slashes
+        base_path = self.path.rstrip("/")
+        directory = f"{base_path}/data/{file_prefix}"
 
         # instrument_id can be an instrument_id or a bar_type
         if instrument_id is not None:
