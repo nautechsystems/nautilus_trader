@@ -64,7 +64,7 @@ pub async fn write_batches_to_parquet(
     let object_path = if base_path.is_empty() {
         ObjectPath::from(path)
     } else {
-        ObjectPath::from(format!("{}/{}", base_path, path))
+        ObjectPath::from(format!("{base_path}/{path}"))
     };
 
     write_batches_to_object_store(
@@ -136,7 +136,7 @@ pub async fn combine_parquet_files(
             if base_path.is_empty() {
                 ObjectPath::from(*path)
             } else {
-                ObjectPath::from(format!("{}/{}", base_path, path))
+                ObjectPath::from(format!("{base_path}/{path}"))
             }
         })
         .collect();
@@ -144,7 +144,7 @@ pub async fn combine_parquet_files(
     let new_object_path = if base_path.is_empty() {
         ObjectPath::from(new_file_path)
     } else {
-        ObjectPath::from(format!("{}/{}", base_path, new_file_path))
+        ObjectPath::from(format!("{base_path}/{new_file_path}"))
     };
 
     combine_parquet_files_from_object_store(
@@ -197,7 +197,7 @@ pub async fn combine_parquet_files_from_object_store(
     .await?;
 
     // Remove the merged files
-    for path in file_paths.iter() {
+    for path in &file_paths {
         object_store.delete(path).await?;
     }
 
@@ -222,7 +222,7 @@ pub async fn min_max_from_parquet_metadata(
     let object_path = if base_path.is_empty() {
         ObjectPath::from(file_path)
     } else {
-        ObjectPath::from(format!("{}/{}", base_path, file_path))
+        ObjectPath::from(format!("{base_path}/{file_path}"))
     };
 
     min_max_from_parquet_metadata_object_store(object_store, &object_path, column_name).await
@@ -311,12 +311,12 @@ pub async fn min_max_from_parquet_metadata_object_store(
 /// # Parameters
 ///
 /// - `path`: The URI string for the storage location
-/// - `storage_options`: Optional HashMap containing storage-specific configuration options
-///   - For S3: endpoint_url, region, access_key_id, secret_access_key, session_token, etc.
-///   - For GCS: service_account_path, service_account_key, project_id, etc.
-///   - For Azure: account_name, account_key, sas_token, etc.
+/// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
+///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
+///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
+///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
 ///
-/// Returns a tuple of (ObjectStore, base_path, normalized_uri)
+/// Returns a tuple of (`ObjectStore`, `base_path`, `normalized_uri`)
 pub fn create_object_store_from_path(
     path: &str,
     storage_options: Option<std::collections::HashMap<String, String>>,
@@ -349,6 +349,7 @@ pub fn create_object_store_from_path(
 /// - `azure://` or `abfs://` for Azure Blob Storage
 /// - `http://` or `https://` for HTTP/WebDAV
 /// - `file://` for local files
+#[must_use]
 pub fn normalize_path_to_uri(path: &str) -> String {
     if path.contains("://") {
         // Already a URI - return as-is
@@ -356,7 +357,7 @@ pub fn normalize_path_to_uri(path: &str) -> String {
     } else {
         // Convert local path to file:// URI
         if path.starts_with('/') {
-            format!("file://{}", path)
+            format!("file://{path}")
         } else {
             format!(
                 "file://{}",
@@ -416,7 +417,7 @@ fn create_s3_store(
                 }
                 _ => {
                     // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown S3 storage option: {}", key);
+                    log::warn!("Unknown S3 storage option: {key}");
                 }
             }
         }
@@ -461,7 +462,7 @@ fn create_gcs_store(
                 }
                 _ => {
                     // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown GCS storage option: {}", key);
+                    log::warn!("Unknown GCS storage option: {key}");
                 }
             }
         }
@@ -530,7 +531,7 @@ fn create_azure_store(
                 }
                 _ => {
                     // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown Azure storage option: {}", key);
+                    log::warn!("Unknown Azure storage option: {key}");
                 }
             }
         }
@@ -600,7 +601,7 @@ fn create_abfs_store(
                 }
                 _ => {
                     // Ignore unknown options for forward compatibility
-                    log::warn!("Unknown ABFS storage option: {}", key);
+                    log::warn!("Unknown ABFS storage option: {key}");
                 }
             }
         }
@@ -626,7 +627,7 @@ fn create_http_store(
             // HTTP builder has limited configuration options
             // Most HTTP-specific options would be handled via client options
             // Ignore unknown options for forward compatibility
-            log::warn!("Unknown HTTP storage option: {}", key);
+            log::warn!("Unknown HTTP storage option: {key}");
         }
     }
 
@@ -639,6 +640,13 @@ fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
     let url = url::Url::parse(uri)?;
     let path = url.path().trim_start_matches('/').to_string();
     Ok((url, path))
+}
+
+/// Helper function to extract host from URL with error handling
+fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
+    url.host_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
 }
 
 #[cfg(test)]
@@ -655,7 +663,7 @@ mod tests {
 
         let result = create_object_store_from_path(temp_dir.to_str().unwrap(), None);
         if let Err(e) = &result {
-            println!("Error: {:?}", e);
+            println!("Error: {e:?}");
         }
         assert!(result.is_ok());
         let (_, base_path, uri) = result.unwrap();
@@ -695,7 +703,7 @@ mod tests {
         let result =
             create_object_store_from_path("azure://testaccount/container/path", Some(options));
         if let Err(e) = &result {
-            println!("Azure Error: {:?}", e);
+            println!("Azure Error: {e:?}");
         }
         assert!(result.is_ok());
         let (_, base_path, uri) = result.unwrap();
@@ -719,7 +727,7 @@ mod tests {
             }
             Err(e) => {
                 // Expected to fail due to missing credentials, but should contain bucket info
-                let error_msg = format!("{:?}", e);
+                let error_msg = format!("{e:?}");
                 assert!(error_msg.contains("test-bucket") || error_msg.contains("credential"));
             }
         }
@@ -764,11 +772,4 @@ mod tests {
             "file:///tmp/test"
         );
     }
-}
-
-/// Helper function to extract host from URL with error handling
-fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
-    url.host_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
 }

@@ -469,7 +469,7 @@ impl NautilusKernel {
         let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters.iter_mut() {
+        for adapter in &mut data_adapters {
             futures.push(adapter.connect());
         }
 
@@ -490,7 +490,7 @@ impl NautilusKernel {
         let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters.iter_mut() {
+        for adapter in &mut data_adapters {
             futures.push(adapter.disconnect());
         }
 

@@ -155,7 +155,7 @@ impl ParquetDataCatalog {
     /// # Parameters
     ///
     /// - `base_path`: The base directory path for data storage
-    /// - `storage_options`: Optional HashMap containing storage-specific configuration options
+    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
     /// - `batch_size`: Number of records to process in each batch (default: 5000)
     /// - `compression`: Parquet compression algorithm (default: SNAPPY)
     /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000)
@@ -205,11 +205,11 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `uri`: The URI for the data storage location (e.g., "s3://bucket/path", "/local/path")
-    /// - `storage_options`: Optional HashMap containing storage-specific configuration options
-    ///   - For S3: endpoint_url, region, access_key_id, secret_access_key, session_token, etc.
-    ///   - For GCS: service_account_path, service_account_key, project_id, etc.
-    ///   - For Azure: account_name, account_key, sas_token, etc.
+    /// - `uri`: The URI for the data storage location (e.g., "<s3://bucket/path>", "/local/path")
+    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
+    ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
+    ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
+    ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
     /// - `batch_size`: Number of records to process in each batch (default: 5000)
     /// - `compression`: Parquet compression algorithm (default: SNAPPY)
     /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000)
@@ -436,7 +436,7 @@ impl ParquetDataCatalog {
 
         let directory = self.make_path(T::path_prefix(), instrument_id)?;
         let filename = timestamps_to_filename(start_ts, end_ts);
-        let path = PathBuf::from(format!("{}/{}", directory, filename));
+        let path = PathBuf::from(format!("{directory}/{filename}"));
 
         // Write all batches to parquet file
         info!(
@@ -704,7 +704,7 @@ impl ParquetDataCatalog {
     /// Helper method to list parquet files in a directory
     fn list_parquet_files(&self, directory: &str) -> anyhow::Result<Vec<String>> {
         self.execute_async(async {
-            let prefix = ObjectPath::from(format!("{}/", directory));
+            let prefix = ObjectPath::from(format!("{directory}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut files = Vec::new();
 
@@ -724,7 +724,7 @@ impl ParquetDataCatalog {
             // Extract bucket from the original URI
             let url = url::Url::parse(&self.original_uri).unwrap();
             let bucket = url.host_str().unwrap();
-            format!("s3://{}/{}", bucket, path_str)
+            format!("s3://{bucket}/{path_str}")
         } else {
             path_str.to_string()
         }
@@ -893,7 +893,7 @@ impl ParquetDataCatalog {
                 UnixNanos::from(intervals[0].0),
                 UnixNanos::from(intervals.last().unwrap().1),
             );
-            let path = format!("{}/{}", directory, file_name);
+            let path = format!("{directory}/{file_name}");
 
             // Convert string paths to ObjectPath for the function call
             let object_paths: Vec<ObjectPath> = files_to_consolidate
@@ -1022,7 +1022,7 @@ impl ParquetDataCatalog {
 
             let new_filename =
                 timestamps_to_filename(UnixNanos::from(first_ts), UnixNanos::from(last_ts));
-            let new_file_path = format!("{}/{}", directory, new_filename);
+            let new_file_path = format!("{directory}/{new_filename}");
             let new_object_path = ObjectPath::from(new_file_path);
 
             self.move_file(&object_path, &new_object_path)?;
@@ -1080,7 +1080,7 @@ impl ParquetDataCatalog {
             let mut files_in_dirs = std::collections::HashMap::new();
 
             // List all objects under the data directory
-            let prefix = ObjectPath::from(format!("{}/", data_dir));
+            let prefix = ObjectPath::from(format!("{data_dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
 
             while let Some(object) = stream.next().await {
@@ -1109,7 +1109,7 @@ impl ParquetDataCatalog {
                     .is_some_and(|files| !files.is_empty());
                 let has_subdirs = directories
                     .iter()
-                    .any(|d| d.starts_with(&format!("{}/", dir)) && d != dir);
+                    .any(|d| d.starts_with(&format!("{dir}/")) && d != dir);
 
                 if has_files && !has_subdirs {
                     leaf_dirs.push(dir.clone());
@@ -1221,7 +1221,7 @@ impl ParquetDataCatalog {
         let base_dir = self.make_path(data_cls, None)?;
 
         let list_result = self.execute_async(async {
-            let prefix = ObjectPath::from(format!("{}/", base_dir));
+            let prefix = ObjectPath::from(format!("{base_dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
             let mut objects = Vec::new();
             while let Some(object) = stream.next().await {
@@ -1444,11 +1444,11 @@ impl ParquetDataCatalog {
     /// Create a directory path for a data type and instrument ID
     fn make_path(&self, type_name: &str, instrument_id: Option<String>) -> anyhow::Result<String> {
         let mut path = if self.base_path.is_empty() {
-            format!("data/{}", type_name)
+            format!("data/{type_name}")
         } else {
             // Remove trailing slash from base_path to avoid double slashes
             let base_path = self.base_path.trim_end_matches('/');
-            format!("{}/data/{}", base_path, type_name)
+            format!("{base_path}/data/{type_name}")
         };
 
         if let Some(id) = instrument_id {
@@ -1469,18 +1469,18 @@ impl ParquetDataCatalog {
     ) -> anyhow::Result<()> {
         let old_filename =
             timestamps_to_filename(UnixNanos::from(old_start), UnixNanos::from(old_end));
-        let old_path = format!("{}/{}", directory, old_filename);
+        let old_path = format!("{directory}/{old_filename}");
         let old_object_path = self.to_object_path(&old_path);
 
         let new_filename =
             timestamps_to_filename(UnixNanos::from(new_start), UnixNanos::from(new_end));
-        let new_path = format!("{}/{}", directory, new_filename);
+        let new_path = format!("{directory}/{new_filename}");
         let new_object_path = self.to_object_path(&new_path);
 
         self.move_file(&old_object_path, &new_object_path)
     }
 
-    /// Helper method to convert a path string to ObjectPath, handling base_path
+    /// Helper method to convert a path string to `ObjectPath`, handling `base_path`
     fn to_object_path(&self, path: &str) -> ObjectPath {
         if self.base_path.is_empty() {
             ObjectPath::from(path)
@@ -1586,7 +1586,7 @@ impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 ///
 /// # Returns
 ///
-/// Returns a filename string in the format: "iso_timestamp_1_iso_timestamp_2.parquet"
+/// Returns a filename string in the format: "`iso_timestamp_1_iso_timestamp_2.parquet`"
 ///
 /// # Examples
 ///
@@ -1603,7 +1603,7 @@ fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> Str
     let datetime_1 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_1));
     let datetime_2 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_2));
 
-    format!("{}_{}.parquet", datetime_1, datetime_2)
+    format!("{datetime_1}_{datetime_2}.parquet")
 }
 
 /// Converts an ISO 8601 timestamp to a filesystem-safe format.
@@ -1664,11 +1664,11 @@ fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
             &time_part[last_hyphen_idx + 1..]
         );
         let final_time_part = time_with_dot_for_nanos.replace('-', ":");
-        format!("{}T{}Z", date_part, final_time_part)
+        format!("{date_part}T{final_time_part}Z")
     } else {
         // Fallback if no nanoseconds part found
         let final_time_part = time_part.replace('-', ":");
-        format!("{}T{}Z", date_part, final_time_part)
+        format!("{date_part}T{final_time_part}Z")
     }
 }
 
@@ -1722,7 +1722,7 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 /// assert_eq!(urisafe_instrument_id("EUR-USD"), "EUR-USD");
 /// ```
 fn urisafe_instrument_id(instrument_id: &str) -> String {
-    instrument_id.replace("/", "")
+    instrument_id.replace('/', "")
 }
 
 /// Checks if a filename's timestamp range intersects with a query interval.
@@ -1732,7 +1732,7 @@ fn urisafe_instrument_id(instrument_id: &str) -> String {
 ///
 /// # Parameters
 ///
-/// - `filename`: The filename to check (format: "iso_timestamp_1_iso_timestamp_2.parquet")
+/// - `filename`: The filename to check (format: "`iso_timestamp_1_iso_timestamp_2.parquet`")
 /// - `start`: Optional start timestamp for the query range
 /// - `end`: Optional end timestamp for the query range
 ///
@@ -1764,7 +1764,7 @@ fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64
 /// Parses timestamps from a Parquet filename.
 ///
 /// Extracts the start and end timestamps from filenames that follow the ISO 8601 format:
-/// "iso_timestamp_1_iso_timestamp_2.parquet" (e.g., "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet")
+/// "`iso_timestamp_1_iso_timestamp_2.parquet`" (e.g., "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet")
 ///
 /// # Parameters
 ///

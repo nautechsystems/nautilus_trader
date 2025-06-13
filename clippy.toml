@@ -4,6 +4,7 @@ allow-unwrap-in-tests = true
 doc-valid-idents = [
   "BaseSwap",
   "BaseX",
+  "DataFusion",
   "DeFi",
   "HyperSync",
   "MessagePack",
