@@ -403,12 +403,14 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     option_contracts_detail = await self.get_option_chain_details_by_expiry(
                         underlying=detail.contract,
                         last_trading_date=contract.lastTradeDateOrContractMonth,
+                        exchange=contract.options_chain_exchange or contract.exchange,
                     )
                 else:
                     option_contracts_detail = await self.get_option_chain_details_by_range(
                         underlying=detail.contract,
                         min_expiry=min_expiry,
                         max_expiry=max_expiry,
+                        exchange=contract.options_chain_exchange or contract.exchange,
                     )
                 details.extend(option_contracts_detail)
 
@@ -464,7 +466,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self,
         underlying: IBContract,
         last_trading_date: str,
-        exchange: str | None = None,
+        exchange: str,
     ) -> list[ContractDetails]:
         [option_details] = (
             await self._client.get_contract_details(
@@ -472,7 +474,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     secType=("FOP" if underlying.secType == "FUT" else "OPT"),
                     symbol=underlying.symbol,
                     lastTradeDateOrContractMonth=last_trading_date,
-                    exchange=exchange or "SMART",
+                    exchange=exchange,
                 ),
             ),
         )
