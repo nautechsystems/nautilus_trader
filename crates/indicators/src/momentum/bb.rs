@@ -13,11 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
@@ -25,7 +23,7 @@ use crate::{
     indicator::{Indicator, MovingAverage},
 };
 
-const MAX_PERIOD: usize = 1024;
+pub const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -42,7 +40,7 @@ pub struct BollingerBands {
     pub lower: f64,
     pub initialized: bool,
     ma: Box<dyn MovingAverage + Send + 'static>,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     has_inputs: bool,
 }
 
@@ -61,7 +59,7 @@ impl Display for BollingerBands {
 
 impl Indicator for BollingerBands {
     fn name(&self) -> String {
-        stringify!(BollingerBands).to_string()
+        stringify!(BollingerBands).into()
     }
 
     fn has_inputs(&self) -> bool {
@@ -109,14 +107,9 @@ impl BollingerBands {
     #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         assert!(
-            period > 0,
-            "BollingerBands: period must be > 0 (received {period})"
+            (1..=MAX_PERIOD).contains(&period),
+            "BollingerBands: period {period} out of range (1..={MAX_PERIOD})"
         );
-        assert!(
-            period <= MAX_PERIOD,
-            "BollingerBands: period {period} exceeds MAX_PERIOD {MAX_PERIOD}"
-        );
-
         assert!(
             k.is_finite() && k > 0.0,
             "BollingerBands: k must be positive and finite (received {k})"
@@ -126,22 +119,23 @@ impl BollingerBands {
             period,
             k,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            prices: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
             upper: 0.0,
             middle: 0.0,
             lower: 0.0,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            prices: VecDeque::with_capacity(period),
         }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
         let typical = (high + low + close) / 3.0;
+
         if self.prices.len() == self.period {
-            self.prices.pop_front();
+            let _ = self.prices.pop_front();
         }
-        self.prices.push_back(typical);
+        let _ = self.prices.push_back(typical);
         self.ma.update_raw(typical);
 
         if !self.initialized {
@@ -167,8 +161,8 @@ pub fn fast_std_with_mean<I>(values: I, mean: f64) -> f64
 where
     I: IntoIterator<Item = f64>,
 {
-    let mut var_acc = 0.0f64;
-    let mut count = 0usize;
+    let mut var_acc = 0.0_f64;
+    let mut count = 0_usize;
 
     for v in values {
         let diff = v - mean;
@@ -180,7 +174,7 @@ where
         return 0.0;
     }
 
-    let variance: f64 = var_acc / count as f64;
+    let variance = var_acc / count as f64;
     variance.sqrt()
 }
 

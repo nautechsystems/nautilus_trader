@@ -77,8 +77,8 @@ impl Bias {
     ///
     /// # Panics
     ///
-    /// * If `period` is less than or equal to 0.
-    /// * If `period` exceeds `MAX_PERIOD`.
+    /// - If `period` is less than or equal to 0.
+    /// - If `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         assert!(
