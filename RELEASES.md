@@ -50,6 +50,7 @@ Released on TBD (UTC).
 - Fixed incorrect logging of trigger type for Binance
 - Fixed trade ticks unsubscribe for Binance which was not differentiating aggregated trades
 - Fixed pending update hot cache cleanup for Betfair execution client
+- Fixed order book snapshots unsubscribe for Tardis data client
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
