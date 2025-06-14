@@ -29,7 +29,7 @@ use nautilus_model::{
 };
 use tokio::sync::Notify;
 
-// Run with `cargo run -p nautilus-blockchain --bin watch_hypersync_live_block --features hypersync,python`
+// Run with `cargo run -p nautilus-blockchain --bin live_blocks_hypersync --features hypersync,python`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

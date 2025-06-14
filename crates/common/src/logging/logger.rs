@@ -72,7 +72,7 @@ impl Default for LoggerConfig {
             stdout_level: LevelFilter::Info,
             fileout_level: LevelFilter::Off,
             component_level: HashMap::new(),
-            is_colored: false,
+            is_colored: true,
             print_config: false,
         }
     }
@@ -644,7 +644,7 @@ mod tests {
                 stdout_level: LevelFilter::Warn,
                 fileout_level: LevelFilter::Error,
                 component_level: HashMap::new(),
-                is_colored: false,
+                is_colored: true,
                 print_config: true,
             }
         );

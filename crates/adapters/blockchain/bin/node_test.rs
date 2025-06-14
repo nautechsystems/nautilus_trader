@@ -155,7 +155,7 @@ impl DerefMut for BlockchainSubscriberActor {
 impl DataActor for BlockchainSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Starting blockchain subscriber actor for {} pools",
+            "Starting blockchain subscriber actor for {} pool(s)",
             self.config.pool_addresses.len()
         );
 
@@ -197,7 +197,7 @@ impl DataActor for BlockchainSubscriberActor {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         log::info!(
-            "Stopping blockchain subscriber actor for {} pools",
+            "Stopping blockchain subscriber actor for {} pool(s)",
             self.config.pool_addresses.len()
         );
 
