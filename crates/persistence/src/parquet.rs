@@ -310,8 +310,8 @@ pub async fn min_max_from_parquet_metadata_object_store(
 ///
 /// # Parameters
 ///
-/// - `path`: The URI string for the storage location
-/// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
+/// - `path`: The URI string for the storage location.
+/// - `storage_options`: Optional `HashMap` containing storage-specific configuration options:
 ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
 ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
 ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
@@ -455,7 +455,10 @@ fn create_gcs_store(
                     );
                 }
                 "application_credentials" => {
-                    // This would typically be set via GOOGLE_APPLICATION_CREDENTIALS env var
+                    // Set GOOGLE_APPLICATION_CREDENTIALS env var required by Google auth libraries.
+                    // SAFETY: std::env::set_var is marked unsafe because it mutates global state and
+                    // can break signal-safe code. We only call it during configuration before any
+                    // multi-threaded work starts, so it is considered safe in this context.
                     unsafe {
                         std::env::set_var("GOOGLE_APPLICATION_CREDENTIALS", &value);
                     }
@@ -541,7 +544,7 @@ fn create_azure_store(
     Ok((Arc::new(azure_store), path, uri.to_string()))
 }
 
-/// Helper function to create Azure object store from abfs:// URI with options
+/// Helper function to create Azure object store from abfs:// URI with options.
 fn create_abfs_store(
     uri: &str,
     storage_options: Option<std::collections::HashMap<String, String>>,
@@ -611,7 +614,7 @@ fn create_abfs_store(
     Ok((Arc::new(azure_store), path, uri.to_string()))
 }
 
-/// Helper function to create HTTP object store with options
+/// Helper function to create HTTP object store with options.
 fn create_http_store(
     uri: &str,
     storage_options: Option<std::collections::HashMap<String, String>>,
@@ -635,19 +638,23 @@ fn create_http_store(
     Ok((Arc::new(http_store), path, uri.to_string()))
 }
 
-/// Helper function to parse URL and extract path component
+/// Helper function to parse URL and extract path component.
 fn parse_url_and_path(uri: &str) -> anyhow::Result<(url::Url, String)> {
     let url = url::Url::parse(uri)?;
     let path = url.path().trim_start_matches('/').to_string();
     Ok((url, path))
 }
 
-/// Helper function to extract host from URL with error handling
+/// Helper function to extract host from URL with error handling.
 fn extract_host(url: &url::Url, error_msg: &str) -> anyhow::Result<String> {
     url.host_str()
         .map(std::string::ToString::to_string)
         .ok_or_else(|| anyhow::anyhow!("{}", error_msg))
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {
