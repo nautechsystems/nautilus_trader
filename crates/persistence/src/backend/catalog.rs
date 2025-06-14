@@ -154,11 +154,11 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `base_path`: The base directory path for data storage
-    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
-    /// - `batch_size`: Number of records to process in each batch (default: 5000)
-    /// - `compression`: Parquet compression algorithm (default: SNAPPY)
-    /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000)
+    /// - `base_path`: The base directory path for data storage.
+    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options.
+    /// - `batch_size`: Number of records to process in each batch (default: 5000).
+    /// - `compression`: Parquet compression algorithm (default: SNAPPY).
+    /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000).
     ///
     /// # Panics
     ///
@@ -205,21 +205,21 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `uri`: The URI for the data storage location (e.g., "<s3://bucket/path>", "/local/path")
-    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options
+    /// - `uri`: The URI for the data storage location (e.g., "<s3://bucket/path>", "/local/path").
+    /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options:
     ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
     ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
     ///   - For Azure: `account_name`, `account_key`, `sas_token`, etc.
-    /// - `batch_size`: Number of records to process in each batch (default: 5000)
-    /// - `compression`: Parquet compression algorithm (default: SNAPPY)
-    /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000)
+    /// - `batch_size`: Number of records to process in each batch (default: 5000).
+    /// - `compression`: Parquet compression algorithm (default: SNAPPY).
+    /// - `max_row_group_size`: Maximum rows per Parquet row group (default: 5000).
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The URI format is invalid or unsupported
-    /// - The object store cannot be created or accessed
-    /// - Authentication fails for cloud storage backends
+    /// - The URI format is invalid or unsupported.
+    /// - The object store cannot be created or accessed.
+    /// - Authentication fails for cloud storage backends.
     ///
     /// # Examples
     ///
@@ -285,16 +285,15 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: A vector of mixed [`Data`] enum variants
-    /// - `start`: Optional start timestamp to override the data's natural range
-    /// - `end`: Optional end timestamp to override the data's natural range
+    /// - `data`: A vector of mixed [`Data`] enum variants.
+    /// - `start`: Optional start timestamp to override the data's natural range.
+    /// - `end`: Optional end timestamp to override the data's natural range.
     ///
     /// # Notes
     ///
-    /// - Data is automatically sorted by type before writing
-    /// - Each data type is written to its own directory structure
-    /// - Errors during individual type writes are currently ignored (TODO: improve error handling)
-    /// - Instrument data handling is not yet implemented (TODO)
+    /// - Data is automatically sorted by type before writing.
+    /// - Each data type is written to its own directory structure.
+    /// - Instrument data handling is not yet implemented (TODO).
     ///
     /// # Examples
     ///
@@ -305,14 +304,14 @@ impl ParquetDataCatalog {
     /// let catalog = ParquetDataCatalog::new(/* ... */);
     /// let mixed_data: Vec<Data> = vec![/* mixed data types */];
     ///
-    /// catalog.write_data_enum(mixed_data, None, None);
+    /// catalog.write_data_enum(mixed_data, None, None)?;
     /// ```
     pub fn write_data_enum(
         &self,
         data: Vec<Data>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) {
+    ) -> anyhow::Result<()> {
         let mut deltas: Vec<OrderBookDelta> = Vec::new();
         let mut depth10s: Vec<OrderBookDepth10> = Vec::new();
         let mut quotes: Vec<QuoteTick> = Vec::new();
@@ -353,14 +352,17 @@ impl ParquetDataCatalog {
         }
 
         // TODO: need to handle instruments here
-        let _ = self.write_to_parquet(deltas, start, end);
-        let _ = self.write_to_parquet(depth10s, start, end);
-        let _ = self.write_to_parquet(quotes, start, end);
-        let _ = self.write_to_parquet(trades, start, end);
-        let _ = self.write_to_parquet(bars, start, end);
-        let _ = self.write_to_parquet(mark_prices, start, end);
-        let _ = self.write_to_parquet(index_prices, start, end);
-        let _ = self.write_to_parquet(closes, start, end);
+
+        self.write_to_parquet(deltas, start, end)?;
+        self.write_to_parquet(depth10s, start, end)?;
+        self.write_to_parquet(quotes, start, end)?;
+        self.write_to_parquet(trades, start, end)?;
+        self.write_to_parquet(bars, start, end)?;
+        self.write_to_parquet(mark_prices, start, end)?;
+        self.write_to_parquet(index_prices, start, end)?;
+        self.write_to_parquet(closes, start, end)?;
+
+        Ok(())
     }
 
     /// Writes typed data to a Parquet file in the catalog.
@@ -371,13 +373,13 @@ impl ParquetDataCatalog {
     ///
     /// # Type Parameters
     ///
-    /// - `T`: The data type to write, must implement required traits for serialization and cataloging
+    /// - `T`: The data type to write, must implement required traits for serialization and cataloging.
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to write (must be in ascending timestamp order)
-    /// - `start`: Optional start timestamp to override the natural data range
-    /// - `end`: Optional end timestamp to override the natural data range
+    /// - `data`: Vector of data records to write (must be in ascending timestamp order).
+    /// - `start`: Optional start timestamp to override the natural data range.
+    /// - `end`: Optional end timestamp to override the natural data range.
     ///
     /// # Returns
     ///
@@ -425,7 +427,7 @@ impl ParquetDataCatalog {
         }
 
         let type_name = std::any::type_name::<T>().to_snake_case();
-        Self::check_ascending_timestamps(&data, &type_name);
+        Self::check_ascending_timestamps(&data, &type_name)?;
 
         let start_ts = start.unwrap_or(data.first().unwrap().ts_init());
         let end_ts = end.unwrap_or(data.last().unwrap().ts_init());
@@ -447,7 +449,6 @@ impl ParquetDataCatalog {
         // Convert path to object store path
         let object_path = self.to_object_path(&path.to_string_lossy());
 
-        // Use async runtime to write to object store
         self.execute_async(async {
             write_batches_to_object_store(
                 &batches,
@@ -474,13 +475,13 @@ impl ParquetDataCatalog {
     ///
     /// # Type Parameters
     ///
-    /// - `T`: The data type to write, must implement serialization and cataloging traits
+    /// - `T`: The data type to write, must implement serialization and cataloging traits.
     ///
     /// # Parameters
     ///
-    /// - `data`: Vector of data records to write (must be in ascending timestamp order)
-    /// - `path`: Optional custom directory path (defaults to catalog's standard structure)
-    /// - `write_metadata`: Whether to write a separate metadata file alongside the data
+    /// - `data`: Vector of data records to write (must be in ascending timestamp order).
+    /// - `path`: Optional custom directory path (defaults to catalog's standard structure).
+    /// - `write_metadata`: Whether to write a separate metadata file alongside the data.
     ///
     /// # Returns
     ///
@@ -528,7 +529,7 @@ impl ParquetDataCatalog {
         }
 
         let type_name = std::any::type_name::<T>().to_snake_case();
-        Self::check_ascending_timestamps(&data, &type_name);
+        Self::check_ascending_timestamps(&data, &type_name)?;
 
         let start_ts = data.first().unwrap().ts_init();
         let end_ts = data.last().unwrap().ts_init();
@@ -576,17 +577,18 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data`: Slice of data records to validate
-    /// - `type_name`: Name of the data type for error messages
+    /// - `data`: Slice of data records to validate.
+    /// - `type_name`: Name of the data type for error messages.
     ///
     /// # Panics
     ///
     /// Panics if any timestamp is less than the previous timestamp.
-    fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) {
-        assert!(
-            data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()),
-            "{type_name} timestamps must be in ascending order"
-        );
+    fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) -> anyhow::Result<()> {
+        if !data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()) {
+            anyhow::bail!("{type_name} timestamps must be in ascending order");
+        }
+
+        Ok(())
     }
 
     /// Converts data into Arrow record batches for Parquet serialization.
@@ -596,7 +598,7 @@ impl ParquetDataCatalog {
     ///
     /// # Type Parameters
     ///
-    /// - `T`: The data type to convert, must implement required encoding traits
+    /// - `T`: The data type to convert, must implement required encoding traits.
     ///
     /// # Parameters
     ///
@@ -633,10 +635,10 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
-    /// - `start`: Start timestamp of the new range to extend to
-    /// - `end`: End timestamp of the new range to extend to
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
+    /// - `start`: Start timestamp of the new range to extend to.
+    /// - `end`: End timestamp of the new range to extend to.
     ///
     /// # Returns
     ///
@@ -645,10 +647,10 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - No adjacent file is found to extend
-    /// - File rename operations fail
-    /// - Interval validation fails after extension
+    /// - The directory path cannot be constructed.
+    /// - No adjacent file is found to extend.
+    /// - File rename operations fail.
+    /// - Interval validation fails after extension.
     ///
     /// # Examples
     ///
@@ -738,9 +740,9 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `start`: Optional start timestamp to limit consolidation to files within this range
-    /// - `end`: Optional end timestamp to limit consolidation to files within this range
-    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true)
+    /// - `start`: Optional start timestamp to limit consolidation to files within this range.
+    /// - `end`: Optional end timestamp to limit consolidation to files within this range.
+    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
     ///
     /// # Returns
     ///
@@ -749,9 +751,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - Directory listing fails
-    /// - File consolidation operations fail
-    /// - Interval validation fails (when `ensure_contiguous_files` is true)
+    /// - Directory listing fails.
+    /// - File consolidation operations fail.
+    /// - Interval validation fails (when `ensure_contiguous_files` is true).
     ///
     /// # Examples
     ///
@@ -795,11 +797,11 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
-    /// - `start`: Optional start timestamp to limit consolidation to files within this range
-    /// - `end`: Optional end timestamp to limit consolidation to files within this range
-    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true)
+    /// - `type_name`: The data type directory name (e.g., "quotes", "trades", "bars").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
+    /// - `start`: Optional start timestamp to limit consolidation to files within this range.
+    /// - `end`: Optional end timestamp to limit consolidation to files within this range.
+    /// - `ensure_contiguous_files`: Whether to validate that consolidated intervals are contiguous (default: true).
     ///
     /// # Returns
     ///
@@ -967,8 +969,8 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
     ///
@@ -1136,8 +1138,10 @@ impl ParquetDataCatalog {
         // Register the object store with the session
         if self.original_uri.starts_with("s3://") {
             let url = url::Url::parse(&self.original_uri)?;
-            let base_url =
-                url::Url::parse(&format!("{}://{}", url.scheme(), url.host_str().unwrap()))?;
+            let host = url
+                .host_str()
+                .ok_or_else(|| anyhow::anyhow!("S3 URI missing bucket name"))?;
+            let base_url = url::Url::parse(&format!("{}://{}", url.scheme(), host))?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
         }
@@ -1163,10 +1167,10 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_ids`: Optional list of instrument IDs to filter by
-    /// - `start`: Optional start timestamp to filter files by their time range
-    /// - `end`: Optional end timestamp to filter files by their time range
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_ids`: Optional list of instrument IDs to filter by.
+    /// - `start`: Optional start timestamp to filter files by their time range.
+    /// - `end`: Optional end timestamp to filter files by their time range.
     ///
     /// # Returns
     ///
@@ -1176,9 +1180,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Object store listing operations fail
-    /// - URI reconstruction fails
+    /// - The directory path cannot be constructed.
+    /// - Object store listing operations fail.
+    /// - URI reconstruction fails.
     ///
     /// # Examples
     ///
@@ -1258,10 +1262,10 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `start`: Start timestamp of the requested range (Unix nanoseconds)
-    /// - `end`: End timestamp of the requested range (Unix nanoseconds)
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
+    /// - `start`: Start timestamp of the requested range (Unix nanoseconds).
+    /// - `end`: End timestamp of the requested range (Unix nanoseconds).
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
     ///
@@ -1315,8 +1319,8 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
     ///
@@ -1366,8 +1370,8 @@ impl ParquetDataCatalog {
     ///
     /// # Parameters
     ///
-    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades")
-    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data
+    /// - `data_cls`: The data type directory name (e.g., "quotes", "trades").
+    /// - `instrument_id`: Optional instrument ID to target a specific instrument's data.
     ///
     /// # Returns
     ///
@@ -1377,9 +1381,9 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// This function will return an error if:
-    /// - The directory path cannot be constructed
-    /// - Directory listing fails
-    /// - Filename parsing fails
+    /// - The directory path cannot be constructed.
+    /// - Directory listing fails.
+    /// - Filename parsing fails.
     ///
     /// # Examples
     ///
@@ -1483,13 +1487,18 @@ impl ParquetDataCatalog {
     /// Helper method to convert a path string to `ObjectPath`, handling `base_path`
     fn to_object_path(&self, path: &str) -> ObjectPath {
         if self.base_path.is_empty() {
-            ObjectPath::from(path)
-        } else {
-            ObjectPath::from(
-                path.strip_prefix(&format!("{}/", self.base_path))
-                    .unwrap_or(path),
-            )
+            return ObjectPath::from(path);
         }
+
+        let base = self.base_path.trim_end_matches('/');
+
+        // Remove the catalog base prefix if present
+        let without_base = path
+            .strip_prefix(&format!("{}/", base))
+            .or_else(|| path.strip_prefix(base))
+            .unwrap_or(path);
+
+        ObjectPath::from(without_base)
     }
 
     /// Helper method to move a file using object store rename operation
@@ -1507,8 +1516,8 @@ impl ParquetDataCatalog {
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
-        let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(future)
+        let rt = nautilus_common::runtime::get_runtime();
+        rt.block_on(future)
     }
 }
 
@@ -1547,8 +1556,8 @@ pub trait CatalogPathPrefix {
 ///
 /// # Parameters
 ///
-/// - `$type`: The data type to implement the trait for
-/// - `$path`: The path prefix string for that type
+/// - `$type`: The data type to implement the trait for.
+/// - `$path`: The path prefix string for that type.
 macro_rules! impl_catalog_path_prefix {
     ($type:ty, $path:expr) => {
         impl CatalogPathPrefix for $type {
@@ -1581,12 +1590,12 @@ impl_catalog_path_prefix!(InstrumentClose, "instrument_closes");
 ///
 /// # Parameters
 ///
-/// - `timestamp_1`: First timestamp in Unix nanoseconds
-/// - `timestamp_2`: Second timestamp in Unix nanoseconds
+/// - `timestamp_1`: First timestamp in Unix nanoseconds.
+/// - `timestamp_2`: Second timestamp in Unix nanoseconds.
 ///
 /// # Returns
 ///
-/// Returns a filename string in the format: "`iso_timestamp_1_iso_timestamp_2.parquet`"
+/// Returns a filename string in the format: "`iso_timestamp_1_iso_timestamp_2.parquet`".
 ///
 /// # Examples
 ///
@@ -1613,11 +1622,11 @@ fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> Str
 ///
 /// # Parameters
 ///
-/// - `iso_timestamp`: ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z")
+/// - `iso_timestamp`: ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z").
 ///
 /// # Returns
 ///
-/// Returns a filesystem-safe timestamp string (e.g., "2023-10-26T07-30-50-123456789Z")
+/// Returns a filesystem-safe timestamp string (e.g., "2023-10-26T07-30-50-123456789Z").
 ///
 /// # Examples
 ///
@@ -1637,11 +1646,11 @@ fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
 ///
 /// # Parameters
 ///
-/// - `file_timestamp`: Filesystem-safe timestamp string (e.g., "2023-10-26T07-30-50-123456789Z")
+/// - `file_timestamp`: Filesystem-safe timestamp string (e.g., "2023-10-26T07-30-50-123456789Z").
 ///
 /// # Returns
 ///
-/// Returns an ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z")
+/// Returns an ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z").
 ///
 /// # Examples
 ///
@@ -1679,7 +1688,7 @@ fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
 ///
 /// # Parameters
 ///
-/// - `iso_timestamp`: ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z")
+/// - `iso_timestamp`: ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z").
 ///
 /// # Returns
 ///
@@ -1708,7 +1717,7 @@ fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
 ///
 /// # Parameters
 ///
-/// - `instrument_id`: The original instrument ID string
+/// - `instrument_id`: The original instrument ID string.
 ///
 /// # Returns
 ///
@@ -1732,9 +1741,9 @@ fn urisafe_instrument_id(instrument_id: &str) -> String {
 ///
 /// # Parameters
 ///
-/// - `filename`: The filename to check (format: "`iso_timestamp_1_iso_timestamp_2.parquet`")
-/// - `start`: Optional start timestamp for the query range
-/// - `end`: Optional end timestamp for the query range
+/// - `filename`: The filename to check (format: "`iso_timestamp_1_iso_timestamp_2.parquet`").
+/// - `start`: Optional start timestamp for the query range.
+/// - `end`: Optional end timestamp for the query range.
 ///
 /// # Returns
 ///
@@ -1768,7 +1777,7 @@ fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64
 ///
 /// # Parameters
 ///
-/// - `filename`: The filename to parse (can be a full path)
+/// - `filename`: The filename to parse (can be a full path).
 ///
 /// # Returns
 ///
@@ -1805,7 +1814,7 @@ fn parse_filename_timestamps(filename: &str) -> Option<(u64, u64)> {
 ///
 /// # Parameters
 ///
-/// - `intervals`: A slice of timestamp intervals as (start, end) tuples
+/// - `intervals`: A slice of timestamp intervals as (start, end) tuples.
 ///
 /// # Returns
 ///
@@ -1852,7 +1861,7 @@ fn are_intervals_disjoint(intervals: &[(u64, u64)]) -> bool {
 ///
 /// # Parameters
 ///
-/// - `intervals`: A slice of timestamp intervals as (start, end) tuples
+/// - `intervals`: A slice of timestamp intervals as (start, end) tuples.
 ///
 /// # Returns
 ///
@@ -1898,9 +1907,9 @@ fn are_intervals_contiguous(intervals: &[(u64, u64)]) -> bool {
 ///
 /// # Parameters
 ///
-/// - `start`: Start timestamp of the query interval (inclusive)
-/// - `end`: End timestamp of the query interval (inclusive)
-/// - `closed_intervals`: Existing data intervals as (start, end) tuples
+/// - `start`: Start timestamp of the query interval (inclusive).
+/// - `end`: End timestamp of the query interval (inclusive).
+/// - `closed_intervals`: Existing data intervals as (start, end) tuples.
 ///
 /// # Returns
 ///
@@ -1942,7 +1951,7 @@ fn query_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) ->
 ///
 /// # Parameters
 ///
-/// - `intervals`: A slice of closed intervals as (start, end) tuples
+/// - `intervals`: A slice of closed intervals as (start, end) tuples.
 ///
 /// # Returns
 ///
@@ -1981,9 +1990,9 @@ fn get_interval_set(intervals: &[(u64, u64)]) -> IntervalTree<u64> {
 ///
 /// # Parameters
 ///
-/// - `interval`: The bounded interval from the interval tree
-/// - `query_start`: The start of the original query range
-/// - `query_end`: The end of the original query range
+/// - `interval`: The bounded interval from the interval tree.
+/// - `query_start`: The start of the original query range.
+/// - `query_end`: The end of the original query range.
 ///
 /// # Returns
 ///
@@ -2016,5 +2025,56 @@ fn interval_to_tuple(
         Some((start, end))
     } else {
         None
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::data::GetTsInit;
+
+    use super::*;
+
+    #[derive(Clone)]
+    struct DummyData(u64);
+
+    impl GetTsInit for DummyData {
+        fn ts_init(&self) -> UnixNanos {
+            UnixNanos::from(self.0)
+        }
+    }
+
+    #[test]
+    fn test_check_ascending_timestamps_error() {
+        let data = vec![DummyData(2), DummyData(1)];
+        let result = super::ParquetDataCatalog::check_ascending_timestamps(&data, "dummy");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_object_path_trailing_slash() {
+        // Create catalog with base path that contains a trailing slash
+        let tmp = tempfile::tempdir().unwrap();
+        let base_dir = tmp.path().join("catalog");
+        std::fs::create_dir_all(&base_dir).unwrap();
+
+        let catalog = ParquetDataCatalog::new(base_dir.clone(), None, None, None, None);
+
+        // Build a sample path under the catalog base
+        let sample_path = format!(
+            "{}/data/quotes/XYZ/2021-01-01T00-00-00-000000000Z_2021-01-01T00-00-01-000000000Z.parquet",
+            base_dir.to_string_lossy()
+        );
+
+        let object_path = catalog.to_object_path(&sample_path);
+
+        assert!(
+            !object_path
+                .as_ref()
+                .starts_with(base_dir.to_string_lossy().as_ref())
+        );
     }
 }
