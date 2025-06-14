@@ -18,10 +18,7 @@ use nautilus_model::identifiers::TraderId;
 use sysinfo::System;
 use ustr::Ustr;
 
-use crate::{
-    enums::{LogColor, LogLevel},
-    logging::logger::log,
-};
+use crate::{enums::LogColor, logging::log_info};
 
 #[rustfmt::skip]
 pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
@@ -140,11 +137,11 @@ pub fn log_sysinfo(component: Ustr) {
 }
 
 fn header_sepr(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Cyan, c, s);
+    log_info!("{}", s, color = LogColor::Cyan, component = c.as_str());
 }
 
 fn header_line(c: Ustr, s: &str) {
-    log(LogLevel::Info, LogColor::Normal, c, s);
+    log_info!("{}", s, component = c.as_str());
 }
 
 fn bytes_to_gib(b: u64) -> f64 {

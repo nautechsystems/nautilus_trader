@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Removed support for Databento DBN v1 schemas (migrate to DBN v2 or v3, see [DBN Changelog](https://github.com/databento/dbn/blob/main/CHANGELOG.md#0350---2025-05-28))
 
 ### Internal Improvements
+- Added logging macros for custom component and color in Rust
 - Added Cython-level parameter validation for timer operations to prevent Rust panics and provide clearer Python error messages
 - Added property-based testing for `Price`, `Quantity`, `Money` value types in Rust
 - Added property-based testing for `UnixNanos` in Rust

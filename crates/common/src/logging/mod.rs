@@ -17,6 +17,7 @@
 
 pub mod headers;
 pub mod logger;
+pub mod macros;
 pub mod writer;
 
 use std::{
@@ -27,6 +28,8 @@ use std::{
 };
 
 use log::LevelFilter;
+// Re-exports
+pub use macros::{log_debug, log_error, log_info, log_trace, log_warn};
 use nautilus_core::{UUID4, time::get_atomic_clock_static};
 use nautilus_model::identifiers::TraderId;
 use tracing_subscriber::EnvFilter;
