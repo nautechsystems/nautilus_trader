@@ -100,6 +100,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         cloud storage, or others. Common protocols include 'file' for local storage,
         's3' for Amazon S3, and 'gcs' for Google Cloud Storage. If not provided, it defaults to 'file',
         meaning the catalog operates on the local filesystem.
+        Note: For Rust queries (e.g. via BacktestNode) only the 'file' protocol is supported.
     fs_storage_options : dict, optional
         The fs storage options.
     min_rows_per_group : int, default 0
@@ -111,8 +112,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         then the dataset writer may split up large incoming batches into
         multiple row groups.  If this value is set, then min_rows_per_group
         should also be set. Otherwise it could end up with very small row
-        groups.
-    show_query_paths : bool, default False
+         groups.
+    show_query_paths : bool, (default False)
         If globed query paths should be printed to stdout.
 
     Warnings
@@ -125,6 +126,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     For further details about `fsspec` and its filesystem protocols, see
     https://filesystem-spec.readthedocs.io/en/latest/.
 
+    Note: For Rust queries (for example, when using BacktestNode) only the 'file' protocol is supported. Remote catalogs (e.g. S3) are not supported for Rust queries.
     """
 
     def __init__(
@@ -639,7 +641,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         session: DataBackendSession | None = None,
         **kwargs: Any,
     ) -> DataBackendSession:
-        assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
+        assert self.fs_protocol == "file", "Remote catalogs (e.g. S3) are not supported for Rust queries. Please use a local (file://) catalog for backtesting."
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
 
         if session is None:
