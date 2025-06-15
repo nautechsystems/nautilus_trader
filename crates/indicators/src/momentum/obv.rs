@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -33,7 +33,7 @@ pub struct OnBalanceVolume {
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    obv: VecDeque<f64>,
+    obv: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for OnBalanceVolume {
@@ -73,32 +73,43 @@ impl Indicator for OnBalanceVolume {
 
 impl OnBalanceVolume {
     /// Creates a new [`OnBalanceVolume`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is greater than `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize) -> Self {
+        assert!(
+            period <= MAX_PERIOD,
+            "OnBalanceVolume: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
         Self {
             period,
             value: 0.0,
-            obv: VecDeque::with_capacity(period),
+            obv: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
         }
     }
 
     pub fn update_raw(&mut self, open: f64, close: f64, volume: f64) {
-        if close > open {
-            self.obv.push_back(volume);
+        let delta = if close > open {
+            volume
         } else if close < open {
-            self.obv.push_back(-volume);
+            -volume
         } else {
-            self.obv.push_back(0.0);
-        }
+            0.0
+        };
+
+        let _ = self.obv.push_back(delta);
 
         self.value = self.obv.iter().sum();
 
-        // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
-            if self.period == 0 && !self.obv.is_empty() || self.obv.len() >= self.period {
+            if (self.period == 0 && !self.obv.is_empty()) || self.obv.len() >= self.period {
                 self.initialized = true;
             }
         }

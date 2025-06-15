@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -40,8 +40,8 @@ pub struct Swings {
     pub duration: usize,
     pub since_high: usize,
     pub since_low: usize,
-    high_inputs: VecDeque<f64>,
-    low_inputs: VecDeque<f64>,
+    high_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    low_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     has_inputs: bool,
     initialized: bool,
 }
@@ -88,12 +88,24 @@ impl Indicator for Swings {
 }
 
 impl Swings {
+    /// Creates a new [`Swings`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is less than or equal to 0.
+    /// - `period` exceeds the maximum allowed value of `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize) -> Self {
+        assert!(
+            period > 0 && period <= MAX_PERIOD,
+            "Swings: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
         Self {
             period,
-            high_inputs: VecDeque::with_capacity(period + 1),
-            low_inputs: VecDeque::with_capacity(period + 1),
+            high_inputs: ArrayDeque::new(),
+            low_inputs: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
             direction: 0,
@@ -113,13 +125,13 @@ impl Swings {
         self.changed = false;
 
         if self.high_inputs.len() == self.period {
-            let _ = self.high_inputs.pop_front();
+            self.high_inputs.pop_front();
         }
         if self.low_inputs.len() == self.period {
-            let _ = self.low_inputs.pop_front();
+            self.low_inputs.pop_front();
         }
-        self.high_inputs.push_back(high);
-        self.low_inputs.push_back(low);
+        let _ = self.high_inputs.push_back(high);
+        let _ = self.low_inputs.push_back(low);
 
         let max_high = self.high_inputs.iter().fold(f64::MIN, |a, &b| a.max(b));
         let min_low = self.low_inputs.iter().fold(f64::MAX, |a, &b| a.min(b));
@@ -181,6 +193,9 @@ impl Swings {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
