@@ -212,6 +212,10 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+    cdef readonly datetime start
+    """The start datetime (UTC) of response time range (inclusive)."""
+    cdef readonly datetime end
+    """The end datetime (UTC) of response time range."""
     cdef readonly dict[str, object] params
     """Additional specific parameters for the response.\n\n:returns: `dict[str, object]` or ``None``"""
 

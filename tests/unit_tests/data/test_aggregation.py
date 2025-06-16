@@ -2467,7 +2467,7 @@ class TestTimeBarAggregator:
         )
         handle_tick(tick1)
         handle_tick(tick2)
-        aggregator.stop_batch_update()
+        aggregator.stop_batch_update(start_time_ns)
 
         for event in clock.advance_time(start_time_ns):
             event.handle()
@@ -2647,7 +2647,7 @@ class TestTimeBarAggregator:
         aggregator.start_batch_update(handler_batch.append, tick1.ts_event)
         aggregator.handle_quote_tick(tick1)
         aggregator.handle_quote_tick(tick2)
-        aggregator.stop_batch_update()
+        aggregator.stop_batch_update(tick2.ts_init)
 
         aggregator.handle_quote_tick(tick3)
 
@@ -3162,7 +3162,7 @@ class TestTimeBarAggregator:
         aggregator.start_batch_update(handler.append, bar1.ts_init)
         aggregator.handle_bar(bar1)
         aggregator.handle_bar(bar2)
-        aggregator.stop_batch_update()
+        aggregator.stop_batch_update(bar2.ts_init)
         aggregator.handle_bar(bar3)
 
         # Assert

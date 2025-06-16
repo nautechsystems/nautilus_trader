@@ -81,16 +81,31 @@ class MockMarketDataClient(MarketDataClient):
         self.bars: list[Bar] = []
 
     def request_instrument(self, request: RequestInstrument) -> None:
-        self._handle_instrument(self.instrument, request.id, request.params)
+        self._handle_instrument(
+            self.instrument,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_instruments(self, request: RequestInstruments) -> None:
-        self._handle_instruments(request.venue, self.instruments, request.id, request.params)
+        self._handle_instruments(
+            request.venue,
+            self.instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
     def request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         self._handle_quote_ticks(
             request.instrument_id,
             self.quote_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
@@ -99,11 +114,21 @@ class MockMarketDataClient(MarketDataClient):
             request.instrument_id,
             self.trade_ticks,
             request.id,
+            request.start,
+            request.end,
             request.params,
         )
 
     def request_bars(self, request: RequestBars) -> None:
-        self._handle_bars(request.bar_type, self.bars, None, request.id, request.params)
+        self._handle_bars(
+            request.bar_type,
+            self.bars,
+            None,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

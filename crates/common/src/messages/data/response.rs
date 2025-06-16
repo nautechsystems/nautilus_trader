@@ -179,6 +179,8 @@ pub struct QuotesResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: Vec<QuoteTick>,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -195,6 +197,8 @@ impl QuotesResponse {
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: Vec<QuoteTick>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -203,6 +207,8 @@ impl QuotesResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -215,6 +221,8 @@ pub struct TradesResponse {
     pub client_id: ClientId,
     pub instrument_id: InstrumentId,
     pub data: Vec<TradeTick>,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub ts_init: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
@@ -231,6 +239,8 @@ impl TradesResponse {
         client_id: ClientId,
         instrument_id: InstrumentId,
         data: Vec<TradeTick>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -239,6 +249,8 @@ impl TradesResponse {
             client_id,
             instrument_id,
             data,
+            start,
+            end,
             ts_init,
             params,
         }
@@ -252,6 +264,8 @@ pub struct BarsResponse {
     pub bar_type: BarType,
     pub data: Vec<Bar>,
     pub ts_init: UnixNanos,
+    pub start: UnixNanos,
+    pub end: UnixNanos,
     pub params: Option<IndexMap<String, String>>,
 }
 
@@ -267,6 +281,8 @@ impl BarsResponse {
         client_id: ClientId,
         bar_type: BarType,
         data: Vec<Bar>,
+        start: UnixNanos,
+        end: UnixNanos,
         ts_init: UnixNanos,
         params: Option<IndexMap<String, String>>,
     ) -> Self {
@@ -275,6 +291,8 @@ impl BarsResponse {
             client_id,
             bar_type,
             data,
+            start,
+            end,
             ts_init,
             params,
         }

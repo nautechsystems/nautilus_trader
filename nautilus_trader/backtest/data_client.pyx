@@ -373,7 +373,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(f"Cannot find instrument for {request.instrument_id}")
             return
 
-        self._handle_instrument(instrument, request.id, request.params)
+        self._handle_instrument(instrument, request.id, request.start, request.end, request.params)
 
     cpdef void request_instruments(self, RequestInstruments request):
         cdef list instruments = self._cache.instruments(request.venue)
@@ -381,7 +381,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(f"Cannot find instruments")
             return
 
-        self._handle_instruments(request.venue, instruments, request.id, request.params)
+        self._handle_instruments(request.venue, instruments, request.id, request.start, request.end, request.params)
 
     cpdef void request_order_book_snapshot(self, RequestOrderBookSnapshot request):
         # Do nothing else for backtest

@@ -889,7 +889,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             return
 
-        self._handle_instrument(instruments[0], request.id, request.params)
+        self._handle_instrument(instruments[0], request.id, request.start, request.end, request.params)
 
     async def _request_instruments(self, request: RequestInstruments) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.venue)
@@ -919,7 +919,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
         instruments = instruments_from_pyo3(pyo3_instruments)
 
-        self._handle_instruments(instruments, request.venue, request.id, request.params)
+        self._handle_instruments(request.venue, instruments, request.id, request.start, request.end, request.params)
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
@@ -957,7 +957,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
-        self._handle_quote_ticks(request.instrument_id, quotes, request.id, request.params)
+        self._handle_quote_ticks(request.instrument_id, quotes, request.id, request.start, request.end, request.params)
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.instrument_id.venue)
@@ -985,7 +985,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.params)
+        self._handle_trade_ticks(request.instrument_id, trades, request.id, request.start, request.end, request.params)
 
     async def _request_bars(self, request: RequestBars) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(request.bar_type.instrument_id.venue)
@@ -1023,6 +1023,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             bars=bars,
             partial=None,  # No partials
             correlation_id=request.id,
+            start=request.start,
+            end=request.end,
             params=request.params,
         )
 

@@ -310,21 +310,21 @@ cdef class BarAggregator:
         self._batch_mode = False
         self.is_running = False # is_running means that an aggregator receives data from the message bus
 
-    def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
+    cpdef void start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns):
         self._batch_mode = True
         self._handler_backup = self._handler
         self._handler = handler
-        self._start_batch_time(time_ns)
+        self._start_batch_update(time_ns)
 
-    def _start_batch_time(self, uint64_t time_ns):
+    cdef void _start_batch_update(self, uint64_t time_ns):
         pass
 
-    def stop_batch_update(self, uint64_t time_ns) -> None:
+    cpdef void stop_batch_update(self, uint64_t time_ns):
         self._stop_batch_update(time_ns)
         self._batch_mode = False
         self._handler = self._handler_backup
 
-    def _stop_batch_update(self) -> None:
+    cdef void _stop_batch_update(self, uint64_t time_ns):
         pass
 
     def set_await_partial(self, bint value):
@@ -928,7 +928,7 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
 
-    cpdef void _set_build_timer(self):
+    cdef void _set_build_timer(self):
         cdef int step = self.bar_type.spec.step
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
@@ -976,10 +976,7 @@ cdef class TimeBarAggregator(BarAggregator):
         else:
             BarAggregator._build_and_send(self, ts_event, ts_init)
 
-    def _start_batch_time(self, uint64_t time_ns):
-        cdef int step = self.bar_type.spec.step
-        self._batch_mode = True
-
+    cdef void _start_batch_update(self, uint64_t time_ns):
         cdef datetime given_start_time = unix_nanos_to_dt(time_ns)
         cdef datetime start_time = self.get_start_time(given_start_time)
 
@@ -996,7 +993,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
             self._batch_next_close_ns = dt_to_unix_nanos(unix_nanos_to_dt(self._batch_open_ns) + pd.DateOffset(months=step))
 
-    def _stop_batch_update(self, uint64_t time_ns) -> None:
+    cdef void _stop_batch_update(self, uint64_t time_ns):
         pass
 
     cdef void _batch_pre_update(self, uint64_t time_ns):

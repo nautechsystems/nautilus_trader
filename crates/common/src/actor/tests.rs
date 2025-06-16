@@ -764,7 +764,7 @@ fn test_request_quotes(
     let quote = QuoteTick::default();
     let data = vec![quote];
     let ts_init = UnixNanos::default();
-    let response = QuotesResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+    let response = QuotesResponse::new(request_id, client_id, audusd_sim.id, data, UnixNanos::from(1_690_000_000_000_000_000), UnixNanos::from(1_700_000_000_000_000_000), ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
@@ -791,7 +791,7 @@ fn test_request_trades(
     let trade = TradeTick::default();
     let data = vec![trade];
     let ts_init = UnixNanos::default();
-    let response = TradesResponse::new(request_id, client_id, audusd_sim.id, data, ts_init, None);
+    let response = TradesResponse::new(request_id, client_id, audusd_sim.id, data, UnixNanos::from(1_695_000_000_000_000_000), UnixNanos::from(1_699_000_000_000_000_000), ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
@@ -820,7 +820,7 @@ fn test_request_bars(
     let bar = Bar::default();
     let data = vec![bar];
     let ts_init = UnixNanos::default();
-    let response = BarsResponse::new(request_id, client_id, bar_type, data, ts_init, None);
+    let response = BarsResponse::new(request_id, client_id, bar_type, data, UnixNanos::from(1_700_000_000_000_000_000), UnixNanos::from(1_705_000_000_000_000_000), ts_init, None);
 
     msgbus::response(&request_id, response.as_any());
 
