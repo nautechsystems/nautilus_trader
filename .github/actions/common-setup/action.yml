@@ -40,7 +40,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y curl clang git libssl-dev libssl3 make pkg-config
+        sudo apt-get install -y curl clang git make pkg-config
         sudo apt-get install -y python3-dev libpython3-dev
         sudo apt-get install -y capnproto libcapnp-dev
 
