@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Added chaos testing with `turmoil` for socket clients in Rust
 - Ported data catalog refactor to Rust (#2681), thanks @faysou
 - Consolidated the clocks and timers v2 feature from @twitu
+- Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
@@ -42,6 +43,8 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.27.0
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
+- Upgraded `redis` crate to v0.32.0
+- Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
 - Fixed `AccountBalance` mutation in `AccountState` events (#2701), thanks for reporting @DeirhX

@@ -14,23 +14,32 @@
 // -------------------------------------------------------------------------------------------------
 
 use base64::prelude::*;
+use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey};
 use hex;
-use ring::{
-    hmac,
-    rand::SystemRandom,
-    signature::{Ed25519KeyPair, RSA_PKCS1_SHA256, RsaKeyPair, Signature},
+use hmac::{Hmac, Mac};
+use rsa::{
+    RsaPrivateKey,
+    pkcs1v15::SigningKey as RsaSigningKey,
+    pkcs8::DecodePrivateKey,
+    rand_core::OsRng,
+    signature::{RandomizedSigner, SignatureEncoding},
 };
+use sha2::Sha256;
 
 /// Generates an HMAC-SHA256 signature for the given data using the provided secret.
 ///
 /// This function creates a cryptographic hash-based message authentication code (HMAC)
 /// using SHA-256 as the underlying hash function. The resulting signature is returned
 /// as a lowercase hexadecimal string.
-#[must_use]
-pub fn hmac_signature(secret: &str, data: &str) -> String {
-    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
-    let signature = hmac::sign(&key, data.as_bytes());
-    hex::encode(signature.as_ref())
+///
+/// # Errors
+///
+/// Returns an error if signature generation fails due to key or cryptographic errors.
+pub fn hmac_signature(secret: &str, data: &str) -> anyhow::Result<String> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())?;
+    mac.update(data.as_bytes());
+    let result = mac.finalize();
+    Ok(hex::encode(result.into_bytes()))
 }
 
 /// Signs `data` using RSA PKCS#1 v1.5 SHA-256 with the provided private key in PEM format.
@@ -46,15 +55,15 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
         anyhow::bail!("Query string cannot be empty");
     }
 
-    let pem = pem::parse(private_key_pem)?;
-    let private_key =
-        RsaKeyPair::from_pkcs8(pem.contents()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    let mut signature = vec![0; private_key.public().modulus_len()];
-    let rng = SystemRandom::new();
+    let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
+        .map_err(|e| anyhow::anyhow!("Failed to parse RSA private key: {e}"))?;
 
-    private_key
-        .sign(&RSA_PKCS1_SHA256, &rng, data.as_bytes(), &mut signature)
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    let signing_key = RsaSigningKey::<Sha256>::new_unprefixed(private_key);
+    let mut rng = OsRng;
+
+    let signature = signing_key
+        .sign_with_rng(&mut rng, data.as_bytes())
+        .to_bytes();
 
     Ok(BASE64_STANDARD.encode(&signature))
 }
@@ -65,10 +74,13 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
 ///
 /// Returns an error if the provided private key seed is invalid or signature creation fails.
 pub fn ed25519_signature(private_key: &[u8], data: &str) -> anyhow::Result<String> {
-    let key_pair =
-        Ed25519KeyPair::from_seed_unchecked(private_key).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    let signature: Signature = key_pair.sign(data.as_bytes());
-    Ok(hex::encode(signature.as_ref()))
+    let signing_key = SigningKey::from_bytes(
+        private_key
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid Ed25519 private key length"))?,
+    );
+    let signature: Ed25519Signature = signing_key.sign(data.as_bytes());
+    Ok(hex::encode(signature.to_bytes()))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +123,7 @@ mod tests {
         #[case] data: &str,
         #[case] expected_signature: &str,
     ) {
-        let result = hmac_signature(secret, data);
+        let result = hmac_signature(secret, data).unwrap();
         assert_eq!(
             result, expected_signature,
             "Expected signature did not match"
