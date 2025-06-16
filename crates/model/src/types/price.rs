@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Represents a price in a market.
+//! Represents a price in a market with a specified precision.
 
 use std::{
     cmp::Ordering,
@@ -31,16 +31,28 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
+#[cfg(feature = "defi")]
+use super::fixed::MAX_FLOAT_PRECISION;
 use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 #[cfg(feature = "high-precision")]
 use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
+// -----------------------------------------------------------------------------
+// PriceRaw
+// -----------------------------------------------------------------------------
+
+// Use 128-bit integers when either `high-precision` or `defi` features are enabled. This is
+// required for the extended 18-decimal WEI precision used in DeFi contexts.
+
 #[cfg(feature = "high-precision")]
 pub type PriceRaw = i128;
+
 #[cfg(not(feature = "high-precision"))]
 pub type PriceRaw = i64;
+
+// -----------------------------------------------------------------------------
 
 /// The maximum raw price integer value.
 ///
@@ -72,17 +84,31 @@ pub const PRICE_UNDEF: PriceRaw = PriceRaw::MAX;
 /// The sentinel value for an error or invalid price.
 pub const PRICE_ERROR: PriceRaw = PriceRaw::MIN;
 
-/// The maximum valid price value which can be represented.
+// -----------------------------------------------------------------------------
+// PRICE_MAX
+// -----------------------------------------------------------------------------
+
+/// The maximum valid price value that can be represented.
 #[cfg(feature = "high-precision")]
 pub const PRICE_MAX: f64 = 17_014_118_346_046.0;
+
 #[cfg(not(feature = "high-precision"))]
+/// The maximum valid price value that can be represented.
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 
-/// The minimum valid price value which can be represented.
+// -----------------------------------------------------------------------------
+// PRICE_MIN
+// -----------------------------------------------------------------------------
+
 #[cfg(feature = "high-precision")]
+/// The minimum valid price value that can be represented.
 pub const PRICE_MIN: f64 = -17_014_118_346_046.0;
+
 #[cfg(not(feature = "high-precision"))]
+/// The minimum valid price value that can be represented.
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
+
+// -----------------------------------------------------------------------------
 
 /// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {
@@ -90,7 +116,7 @@ pub const ERROR_PRICE: Price = Price {
     precision: 255,
 };
 
-/// Represents a price in a market.
+/// Represents a price in a market with a specified precision.
 ///
 /// The number of decimal places may vary. For certain asset classes, prices may
 /// have negative values. For example, prices for options instruments can be
@@ -98,8 +124,8 @@ pub const ERROR_PRICE: Price = Price {
 ///
 /// Handles up to [`FIXED_PRECISION`] decimals of precision.
 ///
-/// - [`PRICE_MAX`] - Maximum representable price value
-/// - [`PRICE_MIN`] - Minimum representable price value
+/// - [`PRICE_MAX`] - Maximum representable price value.
+/// - [`PRICE_MIN`] - Minimum representable price value.
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -119,18 +145,28 @@ impl Price {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is invalid outside the representable range [PRICE_MIN, PRICE_MAX].
-    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
+    /// - `value` is invalid outside the representable range [`PRICE_MIN`, `PRICE_MAX`].
+    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION``].
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
+
+        #[cfg(feature = "defi")]
+        if precision > MAX_FLOAT_PRECISION {
+            // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
+            anyhow::bail!(
+                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Price::from_wei()` for WEI values instead"
+            );
+        }
+
         check_fixed_precision(precision)?;
 
         #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_i128(value, precision);
+
         #[cfg(not(feature = "high-precision"))]
         let raw = f64_to_fixed_i64(value, precision);
 
@@ -227,14 +263,28 @@ impl Price {
         self.raw != PRICE_UNDEF && self.raw > 0
     }
 
-    /// Returns the value of this instance as an `f64`.
-    #[must_use]
     #[cfg(feature = "high-precision")]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
+        if self.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
         fixed_i128_to_f64(self.raw)
     }
 
     #[cfg(not(feature = "high-precision"))]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
@@ -243,8 +293,8 @@ impl Price {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw =
-            self.raw / PriceRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        let rescaled_raw = self.raw / PriceRaw::pow(10, u32::from(precision_diff));
         #[allow(clippy::unnecessary_cast)] // Required for precision modes
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
@@ -499,8 +549,8 @@ pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "high-precision")]
-/// The raw i64 price has already been scaled by 10^9. Further scale
-/// it by the difference to FIXED_PRECISION to make it high-precision raw price.
+/// The raw i64 price has already been scaled by 10^9. Further scale it by the difference to
+/// `FIXED_PRECISION` to make it high/defi-precision raw price.
 pub fn decode_raw_price_i64(value: i64) -> PriceRaw {
     value as PriceRaw * PRECISION_DIFF_SCALAR as PriceRaw
 }
@@ -522,13 +572,15 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
+    #[cfg(not(feature = "defi"))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 50")]
     fn test_invalid_precision_new() {
-        // Precision out of range for fixed
-        let _ = Price::new(1.0, FIXED_PRECISION + 1);
+        // Precision exceeds float precision limit (16)
+        let _ = Price::new(1.0, 50);
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
@@ -536,6 +588,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_max() {
         // Precision out of range for fixed
@@ -543,6 +596,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_min() {
         // Precision out of range for fixed
@@ -550,6 +604,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
@@ -605,15 +660,17 @@ mod tests {
 
     #[rstest]
     fn test_negative_price_in_range() {
-        let neg_price = Price::new(PRICE_MIN / 2.0, FIXED_PRECISION);
+        // Use precision 16 which is the max for float-based construction regardless of features
+        let neg_price = Price::new(PRICE_MIN / 2.0, 16);
         assert!(neg_price.raw < 0);
     }
 
     #[rstest]
     fn test_new_checked() {
-        assert!(Price::new_checked(1.0, FIXED_PRECISION).is_ok());
-        assert!(Price::new_checked(f64::NAN, FIXED_PRECISION).is_err());
-        assert!(Price::new_checked(f64::INFINITY, FIXED_PRECISION).is_err());
+        // Use precision 16 which is the max for float-based construction regardless of features
+        assert!(Price::new_checked(1.0, 16).is_ok());
+        assert!(Price::new_checked(f64::NAN, 16).is_err());
+        assert!(Price::new_checked(f64::INFINITY, 16).is_err());
     }
 
     #[rstest]
@@ -836,6 +893,7 @@ mod property_tests {
     use proptest::prelude::*;
 
     use super::*;
+    use crate::types::fixed::MAX_FLOAT_PRECISION;
 
     /// Strategy to generate valid price values within the allowed range.
     fn price_value_strategy() -> impl Strategy<Value = f64> {
@@ -853,9 +911,9 @@ mod property_tests {
         ]
     }
 
-    /// Strategy to generate valid precision values.
-    fn precision_strategy() -> impl Strategy<Value = u8> {
-        0..=FIXED_PRECISION
+    /// Strategy to generate valid precision values for float-based constructors.
+    fn float_precision_strategy() -> impl Strategy<Value = u8> {
+        0..=MAX_FLOAT_PRECISION
     }
 
     proptest! {
@@ -932,7 +990,7 @@ mod property_tests {
             a in price_value_strategy(),
             b in price_value_strategy(),
             c in price_value_strategy(),
-            precision in precision_strategy()
+            precision in float_precision_strategy()
         ) {
             let p_a = Price::new(a, precision);
             let p_b = Price::new(b, precision);
@@ -998,7 +1056,7 @@ mod property_tests {
         fn prop_price_arithmetic_bounds(
             a in price_value_strategy(),
             b in price_value_strategy(),
-            precision in precision_strategy()
+            precision in float_precision_strategy()
         ) {
             let p_a = Price::new(a, precision);
             let p_b = Price::new(b, precision);

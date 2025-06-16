@@ -140,35 +140,35 @@ cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest
 cargo-test:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-lib
 cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test-lib: check-nextest
 cargo-test-lib:
-	cargo nextest run --lib --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	cargo nextest run --workspace --features "python,ffi,defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
 cargo-test-debug: check-nextest
 cargo-test-debug:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi"
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
 cargo-test-standard-precision-debug: check-nextest
 cargo-test-standard-precision-debug:
-	cargo nextest run --workspace --features "python,ffi"
+	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest
@@ -178,6 +178,25 @@ cargo-test-coverage:
 		exit 1; \
 	fi
 	cargo llvm-cov nextest run --workspace
+
+# -----------------------------------------------------------------------------
+# Library tests for a single crate
+# -----------------------------------------------------------------------------
+# Invoke as:
+#   make cargo-test-crate-<crate_name>
+# Example:
+#   make cargo-test-crate-nautilus_macro
+#
+# This reuses the same flags as `cargo-test-lib` but targets only the specified
+# crate by replacing `--workspace` with `-p <crate>`.
+# -----------------------------------------------------------------------------
+
+.PHONY: cargo-test-crate-%
+cargo-test-crate-%: RUST_BACKTRACE=1
+cargo-test-crate-%: HIGH_PRECISION=true
+cargo-test-crate-%: check-nextest
+cargo-test-crate-%:
+	cargo nextest run --lib --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest -p $*
 
 .PHONY: cargo-bench
 cargo-bench:

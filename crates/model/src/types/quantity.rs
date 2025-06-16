@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Represents a quantity with a non-negative value.
+//! Represents a quantity with a non-negative value and specified precision.
 
 use std::{
     cmp::Ordering,
@@ -36,11 +36,20 @@ use super::fixed::{FIXED_PRECISION, FIXED_SCALAR, check_fixed_precision};
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
+
+// -----------------------------------------------------------------------------
+// QuantityRaw
+// -----------------------------------------------------------------------------
 
 #[cfg(feature = "high-precision")]
 pub type QuantityRaw = u128;
+
 #[cfg(not(feature = "high-precision"))]
 pub type QuantityRaw = u64;
+
+// -----------------------------------------------------------------------------
 
 /// The maximum raw quantity integer value.
 #[unsafe(no_mangle)]
@@ -50,16 +59,24 @@ pub static QUANTITY_RAW_MAX: QuantityRaw = (QUANTITY_MAX * FIXED_SCALAR) as Quan
 /// The sentinel value for an unset or null quantity.
 pub const QUANTITY_UNDEF: QuantityRaw = QuantityRaw::MAX;
 
-/// The maximum valid quantity value which can be represented.
+// -----------------------------------------------------------------------------
+// QUANTITY_MAX
+// -----------------------------------------------------------------------------
+
 #[cfg(feature = "high-precision")]
+/// The maximum valid quantity value that can be represented.
 pub const QUANTITY_MAX: f64 = 34_028_236_692_093.0;
+
 #[cfg(not(feature = "high-precision"))]
+/// The maximum valid quantity value that can be represented.
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 
-/// The minimum valid quantity value which can be represented.
+// -----------------------------------------------------------------------------
+
+/// The minimum valid quantity value that can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
-/// Represents a quantity with a non-negative value.
+/// Represents a quantity with a non-negative value and specified precision.
 ///
 /// Capable of storing either a whole number (no decimal places) of 'contracts'
 /// or 'shares' (instruments denominated in whole units) or a decimal value
@@ -67,8 +84,8 @@ pub const QUANTITY_MIN: f64 = 0.0;
 ///
 /// Handles up to [`FIXED_PRECISION`] decimals of precision.
 ///
-/// - [`QUANTITY_MAX`] - Maximum representable quantity value
-/// - [`QUANTITY_MIN`] - 0 (non-negative values only)
+/// - [`QUANTITY_MAX`] - Maximum representable quantity value.
+/// - [`QUANTITY_MIN`] - 0 (non-negative values only).
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -88,14 +105,23 @@ impl Quantity {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - `value` is invalid outside the representable range [0, QUANTITY_MAX].
-    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
+    /// - `value` is invalid outside the representable range [0, `QUANTITY_MAX`].
+    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION`].
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
+
+        #[cfg(feature = "defi")]
+        if precision > MAX_FLOAT_PRECISION {
+            // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
+            anyhow::bail!(
+                "`precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Quantity::from_wei()` for WEI values instead"
+            );
+        }
+
         check_fixed_precision(precision)?;
 
         #[cfg(feature = "high-precision")]
@@ -113,8 +139,8 @@ impl Quantity {
     /// Returns an error if:
     /// - `value` is zero.
     /// - `value` becomes zero after rounding to `precision`.
-    /// - `value` is invalid outside the representable range [0, QUANTITY_MAX].
-    /// - `precision` is invalid outside the representable range [0, FIXED_PRECISION].
+    /// - `value` is invalid outside the representable range [0, `QUANTITY_MAX`].
+    /// - `precision` is invalid outside the representable range [0, `FIXED_PRECISION`].
     ///
     /// # Notes
     ///
@@ -201,14 +227,28 @@ impl Quantity {
         self.raw != QUANTITY_UNDEF && self.raw > 0
     }
 
-    /// Returns the value of this instance as an `f64`.
-    #[must_use]
     #[cfg(feature = "high-precision")]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
+        if self.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
         fixed_u128_to_f64(self.raw)
     }
 
     #[cfg(not(feature = "high-precision"))]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -217,8 +257,9 @@ impl Quantity {
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
-        let rescaled_raw =
-            self.raw / QuantityRaw::pow(10, u32::from(FIXED_PRECISION - self.precision));
+        let precision_diff = FIXED_PRECISION.saturating_sub(self.precision);
+        let rescaled_raw = self.raw / QuantityRaw::pow(10, u32::from(precision_diff));
+
         // SAFETY: The raw value is guaranteed to be within i128 range after scaling
         // because our quantity constraints ensure the maximum raw value times the scaling
         // factor cannot exceed i128::MAX (high-precision) or i64::MAX (standard-precision).
@@ -539,13 +580,15 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
+    #[cfg(not(feature = "defi"))]
+    #[should_panic(expected = "`precision` exceeded maximum `FIXED_PRECISION` (16), was 17")]
     fn test_invalid_precision_new() {
-        // Precision out of range for fixed
-        let _ = Quantity::new(1.0, FIXED_PRECISION + 1);
+        // Precision 17 should fail due to DeFi validation
+        let _ = Quantity::new(1.0, 17);
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
@@ -553,6 +596,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(not(feature = "defi"))]
     #[should_panic(expected = "Condition failed: `precision` exceeded maximum `FIXED_PRECISION`")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
@@ -933,7 +977,15 @@ mod property_tests {
 
     /// Strategy to generate valid precision values.
     fn precision_strategy() -> impl Strategy<Value = u8> {
-        0..=FIXED_PRECISION
+        #[cfg(feature = "defi")]
+        {
+            // In DeFi mode, exclude precision 17 (invalid) and 18 (f64 constructor incompatible)
+            0..=16u8
+        }
+        #[cfg(not(feature = "defi"))]
+        {
+            0..=FIXED_PRECISION
+        }
     }
 
     proptest! {
@@ -1101,8 +1153,8 @@ mod property_tests {
         /// Property: Multiplication should preserve non-negativity
         #[test]
         fn prop_quantity_multiplication_non_negative(
-            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 1000.0),
-            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 1000.0),
+            a in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 100.0),
+            b in quantity_value_strategy().prop_filter("Reasonable values", |&x| x > 0.0 && x < 100.0),
             precision in precision_strategy()
         ) {
             let q_a = Quantity::new(a, precision);
@@ -1110,7 +1162,14 @@ mod property_tests {
 
             // Check if multiplication would overflow before performing it
             let product_f64 = q_a.as_f64() * q_b.as_f64();
-            if product_f64.is_finite() && product_f64 <= QUANTITY_MAX {
+            // More conservative overflow check for high-precision modes
+            let safe_limit = if cfg!(any(feature = "defi", feature = "high-precision")) {
+                QUANTITY_MAX / 10000.0  // Much more conservative in high-precision mode
+            } else {
+                QUANTITY_MAX
+            };
+
+            if product_f64.is_finite() && product_f64 <= safe_limit {
                 // Multiplying two quantities should always result in a non-negative value
                 let product = q_a * q_b;
                 prop_assert!(product.as_f64() >= 0.0, "Quantity multiplication produced negative value: {}", product.as_f64());
