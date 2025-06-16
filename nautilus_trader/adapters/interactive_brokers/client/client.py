@@ -446,16 +446,21 @@ class InteractiveBrokersClient(
             The asyncio Task that has been completed.
 
         """
-        if actions:
-            try:
-                actions()
-            except Exception as e:
-                self._log.exception(
-                    f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
-                    e,
-                )
-        if success:
-            self._log.info(success, LogColor.GREEN)
+        if task.exception():
+            self._log.error(
+                f"Error on '{task.get_name()}': {task.exception()!r}",
+            )
+        else:
+            if actions:
+                try:
+                    actions()
+                except Exception as e:
+                    self._log.exception(
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
+                        e,
+                    )
+            if success:
+                self._log.info(success, LogColor.GREEN)
 
     def subscribe_event(self, name: str, handler: Callable) -> None:
         """
