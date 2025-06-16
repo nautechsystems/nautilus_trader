@@ -31,9 +31,9 @@ pub enum AmmType {
     CPAMM,
     /// Concentrated Liquidity Automated Market Maker.
     CLAMM,
-    /// Enhanced CLAMM with Additional Features (Uniswap V4 with Hooks).
+    /// Concentrated liquidity AMM **with hooks** (e.g. upcoming Uniswap v4).
     CLAMEnhanced,
-    /// Specialized AMM for Stable Assets (Curve Style).
+    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style “StableSwap”).
     StableSwap,
     /// AMM with customizable token weights (e.g., Balancer style).
     WeightedPool,

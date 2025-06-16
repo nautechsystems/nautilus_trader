@@ -3,9 +3,12 @@
 A high-performance, universal, extensible adapter for ingesting DeFi data from decentralized exchanges (DEXs),
 liquidity pools, and on-chain events. It enables you to power analytics pipelines and trading strategies with real-time and historical on-chain data.
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
-providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
+## Platform
+
+[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+algorithmic trading platform, providing quantitative traders with the ability to backtest
+portfolios of automated trading strategies on historical data with an event-driven engine,
+and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.

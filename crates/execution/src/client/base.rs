@@ -39,6 +39,12 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
+/// Base implementation for execution clients providing common functionality.
+///
+/// This struct provides the foundation for all execution clients, handling
+/// account state generation, order event creation, and message routing.
+/// Execution clients can inherit this base functionality and extend it
+/// with venue-specific implementations.
 pub struct BaseExecutionClient {
     pub trader_id: TraderId,
     pub client_id: ClientId,
@@ -61,6 +67,7 @@ impl Debug for BaseExecutionClient {
 }
 
 impl BaseExecutionClient {
+    /// Creates a new [`BaseExecutionClient`] instance.
     #[allow(clippy::too_many_arguments)]
     pub const fn new(
         trader_id: TraderId,
@@ -87,15 +94,18 @@ impl BaseExecutionClient {
         }
     }
 
+    /// Sets the connection status of the execution client.
     pub const fn set_connected(&mut self, is_connected: bool) {
         self.is_connected = is_connected;
     }
 
+    /// Sets the account identifier for the execution client.
     pub const fn set_account_id(&mut self, account_id: AccountId) {
         self.account_id = account_id;
     }
 
     #[must_use]
+    /// Returns the account associated with this execution client.
     pub fn get_account(&self) -> Option<AccountAny> {
         self.cache.borrow().account(&self.account_id).cloned()
     }

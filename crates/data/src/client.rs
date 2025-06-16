@@ -83,14 +83,14 @@ pub trait DataClient: Any + Sync + Send {
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    async fn connect(&self) -> anyhow::Result<()>;
+    async fn connect(&mut self) -> anyhow::Result<()>;
 
     /// Disconnects external API's if needed.
     ///
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    async fn disconnect(&self) -> anyhow::Result<()>;
+    async fn disconnect(&mut self) -> anyhow::Result<()>;
 
     /// Returns `true` if the client is currently connected.
     fn is_connected(&self) -> bool;

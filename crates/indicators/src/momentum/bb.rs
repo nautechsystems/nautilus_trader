@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
 };
+
+pub const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -40,7 +40,7 @@ pub struct BollingerBands {
     pub lower: f64,
     pub initialized: bool,
     ma: Box<dyn MovingAverage + Send + 'static>,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     has_inputs: bool,
 }
 
@@ -59,7 +59,7 @@ impl Display for BollingerBands {
 
 impl Indicator for BollingerBands {
     fn name(&self) -> String {
-        stringify!(BollingerBands).to_string()
+        stringify!(BollingerBands).into()
     }
 
     fn has_inputs(&self) -> bool {
@@ -99,28 +99,45 @@ impl Indicator for BollingerBands {
 
 impl BollingerBands {
     /// Creates a new [`BollingerBands`] instance.
+    ///
+    /// # Panics
+    ///
+    /// - If `period` is `0` or greater than `MAX_PERIOD`.
+    /// - If `k` is *not finite* or *≤ 0*.
     #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(
+            (1..=MAX_PERIOD).contains(&period),
+            "BollingerBands: period {period} out of range (1..={MAX_PERIOD})"
+        );
+        assert!(
+            k.is_finite() && k > 0.0,
+            "BollingerBands: k must be positive and finite (received {k})"
+        );
+
         Self {
             period,
             k,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            prices: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
             upper: 0.0,
             middle: 0.0,
             lower: 0.0,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            prices: VecDeque::with_capacity(period),
         }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
         let typical = (high + low + close) / 3.0;
-        self.prices.push_back(typical);
+
+        if self.prices.len() == self.period {
+            let _ = self.prices.pop_front();
+        }
+        let _ = self.prices.push_back(typical);
         self.ma.update_raw(typical);
 
-        // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
             if self.prices.len() >= self.period {
@@ -128,8 +145,10 @@ impl BollingerBands {
             }
         }
 
-        // Calculate values
-        let std = fast_std_with_mean(self.prices.clone(), self.ma.value());
+        let std = fast_std_with_mean(
+            self.prices.iter().rev().take(self.period).copied(),
+            self.ma.value(),
+        );
 
         self.upper = self.k.mul_add(std, self.ma.value());
         self.middle = self.ma.value();
@@ -138,18 +157,25 @@ impl BollingerBands {
 }
 
 #[must_use]
-pub fn fast_std_with_mean(values: VecDeque<f64>, mean: f64) -> f64 {
-    if values.is_empty() {
+pub fn fast_std_with_mean<I>(values: I, mean: f64) -> f64
+where
+    I: IntoIterator<Item = f64>,
+{
+    let mut var_acc = 0.0_f64;
+    let mut count = 0_usize;
+
+    for v in values {
+        let diff = v - mean;
+        var_acc += diff * diff;
+        count += 1;
+    }
+
+    if count == 0 {
         return 0.0;
     }
 
-    let mut std_dev = 0.0;
-    for v in &values {
-        let diff = v - mean;
-        std_dev += diff * diff;
-    }
-
-    (std_dev / values.len() as f64).sqrt()
+    let variance = var_acc / count as f64;
+    variance.sqrt()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -191,7 +217,6 @@ mod tests {
         let low_values = [
             0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9, 10.1, 10.2, 10.3, 11.1, 11.4,
         ];
-
         let close_values = [
             0.95, 1.95, 2.95, 3.95, 4.95, 5.95, 6.95, 7.95, 8.95, 9.95, 10.05, 10.15, 10.25, 11.05,
             11.45,
@@ -202,9 +227,9 @@ mod tests {
         }
 
         assert!(bb_10.initialized());
-        assert_eq!(bb_10.upper, 10.108_266_446_984_462);
+        assert_eq!(bb_10.upper, 9.884_458_228_895_1);
         assert_eq!(bb_10.middle, 9.676_666_666_666_666);
-        assert_eq!(bb_10.lower, 9.245_066_886_348_87);
+        assert_eq!(bb_10.lower, 9.468_875_104_438_231);
     }
 
     #[rstest]
@@ -220,5 +245,46 @@ mod tests {
         assert_eq!(bb_10.middle, 0.0);
         assert_eq!(bb_10.lower, 0.0);
         assert_eq!(bb_10.prices.len(), 0);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "k must be positive")]
+    fn test_new_panics_on_zero_k() {
+        let _ = BollingerBands::new(10, 0.0, None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "k must be positive")]
+    fn test_new_panics_on_negative_k() {
+        let _ = BollingerBands::new(10, -2.0, None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "k must be positive")]
+    fn test_new_panics_on_nan_k() {
+        let _ = BollingerBands::new(10, f64::NAN, None);
+    }
+
+    #[rstest]
+    fn test_std_dev_uses_sliding_window() {
+        let mut bb = BollingerBands::new(3, 1.0, None);
+
+        for v in 1..=6 {
+            bb.update_raw(f64::from(v), f64::from(v), f64::from(v));
+        }
+
+        let expected_mid: f64 = (4.0 + 5.0 + 6.0) / 3.0;
+        let variance = (6.0 - expected_mid).mul_add(
+            6.0 - expected_mid,
+            (4.0 - expected_mid).mul_add(
+                4.0 - expected_mid,
+                (5.0 - expected_mid) * (5.0 - expected_mid),
+            ),
+        ) / 3.0;
+        let expected_std = variance.sqrt();
+
+        assert!((bb.middle - expected_mid).abs() < 1e-12);
+        assert!((bb.upper - (expected_mid + expected_std)).abs() < 1e-12);
+        assert!((bb.lower - (expected_mid - expected_std)).abs() < 1e-12);
     }
 }

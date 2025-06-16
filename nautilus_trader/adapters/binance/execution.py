@@ -64,7 +64,6 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
@@ -621,9 +620,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         raise NotImplementedError
 
     def _determine_time_in_force(self, order: Order) -> BinanceTimeInForce:
-        time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if time_in_force == TimeInForce.GTD and not self._use_gtd:
-            time_in_force = TimeInForce.GTC
+        # Convert the internal TimeInForce enum to the Binance equivalent
+        time_in_force: BinanceTimeInForce = self._enum_parser.parse_internal_time_in_force(
+            order.time_in_force,
+        )
+
+        # When the client is configured *not* to make use of the native GTD
+        # (Good-Till-Date) support on Binance we transparently downgrade GTD to
+        # GTC. Comparison must be performed against the *Binance* enum; the
+        # previous implementation compared against the internal Nautilus enum
+        # which would always evaluate to ``False`` and therefore never apply
+        # the downgrade.
+        if time_in_force == BinanceTimeInForce.GTD and not self._use_gtd:
+            time_in_force = BinanceTimeInForce.GTC
             self._log.info(
                 f"Converted GTD `time_in_force` to GTC for {order.client_order_id}",
                 LogColor.BLUE,
@@ -844,7 +853,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 
@@ -876,7 +885,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         else:
             self._log.error(
                 f"Cannot submit order: invalid `order.trigger_type`, was "
-                f"{trigger_type_to_str(order.trigger_price)}, {order}",
+                f"{trigger_type_to_str(order.trigger_type)}, {order}",
             )
             return
 

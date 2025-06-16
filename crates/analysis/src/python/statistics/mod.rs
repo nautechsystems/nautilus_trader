@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings for trading performance statistics.
+
 pub mod expectancy;
 pub mod long_ratio;
 pub mod loser_avg;

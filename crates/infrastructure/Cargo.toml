@@ -25,7 +25,13 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-python = ["pyo3", "pyo3-async-runtimes"]
+python = [
+  "pyo3",
+  "pyo3-async-runtimes",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]
 
@@ -34,10 +40,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-nautilus-common = { workspace = true, features = ["python"] }
-nautilus-core = { workspace = true, features = ["python"] }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
 nautilus-cryptography = { workspace = true }
-nautilus-model = { workspace = true, features = ["python", "stubs"] }
+nautilus-model = { workspace = true, features = ["stubs"] }
 
 anyhow = { workspace = true }
 async-stream = { workspace = true }

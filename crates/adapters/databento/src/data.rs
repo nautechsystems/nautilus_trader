@@ -356,7 +356,7 @@ impl DataClient for DatabentoDataClient {
         self.stop()
     }
 
-    async fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Connecting Databento data client");
 
         // Connection will happen lazily when subscriptions are made
@@ -367,7 +367,7 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disconnecting Databento data client");
 
         // Signal cancellation to all running tasks

@@ -15,6 +15,13 @@
 
 use crate::{Returns, statistic::PortfolioStatistic};
 
+/// Calculates the Sharpe ratio for portfolio returns.
+///
+/// The Sharpe ratio measures risk-adjusted return and is calculated as:
+/// (Mean Return - Risk-free Rate) / Standard Deviation of Returns
+///
+/// This implementation assumes a risk-free rate of 0 and annualizes the ratio
+/// using the square root of the specified period.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -22,6 +29,7 @@ use crate::{Returns, statistic::PortfolioStatistic};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
 pub struct SharpeRatio {
+    /// The annualization period (default: 252 for daily data).
     period: usize,
 }
 

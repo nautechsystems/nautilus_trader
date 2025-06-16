@@ -65,7 +65,7 @@ and events.
 
 :::warning
 Do not call components such as `clock` and `logger` in the `__init__` constructor (which is prior to registration).
-This is because the systems clock and logging system have not yet been initialized.
+This is because the systems clock and logging subsystem have not yet been initialized.
 :::
 
 ### Handlers

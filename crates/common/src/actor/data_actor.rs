@@ -216,16 +216,6 @@ pub trait DataActor:
         Ok(())
     }
 
-    /// Actions to be performed when receiving an event.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if handling the event fails.
-    fn on_event(&mut self, event: &dyn Any) -> anyhow::Result<()> {
-        // TODO: Implement `Event` enum?
-        Ok(())
-    }
-
     /// Actions to be performed when receiving a time event.
     ///
     /// # Errors
@@ -405,15 +395,6 @@ pub trait DataActor:
         log_received(&event);
 
         if let Err(e) = DataActor::on_time_event(self, event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received event.
-    fn handle_event(&mut self, event: &dyn Any) {
-        log_received(&event);
-
-        if let Err(e) = DataActor::on_event(self, event) {
             log_error(&e);
         }
     }

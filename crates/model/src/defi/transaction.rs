@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy_primitives::{Address, U256};
 use serde::{Deserialize, Deserializer};
 
 use crate::defi::{chain::Chain, hex::deserialize_hex_number};
@@ -32,12 +33,11 @@ pub struct Transaction {
     #[serde(rename = "blockNumber", deserialize_with = "deserialize_hex_number")]
     pub block_number: u64,
     /// The address of the sender (transaction originator).
-    pub from: String,
+    pub from: Address,
     /// The address of the recipient.
-    pub to: String,
+    pub to: Address,
     /// The amount of Ether transferred in the transaction, in wei.
-    #[serde(deserialize_with = "deserialize_hex_number")]
-    pub value: u64,
+    pub value: U256,
     /// The index of the transaction within its containing block.
     #[serde(
         rename = "transactionIndex",
@@ -45,11 +45,10 @@ pub struct Transaction {
     )]
     pub transaction_index: u64,
     /// The amount of gas allocated for transaction execution.
-    #[serde(deserialize_with = "deserialize_hex_number")]
-    pub gas: u64,
-    /// The price of gas in wei.
-    #[serde(rename = "gasPrice", deserialize_with = "deserialize_hex_number")]
-    pub gas_price: u64,
+    pub gas: U256,
+    /// The price of gas in wei per gas unit.
+    #[serde(rename = "gasPrice")]
+    pub gas_price: U256,
 }
 
 impl Transaction {
@@ -60,12 +59,12 @@ impl Transaction {
         hash: String,
         block_hash: String,
         block_number: u64,
-        from: String,
-        to: String,
-        gas: u64,
-        gas_price: u64,
+        from: Address,
+        to: Address,
+        gas: U256,
+        gas_price: U256,
         transaction_index: u64,
-        value: u64,
+        value: U256,
     ) -> Self {
         Self {
             chain,
@@ -185,12 +184,22 @@ mod tests {
             "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0"
         );
         assert_eq!(tx.block_number, 22323670);
-        assert_eq!(tx.from, "0xd6a8749e224ecdfcc79d473d3355b1b0eb51d423");
-        assert_eq!(tx.to, "0x3c9af20c7b7809a825373881f61b5a69ef8bc6bd");
-        assert_eq!(tx.gas, 21000);
-        assert_eq!(tx.gas_price, 762999156);
+        assert_eq!(
+            tx.from,
+            "0xd6a8749e224ecdfcc79d473d3355b1b0eb51d423"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(
+            tx.to,
+            "0x3c9af20c7b7809a825373881f61b5a69ef8bc6bd"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(tx.gas, U256::from(21000));
+        assert_eq!(tx.gas_price, U256::from(762999156));
         assert_eq!(tx.transaction_index, 153);
-        assert_eq!(tx.value, 100000000);
+        assert_eq!(tx.value, U256::from(100000000));
     }
 
     #[rstest]
@@ -210,11 +219,130 @@ mod tests {
             tx.block_hash,
             "0xfdba50e306d1b0ebd1971ec0440799b324229841637d8c56afbd1d6950bb09f0"
         );
-        assert_eq!(tx.from, "0x2b711ee00b50d67667c4439c28aeaf7b75cb6e0d");
-        assert_eq!(tx.to, "0x8c0bfc04ada21fd496c55b8c50331f904306f564");
-        assert_eq!(tx.gas, 15000000);
-        assert_eq!(tx.gas_price, 1399572700);
+        assert_eq!(
+            tx.from,
+            "0x2b711ee00b50d67667c4439c28aeaf7b75cb6e0d"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(
+            tx.to,
+            "0x8c0bfc04ada21fd496c55b8c50331f904306f564"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(tx.gas, U256::from(15000000));
+        assert_eq!(tx.gas_price, U256::from(1399572700));
         assert_eq!(tx.transaction_index, 74);
-        assert_eq!(tx.value, 0);
+        assert_eq!(tx.value, U256::ZERO);
+    }
+
+    #[rstest]
+    fn test_transaction_with_large_values() {
+        // Test with transaction that has very large gas and value amounts
+        let large_value_tx = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "blockHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "blockNumber": "0x1000000",
+                "chainId": "0x1",
+                "from": "0x0000000000000000000000000000000000000001",
+                "gas": "0xffffffffffffffff",
+                "gasPrice": "0xde0b6b3a7640000",
+                "hash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                "to": "0x0000000000000000000000000000000000000002",
+                "transactionIndex": "0x0",
+                "value": "0xde0b6b3a7640000"
+            }
+        }"#;
+
+        let tx = serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(large_value_tx)
+            .expect("Should parse large value transaction")
+            .result;
+
+        // Test that large values are handled correctly with U256
+        assert_eq!(tx.gas, U256::from(u64::MAX));
+        assert_eq!(tx.gas_price, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
+        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64)); // 1 ETH in wei
+        assert_eq!(tx.block_number, 16777216); // 0x1000000
+    }
+
+    #[rstest]
+    fn test_transaction_parsing_with_invalid_address_should_fail() {
+        let invalid_address_tx = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "blockHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "blockNumber": "0x1",
+                "chainId": "0x1",
+                "from": "0xinvalid_address",
+                "gas": "0x5208",
+                "gasPrice": "0x2d7a7174",
+                "hash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                "to": "0x0000000000000000000000000000000000000002",
+                "transactionIndex": "0x0",
+                "value": "0x0"
+            }
+        }"#;
+
+        let result = serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(invalid_address_tx);
+        assert!(result.is_err(), "Should fail to parse invalid address");
+    }
+
+    #[rstest]
+    fn test_transaction_parsing_with_unknown_chain_should_fail() {
+        let unknown_chain_tx = r#"{
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "blockHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+                "blockNumber": "0x1",
+                "chainId": "0x999999",
+                "from": "0x0000000000000000000000000000000000000001",
+                "gas": "0x5208",
+                "gasPrice": "0x2d7a7174",
+                "hash": "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+                "to": "0x0000000000000000000000000000000000000002",
+                "transactionIndex": "0x0",
+                "value": "0x0"
+            }
+        }"#;
+
+        let result = serde_json::from_str::<RpcNodeHttpResponse<Transaction>>(unknown_chain_tx);
+        assert!(result.is_err(), "Should fail to parse unknown chain ID");
+    }
+
+    #[rstest]
+    fn test_transaction_creation_with_constructor() {
+        use crate::defi::chain::chains;
+
+        let chain = chains::ETHEREUM.clone();
+        let from_addr = "0x0000000000000000000000000000000000000001"
+            .parse::<Address>()
+            .unwrap();
+        let to_addr = "0x0000000000000000000000000000000000000002"
+            .parse::<Address>()
+            .unwrap();
+
+        let tx = Transaction::new(
+            chain,
+            "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890".to_string(),
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".to_string(),
+            123456,
+            from_addr,
+            to_addr,
+            U256::from(21_000),
+            U256::from(20_000_000_000u64), // 20 gwei
+            0,
+            U256::from(1_000_000_000_000_000_000u64), // 1 ETH
+        );
+
+        assert_eq!(tx.from, from_addr);
+        assert_eq!(tx.to, to_addr);
+        assert_eq!(tx.gas, U256::from(21_000));
+        assert_eq!(tx.gas_price, U256::from(20_000_000_000u64));
+        assert_eq!(tx.value, U256::from(1_000_000_000_000_000_000u64));
     }
 }

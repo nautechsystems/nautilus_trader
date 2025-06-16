@@ -16,7 +16,6 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 pub mod arrow;
-pub mod enums;
 
 use pyo3::prelude::*;
 
@@ -67,8 +66,6 @@ pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         crate::python::arrow::py_instrument_closes_to_arrow_record_batch_bytes,
         m
     )?)?;
-
-    m.add_class::<crate::enums::ParquetWriteMode>()?;
 
     Ok(())
 }

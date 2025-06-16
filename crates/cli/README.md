@@ -5,9 +5,23 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-cli.svg)](https://crates.io/crates/nautilus-cli)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
-[NautilusTrader](https://nautilustrader.io) is an open-source, high-performance, production-grade algorithmic trading platform,
-providing quantitative traders with the ability to backtest portfolios of automated trading strategies
-on historical data with an event-driven engine, and also deploy those same strategies live, with no code changes.
+Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
+
+The *cli* crate provides a comprehensive command-line interface for managing and
+operating NautilusTrader installations. It includes tools for database management,
+system configuration, and operational utilities:
+
+- Database initialization and management commands
+- PostgreSQL schema setup and maintenance
+- Configuration validation and setup utilities
+- System administration and operational tools
+
+## Platform
+
+[NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
+algorithmic trading platform, providing quantitative traders with the ability to backtest
+portfolios of automated trading strategies on historical data with an event-driven engine,
+and also deploy those same strategies live, with no code changes.
 
 NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
 highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.

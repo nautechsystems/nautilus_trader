@@ -63,14 +63,17 @@ impl FillModel {
         })
     }
 
+    /// Returns `true` if a limit order should be filled based on the configured probability.
     pub fn is_limit_filled(&mut self) -> bool {
         self.event_success(self.prob_fill_on_limit)
     }
 
+    /// Returns `true` if a stop order should be filled based on the configured probability.
     pub fn is_stop_filled(&mut self) -> bool {
         self.event_success(self.prob_fill_on_stop)
     }
 
+    /// Returns `true` if an order should slip by one tick based on the configured probability.
     pub fn is_slipped(&mut self) -> bool {
         self.event_success(self.prob_slippage)
     }

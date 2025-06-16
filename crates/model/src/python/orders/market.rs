@@ -422,13 +422,9 @@ impl MarketOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let linked_order_ids_list = PyList::new(
-                    py,
-                    linked_order_ids
-                        .iter()
-                        .map(std::string::ToString::to_string),
-                )
-                .expect("Invalid `ExactSizeIterator`");
+                let linked_order_ids_list =
+                    PyList::new(py, linked_order_ids.iter().map(ToString::to_string))
+                        .expect("Invalid `ExactSizeIterator`");
                 dict.set_item("linked_order_ids", linked_order_ids_list)
             },
         )?;

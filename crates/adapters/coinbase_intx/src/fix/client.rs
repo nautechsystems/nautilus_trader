@@ -31,6 +31,7 @@ use std::{
 };
 
 use base64::prelude::*;
+use hmac::{Hmac, Mac};
 use nautilus_common::logging::{log_task_started, log_task_stopped};
 #[cfg(feature = "python")]
 use nautilus_core::python::IntoPyObjectNautilusExt;
@@ -39,7 +40,7 @@ use nautilus_model::identifiers::AccountId;
 use nautilus_network::socket::{SocketClient, SocketConfig, WriterCommand};
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use ring::hmac;
+use sha2::Sha256;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -457,9 +458,11 @@ impl CoinbaseIntxFixClient {
             .decode(&self.api_secret)
             .map_err(|e| anyhow::anyhow!("Invalid base64 secret key: {e}"))?;
 
-        let hmac_key = hmac::Key::new(hmac::HMAC_SHA256, &decoded_secret);
-        let signature = hmac::sign(&hmac_key, message.as_bytes());
-        let encoded_signature = BASE64_STANDARD.encode(signature);
+        let mut mac = Hmac::<Sha256>::new_from_slice(&decoded_secret)
+            .map_err(|e| anyhow::anyhow!("Invalid HMAC key: {e}"))?;
+        mac.update(message.as_bytes());
+        let result = mac.finalize();
+        let encoded_signature = BASE64_STANDARD.encode(result.into_bytes());
 
         let logon_msg = FixMessage::create_logon(
             1, // Always use 1 for new logon with reset

@@ -15,6 +15,10 @@
 
 use clap::Parser;
 
+/// Main CLI structure for parsing command-line arguments and options.
+///
+/// This is the entry point for the NautilusTrader command-line interface,
+/// providing access to various system management and operational commands.
 #[derive(Debug, Parser)]
 #[clap(version, about, author)]
 pub struct NautilusCli {
@@ -22,11 +26,13 @@ pub struct NautilusCli {
     pub command: Commands,
 }
 
+/// Available top-level commands for the NautilusTrader CLI.
 #[derive(Parser, Debug)]
 pub enum Commands {
     Database(DatabaseOpt),
 }
 
+/// Database management options and subcommands.
 #[derive(Parser, Debug)]
 #[command(about = "Postgres database operations", long_about = None)]
 pub struct DatabaseOpt {
@@ -34,6 +40,7 @@ pub struct DatabaseOpt {
     pub command: DatabaseCommand,
 }
 
+/// Configuration parameters for database connection and operations.
 #[derive(Parser, Debug, Clone)]
 pub struct DatabaseConfig {
     /// Hostname or IP address of the database server.
@@ -56,6 +63,7 @@ pub struct DatabaseConfig {
     pub schema: Option<String>,
 }
 
+/// Available database management commands.
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Postgres database operations", long_about = None)]
 pub enum DatabaseCommand {

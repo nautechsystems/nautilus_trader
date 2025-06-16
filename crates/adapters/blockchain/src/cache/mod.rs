@@ -27,12 +27,7 @@ use std::{
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    amm::{Pool, SharedPool},
-    block::Block,
-    chain::SharedChain,
-    liquidity::PoolLiquidityUpdate,
-    swap::Swap,
-    token::Token,
+    Block, Pool, PoolLiquidityUpdate, SharedChain, SharedPool, Swap, Token,
 };
 use sqlx::postgres::PgConnectOptions;
 
@@ -94,12 +89,20 @@ impl BlockchainCache {
     pub async fn connect(&mut self, from_block: u64) -> anyhow::Result<()> {
         // Seed target adapter chain in database
         if let Some(database) = &self.database {
-            database.seed_chain(&self.chain).await?;
+            if let Err(e) = database.seed_chain(&self.chain).await {
+                log::error!("Error seeding chain in database: {e}");
+                log::warn!("Continuing without database cache functionality");
+            }
         }
-        self.load_tokens().await?;
+
+        if let Err(e) = self.load_tokens().await {
+            log::error!("Error loading tokens from database: {e}");
+        }
+
         if let Err(e) = self.load_blocks(from_block).await {
             log::error!("Error loading blocks from database: {e}");
         }
+
         Ok(())
     }
 
@@ -115,9 +118,11 @@ impl BlockchainCache {
     /// Adds a DEX to the cache with the specified identifier.
     pub async fn add_dex(&mut self, dex_id: String, dex: DexExtended) -> anyhow::Result<()> {
         log::info!("Adding dex {dex_id} to the cache");
+
         if let Some(database) = &self.database {
             database.add_dex(&dex).await?;
         }
+
         self.dexes.insert(dex_id, dex);
         Ok(())
     }
@@ -126,9 +131,11 @@ impl BlockchainCache {
     pub async fn add_pool(&mut self, pool: Pool) -> anyhow::Result<()> {
         let pool_address = pool.address;
         log::info!("Adding dex pool {pool_address} to the cache");
+
         if let Some(database) = &self.database {
             database.add_pool(&pool).await?;
         }
+
         self.pools.insert(pool_address, Arc::new(pool));
         Ok(())
     }
@@ -147,6 +154,7 @@ impl BlockchainCache {
         if let Some(database) = &self.database {
             let tokens = database.load_tokens(self.chain.clone()).await?;
             log::info!("Loading {} tokens from cache database", tokens.len());
+
             for token in tokens {
                 self.tokens.insert(token.address, token);
             }

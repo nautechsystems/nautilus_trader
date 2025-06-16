@@ -70,43 +70,47 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.49.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.49.0" }
 
 ahash = "0.8.12"
-alloy = "1.0.9"
+alloy = { version = "1.0.9", default-features = false, features = ["sol-types", "contract"] }
 alloy-primitives = { version = "1.2.0", features = ["serde"] }
 anyhow = "1.0.98"
 arraydeque = "0.5.1"
-arrow = "55.1.0"  # Keep major version in line with datafusion
+# Keep arrow major version in line with datafusion
+arrow = { version = "55.1.0", default-features = false, features = ["csv", "json", "ipc"] }
 async-stream = "0.3.6"
 async-trait = "0.1.88"
 base64 = "0.22.1"
 binary-heap-plus = "0.5.0"
 bytes = { version = "1.10.1", features = ["serde"] }
-chrono = { version = "0.4.41", features = ["serde"] }
+chrono = { version = "0.4.41", default-features = false, features = ["serde", "std", "clock"] }
 chrono-tz = "0.10.3"
 clap = { version = "4.5.39", features = ["derive", "env"] }
 compare = "0.1.0"
 csv = "1.3.1"
 dashmap = "6.1.0"
-databento = "0.27.0"
-datafusion = { version = "47.0.0", default-features = false, features = [
+databento = { version = "0.27.0", default-features = false, features = ["historical", "live"] }
+datafusion = { version = "48.0.0", default-features = false, features = [
   "parquet",
   "regex_expressions",
   "unicode_expressions",
 ] }
 deranged = "=0.4.0"
-derive_builder = "0.20.2"
+derive_builder = { version = "0.20.2", default-features = false, features = ["alloc"] }
+dotenvy = "0.15.7"
+ed25519-dalek = "2.1.1"
 enum_dispatch = "0.3.13"
 evalexpr = "=11.3.1"  # Pinned to v11.3.1 for MIT licensing
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.2"
-futures = "0.3.31"
+futures = { version = "0.3.31", default-features = false, features = ["std", "async-await"] }
 futures-util = "0.3.31"
 heck = "0.5.0"
 hex = "0.4.3"
+hmac = "0.12.1"
 hostname = "0.4.1"
 http = "1.3.1"
 hypersync-client = { version = "0.18.2" }
 hypersync-schema = { version = "0.3.0" }
-implied-vol = { version = "1.0.1", features = ["normal-distribution"] }
+implied-vol = { version = "1.1.0", features = ["normal-distribution"] }
 indexmap = { version = "2.9.0", features = ["serde"] }
 itertools = "0.14.0"
 itoa = "1.0.15"
@@ -118,24 +122,31 @@ log = { version = "0.4.27", features = [
 ] }
 memchr = "2.7.4"
 nonzero_ext = "0.3.0"
-object_store = { version = "0.12.2", default-features = false, features = ["fs"] }
-parquet = "55.1.0"  # Keep major version in line with datafusion
+object_store = { version = "0.12.2", default-features = false, features = [
+  "fs",
+  "aws",
+  "azure",
+  "gcp",
+  "http",
+] }
+# Keep parquet major version in line with datafusion
+parquet = { version = "55.1.0", default-features = false, features = ["arrow", "async"] }
 pem = "3.0.5"
 procfs = "0.17.0"
-pyo3 = { version = "0.25.0", features = [
+pyo3 = { version = "0.25.1", default-features = false, features = [
   "chrono",
   "indexmap",
+  "macros",
   "rust_decimal",
   "serde",
-  "smallvec",
 ] }
-pyo3-async-runtimes = { version = "0.25.0", features = [
+pyo3-async-runtimes = { version = "0.25.0", default-features = false, features = [
   "attributes",
   "tokio",
   "tokio-runtime",
 ] }
-rand = "0.9.1"
-redis = { version = "0.31.0", features = [
+rand = { version = "0.9.1", default-features = false, features = ["std", "thread_rng"] }
+redis = { version = "0.32.0", features = [
   "connection-manager",
   "keep-alive",
   "sentinel",
@@ -145,24 +156,24 @@ redis = { version = "0.31.0", features = [
   "tls-rustls",
   "tls-rustls-webpki-roots",
 ] }
-regex = "1.11.1"
-reqwest = { version = "0.12.20",  default-features = false, features = [
+regex = { version = "1.11.1", default-features = false, features = ["std", "perf"] }
+reqwest = { version = "0.12.20", default-features = false, features = [
   "blocking",
   "rustls-tls",
   "stream",
   "json",
 ] }
-ring = "0.17.14"
 rmp-serde = "1.3.0"
-rust_decimal = "1.37.1"
+rsa = "0.9.8"
+rust_decimal = "1.37.2"
 rust_decimal_macros = "1.37.1"
-rustls = { version = "0.23.27", features = ["ring"] }
+rustls = { version = "0.23.27" }
 rustls-pemfile = "2.2.0"
-rustls-platform-verifier = "0.6.0"
 semver = "1.0.25"
 serde = { version = "1.0.219", default-features = false, features = ["derive", "std", "rc"] }
 serde_json = { version = "1.0.140", default-features = false, features = ["std"] }
 serde_urlencoded = "0.7.1"
+sha2 = "0.10.9"
 simple_logger = "5.0.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
   "postgres",
@@ -171,11 +182,16 @@ sqlx = { version = "0.8.6", default-features = false, features = [
   "derive",
 ] }
 strum = { version = "0.27.1", features = ["derive"] }
-sysinfo = "0.35.2"
-tabled = "0.20.0"
+sysinfo = { version = "0.35.2", default-features = false, features = ["system"] }
+tabled = { version = "0.20.0", default-features = false, features = ["std", "derive"] }
 thiserror = "2.0.12"
 thousands = "0.2.0"
-time = "0.3.41"
+time = { version = "0.3.41", default-features = false, features = [
+  "macros",
+  "parsing",
+  "serde",
+  "std",
+] }
 tokio = { version = "1.45.1", default-features = false, features = [
   "rt-multi-thread",
   "sync",
@@ -188,10 +204,10 @@ tokio = { version = "1.45.1", default-features = false, features = [
 ] }
 tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
-tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
-tokio-util = "0.7.14"
-toml = "0.8.23"
-tracing = "0.1.41"
+tokio-tungstenite = { version = "0.27.0", features = ["rustls-tls-webpki-roots"] }
+tokio-util = { version = "0.7.15", default-features = false, features = ["io"] }
+toml = { version = "0.8.23", default-features = false, features = ["parse"] }
+tracing = { version = "0.1.41", default-features = false, features = ["std", "attributes"] }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = [
   "smallvec",
@@ -201,16 +217,16 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
   "env-filter",
   "registry",
 ] }
+unbounded-interval-tree = { version = "1.1.2", default-features = false }
+url = { version = "2.5.4", default-features = false }
 urlencoding = "2.1.3"
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.17.0", features = ["v4", "serde"] }
-walkdir = "2.5.0"
 webpki-roots = "1.0.0"
 
 # dev-dependencies
-axum = "0.8.4"
+axum = { version = "0.8.4", default-features = false, features = ["tokio", "http1"] }
 criterion = "0.5.1"
-dotenvy = "0.15.7"
 float-cmp = "0.10.0"
 iai = "0.1.1"
 pretty_assertions = "1.4.1"

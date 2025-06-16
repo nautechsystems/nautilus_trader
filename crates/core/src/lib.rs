@@ -19,13 +19,13 @@
 //! wherever possible. It supplies the essential building blocks used across the NautilusTrader
 //! ecosystem, including:
 //!
-//! - Time handling and atomic clock functionality
-//! - UUID generation and management
-//! - Mathematical functions and interpolation utilities
-//! - Correctness validation functions
-//! - Serialization traits and helpers
-//! - Cross-platform environment utilities
-//! - Abstractions over common collections
+//! - Time handling and atomic clock functionality.
+//! - UUID generation and management.
+//! - Mathematical functions and interpolation utilities.
+//! - Correctness validation functions.
+//! - Serialization traits and helpers.
+//! - Cross-platform environment utilities.
+//! - Abstractions over common collections.
 //!
 //! # Platform
 //!
@@ -33,6 +33,9 @@
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!

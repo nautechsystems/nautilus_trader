@@ -48,7 +48,7 @@ pub async fn init_data_engine(
     let (client, http_stream, websocket_stream) =
         MockDataClient::start(http_address, websocket_address).await;
     let client: Box<dyn DataClient> = Box::new(client);
-    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(LiveClock::new()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(LiveClock::default()));
 
     let adapter = DataClientAdapter::new(
         client.client_id(),

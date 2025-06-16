@@ -16,6 +16,7 @@
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
+    time::Duration,
 };
 
 use nautilus_common::{
@@ -35,10 +36,6 @@ use nautilus_model::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Initialize Python interpreter only if python feature is enabled
-    // #[cfg(feature = "python")]
-    pyo3::prepare_freethreaded_python();
-
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
@@ -146,11 +143,6 @@ impl DerefMut for DatabentoSubscriberActor {
 
 impl DataActor for DatabentoSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        log::info!(
-            "Starting Databento subscriber actor for {} instruments",
-            self.config.instrument_ids.len()
-        );
-
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
@@ -163,42 +155,30 @@ impl DataActor for DatabentoSubscriberActor {
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
-        // TODO: Need to create a nicer API with `set_timer` method
-        let start = self.clock().timestamp_ns();
-        self.clock()
-            .set_timer_ns(
-                "TEST-TIMER-1-SECOND",
-                1_000_000_000,
-                start,
-                None,
-                None,
-                Some(true),
-                Some(false),
-            )
-            .expect("Error setting timer");
+        self.clock().set_timer(
+            "TEST-TIMER-1-SECOND",
+            Duration::from_secs(1),
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
 
-        self.clock()
-            .set_timer_ns(
-                "TEST-TIMER-2-SECOND",
-                2_000_000_000,
-                start,
-                None,
-                None,
-                Some(true),
-                Some(false),
-            )
-            .expect("Error setting timer");
+        self.clock().set_timer(
+            "TEST-TIMER-2-SECOND",
+            Duration::from_secs(2),
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
 
-        log::info!("Databento subscriber actor started successfully");
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        log::info!(
-            "Stopping Databento subscriber actor for {} instruments",
-            self.config.instrument_ids.len()
-        );
-
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
@@ -211,7 +191,6 @@ impl DataActor for DatabentoSubscriberActor {
             self.unsubscribe_trades(instrument_id, Some(client_id), None);
         }
 
-        log::info!("Databento subscriber actor stopped successfully");
         Ok(())
     }
 

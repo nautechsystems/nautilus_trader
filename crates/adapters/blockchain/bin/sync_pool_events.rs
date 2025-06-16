@@ -15,28 +15,36 @@
 
 use std::sync::Arc;
 
-use nautilus_blockchain::{config::BlockchainAdapterConfig, data::BlockchainDataClient, exchanges};
+use nautilus_blockchain::{
+    config::BlockchainDataClientConfig, data::BlockchainDataClient, exchanges,
+};
 use nautilus_common::logging::{
     logger::{Logger, LoggerConfig},
     writer::FileWriterConfig,
 };
 use nautilus_core::{UUID4, env::get_env_var};
+use nautilus_data::DataClient;
+use nautilus_live::runner::AsyncRunner;
 use nautilus_model::{
     defi::chain::{Blockchain, Chain, chains},
     identifiers::TraderId,
 };
 use tokio::sync::Notify;
 
+// Run with `cargo run -p nautilus-blockchain --bin sync_pool_events --features hypersync,python`
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    // Setup logger
+
     let _logger_guard = Logger::init_with_config(
         TraderId::default(),
         UUID4::new(),
         LoggerConfig::default(),
         FileWriterConfig::new(None, None, None, None),
     )?;
+
+    let _ = AsyncRunner::default(); // Needed for live channels
 
     // Setup graceful shutdown with signal handling in different task
     let notify = Arc::new(Notify::new());
@@ -72,21 +80,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(_) => chains::ETHEREUM.clone(), // default
     };
     let chain = Arc::new(chain);
-    let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
-    let blockchain_config = BlockchainAdapterConfig::new(http_rpc_url, Some(3), None, true);
-
-    let mut data_client = BlockchainDataClient::new(chain, blockchain_config);
-    data_client.initialize_cache_database(None).await;
-
-    let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
-    let dex_id = univ3.id();
-
     // WETH/USDC Uniswap V3 pool
     let weth_usdc_pool = "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640";
     let pool_creation_block = 12376729;
     let from_block = Some(22550000);
 
-    data_client.connect(from_block).await?;
+    let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
+    let blockchain_config = BlockchainDataClientConfig::new(
+        chain.clone(),
+        http_rpc_url,
+        Some(3), // RPC requests per second
+        None,    // WSS RPC URL
+        true,    // Use hypersync for live data
+        from_block,
+    );
+
+    let mut data_client = BlockchainDataClient::new(blockchain_config);
+    data_client.initialize_cache_database(None).await;
+
+    let univ3 = exchanges::ethereum::UNISWAP_V3.clone();
+    let dex_id = univ3.id();
+
+    data_client.connect().await?;
     data_client.register_exchange(univ3.clone()).await?;
 
     // Main loop to keep the app running
@@ -120,6 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => break,
         }
     }
-    data_client.disconnect()?;
+
+    data_client.disconnect().await?;
     Ok(())
 }

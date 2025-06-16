@@ -1059,6 +1059,11 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     ts_event=canceled_ts,
                 )
+            else:
+                # Cancel originates from a ReplaceOrders amend that we initiated.
+                # Suppress the synthetic cancel report and clear the tracking key
+                # so that future genuine cancels are not ignored.
+                self._pending_update_order_client_ids.discard(key)
         # Check for lapse
         elif unmatched_order.lapse_status_reason_code is not None:
             # This order has lapsed. No lapsed size was found in the above check for cancel,

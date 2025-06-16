@@ -70,7 +70,7 @@ we set clear expectations, focus community efforts, and support a sustainable op
 - Integrated hyper-parameter optimization or built-in AI/ML tooling. Users can integrate their own optimization frameworks tailored to their needs.
 - Additional external integrations not explicitly listed as in scope.
 
-### Long-term commitment
+## Long-term commitment
 
 NautilusTrader is an open-core project. All core trading engine
 features land in the public repository first, and we are committed to

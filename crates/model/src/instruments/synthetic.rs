@@ -92,11 +92,7 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
 
         let fields = Fields::deserialize(deserializer)?;
 
-        let variables = fields
-            .components
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let variables = fields.components.iter().map(ToString::to_string).collect();
 
         let operator_tree =
             evalexpr::build_operator_tree(&fields.formula).map_err(serde::de::Error::custom)?;
@@ -136,10 +132,7 @@ impl SyntheticInstrument {
         let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
         // Extract variables from the component instruments
-        let variables: Vec<String> = components
-            .iter()
-            .map(std::string::ToString::to_string)
-            .collect();
+        let variables: Vec<String> = components.iter().map(ToString::to_string).collect();
 
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 
@@ -278,7 +271,7 @@ mod tests {
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
         let price = synth.calculate_from_map(&inputs).unwrap();
 
-        assert_eq!(price.as_f64(), 150.0);
+        assert_eq!(price, Price::from("150.0"));
         assert_eq!(
             synth.formula,
             "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string()
@@ -290,7 +283,7 @@ mod tests {
         let mut synth = SyntheticInstrument::default();
         let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
-        assert_eq!(price.as_f64(), 150.0);
+        assert_eq!(price, Price::from("150.0"));
     }
 
     #[rstest]
@@ -304,7 +297,7 @@ mod tests {
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
         let price = synth.calculate_from_map(&inputs).unwrap();
 
-        assert_eq!(price.as_f64(), 75.0);
+        assert_eq!(price, Price::from("75.0"));
         assert_eq!(synth.formula, new_formula);
     }
 }

@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -40,8 +40,8 @@ pub struct Swings {
     pub duration: usize,
     pub since_high: usize,
     pub since_low: usize,
-    high_inputs: VecDeque<f64>,
-    low_inputs: VecDeque<f64>,
+    high_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    low_inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
     has_inputs: bool,
     initialized: bool,
 }
@@ -89,12 +89,23 @@ impl Indicator for Swings {
 
 impl Swings {
     /// Creates a new [`Swings`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is less than or equal to 0.
+    /// - `period` exceeds the maximum allowed value of `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize) -> Self {
+        assert!(
+            period > 0 && period <= MAX_PERIOD,
+            "Swings: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
         Self {
             period,
-            high_inputs: VecDeque::with_capacity(period + 1),
-            low_inputs: VecDeque::with_capacity(period + 1),
+            high_inputs: ArrayDeque::new(),
+            low_inputs: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
             direction: 0,
@@ -111,36 +122,53 @@ impl Swings {
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, timestamp: f64) {
-        // Update inputs
-        self.high_inputs.push_back(high);
-        self.low_inputs.push_back(low);
+        self.changed = false;
 
-        // Update max high and min low
+        if self.high_inputs.len() == self.period {
+            self.high_inputs.pop_front();
+        }
+        if self.low_inputs.len() == self.period {
+            self.low_inputs.pop_front();
+        }
+        let _ = self.high_inputs.push_back(high);
+        let _ = self.low_inputs.push_back(low);
+
         let max_high = self.high_inputs.iter().fold(f64::MIN, |a, &b| a.max(b));
         let min_low = self.low_inputs.iter().fold(f64::MAX, |a, &b| a.min(b));
 
-        // Calculate if swings
         let is_swing_high = high >= max_high && low >= min_low;
         let is_swing_low = high <= max_high && low <= min_low;
 
-        // Swing logic
-        self.changed = true;
-
-        if is_swing_high && !is_swing_low {
+        if is_swing_high && is_swing_low {
+            if self.high_price == 0.0 {
+                self.high_price = high;
+                self.high_datetime = timestamp;
+            }
+            self.since_high += 1;
+            self.since_low += 1;
+        } else if is_swing_high {
             if self.direction == -1 {
                 self.changed = true;
             }
-            self.high_price = high;
-            self.high_datetime = timestamp;
+            if high > self.high_price {
+                self.high_price = high;
+                self.high_datetime = timestamp;
+            }
             self.direction = 1;
             self.since_high = 0;
             self.since_low += 1;
-        } else if is_swing_low && !is_swing_high {
+        } else if is_swing_low {
             if self.direction == 1 {
                 self.changed = true;
             }
-            self.low_price = low;
-            self.low_datetime = timestamp;
+            if self.high_price == 0.0 {
+                self.high_price = max_high;
+                self.high_datetime = timestamp;
+            }
+            if low < self.low_price || self.low_price == 0.0 {
+                self.low_price = low;
+                self.low_datetime = timestamp;
+            }
             self.direction = -1;
             self.since_high += 1;
             self.since_low = 0;
@@ -149,18 +177,17 @@ impl Swings {
             self.since_low += 1;
         }
 
-        // Initialization logic
-        if self.initialized {
-            self.length = (self.high_price - self.low_price) as usize;
+        self.has_inputs = true;
+
+        if self.high_price != 0.0 && self.low_price != 0.0 {
+            self.initialized = true;
+            self.length = ((self.high_price - self.low_price).abs().round()) as usize;
             if self.direction == 1 {
                 self.duration = self.since_low;
-            } else {
+            } else if self.direction == -1 {
                 self.duration = self.since_high;
-            }
-        } else {
-            self.has_inputs = true;
-            if self.high_price != 0.0 && self.low_price != 0.0 {
-                self.initialized = true;
+            } else {
+                self.duration = 0;
             }
         }
     }
@@ -239,7 +266,6 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(mut swings_10: Swings) {
-        // Update the indicator with some values
         let high = [1.0, 2.0, 3.0, 4.0, 5.0];
         let low = [0.9, 1.9, 2.9, 3.9, 4.9];
         let time = [
@@ -268,5 +294,102 @@ mod tests {
         assert_eq!(swings_10.since_low, 0);
         assert!(swings_10.high_inputs.is_empty());
         assert!(swings_10.low_inputs.is_empty());
+    }
+
+    #[rstest]
+    fn test_changed_flag_flips() {
+        let mut swings = Swings::new(2);
+
+        swings.update_raw(1.0, 0.5, 1.0);
+        assert!(!swings.changed);
+
+        swings.update_raw(2.0, 1.5, 2.0);
+        assert!(!swings.changed);
+
+        swings.update_raw(0.0, -1.0, 3.0);
+        assert!(swings.changed);
+
+        swings.update_raw(-0.5, -1.5, 4.0);
+        assert!(!swings.changed);
+    }
+
+    #[rstest]
+    fn test_length_computation_after_initialization() {
+        let mut swings = Swings::new(2);
+        swings.update_raw(10.0, 9.0, 1.0);
+        swings.update_raw(8.0, 7.0, 2.0);
+        swings.update_raw(8.0, 7.5, 3.0);
+        assert_eq!(swings.length, 3);
+    }
+
+    #[rstest]
+    fn test_length_rounds_fractional_difference() {
+        let mut swings = Swings::new(2);
+        swings.update_raw(10.9, 10.7, 1.0);
+        swings.update_raw(9.7, 9.4, 2.0);
+        swings.update_raw(9.7, 9.4, 3.0);
+        assert_eq!(swings.length, 2);
+    }
+
+    #[rstest]
+    fn test_queue_eviction_does_not_exceed_capacity() {
+        let period = 3;
+        let mut swings = Swings::new(period);
+
+        let highs = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let lows = [0.5, 1.5, 2.5, 3.5, 4.5];
+
+        for i in 0..highs.len() {
+            swings.update_raw(highs[i], lows[i], (i + 1) as f64);
+
+            assert!(swings.high_inputs.len() <= period);
+            assert!(swings.low_inputs.len() <= period);
+        }
+
+        assert_eq!(swings.high_inputs.len(), period);
+        assert_eq!(swings.low_inputs.len(), period);
+        assert_eq!(swings.high_inputs.front().copied(), Some(3.0));
+        assert_eq!(swings.low_inputs.front().copied(), Some(2.5));
+    }
+
+    #[rstest]
+    fn test_changed_flag_toggles_on_every_direction_flip() {
+        let mut swings = Swings::new(2);
+
+        swings.update_raw(1.0, 0.7, 1.0);
+        assert!(!swings.changed);
+        swings.update_raw(2.0, 1.7, 2.0);
+        assert!(!swings.changed);
+
+        swings.update_raw(0.0, -1.0, 3.0);
+        assert!(swings.changed);
+        swings.update_raw(-0.5, -1.5, 4.0);
+        assert!(!swings.changed);
+
+        swings.update_raw(2.5, 1.5, 5.0);
+        assert!(swings.changed);
+        swings.update_raw(3.0, 2.0, 6.0);
+        assert!(!swings.changed);
+    }
+
+    #[rstest]
+    fn test_length_precision_rounding() {
+        let mut swings = Swings::new(3);
+        swings.update_raw(10.49, 9.9, 1.0);
+        swings.update_raw(9.00, 8.0, 2.0);
+        swings.update_raw(9.00, 8.0, 3.0);
+        assert_eq!(swings.length, 2);
+
+        swings.reset();
+        swings.update_raw(10.5, 10.4, 10.0);
+        swings.update_raw(8.0, 7.5, 20.0);
+        swings.update_raw(8.0, 7.5, 30.0);
+        assert_eq!(swings.length, 3);
+
+        swings.reset();
+        swings.update_raw(10.8, 10.6, 40.0);
+        swings.update_raw(8.2, 7.4, 50.0);
+        swings.update_raw(8.2, 7.4, 60.0);
+        assert_eq!(swings.length, 3);
     }
 }

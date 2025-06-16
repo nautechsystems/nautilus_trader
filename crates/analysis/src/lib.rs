@@ -13,14 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Portfolio analysis and performance metrics for [NautilusTrader](http://nautilustrader.io).
+//!
+//! The *analysis* crate provides a comprehensive suite of portfolio analysis tools and performance
+//! statistics for evaluating trading strategies and portfolios. This includes return-based metrics,
+//! PnL-based statistics, and risk measurements commonly used in quantitative finance:
+//!
+//! - Portfolio analyzer for tracking account states and positions.
+//! - Extensive collection of performance statistics and risk metrics.
+//! - Flexible statistic calculation framework supporting different data sources.
+//! - Support for multi-currency portfolios and unrealized PnL calculations.
+//!
+//! # Platform
+//!
 //! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
 //!
-//! The platform is modularly designed to work with *adapters*, enabling connectivity to trading venues
-//! and data providers by translating their raw APIs into a unified interface and normalized domain
-//! model.
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!
@@ -29,7 +41,6 @@
 //! for the [nautilus_trader](https://pypi.org/project/nautilus_trader) Python package,
 //! or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from [cbindgen](https://github.com/mozilla/cbindgen).
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 
 #![warn(rustc::all)]
@@ -51,4 +62,7 @@ use std::collections::BTreeMap;
 
 use nautilus_core::UnixNanos;
 
+/// Type alias for time-indexed returns data used in portfolio analysis.
+///
+/// Maps timestamps to return values for time-series analysis of portfolio performance.
 pub type Returns = BTreeMap<UnixNanos, f64>;

@@ -101,7 +101,6 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
-    use ustr::Ustr;
 
     use super::Block;
     use crate::defi::rpc::RpcNodeWssResponse;
@@ -248,17 +247,14 @@ mod tests {
         );
         assert_eq!(
             block.hash,
-            Ustr::from("0x71ece187051700b814592f62774e6ebd8ebdf5efbb54c90859a7d1522ce38e0a")
+            "0x71ece187051700b814592f62774e6ebd8ebdf5efbb54c90859a7d1522ce38e0a"
         );
         assert_eq!(
             block.parent_hash,
-            Ustr::from("0x2abcce1ac985ebea2a2d6878a78387158f46de8d6db2cefca00ea36df4030a40")
+            "0x2abcce1ac985ebea2a2d6878a78387158f46de8d6db2cefca00ea36df4030a40"
         );
         assert_eq!(block.number, 22294175);
-        assert_eq!(
-            block.miner,
-            Ustr::from("0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97")
-        );
+        assert_eq!(block.miner, "0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97");
         // Timestamp of block is on Apr-18-2025 06:44:11 AM +UTC
         assert_eq!(
             block.timestamp,
@@ -281,17 +277,14 @@ mod tests {
         );
         assert_eq!(
             block.hash,
-            Ustr::from("0x38ca655a2009e1748097f5559a0c20de7966243b804efeb53183614e4bebe199")
+            "0x38ca655a2009e1748097f5559a0c20de7966243b804efeb53183614e4bebe199"
         );
         assert_eq!(
             block.parent_hash,
-            Ustr::from("0xf25e108267e3d6e1e4aaf4e329872273f2b1ad6186a4a22e370623aa8d021c50")
+            "0xf25e108267e3d6e1e4aaf4e329872273f2b1ad6186a4a22e370623aa8d021c50"
         );
         assert_eq!(block.number, 70453741);
-        assert_eq!(
-            block.miner,
-            Ustr::from("0x0000000000000000000000000000000000000000")
-        );
+        assert_eq!(block.miner, "0x0000000000000000000000000000000000000000");
         // Timestamp of block is on Apr-18-2025 01:17:09 PM +UTC
         assert_eq!(
             block.timestamp,
@@ -314,17 +307,14 @@ mod tests {
         );
         assert_eq!(
             block.hash,
-            Ustr::from("0x14575c65070d455e6d20d5ee17be124917a33ce4437dd8615a56d29e8279b7ad")
+            "0x14575c65070d455e6d20d5ee17be124917a33ce4437dd8615a56d29e8279b7ad"
         );
         assert_eq!(
             block.parent_hash,
-            Ustr::from("0x9a6ad4ffb258faa47ecd5eea9e7a9d8fa1772aa6232bc7cb4bbad5bc30786258")
+            "0x9a6ad4ffb258faa47ecd5eea9e7a9d8fa1772aa6232bc7cb4bbad5bc30786258"
         );
         assert_eq!(block.number, 29139628);
-        assert_eq!(
-            block.miner,
-            Ustr::from("0x4200000000000000000000000000000000000011")
-        );
+        assert_eq!(block.miner, "0x4200000000000000000000000000000000000011");
         // Timestamp of block is on Apr 19 2025 13:16:43 PM +UTC
         assert_eq!(
             block.timestamp,
@@ -347,17 +337,14 @@ mod tests {
         );
         assert_eq!(
             block.hash,
-            Ustr::from("0x724a0af4720fd7624976f71b16163de25f8532e87d0e7058eb0c1d3f6da3c1f8")
+            "0x724a0af4720fd7624976f71b16163de25f8532e87d0e7058eb0c1d3f6da3c1f8"
         );
         assert_eq!(
             block.parent_hash,
-            Ustr::from("0xe7176e201c2db109be479770074ad11b979de90ac850432ed38ed335803861b6")
+            "0xe7176e201c2db109be479770074ad11b979de90ac850432ed38ed335803861b6"
         );
         assert_eq!(block.number, 328014516);
-        assert_eq!(
-            block.miner,
-            Ustr::from("0xa4b000000000000000000073657175656e636572")
-        );
+        assert_eq!(block.miner, "0xa4b000000000000000000073657175656e636572");
         // Timestamp of block is on Apr-19-2025 13:32:54 PM +UTC
         assert_eq!(
             block.timestamp,
@@ -365,5 +352,30 @@ mod tests {
         );
         assert_eq!(block.gas_used, 97012);
         assert_eq!(block.gas_limit, 1125899906842624);
+    }
+
+    #[rstest]
+    fn test_block_set_chain() {
+        use ustr::Ustr;
+
+        use crate::defi::chain::chains;
+
+        let mut block = Block::new(
+            "0x1234567890abcdef".to_string(),
+            "0xabcdef1234567890".to_string(),
+            12345,
+            Ustr::from("0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"),
+            21000,
+            20000,
+            UnixNanos::from(1_640_995_200_000_000_000u64),
+        );
+
+        assert!(block.chain.is_none());
+
+        let chain = chains::ETHEREUM.clone();
+        block.set_chain(chain.clone());
+
+        assert!(block.chain.is_some());
+        assert_eq!(block.chain.unwrap().chain_id, chain.chain_id);
     }
 }

@@ -29,21 +29,45 @@ pub mod chain;
 pub mod dex;
 pub mod hex;
 pub mod liquidity;
+pub mod money;
+pub mod price;
+pub mod quantity;
 pub mod rpc;
 pub mod swap;
 pub mod token;
 pub mod transaction;
+
+// Re-exports
+pub use amm::{Pool, SharedPool};
+pub use block::Block;
+pub use chain::{Blockchain, Chain, SharedChain};
+pub use dex::{AmmType, Dex, SharedDex};
+pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
+pub use swap::Swap;
+pub use token::{SharedToken, Token};
+pub use transaction::Transaction;
+
+/// Number of decimal places used by the native Ether denomination.
+///
+/// On the EVM all ERC-20 balances are expressed in **wei** – the
+/// smallest indivisible unit of Ether, named after cryptographer
+/// Wei Dai. One ether equals `10^18` wei, so using 18 decimal
+/// places is sufficient to represent any value expressible on-chain.
+///
+/// Tokens that choose a smaller precision (e.g. USDC’s 6, WBTC’s 8)
+/// still fall below this upper bound.
+pub static WEI_PRECISION: u8 = 18;
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DefiData {
     /// A token swap transaction on a decentralized exchange.
-    Swap(swap::Swap),
+    Swap(Swap),
     /// A liquidity update event (mint/burn) in a DEX pool.
-    PoolLiquidityUpdate(liquidity::PoolLiquidityUpdate),
+    PoolLiquidityUpdate(PoolLiquidityUpdate),
     /// A DEX liquidity pool definition or update.
-    Pool(amm::Pool),
+    Pool(Pool),
 }
 
 impl DefiData {
@@ -68,19 +92,19 @@ impl GetTsInit for DefiData {
     }
 }
 
-impl From<swap::Swap> for DefiData {
+impl From<Swap> for DefiData {
     fn from(value: swap::Swap) -> Self {
         Self::Swap(value)
     }
 }
 
-impl From<liquidity::PoolLiquidityUpdate> for DefiData {
+impl From<PoolLiquidityUpdate> for DefiData {
     fn from(value: liquidity::PoolLiquidityUpdate) -> Self {
         Self::PoolLiquidityUpdate(value)
     }
 }
 
-impl From<amm::Pool> for DefiData {
+impl From<Pool> for DefiData {
     fn from(value: amm::Pool) -> Self {
         Self::Pool(value)
     }

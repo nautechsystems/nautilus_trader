@@ -199,7 +199,7 @@ mod tests {
         // Test with scientific notation result
         let amount = I256::from_str("1234567890123456789").unwrap();
         let result = convert_i256_to_f64(amount, 9).unwrap();
-        assert!((result - 1_234_567_890.123456789).abs() < 1.0); // Some precision loss expected
+        assert!((result - 1_234_567_890.123_456_7).abs() < 1.0); // Some precision loss expected
     }
 
     // U256 Tests
@@ -311,7 +311,7 @@ mod tests {
         // Test with scientific notation result
         let amount = U256::from_str("1234567890123456789").unwrap();
         let result = convert_u256_to_f64(amount, 9).unwrap();
-        assert!((result - 1_234_567_890.123456789).abs() < 1.0); // Some precision loss expected
+        assert!((result - 1_234_567_890.123_456_7).abs() < 1.0); // Some precision loss expected
     }
 
     #[test]

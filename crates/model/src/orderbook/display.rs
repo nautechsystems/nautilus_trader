@@ -74,7 +74,15 @@ pub(crate) fn pprint_book(bids: &BookLadder, asks: &BookLadder, num_levels: usiz
         })
         .collect();
 
-    Table::new(data).with(Style::rounded()).to_string()
+    let table = Table::new(data).with(Style::rounded()).to_string();
+
+    let header = format!(
+        "bid_levels: {}\nask_levels: {}",
+        bids.levels.len(),
+        asks.levels.len()
+    );
+
+    format!("{}\n{}", header, table)
 }
 
 // TODO: Probably consolidate the below at some point
@@ -128,5 +136,13 @@ pub(crate) fn pprint_own_book(
         })
         .collect();
 
-    Table::new(data).with(Style::rounded()).to_string()
+    let table = Table::new(data).with(Style::rounded()).to_string();
+
+    let header = format!(
+        "bid_levels: {}\nask_levels: {}",
+        bids.levels.len(),
+        asks.levels.len()
+    );
+
+    format!("{}\n{}", header, table)
 }

@@ -48,10 +48,9 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::{data::Data, identifiers::TraderId};
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
-use nautilus_trading::trader::Trader;
 use ustr::Ustr;
 
-use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig};
+use crate::{builder::NautilusKernelBuilder, config::NautilusKernelConfig, trader::Trader};
 
 /// Core Nautilus system kernel.
 ///
@@ -233,7 +232,7 @@ impl NautilusKernel {
                 Rc::new(RefCell::new(test_clock))
             }
             Environment::Live | Environment::Sandbox => {
-                let live_clock = LiveClock::new();
+                let live_clock = LiveClock::default();
                 Rc::new(RefCell::new(live_clock))
             }
         }
@@ -467,11 +466,11 @@ impl NautilusKernel {
     #[allow(clippy::await_holding_refcell_ref)]
     async fn connect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut data_engine = self.data_engine.borrow_mut();
-        let data_adapters = data_engine.get_clients_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().connect());
+        for adapter in &mut data_adapters {
+            futures.push(adapter.connect());
         }
 
         let results = join_all(futures).await;
@@ -488,11 +487,11 @@ impl NautilusKernel {
     #[allow(clippy::await_holding_refcell_ref)]
     async fn disconnect_clients(&mut self) -> Result<(), Vec<anyhow::Error>> {
         let mut data_engine = self.data_engine.borrow_mut();
-        let data_adapters = data_engine.get_clients_mut();
+        let mut data_adapters = data_engine.get_clients_mut();
         let mut futures = Vec::with_capacity(data_adapters.len());
 
-        for adapter in data_adapters {
-            futures.push(adapter.get_client().disconnect());
+        for adapter in &mut data_adapters {
+            futures.push(adapter.disconnect());
         }
 
         let results = join_all(futures).await;

@@ -39,7 +39,6 @@ python = [
   "nautilus-model/python",
   "nautilus-persistence/python",
 ]
-clock_v2 = ["nautilus-common/clock_v2"]
 high-precision = ["nautilus-model/high-precision"]
 defi = ["nautilus-model/defi"]
 
