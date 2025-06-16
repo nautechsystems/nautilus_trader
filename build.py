@@ -123,10 +123,15 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
+    features = "ffi,python,extension-module"
+    flags = ["--no-default-features", "--features"]
+
     if HIGH_PRECISION:
-        return ["--features", "high-precision,ffi,python,extension-module"]
-    else:
-        return ["--features", "ffi,python,extension-module"]
+        features += ",high-precision"
+
+    flags.append(features)
+
+    return flags
 
 
 def _build_rust_libs() -> None:

@@ -40,6 +40,20 @@
 
 #if defined(HIGH_PRECISION)
 /**
+ * The width in bytes for fixed-point value types in high-precision mode (128-bit).
+ */
+#define PRECISION_BYTES 16
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The width in bytes for fixed-point value types in standard-precision mode (64-bit).
+ */
+#define PRECISION_BYTES 8
+#endif
+
+#if defined(HIGH_PRECISION)
+/**
  * The scalar value corresponding to the maximum precision (10^16).
  */
 #define FIXED_SCALAR 10000000000000000.0
@@ -52,68 +66,104 @@
 #define FIXED_SCALAR 1000000000.0
 #endif
 
+#if defined(HIGH_PRECISION)
 /**
  * The scalar representing the difference between high-precision and standard-precision modes.
  */
 #define PRECISION_DIFF_SCALAR 10000000.0
+#endif
+
+#if !defined(HIGH_PRECISION)
+/**
+ * The scalar representing the difference between high-precision and standard-precision modes.
+ */
+#define PRECISION_DIFF_SCALAR 1.0
+#endif
+
+/**
+ * The maximum precision that can be safely used with f64-based constructors.
+ *
+ * This is a hard limit imposed by IEEE 754 double-precision floating-point representation,
+ * which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
+ * floating-point arithmetic becomes unreliable due to rounding errors.
+ *
+ * For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+ * constructors that work with integer representations should be used instead.
+ */
+#define MAX_FLOAT_PRECISION 16
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid money amount which can be represented.
+ * The maximum valid money amount that can be represented.
  */
 #define MONEY_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid money amount that can be represented.
+ */
 #define MONEY_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The minimum valid money amount which can be represented.
+ * The minimum valid money amount that can be represented.
  */
 #define MONEY_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid money amount that can be represented.
+ */
 #define MONEY_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid price value which can be represented.
+ * The maximum valid price value that can be represented.
  */
 #define PRICE_MAX 17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid price value that can be represented.
+ */
 #define PRICE_MAX 9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The minimum valid price value which can be represented.
+ * The minimum valid price value that can be represented.
  */
 #define PRICE_MIN -17014118346046.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The minimum valid price value that can be represented.
+ */
 #define PRICE_MIN -9223372036.0
 #endif
 
 #if defined(HIGH_PRECISION)
 /**
- * The maximum valid quantity value which can be represented.
+ * The maximum valid quantity value that can be represented.
  */
 #define QUANTITY_MAX 34028236692093.0
 #endif
 
 #if !defined(HIGH_PRECISION)
+/**
+ * The maximum valid quantity value that can be represented.
+ */
 #define QUANTITY_MAX 18446744073.0
 #endif
 
 /**
- * The minimum valid quantity value which can be represented.
+ * The minimum valid quantity value that can be represented.
  */
 #define QUANTITY_MIN 0.0
 
@@ -919,7 +969,7 @@ typedef int64_t PriceRaw;
 #endif
 
 /**
- * Represents a price in a market.
+ * Represents a price in a market with a specified precision.
  *
  * The number of decimal places may vary. For certain asset classes, prices may
  * have negative values. For example, prices for options instruments can be
@@ -927,8 +977,8 @@ typedef int64_t PriceRaw;
  *
  * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- * - [`PRICE_MAX`] - Maximum representable price value
- * - [`PRICE_MIN`] - Minimum representable price value
+ * - [`PRICE_MAX`] - Maximum representable price value.
+ * - [`PRICE_MIN`] - Minimum representable price value.
  */
 typedef struct Price_t {
     /**
@@ -950,7 +1000,7 @@ typedef uint64_t QuantityRaw;
 #endif
 
 /**
- * Represents a quantity with a non-negative value.
+ * Represents a quantity with a non-negative value and specified precision.
  *
  * Capable of storing either a whole number (no decimal places) of 'contracts'
  * or 'shares' (instruments denominated in whole units) or a decimal value
@@ -958,8 +1008,8 @@ typedef uint64_t QuantityRaw;
  *
  * Handles up to [`FIXED_PRECISION`] decimals of precision.
  *
- * - [`QUANTITY_MAX`] - Maximum representable quantity value
- * - [`QUANTITY_MIN`] - 0 (non-negative values only)
+ * - [`QUANTITY_MAX`] - Maximum representable quantity value.
+ * - [`QUANTITY_MIN`] - 0 (non-negative values only).
  */
 typedef struct Quantity_t {
     /**
@@ -1840,7 +1890,7 @@ typedef struct Money_t {
 
 
 /**
- * Indicates if high_precision mode is enabled.
+ * Indicates if high-precision mode is enabled.
  *
  * # Safety
  *
@@ -1849,20 +1899,6 @@ typedef struct Money_t {
  * The value is determined by the "high-precision" feature flag.
  */
 extern const uint8_t HIGH_PRECISION_MODE;
-
-#if defined(HIGH_PRECISION)
-/**
- * The width in bytes for fixed-point value types in high-precision mode (128-bit).
- */
-extern const int32_t PRECISION_BYTES;
-#endif
-
-#if !defined(HIGH_PRECISION)
-/**
- * The width in bytes for fixed-point value types in standard-precision mode (64-bit).
- */
-extern const int32_t PRECISION_BYTES;
-#endif
 
 /**
  * The maximum raw price integer value.

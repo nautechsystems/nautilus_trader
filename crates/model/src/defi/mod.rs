@@ -29,6 +29,9 @@ pub mod chain;
 pub mod dex;
 pub mod hex;
 pub mod liquidity;
+pub mod money;
+pub mod price;
+pub mod quantity;
 pub mod rpc;
 pub mod swap;
 pub mod token;
@@ -43,6 +46,17 @@ pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::Swap;
 pub use token::{SharedToken, Token};
 pub use transaction::Transaction;
+
+/// Number of decimal places used by the native Ether denomination.
+///
+/// On the EVM all ERC-20 balances are expressed in **wei** – the
+/// smallest indivisible unit of Ether, named after cryptographer
+/// Wei Dai. One ether equals `10^18` wei, so using 18 decimal
+/// places is sufficient to represent any value expressible on-chain.
+///
+/// Tokens that choose a smaller precision (e.g. USDC’s 6, WBTC’s 8)
+/// still fall below this upper bound.
+pub static WEI_PRECISION: u8 = 18;
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
 #[allow(clippy::large_enum_variant)]

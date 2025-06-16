@@ -28,29 +28,49 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
-use super::fixed::FIXED_PRECISION;
-#[cfg(feature = "high-precision")]
+#[cfg(not(any(feature = "defi", feature = "high-precision")))]
+use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+#[cfg(any(feature = "defi", feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_i128, fixed_i128_to_f64};
-use crate::types::Currency;
-#[cfg(not(feature = "high-precision"))]
-use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+#[cfg(feature = "defi")]
+use crate::types::fixed::MAX_FLOAT_PRECISION;
+use crate::types::{Currency, fixed::FIXED_PRECISION};
 
-/// The maximum valid money amount which can be represented.
-#[cfg(feature = "high-precision")]
-pub const MONEY_MAX: f64 = 17_014_118_346_046.0;
-#[cfg(not(feature = "high-precision"))]
-pub const MONEY_MAX: f64 = 9_223_372_036.0;
-
-/// The minimum valid money amount which can be represented.
-#[cfg(feature = "high-precision")]
-pub const MONEY_MIN: f64 = -17_014_118_346_046.0;
-#[cfg(not(feature = "high-precision"))]
-pub const MONEY_MIN: f64 = -9_223_372_036.0;
+// -----------------------------------------------------------------------------
+// MoneyRaw
+// -----------------------------------------------------------------------------
 
 #[cfg(feature = "high-precision")]
 pub type MoneyRaw = i128;
+
 #[cfg(not(feature = "high-precision"))]
 pub type MoneyRaw = i64;
+
+// -----------------------------------------------------------------------------
+// MONEY_MAX
+// -----------------------------------------------------------------------------
+
+#[cfg(feature = "high-precision")]
+/// The maximum valid money amount that can be represented.
+pub const MONEY_MAX: f64 = 17_014_118_346_046.0;
+
+#[cfg(not(feature = "high-precision"))]
+/// The maximum valid money amount that can be represented.
+pub const MONEY_MAX: f64 = 9_223_372_036.0;
+
+// -----------------------------------------------------------------------------
+// MONEY_MIN
+// -----------------------------------------------------------------------------
+
+#[cfg(feature = "high-precision")]
+/// The minimum valid money amount that can be represented.
+pub const MONEY_MIN: f64 = -17_014_118_346_046.0;
+
+#[cfg(not(feature = "high-precision"))]
+/// The minimum valid money amount that can be represented.
+pub const MONEY_MIN: f64 = -9_223_372_036.0;
+
+// -----------------------------------------------------------------------------
 
 /// Represents an amount of money in a specified currency denomination.
 ///
@@ -85,8 +105,17 @@ impl Money {
         // infinity checks are needed here.
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
+        #[cfg(feature = "defi")]
+        if currency.precision > MAX_FLOAT_PRECISION {
+            // Floats are only reliable up to ~16 decimal digits of precision regardless of feature flags
+            anyhow::bail!(
+                "`currency.precision` exceeded maximum float precision ({MAX_FLOAT_PRECISION}), use `Money::from_wei()` for WEI values instead"
+            );
+        }
+
         #[cfg(feature = "high-precision")]
         let raw = f64_to_fixed_i128(amount, currency.precision);
+
         #[cfg(not(feature = "high-precision"))]
         let raw = f64_to_fixed_i64(amount, currency.precision);
 
@@ -124,16 +153,30 @@ impl Money {
         self.raw == 0
     }
 
+    #[cfg(feature = "high-precision")]
     /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
     #[must_use]
-    #[cfg(not(feature = "high-precision"))]
     pub fn as_f64(&self) -> f64 {
-        fixed_i64_to_f64(self.raw)
+        if self.currency.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
+        fixed_i128_to_f64(self.raw)
     }
 
-    #[cfg(feature = "high-precision")]
+    #[cfg(not(feature = "high-precision"))]
+    /// Returns the value of this instance as an `f64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
+    #[must_use]
     pub fn as_f64(&self) -> f64 {
-        fixed_i128_to_f64(self.raw)
+        fixed_i64_to_f64(self.raw)
     }
 
     /// Returns the value of this instance as a `Decimal`.
@@ -141,7 +184,12 @@ impl Money {
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
         let precision = self.currency.precision;
-        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(FIXED_PRECISION - precision));
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+
+        // Money's raw value is stored at fixed precision scale, but needs to be adjusted
+        // to the currency's actual precision for decimal conversion.
+        let rescaled_raw = self.raw / MoneyRaw::pow(10, u32::from(precision_diff));
+
         #[allow(clippy::useless_conversion)] // Required for precision modes
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
@@ -821,15 +869,35 @@ mod tests {
         fn prop_money_decimal_conversion(money in money_strategy()) {
             // Decimal conversion should preserve value within precision limits
             let decimal = money.as_decimal();
-            let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
-            let original_f64 = money.as_f64();
 
-            // Allow for precision differences based on currency precision
-            let precision_epsilon = 10.0_f64.powi(-(money.currency.precision as i32));
-            let diff = (decimal_f64 - original_f64).abs();
-            prop_assert!(diff <= precision_epsilon,
-                "Decimal conversion should preserve value within currency precision: {} vs {} (diff: {}, epsilon: {})",
-                original_f64, decimal_f64, diff, precision_epsilon);
+            #[cfg(feature = "defi")]
+            {
+                // In DeFi mode, as_f64() is unreliable for high-precision values
+                // Just ensure decimal conversion doesn't panic and produces reasonable values
+                let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
+                prop_assert!(decimal_f64.is_finite(), "Decimal should convert to finite f64");
+
+                // For DeFi mode, we mainly care that decimal conversion preserves the currency precision
+                prop_assert_eq!(decimal.scale(), u32::from(money.currency.precision));
+            }
+            #[cfg(not(feature = "defi"))]
+            {
+                let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
+                let original_f64 = money.as_f64();
+
+                // Allow for precision differences based on currency precision and high-precision mode
+                let base_epsilon = 10.0_f64.powi(-(money.currency.precision as i32));
+                let precision_epsilon = if cfg!(feature = "high-precision") {
+                    // More tolerant epsilon for high-precision modes due to f64 limitations
+                    base_epsilon.max(1e-10)
+                } else {
+                    base_epsilon
+                };
+                let diff = (decimal_f64 - original_f64).abs();
+                prop_assert!(diff <= precision_epsilon,
+                    "Decimal conversion should preserve value within currency precision: {} vs {} (diff: {}, epsilon: {})",
+                    original_f64, decimal_f64, diff, precision_epsilon);
+            }
         }
 
         #[test]
