@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::VecDeque, fmt::Display};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_core::correctness::{FAILED, check_predicate_true};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
@@ -22,6 +23,8 @@ use nautilus_model::{
 };
 
 use crate::indicator::{Indicator, MovingAverage};
+
+const MAX_PERIOD: usize = 8_192;
 
 /// An indicator which calculates a weighted moving average across a rolling window.
 #[repr(C)]
@@ -42,7 +45,7 @@ pub struct WeightedMovingAverage {
     /// Whether the indicator is initialized.
     pub initialized: bool,
     /// Inputs
-    pub inputs: VecDeque<f64>,
+    pub inputs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for WeightedMovingAverage {
@@ -78,7 +81,7 @@ impl WeightedMovingAverage {
         weights: Vec<f64>,
         price_type: Option<PriceType>,
     ) -> anyhow::Result<Self> {
-        const EPS: f64 = f64::EPSILON; // ≈ 2.22 e-16
+        const EPS: f64 = f64::EPSILON;
 
         check_predicate_true(period > 0, "`period` must be positive")?;
 
@@ -98,7 +101,7 @@ impl WeightedMovingAverage {
             weights,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
-            inputs: VecDeque::with_capacity(period),
+            inputs: ArrayDeque::new(),
             initialized: false,
         })
     }
@@ -160,13 +163,12 @@ impl MovingAverage for WeightedMovingAverage {
     }
 
     fn update_raw(&mut self, value: f64) {
-        if self.inputs.len() == self.period {
+        if self.inputs.len() == self.period.min(MAX_PERIOD) {
             self.inputs.pop_front();
         }
-        self.inputs.push_back(value);
+        let _ = self.inputs.push_back(value);
 
         self.value = self.weighted_average();
-
         self.initialized = self.count() >= self.period;
     }
 }
@@ -176,11 +178,9 @@ impl MovingAverage for WeightedMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::VecDeque,
-        f64::{INFINITY, NAN},
-    };
+    use std::f64::{INFINITY, NAN};
 
+    use arraydeque::{ArrayDeque, Wrapping};
     use rstest::rstest;
 
     use crate::{
@@ -389,8 +389,6 @@ mod tests {
 
     #[rstest]
     fn test_nan_input_propagates() {
-        use std::f64::NAN;
-
         let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(NAN);
@@ -523,15 +521,41 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
-    fn new_panics_on_nan_weight() {
-        let _ = WeightedMovingAverage::new(2, vec![NAN, 1.0], None);
+    fn arraydeque_wraps_when_full() {
+        const CAP: usize = 3;
+        let mut buf: ArrayDeque<usize, CAP, Wrapping> = ArrayDeque::new();
+        for i in 0..=CAP {
+            let _ = buf.push_back(i);
+        }
+        assert_eq!(buf.len(), CAP);
+        assert_eq!(buf.front().copied(), Some(1));
+        assert_eq!(buf.back().copied(), Some(3));
+    }
+
+    #[rstest]
+    fn arraydeque_sliding_window_with_pop() {
+        const CAP: usize = 3;
+        let mut buf: ArrayDeque<usize, CAP, Wrapping> = ArrayDeque::new();
+        for i in 0..10 {
+            if buf.len() == CAP {
+                buf.pop_front();
+            }
+            let _ = buf.push_back(i);
+            assert!(buf.len() <= CAP);
+        }
+        assert_eq!(buf.len(), CAP);
     }
 
     #[rstest]
     fn new_ok_with_infinite_weight() {
         let res = WeightedMovingAverage::new_checked(2, vec![INFINITY, 1.0], None);
         assert!(res.is_ok());
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn new_panics_on_nan_weight() {
+        let _ = WeightedMovingAverage::new(2, vec![NAN, 1.0], None);
     }
 
     #[rstest]
@@ -555,29 +579,5 @@ mod tests {
         wma.update_raw(20.0);
         let expected = 20.0f64.mul_add(1.0, 10.0 * 1.0) / 2.0;
         assert_eq!(wma.value(), expected);
-    }
-
-    #[rstest]
-    fn vecdeque_grows_without_pop() {
-        let period = 3;
-        let mut buf: VecDeque<usize> = VecDeque::with_capacity(period);
-        for i in 0..=period {
-            buf.push_back(i);
-        }
-        assert_eq!(buf.len(), period + 1);
-    }
-
-    #[rstest]
-    fn vecdeque_sliding_window_with_pop() {
-        let period = 3;
-        let mut buf: VecDeque<usize> = VecDeque::with_capacity(period);
-        for i in 0..10 {
-            if buf.len() == period {
-                buf.pop_front();
-            }
-            buf.push_back(i);
-            assert!(buf.len() <= period);
-        }
-        assert_eq!(buf.len(), period);
     }
 }

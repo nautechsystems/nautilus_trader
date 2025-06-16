@@ -13,17 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
 };
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -39,7 +39,7 @@ pub struct VerticalHorizontalFilter {
     ma: Box<dyn MovingAverage + Send + 'static>,
     has_inputs: bool,
     previous_close: f64,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for VerticalHorizontalFilter {
@@ -77,17 +77,30 @@ impl Indicator for VerticalHorizontalFilter {
 
 impl VerticalHorizontalFilter {
     /// Creates a new [`VerticalHorizontalFilter`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is less than or equal to 0.
+    /// - `period` exceeds `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(
+            period > 0 && period <= MAX_PERIOD,
+            "VerticalHorizontalFilter: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
+        let ma_kind = ma_type.unwrap_or(MovingAverageType::Simple);
+
         Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type: ma_kind,
             value: 0.0,
             previous_close: 0.0,
-            ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
+            ma: MovingAverageFactory::create(ma_kind, period),
             has_inputs: false,
             initialized: false,
-            prices: VecDeque::with_capacity(period),
+            prices: ArrayDeque::new(),
         }
     }
 
@@ -95,7 +108,8 @@ impl VerticalHorizontalFilter {
         if !self.has_inputs {
             self.previous_close = close;
         }
-        self.prices.push_back(close);
+
+        let _ = self.prices.push_back(close);
 
         let max_price = self
             .prices
@@ -106,11 +120,12 @@ impl VerticalHorizontalFilter {
         let min_price = self.prices.iter().copied().fold(f64::INFINITY, f64::min);
 
         self.ma.update_raw(f64::abs(close - self.previous_close));
+
         if self.initialized {
             self.value = f64::abs(max_price - min_price) / self.period as f64 / self.ma.value();
         }
-        self.previous_close = close;
 
+        self.previous_close = close;
         self._check_initialized();
     }
 
