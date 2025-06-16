@@ -20,23 +20,25 @@ crate-type = ["rlib", "cdylib"]
 [features]
 default = ["live"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "pyo3/extension-module",
 ]
 live = [
   "nautilus-live",
   "nautilus-system",
   "dotenvy",
   "tracing-subscriber",
-  "pyo3",
 ]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-core/ffi",  # Temporary as python currently relies on the ffi CVec
   "nautilus-core/python",
   "nautilus-model/python",
+  "pyo3",
+  "pyo3-async-runtimes",
+]
+high-precision = [
+  "nautilus-model/high-precision",
 ]
 
 [package.metadata.docs.rs]
@@ -45,7 +47,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 nautilus-common = { workspace = true }
-nautilus-core = { workspace = true, features = ["python"] }
+nautilus-core = { workspace = true }
 nautilus-data = { workspace = true }
 nautilus-live = { workspace = true, optional = true }
 nautilus-model = { workspace = true }

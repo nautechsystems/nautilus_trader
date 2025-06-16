@@ -36,10 +36,6 @@ use nautilus_model::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Initialize Python interpreter only if python feature is enabled
-    // #[cfg(feature = "python")]
-    pyo3::prepare_freethreaded_python();
-
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
