@@ -455,7 +455,7 @@ mod tests {
         let mut sma = super::SimpleMovingAverage::new(PERIOD, None);
 
         for i in 0..40 {
-            sma.update_raw(i as f64);
+            sma.update_raw(f64::from(i));
 
             let deque_sum: f64 = sma.buf.iter().copied().sum();
             assert!(

@@ -1494,7 +1494,7 @@ impl ParquetDataCatalog {
 
         // Remove the catalog base prefix if present
         let without_base = path
-            .strip_prefix(&format!("{}/", base))
+            .strip_prefix(&format!("{base}/"))
             .or_else(|| path.strip_prefix(base))
             .unwrap_or(path);
 
