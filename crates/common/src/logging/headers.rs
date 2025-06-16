@@ -88,22 +88,28 @@ fn log_rust_versioning(c: Ustr) {
 #[cfg(feature = "python")]
 #[rustfmt::skip]
 fn log_python_versioning(c: Ustr) {
+    if !python_available() {
+        return;
+    }
+
     let package = "nautilus_trader";
     header_line(c, &format!("{package}: {}", python_package_version(package)));
     header_line(c, &format!("python: {}", python_version()));
-    let package = "numpy";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pandas";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "msgspec";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pyarrow";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "pytz";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
-    let package = "uvloop";
-    header_line(c, &format!("{package}: {}", python_package_version(package)));
+
+    for package in ["numpy", "pandas", "msgspec", "pyarrow", "pytz", "uvloop"] {
+        header_line(c, &format!("{package}: {}", python_package_version(package)));
+    }
+
     header_sepr(c, "=================================================================");
+}
+
+#[cfg(feature = "python")]
+#[inline]
+#[allow(unsafe_code)]
+fn python_available() -> bool {
+    // SAFETY: `Py_IsInitialized` reads a flag and is safe to call at any
+    // time, even before the interpreter has been started.
+    unsafe { pyo3::ffi::Py_IsInitialized() != 0 }
 }
 
 #[rustfmt::skip]
