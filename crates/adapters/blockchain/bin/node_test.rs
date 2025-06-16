@@ -33,14 +33,11 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId},
 };
 
+// Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync,python`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Initialize Python interpreter only if python feature is enabled
-    // #[cfg(feature = "python")]
-    pyo3::prepare_freethreaded_python();
-
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
