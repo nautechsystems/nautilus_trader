@@ -73,24 +73,24 @@ rstest = { workspace = true }
 [[bin]]
 name = "live_blocks_rpc"
 path = "bin/watch_rpc_live_blocks.rs"
-required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync"]
 
 [[bin]]
 name = "live_blocks_hypersync"
 path = "bin/watch_hypersync_live_blocks.rs"
-required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync"]
 
 [[bin]]
 name = "sync_tokens_pools"
 path = "bin/sync_tokens_pools.rs"
-required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync"]
 
 [[bin]]
 name = "sync_pool_events"
 path = "bin/sync_pool_events.rs"
-required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync"]
 
 [[bin]]
 name = "node_test"
 path = "bin/node_test.rs"
-required-features = ["defi", "hypersync", "python"]  # TODO: Requires python for now
+required-features = ["defi", "hypersync"]
