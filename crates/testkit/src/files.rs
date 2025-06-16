@@ -20,8 +20,8 @@ use std::{
 };
 
 use reqwest::blocking::Client;
-use ring::digest;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
 ///
@@ -92,7 +92,7 @@ fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
 
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     let mut file = File::open(filepath)?;
-    let mut context = digest::Context::new(&digest::SHA256);
+    let mut hasher = Sha256::new();
     let mut buffer = [0; 4096];
 
     loop {
@@ -100,11 +100,11 @@ fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
         if count == 0 {
             break;
         }
-        context.update(&buffer[..count]);
+        hasher.update(&buffer[..count]);
     }
 
-    let digest = context.finish();
-    Ok(hex::encode(digest.as_ref()))
+    let result = hasher.finalize();
+    Ok(hex::encode(result))
 }
 
 fn verify_sha256_checksum(filepath: &Path, checksums: &Path) -> anyhow::Result<bool> {
