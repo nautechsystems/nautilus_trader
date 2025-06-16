@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
         assert_eq!(qty.precision, 8);
-        assert_eq!(qty.as_f64(), 0.00812);
+        assert_eq!(qty, Quantity::from("0.00812000"));
         assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert_eq!(qty.to_string(), "0.00812000");
         assert!(!qty.is_zero());
@@ -772,7 +772,7 @@ mod tests {
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
-        assert_eq!(qty.as_f64(), 0.0);
+        assert_eq!(qty, Quantity::from("0.00000000"));
         assert_eq!(qty.as_decimal(), dec!(0));
         assert_eq!(qty.to_string(), "0.00000000");
         assert!(qty.is_zero());
@@ -790,7 +790,7 @@ mod tests {
         let qty = Quantity::new(0.00812000, 8);
         assert_eq!(qty, qty);
         assert_eq!(qty.precision, 8);
-        assert_eq!(qty.as_f64(), 0.00812);
+        assert_eq!(qty, Quantity::from("0.00812000"));
         assert_eq!(qty.to_string(), "0.00812000");
     }
 

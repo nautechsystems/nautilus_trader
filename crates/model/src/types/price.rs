@@ -730,7 +730,7 @@ mod tests {
     fn test_string_parsing() {
         let price: Price = "123.456".into();
         assert_eq!(price.precision, 3);
-        assert_eq!(price.as_f64(), 123.456);
+        assert_eq!(price, Price::from("123.456"));
     }
 
     #[rstest]
@@ -768,9 +768,9 @@ mod tests {
     fn test_basic_arithmetic() {
         let p1 = Price::new(10.5, 2);
         let p2 = Price::new(5.25, 2);
-        assert_eq!((p1 + p2).as_f64(), 15.75);
-        assert_eq!((p1 - p2).as_f64(), 5.25);
-        assert_eq!((-p1).as_f64(), -10.5);
+        assert_eq!(p1 + p2, Price::from("15.75"));
+        assert_eq!(p1 - p2, Price::from("5.25"));
+        assert_eq!(-p1, Price::from("-10.5"));
     }
 
     #[rstest]
@@ -801,9 +801,9 @@ mod tests {
     fn test_assignment_operators() {
         let mut p = Price::new(10.5, 2);
         p += Price::new(5.25, 2);
-        assert_eq!(p.as_f64(), 15.75);
+        assert_eq!(p, Price::from("15.75"));
         p -= Price::new(5.25, 2);
-        assert_eq!(p.as_f64(), 10.5);
+        assert_eq!(p, Price::from("10.5"));
     }
 
     #[rstest]
