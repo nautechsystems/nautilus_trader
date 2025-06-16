@@ -13,17 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
-    momentum::bb::fast_std_with_mean,
 };
 
 /// An indicator which calculates a Average True Range (ATR) across a rolling window.
@@ -39,7 +36,7 @@ pub struct RelativeVolatilityIndex {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub initialized: bool,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, 1024, Wrapping>,
     ma: Box<dyn MovingAverage + Send + 'static>,
     pos_ma: Box<dyn MovingAverage + Send + 'static>,
     neg_ma: Box<dyn MovingAverage + Send + 'static>,
@@ -93,15 +90,28 @@ impl Indicator for RelativeVolatilityIndex {
 
 impl RelativeVolatilityIndex {
     /// Creates a new [`RelativeVolatilityIndex`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is not in the range of 1 to 1024 (inclusive).
+    /// - `scalar` is not in the range of 0.0 to 100.0 (inclusive).
+    /// - `ma_type` is not a valid [`MovingAverageType`].
     #[must_use]
     pub fn new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(
+            period <= 1024,
+            "period {} exceeds maximum capacity of price deque",
+            period
+        );
+
         Self {
             period,
             scalar: scalar.unwrap_or(100.0),
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
             initialized: false,
-            prices: VecDeque::with_capacity(period),
+            prices: ArrayDeque::new(),
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             pos_ma: MovingAverageFactory::create(
                 ma_type.unwrap_or(MovingAverageType::Simple),
@@ -121,8 +131,18 @@ impl RelativeVolatilityIndex {
         self.prices.push_back(close);
         self.ma.update_raw(close);
 
-        self.std = fast_std_with_mean(self.prices.clone(), self.ma.value());
-        self.std = self.std * (self.period as f64).sqrt() / ((self.period - 1) as f64).sqrt();
+        if !self.prices.is_empty() {
+            let mean = self.ma.value();
+            let mut var_sum = 0.0;
+            for &price in self.prices.iter() {
+                let diff = price - mean;
+                var_sum += diff * diff;
+            }
+            self.std = (var_sum / self.prices.len() as f64).sqrt();
+            self.std = self.std * (self.period as f64).sqrt() / ((self.period - 1) as f64).sqrt();
+        } else {
+            self.std = 0.0;
+        }
 
         if self.ma.initialized() {
             if close > self.previous_close {
@@ -142,7 +162,6 @@ impl RelativeVolatilityIndex {
 
         self.previous_close = close;
 
-        // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
             if self.pos_ma.initialized() {

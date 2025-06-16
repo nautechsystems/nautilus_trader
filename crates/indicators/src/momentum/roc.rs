@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -34,7 +34,7 @@ pub struct RateOfChange {
     pub value: f64,
     pub initialized: bool,
     has_inputs: bool,
-    prices: VecDeque<f64>,
+    prices: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for RateOfChange {
@@ -70,20 +70,30 @@ impl Indicator for RateOfChange {
 
 impl RateOfChange {
     /// Creates a new [`RateOfChange`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is greater than `MAX_PERIOD`.
     #[must_use]
     pub fn new(period: usize, use_log: Option<bool>) -> Self {
+        assert!(
+            period <= MAX_PERIOD,
+            "RateOfChange: period {period} exceeds MAX_PERIOD ({MAX_PERIOD})"
+        );
+
         Self {
             period,
             use_log: use_log.unwrap_or(false),
             value: 0.0,
-            prices: VecDeque::with_capacity(period),
+            prices: ArrayDeque::new(),
             has_inputs: false,
             initialized: false,
         }
     }
 
     pub fn update_raw(&mut self, price: f64) {
-        self.prices.push_back(price);
+        let _ = self.prices.push_back(price);
 
         if !self.initialized {
             self.has_inputs = true;
@@ -92,11 +102,12 @@ impl RateOfChange {
             }
         }
 
-        if self.use_log {
-            // add maths log here
-            self.value = (price / self.prices[0]).log10();
-        } else {
-            self.value = (price - self.prices[0]) / self.prices[0];
+        if let Some(first) = self.prices.front() {
+            if self.use_log {
+                self.value = (price / first).log10();
+            } else {
+                self.value = (price - first) / first;
+            }
         }
     }
 }

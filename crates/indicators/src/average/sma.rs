@@ -142,6 +142,7 @@ impl SimpleMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use arraydeque::{ArrayDeque, Wrapping};
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::PriceType,
@@ -339,7 +340,7 @@ mod tests {
     fn sma_matches_reference_implementation() {
         const PERIOD: usize = 5;
         let mut sma = SimpleMovingAverage::new(PERIOD, None);
-        let mut window = std::collections::VecDeque::<f64>::with_capacity(PERIOD);
+        let mut window: ArrayDeque<f64, PERIOD, Wrapping> = ArrayDeque::new();
 
         for step in 0..20 {
             let price = f64::from(step) * 10.0;
@@ -348,7 +349,7 @@ mod tests {
             if window.len() == PERIOD {
                 window.pop_front();
             }
-            window.push_back(price);
+            let _ = window.push_back(price);
 
             let ref_mean: f64 = window.iter().sum::<f64>() / window.len() as f64;
             assert!(
@@ -415,7 +416,7 @@ mod tests {
             assert!(
                 sma.buf.len() <= PERIOD,
                 "step {i}: buf.len()={}, exceeds PERIOD={PERIOD}",
-                sma.buf.len()
+                sma.buf.len(),
             );
         }
         assert!(
@@ -454,7 +455,7 @@ mod tests {
         let mut sma = super::SimpleMovingAverage::new(PERIOD, None);
 
         for i in 0..40 {
-            sma.update_raw(f64::from(i));
+            sma.update_raw(i as f64);
 
             let deque_sum: f64 = sma.buf.iter().copied().sum();
             assert!(
