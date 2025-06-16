@@ -101,8 +101,7 @@ impl RelativeVolatilityIndex {
     pub fn new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
         assert!(
             period <= 1024,
-            "period {} exceeds maximum capacity of price deque",
-            period
+            "period {period} exceeds maximum capacity of price deque"
         );
 
         Self {
@@ -131,17 +130,17 @@ impl RelativeVolatilityIndex {
         self.prices.push_back(close);
         self.ma.update_raw(close);
 
-        if !self.prices.is_empty() {
+        if self.prices.is_empty() {
+            self.std = 0.0;
+        } else {
             let mean = self.ma.value();
             let mut var_sum = 0.0;
-            for &price in self.prices.iter() {
+            for &price in &self.prices {
                 let diff = price - mean;
                 var_sum += diff * diff;
             }
             self.std = (var_sum / self.prices.len() as f64).sqrt();
             self.std = self.std * (self.period as f64).sqrt() / ((self.period - 1) as f64).sqrt();
-        } else {
-            self.std = 0.0;
         }
 
         if self.ma.initialized() {
