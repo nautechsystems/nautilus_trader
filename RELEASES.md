@@ -11,7 +11,7 @@ Released on TBD (UTC).
 - Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
 - Added fill report reconciliation warning when discrepancy with existing fill (#2706), thanks @faysou
 - Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
-- Added support for order-list submission in the sandbox execution client.
+- Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
@@ -68,7 +68,8 @@ Released on TBD (UTC).
 - Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
 - Fixed gateway/TWS reconnect process for IBKR (#2710), thanks @bartlaw
 - Fixed Interactive Brokers options chain issue (#2711), thanks @FGU1
-- Fixed Partially filled bracket order and SL triggered for IBKR (#2704)
+- Fixed Partially filled bracket order and SL triggered for IBKR (#2704, #2717), thanks @bartlaw
+- Restore task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
 None
