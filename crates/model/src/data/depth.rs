@@ -203,7 +203,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::stubs::*;
+    use crate::{data::stubs::*, types::Price};
 
     #[rstest]
     fn test_new(stub_depth10: OrderBookDepth10) {
@@ -217,10 +217,10 @@ mod tests {
         assert_eq!(depth.instrument_id, instrument_id);
         assert_eq!(depth.bids.len(), 10);
         assert_eq!(depth.asks.len(), 10);
-        assert_eq!(depth.asks[9].price.as_f64(), 109.0);
-        assert_eq!(depth.asks[0].price.as_f64(), 100.0);
-        assert_eq!(depth.bids[0].price.as_f64(), 99.0);
-        assert_eq!(depth.bids[9].price.as_f64(), 90.0);
+        assert_eq!(depth.asks[9].price, Price::from("109.0"));
+        assert_eq!(depth.asks[0].price, Price::from("100.0"));
+        assert_eq!(depth.bids[0].price, Price::from("99.0"));
+        assert_eq!(depth.bids[9].price, Price::from("90.0"));
         assert_eq!(depth.bid_counts.len(), 10);
         assert_eq!(depth.ask_counts.len(), 10);
         assert_eq!(depth.bid_counts[0], 1);

@@ -497,7 +497,7 @@ mod tests {
     fn test_money_is_zero() {
         let zero_usd = Money::new(0.0, Currency::USD());
         assert!(zero_usd.is_zero());
-        assert_eq!(zero_usd.as_f64(), 0.0);
+        assert_eq!(zero_usd, Money::from("0.0 USD"));
 
         let non_zero_usd = Money::new(100.0, Currency::USD());
         assert!(!non_zero_usd.is_zero());
@@ -561,7 +561,7 @@ mod tests {
     fn test_money_negation() {
         let money = Money::new(100.0, Currency::USD());
         let result = -money;
-        assert_eq!(result.as_f64(), -100.0);
+        assert_eq!(result, Money::from("-100.0 USD"));
         assert_eq!(result.currency, Currency::USD().clone());
     }
 

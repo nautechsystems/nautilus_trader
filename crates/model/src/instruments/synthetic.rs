@@ -271,7 +271,7 @@ mod tests {
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
         let price = synth.calculate_from_map(&inputs).unwrap();
 
-        assert_eq!(price.as_f64(), 150.0);
+        assert_eq!(price, Price::from("150.0"));
         assert_eq!(
             synth.formula,
             "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string()
@@ -283,7 +283,7 @@ mod tests {
         let mut synth = SyntheticInstrument::default();
         let inputs = vec![100.0, 200.0];
         let price = synth.calculate(&inputs).unwrap();
-        assert_eq!(price.as_f64(), 150.0);
+        assert_eq!(price, Price::from("150.0"));
     }
 
     #[rstest]
@@ -297,7 +297,7 @@ mod tests {
         inputs.insert("LTC.BINANCE".to_string(), 200.0);
         let price = synth.calculate_from_map(&inputs).unwrap();
 
-        assert_eq!(price.as_f64(), 75.0);
+        assert_eq!(price, Price::from("75.0"));
         assert_eq!(synth.formula, new_formula);
     }
 }

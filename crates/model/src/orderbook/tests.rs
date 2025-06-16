@@ -400,10 +400,10 @@ fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
 
     book.apply_depth(&depth);
 
-    assert_eq!(book.best_bid_price().unwrap().as_f64(), 99.00);
-    assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);
-    assert_eq!(book.best_bid_size().unwrap().as_f64(), 100.0);
-    assert_eq!(book.best_ask_size().unwrap().as_f64(), 100.0);
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("99.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_bid_size().unwrap(), Quantity::from("100.0"));
+    assert_eq!(book.best_ask_size().unwrap(), Quantity::from("100.0"));
 }
 
 #[rstest]
