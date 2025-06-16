@@ -68,6 +68,7 @@ Released on TBD (UTC).
 - Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
 - Fixed gateway/TWS reconnect process for IBKR (#2710), thanks @bartlaw
 - Fixed Interactive Brokers options chain issue (#2711), thanks @FGU1
+- Fixed Partially filled bracket order and SL triggered for IBKR (#2704)
 
 ### Documentation Updates
 None
