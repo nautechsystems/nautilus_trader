@@ -71,6 +71,7 @@ class ReportProvider:
             return pd.DataFrame()
 
         filled_orders = [o.to_dict() for o in orders if o.filled_qty > 0]
+
         if not filled_orders:
             return pd.DataFrame()
 
@@ -103,6 +104,7 @@ class ReportProvider:
         fills = [
             OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)
         ]
+
         if not fills:
             return pd.DataFrame()
 
@@ -132,6 +134,7 @@ class ReportProvider:
             return pd.DataFrame()
 
         positions = [p.to_dict() for p in positions]
+
         if not positions:
             return pd.DataFrame()
 

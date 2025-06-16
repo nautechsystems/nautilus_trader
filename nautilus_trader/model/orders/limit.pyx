@@ -159,12 +159,14 @@ cdef class LimitOrder(Order):
         list[str] tags = None,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
             Condition.is_true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
             Condition.is_true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
+
         Condition.is_true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="`display_qty` was negative or greater than `quantity`",
@@ -227,6 +229,7 @@ cdef class LimitOrder(Order):
             self.slippage = self.avg_px - self.price.as_f64_c()
         elif self.side == OrderSide.SELL:
             self.slippage = self.price.as_f64_c() - self.avg_px
+
     cdef bint has_price_c(self):
         return True
 
@@ -256,6 +259,7 @@ cdef class LimitOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {unix_nanos_to_iso8601(self.expire_time_ns, nanos_precision=False)}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
+
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str()} "
@@ -307,6 +311,7 @@ cdef class LimitOrder(Order):
 
         """
         cdef ClientOrderId o
+
         return {
             "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),
@@ -461,6 +466,7 @@ cdef class LimitOrder(Order):
         )
         transformed.liquidity_side = order.liquidity_side
         cdef Price triggered_price = order.get_triggered_price_c()
+
         if triggered_price:
             transformed.set_triggered_price_c(triggered_price)
 

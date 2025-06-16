@@ -109,8 +109,10 @@ def register_arrow(
 
     if encoder is not None:
         _ARROW_ENCODERS[data_cls] = encoder
+
     if decoder is not None:
         _ARROW_DECODERS[data_cls] = decoder
+
     if schema is not None:
         _SCHEMAS[data_cls] = schema
 
@@ -124,6 +126,7 @@ class ArrowSerializer:
     def _unpack_container_objects(data_cls: type, data: list[Any]) -> list[Data]:
         if data_cls == OrderBookDeltas:
             return [delta for deltas in data for delta in deltas.deltas]
+
         return data
 
     @staticmethod
@@ -204,14 +207,18 @@ class ArrowSerializer:
     ) -> pa.RecordBatch:
         if isinstance(data, CustomData):
             data = data.data
+
         data_cls = data_cls or type(data)
+
         if data_cls is None:
             raise RuntimeError("`cls` was `None` when a value was expected")
 
         delegate = _ARROW_ENCODERS.get(data_cls)
+
         if delegate is None:
             if data_cls in RUST_SERIALIZERS:
                 return ArrowSerializer.rust_defined_to_record_batch([data], data_cls=data_cls)
+
             raise TypeError(
                 f"Cannot serialize object `{data_cls}`. Register a "
                 f"serialization method via `nautilus_trader.serialization.arrow.serializer.register_arrow()`",
@@ -219,6 +226,7 @@ class ArrowSerializer:
 
         batch = delegate(data)
         assert isinstance(batch, pa.RecordBatch)
+
         return batch
 
     @staticmethod
@@ -248,7 +256,9 @@ class ArrowSerializer:
         """
         if data_cls in RUST_SERIALIZERS or data_cls.__name__ in RUST_STR_SERIALIZERS:
             return ArrowSerializer.rust_defined_to_record_batch(data, data_cls=data_cls)
+
         batches = [ArrowSerializer.serialize(obj, data_cls) for obj in data]
+
         return pa.Table.from_batches(batches, schema=batches[0].schema)
 
     @staticmethod
@@ -278,6 +288,7 @@ class ArrowSerializer:
             if data_cls in RUST_SERIALIZERS:
                 if isinstance(batch, pa.RecordBatch):
                     batch = pa.Table.from_batches([batch])
+
                 return ArrowSerializer._deserialize_rust(data_cls=data_cls, table=batch)
             raise TypeError(
                 f"Cannot deserialize object `{data_cls}`. Register a "
@@ -304,6 +315,7 @@ class ArrowSerializer:
 
         wrangler = Wrangler.from_schema(table.schema)
         ticks = wrangler.from_arrow(table)
+
         return ticks
 
 
@@ -311,7 +323,9 @@ def make_dict_serializer(schema: pa.Schema) -> Callable[[list[Data | Event]], pa
     def inner(data: list[Data | Event]) -> pa.RecordBatch:
         if not isinstance(data, list):
             data = [data]
+
         dicts = [d.to_dict(d) for d in data]
+
         return dicts_to_record_batch(dicts, schema=schema)
 
     return inner

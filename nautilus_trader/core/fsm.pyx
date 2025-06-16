@@ -77,8 +77,10 @@ cdef class FiniteStateMachine:
     ):
         if trigger_parser is None:
             trigger_parser = str
+
         if state_parser is None:
             state_parser = str
+
         Condition.not_empty(state_transition_table, "state_transition_table")
         Condition.dict_types(state_transition_table, tuple, object, "state_transition_table")
         Condition.callable_or_none(trigger_parser, "trigger_parser")
@@ -123,6 +125,7 @@ cdef class FiniteStateMachine:
 
         """
         cdef int next_state = self._state_transition_table.get((self.state, trigger), -1)
+
         if next_state == -1:  # Invalid
             raise InvalidStateTrigger(f"{self.state_string_c()} -> {self._trigger_parser(trigger)}")
 

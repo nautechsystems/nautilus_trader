@@ -237,18 +237,22 @@ class LiveDataEngine(DataEngine):
         self._log.warning("Killing engine")
         self._kill = True
         self.stop()
+
         if self._cmd_queue_task:
             self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
+
         if self._req_queue_task:
             self._log.debug(f"Canceling task '{self._req_queue_task.get_name()}'")
             self._req_queue_task.cancel()
             self._req_queue_task = None
+
         if self._res_queue_task:
             self._log.debug(f"Canceling task '{self._res_queue_task.get_name()}'")
             self._res_queue_task.cancel()
             self._res_queue_task = None
+
         if self._data_queue_task:
             self._log.debug(f"Canceling task '{self._data_queue_task.get_name()}'")
             self._data_queue_task.cancel()
@@ -357,11 +361,14 @@ class LiveDataEngine(DataEngine):
         self._log.debug(
             f"DataCommand message queue processing starting (qsize={self.cmd_qsize()})",
         )
+
         try:
             while True:
                 command: DataCommand | None = await self._cmd_queue.get()
+
                 if command is self._sentinel:
                     break
+
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("DataCommand message queue canceled")
@@ -369,6 +376,7 @@ class LiveDataEngine(DataEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "DataCommand message queue stopped"
+
             if not self._cmd_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
@@ -378,11 +386,14 @@ class LiveDataEngine(DataEngine):
         self._log.debug(
             f"RequestData message queue processing starting (qsize={self.req_qsize()})",
         )
+
         try:
             while True:
                 request: RequestData | None = await self._req_queue.get()
+
                 if request is self._sentinel:
                     break
+
                 self._handle_request(request)
         except asyncio.CancelledError:
             self._log.warning("RequestData message queue canceled")
@@ -390,6 +401,7 @@ class LiveDataEngine(DataEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "RequestData message queue stopped"
+
             if not self._req_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.req_qsize()} message(s) on queue")
             else:
@@ -402,8 +414,10 @@ class LiveDataEngine(DataEngine):
         try:
             while True:
                 response: DataResponse | None = await self._res_queue.get()
+
                 if response is self._sentinel:
                     break
+
                 self._handle_response(response)
         except asyncio.CancelledError:
             self._log.warning("DataResponse message queue canceled")
@@ -411,6 +425,7 @@ class LiveDataEngine(DataEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "DataResponse message queue stopped"
+
             if not self._res_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.res_qsize()} message(s) on queue")
             else:
@@ -421,8 +436,10 @@ class LiveDataEngine(DataEngine):
         try:
             while True:
                 data: Data | None = await self._data_queue.get()
+
                 if data is self._sentinel:
                     break
+
                 self._handle_data(data)
         except asyncio.CancelledError:
             self._log.warning("Data message queue canceled")
@@ -430,6 +447,7 @@ class LiveDataEngine(DataEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "Data message queue stopped"
+
             if not self._data_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.data_qsize()} message(s) on queue")
             else:

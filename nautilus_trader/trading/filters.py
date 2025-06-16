@@ -214,6 +214,7 @@ class EconomicNewsEventFilter:
         index = 0
         row = events.iloc[index]
         ts_event = pd.Timestamp(events.index[index]).value
+
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
@@ -262,12 +263,14 @@ class EconomicNewsEventFilter:
             )
 
         events = self._news_data[self._news_data.index <= time_now]
+
         if events.empty:
             return None
 
         index = -1
         row = events.iloc[index]
         ts_event = pd.Timestamp(events.index[index]).value
+
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],

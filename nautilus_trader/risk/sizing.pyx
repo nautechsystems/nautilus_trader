@@ -85,6 +85,7 @@ cdef class PositionSizer:
     ):
         if equity <= 0:
             return Decimal(0)
+
         risk_money: Decimal = equity * risk
         commission: Decimal = risk_money * commission_rate * 2  # (round turn)
 
@@ -169,8 +170,10 @@ cdef class FixedRiskSizer(PositionSizer):
         Condition.not_negative(exchange_rate, "xrate")
         Condition.type(commission_rate, Decimal, "commission_rate")
         Condition.not_negative(commission_rate, "commission_rate")
+
         if hard_limit is not None:
             Condition.positive(hard_limit, "hard_limit")
+
         Condition.type(unit_batch_size, Decimal, "unit_batch_size")
         Condition.not_negative(unit_batch_size, "unit_batch_size")
         Condition.positive_int(units, "units")

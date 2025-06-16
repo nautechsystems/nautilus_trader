@@ -64,7 +64,9 @@ class Controller(Actor):
     ) -> None:
         if config is None:
             config = ActorConfig()
+
         PyCondition.type(config, ActorConfig, "config")
+
         super().__init__(config=config)
         self._trader = trader
 

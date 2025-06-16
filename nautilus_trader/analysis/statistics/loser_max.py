@@ -33,6 +33,7 @@ class MaxLoser(PortfolioStatistic):
 
         # Calculate statistic
         losers = [x for x in realized_pnls if x < 0.0]
+
         if realized_pnls is None or not losers:
             return 0.0
 

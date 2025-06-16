@@ -201,8 +201,10 @@ class OrderStatusReport(ExecutionReport):
     ) -> None:
         PyCondition.positive(quantity, "quantity")
         PyCondition.not_negative(filled_qty, "filled_qty")
+
         if trigger_price is not None and trigger_price > 0:
             PyCondition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
+
         if limit_offset is not None or trailing_offset is not None:
             PyCondition.not_equal(
                 trailing_offset_type,
@@ -269,6 +271,7 @@ class OrderStatusReport(ExecutionReport):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, OrderStatusReport):
             return False
+
         return (
             self.account_id == other.account_id
             and self.instrument_id == other.instrument_id
@@ -445,6 +448,7 @@ class FillReport(ExecutionReport):
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, FillReport):
             return False
+
         return (
             self.account_id == other.account_id
             and self.instrument_id == other.instrument_id
@@ -715,6 +719,7 @@ class ExecutionMassStatus(Document):
         for report in reports:
             if report.venue_order_id not in self._fill_reports:
                 self._fill_reports[report.venue_order_id] = []
+
             self._fill_reports[report.venue_order_id].append(report)
 
     def add_position_reports(self, reports: list[PositionStatusReport]) -> None:
@@ -733,4 +738,5 @@ class ExecutionMassStatus(Document):
         for report in reports:
             if report.instrument_id not in self._position_reports:
                 self._position_reports[report.instrument_id] = []
+
             self._position_reports[report.instrument_id].append(report)

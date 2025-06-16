@@ -145,6 +145,7 @@ cdef class BollingerBands(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if len(self._prices) >= self.period:
                 self._set_initialized(True)
 

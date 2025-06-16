@@ -141,6 +141,7 @@ class ActorExecutor:
 
         """
         self._worker_task.cancel()
+
         try:
             await asyncio.wait_for(self._worker_task, timeout=2.0)
         except asyncio.CancelledError:
@@ -153,6 +154,7 @@ class ActorExecutor:
         while not self._queue.empty():
             task_id, _, _, _ = self._queue.get_nowait()
             self._log.info(f"Executor: Dequeued {task_id} prior to execution")
+
         self._queued_tasks.clear()
 
     def _add_active_task(self, task_id: TaskId, task: Future[Any]) -> None:
@@ -163,6 +165,7 @@ class ActorExecutor:
         try:
             while True:
                 task_id, func, args, kwargs = await self._queue.get()
+
                 if task_id not in self._queued_tasks:
                     continue  # Already canceled
 
@@ -179,6 +182,7 @@ class ActorExecutor:
 
     def _remove_done_task(self, task: Future[Any]) -> None:
         task_id = self._future_index.pop(task, None)
+
         if not task_id:
             self._log.error(f"Executor: {task} not found on done callback")
             return
@@ -195,6 +199,7 @@ class ActorExecutor:
                 # Make this a warning level for now
                 self._log.warning(f"Executor: Canceled {task_id}")
                 return
+
             self._log.info(f"Executor: Completed {task_id}")
 
     def _submit_to_executor(
@@ -206,6 +211,7 @@ class ActorExecutor:
         partial_func = functools.partial(func, *args, **kwargs)
         task: Future[Any] = self._loop.run_in_executor(self._executor, partial_func)
         task.add_done_callback(self._remove_done_task)
+
         return task
 
     def queue_for_executor(

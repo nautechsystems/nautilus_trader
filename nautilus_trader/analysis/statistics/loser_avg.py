@@ -33,6 +33,7 @@ class AvgLoser(PortfolioStatistic):
         # Calculate statistic
         pnls = realized_pnls.to_numpy()
         losers = pnls[pnls <= 0.0]
+
         if len(losers) == 0:
             return 0.0
 

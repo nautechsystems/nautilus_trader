@@ -91,7 +91,6 @@ cdef class MarginAccount(Account):
             event=AccountState.from_dict_c(init_event),
             calculate_account_state=calculate_account_state
         )
-
         other_events = events[1:]
 
         for event in other_events:
@@ -190,6 +189,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         return None if margin is None else margin.initial
 
     cpdef Money margin_maint(self, InstrumentId instrument_id):
@@ -214,6 +214,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         return None if margin is None else margin.maintenance
 
     cpdef MarginBalance margin(self, InstrumentId instrument_id):
@@ -313,6 +314,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(margin_init, "margin_init")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         if margin is None:
             self._margins[instrument_id] = MarginBalance(
                 initial=margin_init,
@@ -349,6 +351,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(margin_maint, "margin_maint")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         if margin is None:
             self._margins[instrument_id] = MarginBalance(
                 initial=Money(0, margin_maint.currency),
@@ -395,6 +398,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         if margin is not None:
             if margin.maintenance._mem.raw == 0:
                 self._margins.pop(instrument_id)
@@ -420,6 +424,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef MarginBalance margin = self._margins.get(instrument_id)
+
         if margin is not None:
             if margin.initial._mem.raw == 0:
                 self._margins.pop(instrument_id)
@@ -445,6 +450,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef MarginBalance margin = self._margins.pop(instrument_id, None)
+
         if margin is not None:
             self._recalculate_balance(margin.currency)
 
@@ -452,19 +458,22 @@ cdef class MarginAccount(Account):
 
     cpdef bint is_unleveraged(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
+
         return self._leverages.get(instrument_id, self.default_leverage) == 1
 
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
+
         if current_balance is None:
             raise RuntimeError("cannot recalculate balance when no current balance")
 
         total_margin = Decimal()
-
         cdef MarginBalance margin
+
         for margin in self._margins.values():
             if margin.currency != currency:
                 continue
+
             total_margin += margin.initial
             total_margin += margin.maintenance
 
@@ -586,8 +595,8 @@ cdef class MarginAccount(Account):
             price=price,
             use_quote_for_inverse=use_quote_for_inverse,
         ).as_decimal()
-
         leverage = self._leverages.get(instrument.id, Decimal(0))
+
         if leverage == 0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
@@ -640,8 +649,8 @@ cdef class MarginAccount(Account):
             price=price,
             use_quote_for_inverse=use_quote_for_inverse,
         ).as_decimal()
-
         leverage = self._leverages.get(instrument.id, Decimal(0))
+
         if leverage == 0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
@@ -683,7 +692,6 @@ cdef class MarginAccount(Account):
         Condition.not_none(fill, "fill")
 
         cdef dict pnls = {}  # type: dict[Currency, Money]
-
         cdef:
             Money pnl
             Quantity pnl_quantity
@@ -712,6 +720,7 @@ cdef class MarginAccount(Account):
         OrderSide order_side,
     ):
         leverage = self._leverages.get(instrument.id, Decimal(0))
+
         if leverage == 0:
             leverage = self.default_leverage
             self._leverages[instrument.id] = leverage

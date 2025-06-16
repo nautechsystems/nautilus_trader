@@ -123,6 +123,7 @@ cdef class FuturesContract(Instrument):
     ) -> None:
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -208,6 +209,7 @@ cdef class FuturesContract(Instrument):
     @staticmethod
     cdef FuturesContract from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return FuturesContract(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -233,6 +235,7 @@ cdef class FuturesContract(Instrument):
     @staticmethod
     cdef dict to_dict_c(FuturesContract obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "FuturesContract",
             "id": obj.id.to_str(),

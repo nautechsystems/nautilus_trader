@@ -121,6 +121,7 @@ cdef class BinaryOption(Instrument):
     ) -> None:
         if description is not None:
             Condition.valid_string(description, "description")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -185,6 +186,7 @@ cdef class BinaryOption(Instrument):
         Condition.not_none(values, "values")
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
+
         return BinaryOption(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -210,6 +212,7 @@ cdef class BinaryOption(Instrument):
     @staticmethod
     cdef dict to_dict_c(BinaryOption obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "BinaryOption",
             "id": obj.id.to_str(),

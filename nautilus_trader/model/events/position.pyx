@@ -388,6 +388,7 @@ cdef class PositionOpened(PositionEvent):
     @staticmethod
     cdef PositionOpened from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return PositionOpened(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -413,6 +414,7 @@ cdef class PositionOpened(PositionEvent):
     @staticmethod
     cdef dict to_dict_c(PositionOpened obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": type(obj).__name__,
             "trader_id": obj.trader_id.to_str(),
@@ -647,6 +649,7 @@ cdef class PositionChanged(PositionEvent):
     @staticmethod
     cdef PositionChanged from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return PositionChanged(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -676,6 +679,7 @@ cdef class PositionChanged(PositionEvent):
     @staticmethod
     cdef dict to_dict_c(PositionChanged obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": type(obj).__name__,
             "trader_id": obj.trader_id.to_str(),
@@ -918,6 +922,7 @@ cdef class PositionClosed(PositionEvent):
     @staticmethod
     cdef PositionClosed from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return PositionClosed(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -948,6 +953,7 @@ cdef class PositionClosed(PositionEvent):
     @staticmethod
     cdef dict to_dict_c(PositionClosed obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": type(obj).__name__,
             "trader_id": obj.trader_id.to_str(),

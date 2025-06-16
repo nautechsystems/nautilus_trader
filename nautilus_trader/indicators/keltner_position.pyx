@@ -122,6 +122,7 @@ cdef class KeltnerPosition(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._kc.initialized:
                 self._set_initialized(True)
 

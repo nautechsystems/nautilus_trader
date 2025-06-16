@@ -38,6 +38,7 @@ cdef class TrailingStopCalculator:
         Price last,
     ):
         Condition.not_none(price_increment, "price_increment")
+
         if order.order_type not in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
             raise TypeError(f"invalid `OrderType` for calculation, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
@@ -52,6 +53,7 @@ cdef class TrailingStopCalculator:
         cdef:
             Price temp_trigger_price
             Price temp_price
+
         if (
             order.trigger_type == TriggerType.DEFAULT
             or order.trigger_type == TriggerType.LAST_PRICE
@@ -63,6 +65,7 @@ cdef class TrailingStopCalculator:
                     f"no LAST price for {order.instrument_id} "
                     f"(add trades or use bars)",
                 )
+
             if order.side == OrderSide.BUY:
                 temp_trigger_price = TrailingStopCalculator.calculate_with_last(
                     price_increment=price_increment,
@@ -71,8 +74,10 @@ cdef class TrailingStopCalculator:
                     offset=float(order.trailing_offset),
                     last=last,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_last(
                         price_increment=price_increment,
@@ -81,6 +86,7 @@ cdef class TrailingStopCalculator:
                         offset=float(order.limit_offset),
                         last=last,
                     )
+
                     if price is None or price._mem.raw > temp_price._mem.raw:
                         new_price = temp_price
             elif order.side == OrderSide.SELL:
@@ -91,8 +97,10 @@ cdef class TrailingStopCalculator:
                     offset=float(order.trailing_offset),
                     last=last,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_last(
                         price_increment=price_increment,
@@ -101,6 +109,7 @@ cdef class TrailingStopCalculator:
                         offset=float(order.limit_offset),
                         last=last,
                     )
+
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
         elif order.trigger_type == TriggerType.BID_ASK:
@@ -126,8 +135,10 @@ cdef class TrailingStopCalculator:
                     bid=bid,
                     ask=ask,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_bid_ask(
                         price_increment=price_increment,
@@ -137,6 +148,7 @@ cdef class TrailingStopCalculator:
                         bid=bid,
                         ask=ask,
                     )
+
                     if price is None or price._mem.raw > temp_price._mem.raw:
                         new_price = temp_price
             elif order.side == OrderSide.SELL:
@@ -148,8 +160,10 @@ cdef class TrailingStopCalculator:
                     bid=bid,
                     ask=ask,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_bid_ask(
                         price_increment=price_increment,
@@ -159,6 +173,7 @@ cdef class TrailingStopCalculator:
                         bid=bid,
                         ask=ask,
                     )
+
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
         elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
@@ -168,12 +183,14 @@ cdef class TrailingStopCalculator:
                     f"no LAST price for {order.instrument_id} "
                     f"(add trades or use bars)",
                 )
+
             if bid is None:
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no BID price for {order.instrument_id} "
                     f"(add quotes or use bars)",
                 )
+
             if ask is None:
                 raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
@@ -189,9 +206,11 @@ cdef class TrailingStopCalculator:
                     offset=float(order.trailing_offset),
                     last=last,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw > temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
                     trigger_price = new_trigger_price  # Set trigger to new trigger
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_last(
                         price_increment=price_increment,
@@ -200,6 +219,7 @@ cdef class TrailingStopCalculator:
                         offset=float(order.limit_offset),
                         last=last,
                     )
+
                     if price is None or price._mem.raw > temp_price._mem.raw:
                         new_price = temp_price
                         price = new_price  # Set price to new price
@@ -212,8 +232,10 @@ cdef class TrailingStopCalculator:
                     bid=bid,
                     ask=ask,
                 )
+
                 if trigger_price._mem.raw > temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_bid_ask(
                         price_increment=price_increment,
@@ -223,6 +245,7 @@ cdef class TrailingStopCalculator:
                         bid=bid,
                         ask=ask,
                     )
+
                     if price is None or price._mem.raw > temp_price._mem.raw:
                         new_price = temp_price
             elif order.side == OrderSide.SELL:
@@ -233,9 +256,11 @@ cdef class TrailingStopCalculator:
                     offset=float(order.trailing_offset),
                     last=last,
                 )
+
                 if trigger_price is None or trigger_price._mem.raw < temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
                     trigger_price = new_trigger_price  # Set trigger to new trigger
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_last(
                         price_increment=price_increment,
@@ -244,6 +269,7 @@ cdef class TrailingStopCalculator:
                         offset=float(order.limit_offset),
                         last=last,
                     )
+
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
                         price = new_price  # Set price to new price
@@ -256,8 +282,10 @@ cdef class TrailingStopCalculator:
                     bid=bid,
                     ask=ask,
                 )
+
                 if trigger_price._mem.raw < temp_trigger_price._mem.raw:
                     new_trigger_price = temp_trigger_price
+
                 if order.order_type == OrderType.TRAILING_STOP_LIMIT:
                     temp_price = TrailingStopCalculator.calculate_with_bid_ask(
                         price_increment=price_increment,
@@ -267,6 +295,7 @@ cdef class TrailingStopCalculator:
                         bid=bid,
                         ask=ask,
                     )
+
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
         else:

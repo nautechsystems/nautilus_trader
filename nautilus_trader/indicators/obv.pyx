@@ -93,6 +93,7 @@ cdef class OnBalanceVolume(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
                 self._set_initialized(True)
 

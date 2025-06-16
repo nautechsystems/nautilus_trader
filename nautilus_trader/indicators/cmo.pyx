@@ -91,14 +91,17 @@ cdef class ChandeMomentumOscillator(Indicator):
         else:
             self._average_gain.update_raw(0)
             self._average_loss.update_raw(0)
+
         # Initialization logic
         if not self.initialized:
             if self._average_gain.initialized and self._average_loss.initialized:
                 self._set_initialized(True)
 
         cdef double divisor
+
         if self.initialized:
             divisor = self._average_gain.value + self._average_loss.value
+
             if divisor == 0.0:
                 self.value = 0.0
             else:

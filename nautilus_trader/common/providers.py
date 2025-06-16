@@ -41,6 +41,7 @@ class InstrumentProvider:
     def __init__(self, config: InstrumentProviderConfig | None = None) -> None:
         if config is None:
             config = InstrumentProviderConfig()
+
         self._log = Logger(name=type(self).__name__)
 
         self._instruments: dict[InstrumentId, Instrument] = {}
@@ -157,6 +158,7 @@ class InstrumentProvider:
 
         if self._loading:
             self._log.debug("Awaiting loading...")
+
             while self._loading:
                 await asyncio.sleep(0.1)
 
@@ -175,7 +177,6 @@ class InstrumentProvider:
                     i if isinstance(i, InstrumentId) else InstrumentId.from_str(i)
                     for i in self._load_ids_on_start
                 ]
-
                 instruments_str = ", ".join([i.value for i in instrument_ids])
                 filters_str = "..." if not self._filters else f" with filters {self._filters}..."
                 self._log.info(f"Loading instruments: {instruments_str}{filters_str}")
@@ -209,6 +210,7 @@ class InstrumentProvider:
 
         """
         loop = asyncio.get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_all_async(filters))
             self._tasks.add(task)
@@ -235,6 +237,7 @@ class InstrumentProvider:
         PyCondition.not_none(instrument_ids, "instrument_ids")
 
         loop = asyncio.get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_ids_async(instrument_ids, filters))
             self._tasks.add(task)
@@ -261,6 +264,7 @@ class InstrumentProvider:
         PyCondition.not_none(instrument_id, "instrument_id")
 
         loop = asyncio.get_event_loop()
+
         if loop.is_running():
             task = loop.create_task(self.load_async(instrument_id, filters))
             self._tasks.add(task)
@@ -368,8 +372,10 @@ class InstrumentProvider:
         PyCondition.valid_string(code, "code")
 
         ccy = self._currencies.get(code)
+
         if ccy is None:
             ccy = Currency.from_str(code)
+
         return ccy
 
     def find(self, instrument_id: InstrumentId) -> Instrument | None:

@@ -101,6 +101,7 @@ cdef class Equity(Instrument):
     ) -> None:
         if isin is not None:
             Condition.valid_string(isin, "isin")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -134,6 +135,7 @@ cdef class Equity(Instrument):
     @staticmethod
     cdef Equity from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -154,6 +156,7 @@ cdef class Equity(Instrument):
     @staticmethod
     cdef dict to_dict_c(Equity obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "Equity",
             "id": obj.id.to_str(),

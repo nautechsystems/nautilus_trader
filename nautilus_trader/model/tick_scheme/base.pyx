@@ -122,6 +122,7 @@ cpdef void register_tick_scheme(TickScheme tick_scheme):
 cpdef TickScheme get_tick_scheme(str name):
     Condition.valid_string(name, "name")
     Condition.is_in(name, TICK_SCHEMES, "name", "TICK_SCHEMES")
+
     return TICK_SCHEMES[name]
 
 

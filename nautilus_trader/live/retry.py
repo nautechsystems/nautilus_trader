@@ -167,6 +167,7 @@ class RetryManager(Generic[T]):
                 try:
                     response = await func(*args, **kwargs)
                     self.result = True
+
                     return response  # Successful request
                 except self.exc_types as e:
                     self.log.warning(repr(e))
@@ -308,8 +309,10 @@ class RetryManagerPool(Generic[T]):
 
         """
         self.logger.info("Shutting down retry manager pool")
+
         for retry_manager in self._active_managers:
             retry_manager.cancel()
+
         self._active_managers.clear()
 
     async def acquire(self) -> RetryManager:
@@ -333,6 +336,7 @@ class RetryManagerPool(Generic[T]):
 
             self._active_managers.add(retry_manager)
             self.logger.debug(f"Acquired {retry_manager!r} (active: {len(self._active_managers)})")
+
             return retry_manager
 
     async def release(self, retry_manager: RetryManager) -> None:

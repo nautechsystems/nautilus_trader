@@ -83,6 +83,7 @@ cdef class PsychologicalLine(Indicator):
             self._previous_close = close
 
         self._diff = close - self._previous_close
+
         if self._diff <= 0:
             self._ma.update_raw(0)
         else:
@@ -91,6 +92,7 @@ cdef class PsychologicalLine(Indicator):
 
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma.initialized:
                 self._set_initialized(True)
         self._previous_close = close

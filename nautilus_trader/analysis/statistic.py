@@ -60,6 +60,7 @@ class PortfolioStatistic:
         """
         klass = type(self).__name__
         matches = re.finditer(".+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)", klass)
+
         return " ".join([m.group(0) for m in matches])
 
     def calculate_from_returns(self, returns: pd.Series) -> Any | None:

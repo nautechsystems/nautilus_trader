@@ -35,6 +35,7 @@ class Expectancy(PortfolioStatistic):
         # Calculate statistic
         avg_winner: float | None = AvgWinner().calculate_from_realized_pnls(realized_pnls)
         avg_loser: float | None = AvgLoser().calculate_from_realized_pnls(realized_pnls)
+
         if avg_winner is None or avg_loser is None:
             return 0.0
 

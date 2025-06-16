@@ -72,6 +72,7 @@ cdef class FillModel:
         Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
         Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
+
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
             random.seed(random_seed)
@@ -242,8 +243,8 @@ cdef class MakerTakerFeeModel(FeeModel):
             price=fill_px,
             use_quote_for_inverse=False,
         ).as_f64_c()
-
         cdef double commission_f64
+
         if order.liquidity_side == LiquiditySide.MAKER:
             commission_f64 = notional * float(instrument.maker_fee)
         elif order.liquidity_side == LiquiditySide.TAKER:
@@ -254,6 +255,7 @@ cdef class MakerTakerFeeModel(FeeModel):
             )
 
         cdef Money commission
+
         if instrument.is_inverse:  # Not using quote for inverse (see above):
             commission = Money(commission_f64, instrument.base_currency)
         else:

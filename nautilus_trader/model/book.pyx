@@ -135,6 +135,7 @@ cdef class OrderBook(Data):
 
     def __getstate__(self):
         cdef list orders = [o for level in self.bids() + self.asks() for o in level.orders()]
+
         return (
             self.instrument_id.value,
             self.book_type.value,
@@ -153,8 +154,8 @@ cdef class OrderBook(Data):
         cdef int64_t ts_last = state[2]
         cdef int64_t sequence = state[3]
         cdef list orders = pickle.loads(state[4])
-
         cdef int64_t i
+
         for i in range(len(orders)):
             self.add(orders[i], ts_last, sequence)
 
@@ -452,11 +453,9 @@ cdef class OrderBook(Data):
         """
         cdef CVec raw_levels_vec = orderbook_asks(&self._mem)
         cdef BookLevel_API* raw_levels = <BookLevel_API*>raw_levels_vec.ptr
-
         cdef list levels = []
+        cdef uint64_t i
 
-        cdef:
-            uint64_t i
         for i in range(raw_levels_vec.len):
             levels.append(BookLevel.from_mem_c(raw_levels[i]))
 
@@ -634,6 +633,7 @@ cdef class OrderBook(Data):
         cdef Price order_price
         cdef Price_t price
         price.precision = price_prec
+
         if is_aggressive:
             price.raw = PRICE_RAW_MAX if order.side == OrderSide.BUY else PRICE_RAW_MIN
         else:
@@ -650,19 +650,21 @@ cdef class OrderBook(Data):
         cdef CVec raw_fills_vec = orderbook_simulate_fills(&self._mem, submit_order)
         cdef (Price_t, Quantity_t)* raw_fills = <(Price_t, Quantity_t)*>raw_fills_vec.ptr
         cdef list fills = []
-
         cdef:
             uint64_t i
             (Price_t, Quantity_t) raw_fill
             Price fill_price
             Quantity fill_size
+
         for i in range(raw_fills_vec.len):
             raw_fill = raw_fills[i]
             fill_price = Price.from_mem_c(raw_fill[0])
             fill_size = Quantity.from_mem_c(raw_fill[1])
             fills.append((fill_price, fill_size))
+
             if fill_price.precision != price_prec:
                 raise RuntimeError(f"{fill_price.precision=} did not match instrument {price_prec=}")
+
             if fill_size.precision != size_prec:
                 raise RuntimeError(f"{fill_size.precision=} did not match instrument {size_prec=}")
 
@@ -807,6 +809,7 @@ cdef class BookLevel:
     cdef BookLevel from_mem_c(BookLevel_API mem):
         cdef BookLevel level = BookLevel.__new__(BookLevel)
         level._mem = level_clone(&mem)
+
         return level
 
     cpdef list orders(self):
@@ -822,9 +825,8 @@ cdef class BookLevel:
         cdef BookOrder_t* raw_orders = <BookOrder_t*>raw_orders_vec.ptr
 
         cdef list book_orders = []
+        cdef uint64_t i
 
-        cdef:
-            uint64_t i
         for i in range(raw_orders_vec.len):
             book_orders.append(BookOrder.from_mem_c(raw_orders[i]))
 

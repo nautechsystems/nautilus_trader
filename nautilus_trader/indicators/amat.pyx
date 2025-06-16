@@ -100,6 +100,7 @@ cdef class ArcherMovingAveragesTrends(Indicator):
         """
         self._fast_ma.update_raw(close)
         self._slow_ma.update_raw(close)
+
         if self._slow_ma.initialized:
             self._fast_ma_price.append(self._fast_ma.value)
             self._slow_ma_price.append(self._slow_ma.value)
@@ -117,6 +118,7 @@ cdef class ArcherMovingAveragesTrends(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if len(self._slow_ma_price) >= self.signal_period + 1 and self._slow_ma.initialized:
                 self._set_initialized(True)
 

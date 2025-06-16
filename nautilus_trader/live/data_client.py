@@ -180,6 +180,7 @@ class LiveDataClient(DataClient):
                 success_color,
             ),
         )
+
         return task
 
     def _on_task_completed(
@@ -204,6 +205,7 @@ class LiveDataClient(DataClient):
                         f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
                         e,
                     )
+
             if success_msg:
                 self._log.info(success_msg, success_color)
 

@@ -74,6 +74,7 @@ cdef class SpreadAnalyzer(Indicator):
         # Check initialization
         if not self.initialized:
             self._set_has_inputs(True)
+
             if len(self._spreads) == self.capacity:
                 self._set_initialized(True)
 

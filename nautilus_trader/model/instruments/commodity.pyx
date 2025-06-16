@@ -188,6 +188,7 @@ cdef class Commodity(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return Commodity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -216,6 +217,7 @@ cdef class Commodity(Instrument):
     @staticmethod
     cdef dict to_dict_c(Commodity obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "Commodity",
             "id": obj.id.to_str(),

@@ -107,9 +107,11 @@ cdef class ExecAlgorithm(Actor):
     def __init__(self, config: ExecAlgorithmConfig | None = None):
         if config is None:
             config = ExecAlgorithmConfig()
+
         Condition.type(config, ExecAlgorithmConfig, "config")
 
         super().__init__()
+
         # Assign Execution Algorithm ID after base class initialized
         if isinstance(config.exec_algorithm_id, str):
             self.id = ExecAlgorithmId(config.exec_algorithm_id)
@@ -216,7 +218,6 @@ cdef class ExecAlgorithm(Actor):
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
-
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=primary.trader_id,
             strategy_id=primary.strategy_id,
@@ -231,7 +232,6 @@ cdef class ExecAlgorithm(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-
         primary.apply(updated)
         self.cache.update_order(primary)
 
@@ -279,6 +279,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef void _handle_submit_order(self, SubmitOrder command):
         Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
+
         try:
             self.on_order(command.order)
         except Exception as e:  # pragma: no cover
@@ -288,6 +289,7 @@ cdef class ExecAlgorithm(Actor):
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
         Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
         cdef Order order
+
         for order in command.order_list.orders:
             if order.exec_algorithm_id is not None:
                 Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
@@ -299,6 +301,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef void _handle_cancel_order(self, CancelOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
+
         if order is None:  # pragma: no cover (design-time error)
             self._log.error(
                 f"Cannot cancel order: {repr(command.client_order_id)} not found",
@@ -336,8 +339,10 @@ cdef class ExecAlgorithm(Actor):
 
         if isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
+
             if order is None:
                 return
+
             if order.exec_algorithm_id is None or order.exec_algorithm_id != self.id:
                 return  # Not for this algorithm
 
@@ -1076,6 +1081,7 @@ cdef class ExecAlgorithm(Actor):
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
+
             if primary is None:
                 self._log.error(
                     f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}"
@@ -1116,6 +1122,7 @@ cdef class ExecAlgorithm(Actor):
         position_id = self.cache.position_id(order.client_order_id)
         client_id = self.cache.client_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
+
         if cached_order.order_type != order.order_type:
             self.cache.add_order(order, position_id, client_id, overwrite=True)
 
@@ -1128,7 +1135,6 @@ cdef class ExecAlgorithm(Actor):
             position_id=position_id,
             client_id=client_id,
         )
-
         self._send_risk_command(command)
 
     cpdef void modify_order(
@@ -1195,6 +1201,7 @@ cdef class ExecAlgorithm(Actor):
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
+
             if price != order.price:
                 updating = True
 
@@ -1203,6 +1210,7 @@ cdef class ExecAlgorithm(Actor):
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
+
             if trigger_price != order.trigger_price:
                 updating = True
 
@@ -1222,9 +1230,11 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
+
         if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
+
             try:
                 order.apply(event)
             except InvalidStateTrigger as e:  # pragma: no cover
@@ -1252,7 +1262,6 @@ cdef class ExecAlgorithm(Actor):
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
-
         self._send_risk_command(command)
 
     cpdef void modify_order_in_place(
@@ -1315,6 +1324,7 @@ cdef class ExecAlgorithm(Actor):
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
+
             if price != order.price:
                 updating = True
 
@@ -1323,6 +1333,7 @@ cdef class ExecAlgorithm(Actor):
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
+
             if trigger_price != order.trigger_price:
                 updating = True
 
@@ -1343,7 +1354,6 @@ cdef class ExecAlgorithm(Actor):
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
-
         cdef OrderUpdated updated = OrderUpdated(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1390,9 +1400,11 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
+
         if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
+
             try:
                 order.apply(event)
             except InvalidStateTrigger as e:  # pragma: no cover
@@ -1427,6 +1439,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order):
         cdef uint64_t ts_now = self._clock.timestamp_ns()
+
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1441,6 +1454,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
         cdef uint64_t ts_now = self._clock.timestamp_ns()
+
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1455,6 +1469,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef OrderCanceled _generate_order_canceled(self, Order order):
         cdef uint64_t ts_now = self._clock.timestamp_ns()
+
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
@@ -1472,14 +1487,17 @@ cdef class ExecAlgorithm(Actor):
     cdef void _send_emulator_command(self, TradingCommand command):
         if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
+
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
+
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cdef void _send_exec_command(self, TradingCommand command):
         if self._log_commands and is_logging_initialized():
             self.log.info(f"{CMD}{SENT} {command}.")
+
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

@@ -145,7 +145,9 @@ cdef class AccountState(Event):
     @staticmethod
     cdef AccountState from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         cdef str base_str = values["base_currency"]
+
         return AccountState(
             account_id=AccountId(values["account_id"]),
             account_type=account_type_from_str(values["account_type"]),
@@ -162,6 +164,7 @@ cdef class AccountState(Event):
     @staticmethod
     cdef dict to_dict_c(AccountState obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "AccountState",
             "account_id": obj.account_id.to_str(),

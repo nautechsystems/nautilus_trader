@@ -86,6 +86,7 @@ class PortfolioAnalyzer:
 
     def _get_max_length_name(self) -> int:
         max_length = 0
+
         for stat_name in self._statistics:
             max_length = max(max_length, len(stat_name))
 
@@ -156,6 +157,7 @@ class PortfolioAnalyzer:
 
         """
         self._positions += positions
+
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
             self.add_return(unix_nanos_to_dt(position.ts_closed), position.realized_return)
@@ -191,6 +193,7 @@ class PortfolioAnalyzer:
         """
         if timestamp not in self._returns:
             self._returns.loc[timestamp] = 0.0
+
         self._returns.loc[timestamp] += float(value)
 
     def realized_pnls(self, currency: Currency | None = None) -> pd.Series | None:
@@ -216,9 +219,11 @@ class PortfolioAnalyzer:
         """
         if not self._realized_pnls:
             return None
+
         if currency is None:
             if len(self._account_balances) > 1:
                 raise ValueError("`currency` was `None` for multi-currency portfolio")
+
             currency = next(iter(self._account_balances.keys()))
 
         return self._realized_pnls.get(currency)
@@ -260,6 +265,7 @@ class PortfolioAnalyzer:
         if currency is None:
             if len(self._account_balances) > 1:
                 raise ValueError("`currency` was `None` for multi-currency portfolio")
+
             currency = next(iter(self._account_balances.keys()))
 
         if unrealized_pnl is not None and unrealized_pnl.currency != currency:
@@ -272,6 +278,7 @@ class PortfolioAnalyzer:
             return 0.0
 
         unrealized_pnl_f64 = 0.0 if unrealized_pnl is None else unrealized_pnl.as_double()
+
         return float(account_balance - account_balance_starting) + unrealized_pnl_f64
 
     def total_pnl_percentage(
@@ -311,6 +318,7 @@ class PortfolioAnalyzer:
         if currency is None:
             if len(self._account_balances) != 1:
                 raise ValueError("currency was None for multi-currency portfolio")
+
             currency = next(iter(self._account_balances.keys()))
 
         if unrealized_pnl is not None and unrealized_pnl.currency != currency:
@@ -367,10 +375,13 @@ class PortfolioAnalyzer:
 
         for name, stat in self._statistics.items():
             value = stat.calculate_from_realized_pnls(realized_pnls)
+
             if value is None:
                 continue  # Not implemented
+
             if not isinstance(value, int | float | str | bool):
                 value = str(value)
+
             output[name] = value
 
         return output
@@ -385,12 +396,16 @@ class PortfolioAnalyzer:
 
         """
         output = {}
+
         for name, stat in self._statistics.items():
             value = stat.calculate_from_returns(self._returns)
+
             if value is None:
                 continue  # Not implemented
+
             if not isinstance(value, int | float | str | bool):
                 value = str(value)
+
             output[name] = value
 
         return output
@@ -408,10 +423,13 @@ class PortfolioAnalyzer:
 
         for name, stat in self._statistics.items():
             value = stat.calculate_from_positions(self._positions)
+
             if value is None:
                 continue  # Not implemented
+
             if not isinstance(value, int | float | str | bool):
                 value = str(value)
+
             output[name] = value
 
         return output
@@ -441,6 +459,7 @@ class PortfolioAnalyzer:
         stats = self.get_performance_stats_pnls(currency, unrealized_pnl)
 
         output = []
+
         for k, v in stats.items():
             padding = max_length - len(k) + 1
             output.append(f"{k}: {' ' * padding}{v:_}")
@@ -459,8 +478,8 @@ class PortfolioAnalyzer:
         """
         max_length: int = self._get_max_length_name()
         stats = self.get_performance_stats_returns()
-
         output = []
+
         for k, v in stats.items():
             padding = max_length - len(k) + 1
             output.append(f"{k}: {' ' * padding}{v:_}")
@@ -479,8 +498,8 @@ class PortfolioAnalyzer:
         """
         max_length: int = self._get_max_length_name()
         stats = self.get_performance_stats_general()
-
         output = []
+
         for k, v in stats.items():
             padding = max_length - len(k) + 1
             v_formatted = f"{v:_}" if isinstance(v, int | float | Decimal) else str(v)

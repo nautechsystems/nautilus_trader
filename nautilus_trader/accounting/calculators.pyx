@@ -103,10 +103,12 @@ cdef class RolloverInterestCalculator:
         cdef str time_quarter = f"{date.year}-Q{str(int(((date.month - 1) // 3) + 1)).zfill(2)}"
 
         base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_monthly]
+
         if base_data.empty:
             base_data = self._rate_data[base_currency].loc[self._rate_data[base_currency]['TIME'] == time_quarter]
 
         quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_monthly]
+
         if quote_data.empty:
             quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
@@ -117,4 +119,5 @@ cdef class RolloverInterestCalculator:
         cdef double base_val = <double>base_data['Value'].iloc[0]
         cdef double quote_val = <double>quote_data['Value'].iloc[0]
         cdef double rate = ((base_val - quote_val) / 365.0) / 100.0
+
         return Decimal(rate)

@@ -119,6 +119,7 @@ def calculate_bar_price_offsets(num_records, timestamp_is_close: bool, offset_in
     # Randomize high and low if seed is given
     if random_seed is not None:
         local_random = random.Random(random_seed)
+
         for i in range(num_records):
             if local_random.getrandbits(1):  # With a 50% chance, swap high and low
                 offsets["high"][i], offsets["low"][i] = offsets["low"][i], offsets["high"][i]
@@ -166,6 +167,7 @@ def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame):
     bid_prefixed = bid_data.add_prefix("bid_")
     ask_prefixed = ask_data.add_prefix("ask_")
     merged_data = pd.merge(bid_prefixed, ask_prefixed, left_index=True, right_index=True, how="inner")
+
     return merged_data
 
 
@@ -177,6 +179,7 @@ def prepare_event_and_init_timestamps(
     Condition.not_negative(ts_init_delta, "ts_init_delta")
     ts_events = index.view(np.uint64)
     ts_inits = ts_events + ts_init_delta
+
     return ts_events, ts_inits
 
 
@@ -242,6 +245,7 @@ cdef class OrderBookDeltaDataWrangler:
         cdef:
             OrderBookDelta first
             OrderBookDelta clear
+
         if deltas and deltas[0].flags & RecordFlag.F_SNAPSHOT:
             first = deltas[0]
             clear = OrderBookDelta.clear(
@@ -273,6 +277,7 @@ cdef class OrderBookDeltaDataWrangler:
             Quantity(size, self.instrument.size_precision),
             order_id,
         )
+
         return OrderBookDelta(
             self.instrument.id,
             action,
@@ -339,6 +344,7 @@ cdef class QuoteTickDataWrangler:
 
         if "bid_size" not in data.columns:
             data["bid_size"] = float(default_volume)
+
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
@@ -408,15 +414,18 @@ cdef class QuoteTickDataWrangler:
         Condition.type(bid_data.index, pd.DatetimeIndex, "bid_data.index")
         Condition.type(ask_data.index, pd.DatetimeIndex, "ask_data.index")
         Condition.not_none(default_volume, "default_volume")
+
         for col in BAR_PRICES:
             Condition.is_in(col, bid_data.columns, col, "bid_data.columns")
             Condition.is_in(col, ask_data.columns, col, "ask_data.columns")
+
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
 
         # Add default volume if not present
         if "volume" not in bid_data:
             bid_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
+
         if "volume" not in ask_data:
             ask_data.loc[:, "volume"] = float(default_volume * 4.0) / (FIXED_SCALAR if is_raw else 1.0)
 
@@ -618,8 +627,10 @@ cdef class TradeTickDataWrangler:
         Condition.type(data, pd.DataFrame, "data")
         Condition.is_false(data.empty, "data.empty")
         Condition.type(data.index, pd.DatetimeIndex, "data.index")
+
         for col in BAR_COLUMNS:
             Condition.is_in(col, data.columns, col, "data.columns")
+
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
 
@@ -663,6 +674,7 @@ cdef class TradeTickDataWrangler:
     ):
         dtype = [("price", np.double), ("size", np.double), ("timestamp", "datetime64[ns]")]
         tick_data = np.empty(len(records) * 4, dtype=dtype)
+
         for i, price_key in enumerate(BAR_PRICES):
             start_index = i * len(records)
             end_index = start_index + len(records)

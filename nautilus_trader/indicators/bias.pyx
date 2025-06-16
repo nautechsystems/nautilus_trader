@@ -83,6 +83,7 @@ cdef class Bias(Indicator):
     cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma.initialized:
                 self._set_initialized(True)
 

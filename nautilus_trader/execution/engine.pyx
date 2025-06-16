@@ -125,6 +125,7 @@ cdef class ExecutionEngine(Component):
     ) -> None:
         if config is None:
             config = ExecEngineConfig()
+
         Condition.type(config, ExecEngineConfig, "config")
         super().__init__(
             clock=clock,
@@ -258,9 +259,11 @@ cdef class ExecutionEngine(Component):
 
         """
         cdef ExecutionClient client
+
         for client in self._clients.values():
             if not client.is_connected:
                 return False
+
         return True
 
     cpdef bint check_disconnected(self):
@@ -274,9 +277,11 @@ cdef class ExecutionEngine(Component):
 
         """
         cdef ExecutionClient client
+
         for client in self._clients.values():
             if client.is_connected:
                 return False
+
         return True
 
     cpdef bint check_residuals(self):
@@ -340,17 +345,19 @@ cdef class ExecutionEngine(Component):
 
         cdef set[ClientId] client_ids = set()
         cdef set[Venue] venues = set()
-
         cdef:
             Order order
             ClientId client_id
             Venue venue
             ExecutionClient client
+
         for order in orders:
             venues.add(order.venue)
             client_id = self._cache.client_id(order.client_order_id)
+
             if client_id is None:
                 continue
+
             client_ids.add(client_id)
 
         cdef set[ExecutionClient] clients = set()
@@ -360,6 +367,7 @@ cdef class ExecutionEngine(Component):
 
         for venue in venues:
             client = self._routing_map.get(venue, self._default_client)
+
             if client is not None:
                 clients.add(client)
 
@@ -409,6 +417,7 @@ cdef class ExecutionEngine(Component):
                     f"Default execution client already registered ("
                     f"{self._default_client.id!r}); use register_default_client to override"
                 )
+
             self._default_client = client
             routing_log = " for default routing"
         # Venue-specific routing
@@ -419,6 +428,7 @@ cdef class ExecutionEngine(Component):
                     f"Execution client for venue {client.venue!r} "
                     f"already registered ({existing.id!r})"
                 )
+
             self._routing_map[client.venue] = client
 
         # Finally register in client registry
@@ -509,12 +519,15 @@ cdef class ExecutionEngine(Component):
         cdef:
             InstrumentId instrument_id
             StrategyId existing
+
         for instrument_id in strategy.external_order_claims:
             existing = self._external_order_claims.get(instrument_id)
+
             if existing:
                 raise InvalidConfiguration(
                     f"External order claim for {instrument_id} already exists for {existing}",
                 )
+
             # Register strategy to claim external orders for this instrument
             self._external_order_claims[instrument_id] = strategy.id
 
@@ -550,9 +563,11 @@ cdef class ExecutionEngine(Component):
 
         # Remove any venue-specific routing entries for this client
         cdef list to_remove = []
+
         for venue, mapped_client in self._routing_map.items():
             if mapped_client == client:
                 to_remove.append(venue)
+
         for venue in to_remove:
             del self._routing_map[venue]
 
@@ -700,10 +715,12 @@ cdef class ExecutionEngine(Component):
         self._set_position_id_counts()
 
         cdef Order order
+
         if self.manage_own_order_books:
             for order in self._cache.orders():
                 if order.is_closed_c() or not should_handle_own_book_order(order):
                     continue
+
                 self._add_own_book_order(order)
 
         self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms")
@@ -757,6 +774,7 @@ cdef class ExecutionEngine(Component):
         cdef dict counts = {}  # type: dict[StrategyId, int]
         cdef int count
         cdef Position position
+
         for position in positions:
             count = counts.get(position.strategy_id, 0)
             count += 1
@@ -767,6 +785,7 @@ cdef class ExecutionEngine(Component):
 
         # Set counts
         cdef StrategyId strategy_id
+
         for strategy_id, count in counts.items():
             self._pos_id_generator.set_count(strategy_id, count)
             self._log.info(f"Set PositionId count for {strategy_id!r} to {count}")
@@ -775,6 +794,7 @@ cdef class ExecutionEngine(Component):
         cdef Price last_px = None
         cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
         cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
+
         if last_quote is not None:
             last_px = last_quote.ask_price if order_side == OrderSide.BUY else last_quote.bid_price
         else:
@@ -798,19 +818,24 @@ cdef class ExecutionEngine(Component):
         # Set base quantity for all OTO contingent orders
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
+
         for client_order_id in order.linked_order_ids or []:
             contingent_order = self._cache.order(client_order_id)
+
             if contingent_order is None:
                 self._log.error(f"Contingency order {client_order_id!r} not found")
                 continue
+
             if not contingent_order.is_quote_quantity:
                 continue  # Already base quantity
+
             if contingent_order.quantity != original_qty:
                 self._log.warning(
                     f"Contingent order quantity {contingent_order.quantity} "
                     f"was not equal to the OTO parent original quantity {original_qty} "
                     f"when setting to base quantity of {base_qty}"
                 )
+
             self._log.info(
                 f"Setting {contingent_order.instrument_id} order quote quantity "
                 f"{contingent_order.quantity} to base quantity {base_qty}",
@@ -837,22 +862,26 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
+
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
     cpdef object _get_or_init_own_order_book(self, InstrumentId instrument_id):
         own_book = self._cache.own_order_book(instrument_id)
+
         if own_book is None:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(instrument_id.value)
             own_book = nautilus_pyo3.OwnOrderBook(pyo3_instrument_id)
             self._cache.add_own_order_book(own_book)
             self._log.debug(f"Initialized {own_book!r}", LogColor.MAGENTA)
+
         return own_book
 
     cpdef void _add_own_book_order(self, Order order):
         own_book = self._get_or_init_own_order_book(order.instrument_id)
         own_book_order = order.to_own_book_order()
         own_book.add(own_book_order)
+
         if self.debug:
             self._log.debug(f"Added: {own_book_order!r}", LogColor.MAGENTA)
 
@@ -861,14 +890,17 @@ cdef class ExecutionEngine(Component):
     cpdef void _execute_command(self, TradingCommand command):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
+
         self.command_count += 1
 
         cdef ExecutionClient client = self._clients.get(command.client_id)
+
         if client is None:
             client = self._routing_map.get(
                 command.instrument_id.venue,
                 self._default_client,
             )
+
             if client is None:
                 self._log.error(
                     f"Cannot execute command: "
@@ -898,13 +930,16 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command):
         cdef Order order = command.order
+
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
             self._cache.add_order(order, command.position_id, command.client_id)
+
             if self.snapshot_orders:
                 self._create_order_state_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
+
         if instrument is None:
             self._log.error(
                 f"Cannot handle submit order: "
@@ -915,11 +950,14 @@ cdef class ExecutionEngine(Component):
         # Check if converting quote quantity
         cdef Price last_px = None
         cdef Quantity base_qty = None
+
         if not instrument.is_inverse and order.is_quote_quantity:
             last_px = self._last_px_for_conversion(order.instrument_id, order.side)
+
             if last_px is None:
                 self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
                 return  # Denied
+
             base_qty = instrument.calculate_base_quantity(order.quantity, last_px)
             self._set_order_base_qty(order, base_qty)
 
@@ -931,14 +969,17 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command):
         cdef Order order
+
         for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, command.position_id, command.client_id)
+
                 if self.snapshot_orders:
                     self._create_order_state_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
+
         if instrument is None:
             self._log.error(
                 f"Cannot handle submit order list: "
@@ -950,17 +991,22 @@ cdef class ExecutionEngine(Component):
         cdef Price last_px = None
         cdef Quantity quote_qty = None
         cdef Quantity base_qty = None
+
         if not instrument.is_inverse and command.order_list.first.is_quote_quantity:
             for order in command.order_list.orders:
                 if order.is_quote_quantity == False:
                     continue  # Base quantity already set
+
                 if order.quantity != quote_qty:
                     last_px = self._last_px_for_conversion(order.instrument_id, order.side)
                     quote_qty = order.quantity
+
                 if last_px is None:
                     for order in command.order_list.orders:
                         self._deny_order(order, f"no-price-to-convert-quote-qty {order.instrument_id}")
+
                     return  # Denied
+
                 base_qty = instrument.calculate_base_quantity(quote_qty, last_px)
                 self._set_order_base_qty(order, base_qty)
 
@@ -992,11 +1038,13 @@ cdef class ExecutionEngine(Component):
     cpdef void _handle_event(self, OrderEvent event):
         if self.debug:
             self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
+
         self.event_count += 1
 
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self._cache.order(event.client_order_id)
+
         if order is None:
             self._log.warning(
                 f"Order with {event.client_order_id!r} "
@@ -1013,6 +1061,7 @@ cdef class ExecutionEngine(Component):
 
             # Search cache for ClientOrderId matching the VenueOrderId
             client_order_id = self._cache.client_order_id(event.venue_order_id)
+
             if client_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -1023,6 +1072,7 @@ cdef class ExecutionEngine(Component):
 
             # Search cache for Order matching the found ClientOrderId
             order = self._cache.order(client_order_id)
+
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -1039,6 +1089,7 @@ cdef class ExecutionEngine(Component):
             )
 
         cdef OmsType oms_type
+
         if isinstance(event, OrderFilled):
             oms_type = self._determine_oms_type(event)
             self._determine_position_id(event, oms_type)
@@ -1060,6 +1111,7 @@ cdef class ExecutionEngine(Component):
         cdef:
             PositionEvent pos_event
             Position position
+
         for pos_event in to_publish:
             self._msgbus.publish_c(
                 topic=f"events.position.{pos_event.strategy_id}",
@@ -1070,9 +1122,11 @@ cdef class ExecutionEngine(Component):
         cdef ExecutionClient client
         # Check for strategy OMS override
         cdef OmsType oms_type = self._oms_overrides.get(fill.strategy_id, OmsType.UNSPECIFIED)
+
         if oms_type == OmsType.UNSPECIFIED:
             # Use native venue OMS
             client = self._routing_map.get(fill.instrument_id.venue, self._default_client)
+
             if client is None:
                 return OmsType.NETTING
             else:
@@ -1083,12 +1137,14 @@ cdef class ExecutionEngine(Component):
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type):
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
+
         if self.debug:
             self._log.debug(
                 f"Determining position ID for {fill.client_order_id!r}, "
                 f"position_id={position_id!r}",
                 LogColor.MAGENTA,
             )
+
         if position_id is not None:
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.warning(
@@ -1096,10 +1152,13 @@ cdef class ExecutionEngine(Component):
                     f"cached={position_id!r}, assigned={fill.position_id!r}. "
                     "re-assigning from cache",
                 )
+
             # Assign position ID to fill
             fill.position_id = position_id
+
             if self.debug:
                 self._log.debug(f"Assigned {position_id!r} to {fill}", LogColor.MAGENTA)
+
             return
 
         if oms_type == OmsType.HEDGING:
@@ -1116,6 +1175,7 @@ cdef class ExecutionEngine(Component):
 
         # TODO: Optimize away the need to fetch order from cache
         cdef Order order = self._cache.order(fill.client_order_id)
+
         if order is None:
             raise RuntimeError(
                 f"Order for {fill.client_order_id!r} not found to determine position ID.",
@@ -1127,6 +1187,7 @@ cdef class ExecutionEngine(Component):
 
         cdef Order primary = self._cache.order(order.exec_spawn_id)
         assert primary is not None
+
         if primary.position_id is None:
             primary.position_id = position_id
             self._cache.add_position_id(
@@ -1141,10 +1202,12 @@ cdef class ExecutionEngine(Component):
         if fill.position_id is not None:
             if self.debug:
                 self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
+
             # Already assigned
             return fill.position_id
 
         cdef Order order = self._cache.order(fill.client_order_id)
+
         if order is None:
             raise RuntimeError(
                 f"Order for {fill.client_order_id!r} not found to determine position ID",
@@ -1153,19 +1216,24 @@ cdef class ExecutionEngine(Component):
         cdef:
             list exec_spawn_orders
             Order spawned_order
+
         if order.exec_spawn_id is not None:
             exec_spawn_orders = self._cache.orders_for_exec_spawn(order.exec_spawn_id)
+
             for spawned_order in exec_spawn_orders:
                 if spawned_order.position_id is not None:
                     if self.debug:
                         self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}", LogColor.MAGENTA)
+
                     # Use position ID for execution spawn
                     return spawned_order.position_id
 
         # Assign new position ID
         position_id = self._pos_id_generator.generate(fill.strategy_id)
+
         if self.debug:
             self._log.debug(f"Generated {position_id!r} for {fill}", LogColor.MAGENTA)
+
         return position_id
 
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
@@ -1181,11 +1249,14 @@ cdef class ExecutionEngine(Component):
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
             self._log.exception(f"Error on applying {event!r} to {order!r}", e)
+
             if should_handle_own_book_order(order):
                 self._cache.update_own_order_book(order)
+
             return
 
         self._cache.update_order(order)
+
         if self.snapshot_orders:
             self._create_order_state_snapshot(order)
 
@@ -1196,6 +1267,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
+
         if instrument is None:
             self._log.error(
                 f"Cannot handle order fill: "
@@ -1204,6 +1276,7 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef Account account = self._cache.account(fill.account_id)
+
         if account is None:
             self._log.error(
                 f"Cannot handle order fill: "
@@ -1212,6 +1285,7 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef Position position = self._cache.position(fill.position_id)
+
         if position is None or position.is_closed_c():
             position = self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
@@ -1222,9 +1296,11 @@ cdef class ExecutionEngine(Component):
         cdef:
             ClientOrderId client_order_id
             Order contingent_order
+
         if order.contingency_type == ContingencyType.OTO and position is not None and position.is_open_c():
             for client_order_id in order.linked_order_ids or []:
                 contingent_order = self._cache.order(client_order_id)
+
                 if contingent_order is not None and contingent_order.position_id is None:
                     contingent_order.position_id = position.id
                     self._cache.add_position_id(
@@ -1279,6 +1355,7 @@ cdef class ExecutionEngine(Component):
         self._cache.update_position(position)
 
         cdef PositionEvent event
+
         if position.is_closed_c():
             event = PositionClosed.create_c(
                 position=position,
@@ -1313,6 +1390,7 @@ cdef class ExecutionEngine(Component):
 
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         cdef Quantity difference = None
+
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
         elif position.side == PositionSide.SHORT:
@@ -1324,8 +1402,8 @@ cdef class ExecutionEngine(Component):
         fill_percent: Decimal = position.quantity / fill.last_qty
         cdef Money commission1 = Money(fill.commission * fill_percent, fill.commission.currency)
         cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
-
         cdef OrderFilled fill_split1 = None
+
         if position.is_open_c():
             # Split fill to close original position
             fill_split1 = OrderFilled(
@@ -1361,6 +1439,7 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef PositionId position_id_flip = fill.position_id
+
         if oms_type == OmsType.HEDGING and fill.position_id.is_virtual_c():
             # Generate new position ID for flipped virtual position
             position_id_flip = self._pos_id_generator.generate(
@@ -1415,9 +1494,9 @@ cdef class ExecutionEngine(Component):
             self._log.debug(f"Creating position state snapshot for {position}", LogColor.MAGENTA)
 
         cdef uint64_t ts_snapshot = self._clock.timestamp_ns()
-
         cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
         cdef dict[str, object] position_state = position.to_dict()
+
         if unrealized_pnl is not None:
             position_state["unrealized_pnl"] = str(unrealized_pnl)
 

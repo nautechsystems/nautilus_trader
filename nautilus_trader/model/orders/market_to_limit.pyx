@@ -188,9 +188,11 @@ cdef class MarketToLimitOrder(Order):
         if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
+
         if event.quantity is not None:
             self.quantity = event.quantity
             self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+
         if event.price is not None:
             self.price = event.price
 
@@ -228,6 +230,7 @@ cdef class MarketToLimitOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {unix_nanos_to_iso8601(self.expire_time_ns, nanos_precision=False)}"
+
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str() if self.price else None} "
@@ -244,6 +247,7 @@ cdef class MarketToLimitOrder(Order):
 
         """
         cdef ClientOrderId o
+
         return {
             "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),

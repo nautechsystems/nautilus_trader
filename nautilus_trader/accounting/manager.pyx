@@ -122,12 +122,14 @@ cdef class AccountsManager:
 
         # Determine any position
         cdef PositionId position_id = fill.position_id
+
         if position_id is None:
             # Check for open positions
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=fill.instrument_id,
             )
+
             if positions_open:
                 position_id = positions_open[0].id
 
@@ -136,11 +138,13 @@ cdef class AccountsManager:
         # *** position could still be None here ***
 
         cdef list pnls = account.calculate_pnls(instrument, fill, position)
+
         if is_logging_initialized():
             self._log.debug(f"Calculated PnLs: {pnls}")
 
         # Calculate final PnL including commissions
         cdef Money pnl
+
         if account.base_currency is not None:
             self._update_balance_single_currency(
                 account=account,
@@ -216,9 +220,9 @@ cdef class AccountsManager:
         base_xrate  = Decimal(0)
 
         cdef Currency currency = instrument.get_cost_currency()
-
         cdef:
             Order order
+
         for order in orders_open:
             assert order.instrument_id == instrument.id
 
@@ -274,11 +278,9 @@ cdef class AccountsManager:
     ):
         total_margin_init = Decimal(0)
         base_xrate = Decimal(0)
-
         cdef Currency currency = instrument.get_cost_currency()
+        cdef Order order
 
-        cdef:
-            Order order
         for order in orders_open:
             assert order.instrument_id == instrument.id, f"order not for instrument {instrument}"
 
@@ -318,6 +320,7 @@ cdef class AccountsManager:
             total_margin_init += margin_init
 
         cdef Money margin_init_money = Money(total_margin_init, currency)
+
         if total_margin_init == 0:
             account.clear_margin_init(instrument.id)
         else:
@@ -364,8 +367,8 @@ cdef class AccountsManager:
         base_xrate = Decimal(0)
 
         cdef Currency currency = instrument.get_cost_currency()
-
         cdef Position position
+
         for position in positions_open:
             assert position.instrument_id == instrument.id
 
@@ -406,6 +409,7 @@ cdef class AccountsManager:
             total_margin_maint += margin_maint
 
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
+
         if total_margin_maint == 0:
             account.clear_margin_maint(instrument.id)
         else:
@@ -431,6 +435,7 @@ cdef class AccountsManager:
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
+
             if xrate is None:
                 self._log.error(
                     f"Cannot calculate account state: "
@@ -449,6 +454,7 @@ cdef class AccountsManager:
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
+
             if xrate is None:
                 self._log.error(
                     f"Cannot calculate account state: "
@@ -461,10 +467,12 @@ cdef class AccountsManager:
             pnl = Money(pnl.as_f64_c() * xrate, account.base_currency)
 
         pnl = pnl.sub(commission)
+
         if pnl._mem.raw == 0:
             return False  # Nothing to adjust
 
         cdef AccountBalance balance = account.balance()
+
         if balance is None:
             self._log.error(f"Cannot complete transaction: no balance for {pnl.currency}")
             return False
@@ -490,16 +498,15 @@ cdef class AccountsManager:
         list pnls,
     ):
         cdef list balances = []
-
         cdef Money commission = fill.commission
         cdef AccountBalance balance = None
         cdef AccountBalance new_balance = None
         cdef bint apply_commission = commission._mem.raw != 0
-
         cdef:
             Money pnl
             Money total
             Money free
+
         for pnl in pnls:
             if apply_commission and pnl.currency == commission.currency:
                 # Deduct the commission from the realized PnL (the commission may also be negative)
@@ -512,6 +519,7 @@ cdef class AccountsManager:
 
             currency = pnl.currency
             balance = account.balance(currency)
+
             if balance is None:
                 if pnl._mem.raw < 0:
                     self._log.error(
@@ -519,6 +527,7 @@ cdef class AccountsManager:
                         f"no {pnl.currency} to deduct a {pnl.to_formatted_str()} realized PnL from"
                     )
                     return False
+
                 new_balance = AccountBalance(
                     total=pnl,
                     locked=Money(0, pnl.currency),
@@ -529,11 +538,13 @@ cdef class AccountsManager:
                 new_free = balance.free.as_decimal() + pnl.as_decimal()
                 total = Money(new_total, pnl.currency)
                 free = Money(new_free, pnl.currency)
+
                 if new_total < 0:
                     raise AccountBalanceNegative(
                         balance=total.as_decimal(),
                         currency=pnl.currency,
                     )
+
                 if new_free < 0:
                     raise AccountMarginExceeded(
                         balance=total.as_decimal(),
@@ -554,6 +565,7 @@ cdef class AccountsManager:
             # We still need to apply the commission
             currency = commission.currency
             balance = account.balance(commission.currency)
+
             if balance is None:
                 if commission._mem.raw > 0:
                     self._log.error(
@@ -561,11 +573,13 @@ cdef class AccountsManager:
                         f"balance to deduct a {commission.to_formatted_str()} commission from"
                     )
                     return False
+
                 balance = AccountBalance(
                     total=Money(0, commission.currency),
                     locked=Money(0, commission.currency),
                     free=Money(0, commission.currency),
                 )
+
             commission_dec = commission.as_decimal()
             balance.total = Money(balance.total.as_decimal() - commission_dec, commission.currency)
             balance.free = Money(balance.free.as_decimal() - commission_dec, commission.currency)

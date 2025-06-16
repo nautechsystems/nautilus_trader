@@ -127,6 +127,7 @@ cdef class KlingerVolumeOscillator(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._signal_ma.initialized:
                 self._set_initialized(True)
 

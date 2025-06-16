@@ -210,8 +210,8 @@ cpdef list capsule_to_list(capsule):
     cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
     cdef Data_t* ptr = <Data_t*>data.ptr
     cdef list objects = []
-
     cdef uint64_t i
+
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.DELTA:
             objects.append(delta_from_mem_c(ptr[i].delta))
@@ -811,6 +811,7 @@ cdef class BarType:
         Condition.valid_string(value, "value")
 
         cdef str parse_err = cstr_to_pystr(bar_type_check_parsing(pystr_to_cstr(value)))
+
         if parse_err:
             raise ValueError(parse_err)
 
@@ -1223,7 +1224,6 @@ cdef class Bar(Data):
 
         cdef int count = ts_events.shape[0]
         cdef list[Bar] bars = []
-
         cdef:
             int i
             Price open_price
@@ -1232,6 +1232,7 @@ cdef class Bar(Data):
             Price close_price
             Quantity volume_qty
             Bar bar
+
         for i in range(count):
             open_price = Price(opens[i], price_prec)
             high_price = Price(highs[i], price_prec)
@@ -1282,6 +1283,7 @@ cdef class Bar(Data):
     @staticmethod
     cdef Bar from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return Bar(
             bar_type=BarType.from_str_c(values["bar_type"]),
             open=Price.from_str_c(values["open"]),
@@ -1296,6 +1298,7 @@ cdef class Bar(Data):
     @staticmethod
     cdef dict to_dict_c(Bar obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": type(obj).__name__,
             "bar_type": str(obj.bar_type),
@@ -1391,10 +1394,10 @@ cdef class Bar(Data):
         pyo3_bar_type = None
         cdef uint8_t price_prec = 0
         cdef uint8_t volume_prec = 0
-
         cdef:
             Bar bar
             BarType bar_type
+
         for bar in bars:
             if pyo3_bar_type is None:
                 bar_type = bar.bar_type
@@ -2058,8 +2061,10 @@ cdef class OrderBookDelta(Data):
 
         """
         cdef BookOrder_t order = self._mem.order
+
         if order is None:
             return None
+
         return order_from_mem_c(order)
 
     @property
@@ -2220,8 +2225,8 @@ cdef class OrderBookDelta(Data):
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef OrderBookDelta_t* ptr = <OrderBookDelta_t*>data.ptr
         cdef list[OrderBookDelta] deltas = []
-
         cdef uint64_t i
+
         for i in range(0, data.len):
             deltas.append(delta_from_mem_c(ptr[i]))
 
@@ -2233,8 +2238,10 @@ cdef class OrderBookDelta(Data):
         cdef uint64_t len_ = len(items)
         cdef OrderBookDelta_t *data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
         cdef uint64_t i
+
         for i in range(len_):
             data[i] = (<OrderBookDelta>items[i])._mem
+
         if not data:
             raise MemoryError()
 
@@ -2384,15 +2391,17 @@ cdef class OrderBookDelta(Data):
         pyo3_instrument_id = None
         cdef uint8_t price_prec = 0
         cdef uint8_t size_prec = 0
-
         cdef:
             OrderBookDelta delta
             BookOrder book_order
+
         for delta in deltas:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(delta.instrument_id.value)
+
             if price_prec == 0:
                 price_prec = delta._mem.order.price.precision
+
             if size_prec == 0:
                 size_prec = delta._mem.order.size.precision
 
@@ -2485,17 +2494,20 @@ cdef class OrderBookDeltas(Data):
 
         # Create a C OrderBookDeltas_t buffer
         cdef OrderBookDelta_t *data = <OrderBookDelta_t *>PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+
         if not data:
             raise MemoryError()
 
         cdef uint64_t i
         cdef OrderBookDelta delta
+
         for i in range(len_):
             delta = deltas[i]
             data[i] = <OrderBookDelta_t>delta._mem
 
         # Create CVec
         cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+
         if not cvec:
             raise MemoryError()
 
@@ -2532,12 +2544,14 @@ cdef class OrderBookDeltas(Data):
 
         cdef uint64_t i
         cdef OrderBookDelta delta
+
         for i in range(len_):
             delta = deltas[i]
             data[i] = <OrderBookDelta_t>delta._mem
 
         # Create CVec
         cdef CVec *cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+
         if not cvec:
             raise MemoryError()
 
@@ -2601,9 +2615,8 @@ cdef class OrderBookDeltas(Data):
         cdef OrderBookDelta_t* raw_deltas = <OrderBookDelta_t*>raw_deltas_vec.ptr
 
         cdef list[OrderBookDelta] deltas = []
+        cdef uint64_t i
 
-        cdef:
-            uint64_t i
         for i in range(raw_deltas_vec.len):
             deltas.append(delta_from_mem_c(raw_deltas[i]))
 
@@ -2750,11 +2763,11 @@ cdef class OrderBookDeltas(Data):
         cdef InstrumentId instrument_id = first.instrument_id
         cdef list[list[OrderBookDelta]] batches = []
         cdef list[OrderBookDelta] batch = []
+        cdef OrderBookDelta delta
 
-        cdef:
-            OrderBookDelta delta
         for delta in data:
             batch.append(delta)
+
             if delta.flags == RecordFlag.F_LAST:
                 batches.append(batch)
                 batch = []
@@ -2862,11 +2875,13 @@ cdef class OrderBookDepth10(Data):
         cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
         cdef uint32_t *bid_counts_array = <uint32_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(uint32_t))
         cdef uint32_t *ask_counts_array = <uint32_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(uint32_t))
+
         if bids_array == NULL or asks_array == NULL or bid_counts_array == NULL or ask_counts_array == NULL:
             raise MemoryError("Failed to allocate memory for data transfer array")
 
         cdef uint64_t i
         cdef BookOrder order
+
         try:
             for i in range(DEPTH10_LEN):
                 order = bids[i]
@@ -2915,6 +2930,7 @@ cdef class OrderBookDepth10(Data):
         cdef BookOrder_t *asks_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
         cdef uint32_t *bid_counts_array = <uint32_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(uint32_t))
         cdef uint32_t *ask_counts_array = <uint32_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(uint32_t))
+
         if bids_array == NULL or asks_array == NULL or bid_counts_array == NULL or ask_counts_array == NULL:
             raise MemoryError("Failed to allocate memory for data transfer array")
 
@@ -2925,6 +2941,7 @@ cdef class OrderBookDepth10(Data):
 
         cdef uint64_t i
         cdef BookOrder order
+
         try:
             for i in range(DEPTH10_LEN):
                 order = bids[i]
@@ -2999,6 +3016,7 @@ cdef class OrderBookDepth10(Data):
 
         cdef uint64_t i
         cdef BookOrder order
+
         for i in range(DEPTH10_LEN):
             order = order_from_mem_c(bids_array[i])
             bids.append(order)
@@ -3020,6 +3038,7 @@ cdef class OrderBookDepth10(Data):
 
         cdef uint64_t i
         cdef BookOrder order
+
         for i in range(DEPTH10_LEN):
             order = order_from_mem_c(asks_array[i])
             asks.append(order)
@@ -3040,6 +3059,7 @@ cdef class OrderBookDepth10(Data):
         cdef list[uint32_t] bid_counts = [];
 
         cdef uint64_t i
+
         for i in range(DEPTH10_LEN):
             bid_counts.append(<uint32_t>bid_counts_array[i])
 
@@ -3059,6 +3079,7 @@ cdef class OrderBookDepth10(Data):
         cdef list[uint32_t] ask_counts = [];
 
         cdef uint64_t i
+
         for i in range(DEPTH10_LEN):
             ask_counts.append(<uint32_t>ask_counts_array[i])
 
@@ -3164,6 +3185,7 @@ cdef class OrderBookDepth10(Data):
         cdef list[OrderBookDepth10] depths = []
 
         cdef uint64_t i
+
         for i in range(0, data.len):
             depths.append(depth10_from_mem_c(ptr[i]))
 
@@ -3175,8 +3197,10 @@ cdef class OrderBookDepth10(Data):
         cdef uint64_t len_ = len(items)
         cdef OrderBookDepth10_t * data = <OrderBookDepth10_t *>PyMem_Malloc(len_ * sizeof(OrderBookDepth10_t))
         cdef uint64_t i
+
         for i in range(len_):
             data[i] = (<OrderBookDepth10>items[i])._mem
+
         if not data:
             raise MemoryError()
 
@@ -3373,6 +3397,7 @@ cdef class InstrumentStatus(Data):
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return InstrumentStatus(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             action=market_status_action_from_str(values["action"]),
@@ -3388,6 +3413,7 @@ cdef class InstrumentStatus(Data):
     @staticmethod
     cdef dict to_dict_c(InstrumentStatus obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "InstrumentStatus",
             "instrument_id": obj.instrument_id.to_str(),
@@ -3619,9 +3645,8 @@ cdef class InstrumentClose(Data):
 
         pyo3_instrument_id = None
         cdef uint8_t price_prec = 0
+        cdef InstrumentClose close
 
-        cdef:
-            InstrumentClose close
         for close in closes:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(close.instrument_id.value)
@@ -4033,6 +4058,7 @@ cdef class QuoteTick(Data):
         cdef list[QuoteTick] quotes = []
 
         cdef uint64_t i
+
         for i in range(0, data.len):
             quotes.append(quote_from_mem_c(ptr[i]))
 
@@ -4044,8 +4070,10 @@ cdef class QuoteTick(Data):
         cdef uint64_t len_ = len(items)
         cdef QuoteTick_t * data = <QuoteTick_t *>PyMem_Malloc(len_ * sizeof(QuoteTick_t))
         cdef uint64_t i
+
         for i in range(len_):
             data[i] = (<QuoteTick>items[i])._mem
+
         if not data:
             raise MemoryError()
 
@@ -4210,9 +4238,8 @@ cdef class QuoteTick(Data):
         cdef uint8_t ask_prec = 0
         cdef uint8_t bid_size_prec = 0
         cdef uint8_t ask_size_prec = 0
+        cdef QuoteTick quote
 
-        cdef:
-            QuoteTick quote
         for quote in quotes:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(quote.instrument_id.value)
@@ -4558,7 +4585,6 @@ cdef class TradeTick(Data):
 
         cdef int count = ts_events.shape[0]
         cdef list[TradeTick] trades = []
-
         cdef:
             int i
             Price price
@@ -4566,6 +4592,7 @@ cdef class TradeTick(Data):
             AggressorSide aggressor_side
             TradeId trade_id
             TradeTick trade
+
         for i in range(count):
             price = Price(prices_raw[i], price_prec)
             size = Quantity(sizes_raw[i], size_prec)
@@ -4619,6 +4646,7 @@ cdef class TradeTick(Data):
         cdef list[TradeTick] trades = []
 
         cdef uint64_t i
+
         for i in range(0, data.len):
             trades.append(trade_from_mem_c(ptr[i]))
 
@@ -4630,8 +4658,10 @@ cdef class TradeTick(Data):
         cdef uint64_t len_ = len(items)
         cdef TradeTick_t *data = <TradeTick_t *>PyMem_Malloc(len_ * sizeof(TradeTick_t))
         cdef uint64_t i
+
         for i in range(len_):
             data[i] = (<TradeTick>items[i])._mem
+
         if not data:
             raise MemoryError()
 
@@ -4781,9 +4811,8 @@ cdef class TradeTick(Data):
         pyo3_instrument_id = None
         cdef uint8_t price_prec = 0
         cdef uint8_t size_prec = 0
+        cdef TradeTick trade
 
-        cdef:
-            TradeTick trade
         for trade in trades:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(trade.instrument_id.value)
@@ -5025,9 +5054,8 @@ cdef class MarkPriceUpdate(Data):
 
         pyo3_instrument_id = None
         cdef uint8_t price_prec = 0
+        cdef MarkPriceUpdate mark_price
 
-        cdef:
-            MarkPriceUpdate mark_price
         for mark_price in mark_prices:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(mark_price.instrument_id.value)
@@ -5217,9 +5245,8 @@ cdef class IndexPriceUpdate(Data):
 
         pyo3_instrument_id = None
         cdef uint8_t price_prec = 0
+        cdef IndexPriceUpdate index_price
 
-        cdef:
-            IndexPriceUpdate index_price
         for index_price in index_prices:
             if pyo3_instrument_id is None:
                 pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(index_price.instrument_id.value)

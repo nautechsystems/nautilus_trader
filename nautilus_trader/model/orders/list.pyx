@@ -51,6 +51,7 @@ cdef class OrderList:
         Condition.list_type(orders, Order, "orders")
         cdef Order first = orders[0]
         cdef Order order
+
         for order in orders:
             # First condition check avoids creating an f-string for performance reasons
             if order.instrument_id != first.instrument_id:

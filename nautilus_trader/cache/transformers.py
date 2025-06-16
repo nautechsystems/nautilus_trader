@@ -196,6 +196,7 @@ def from_order_initialized_cython_to_order_pyo3(order_event):
 
 def from_order_initialized_pyo3_to_order_cython(order_event):
     order_event_cython = OrderInitialized.from_dict(order_event.to_dict())
+
     return OrderUnpacker.from_init(order_event_cython)
 
 
@@ -238,29 +239,41 @@ def transform_order_event_from_pyo3(order_event_pyo3):  # noqa: C901
 
 def transform_order_to_pyo3(order: Order):
     events = order.events
+
     if len(events) == 0:
         raise ValueError("Missing events in order")
+
     init_event = events.pop(0)
+
     if not isinstance(init_event, OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
+
     order_py3 = from_order_initialized_cython_to_order_pyo3(init_event)
+
     for event_cython in events:
         event_pyo3 = transform_order_event_to_pyo3(event_cython)
         order_py3.apply(event_pyo3)
+
     return order_py3
 
 
 def transform_order_from_pyo3(order_pyo3) -> Order:
     events_pyo3 = order_pyo3.events
+
     if len(events_pyo3) == 0:
         raise ValueError("Missing events in order")
+
     init_event = events_pyo3.pop(0)
+
     if not isinstance(init_event, nautilus_pyo3.OrderInitialized):
         raise KeyError("init event should be of type OrderInitialized")
+
     order_cython = from_order_initialized_pyo3_to_order_cython(init_event)
+
     for event_pyo3 in events_pyo3:
         event_cython = transform_order_event_from_pyo3(event_pyo3)
         order_cython.apply(event_cython)
+
     return order_cython
 
 
@@ -295,6 +308,7 @@ def transform_account_state_cython_to_pyo3(
     account_state: AccountState,
 ) -> nautilus_pyo3.AccountState:
     account_state_dict = AccountState.to_dict(account_state)
+
     return nautilus_pyo3.AccountState.from_dict(account_state_dict)
 
 
@@ -302,6 +316,7 @@ def transform_account_state_pyo3_to_cython(
     account_state_pyo3: nautilus_pyo3.AccountState,
 ) -> Account:
     account_state_dict_pyo3 = account_state_pyo3.to_dict()
+
     return AccountState.from_dict(account_state_dict_pyo3)
 
 
@@ -310,6 +325,7 @@ def from_account_state_pyo3_to_account_cython(
     calculate_account_state: bool,
 ) -> Account:
     account_state_cython = transform_account_state_pyo3_to_cython(account_state_pyo3)
+
     if account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
         return CashAccount(account_state_cython, calculate_account_state)
     elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
@@ -323,6 +339,7 @@ def from_account_state_cython_to_account_pyo3(
     calculate_account_state: bool,
 ):
     account_state_pyo3 = transform_account_state_cython_to_pyo3(account_state)
+
     if account_state_pyo3.account_type == nautilus_pyo3.AccountType.CASH:
         return nautilus_pyo3.CashAccount(account_state_pyo3, calculate_account_state)
     elif account_state_pyo3.account_type == nautilus_pyo3.AccountType.MARGIN:
@@ -333,27 +350,35 @@ def from_account_state_cython_to_account_pyo3(
 
 def transform_account_to_pyo3(account: Account):
     events = account.events
+
     if len(events) == 0:
         raise ValueError("Missing events in account")
+
     init_event = events.pop(0)
     calculate_account_state = account.calculate_account_state
     account_pyo3 = from_account_state_cython_to_account_pyo3(init_event, calculate_account_state)
+
     for account_state_cython in events:
         event_pyo3 = transform_account_state_cython_to_pyo3(account_state_cython)
         account_pyo3.apply(event_pyo3)
+
     return account_pyo3
 
 
 def transform_account_from_pyo3(account_pyo3) -> Account:
     events_pyo3 = account_pyo3.events
+
     if len(events_pyo3) == 0:
         raise ValueError("Missing events in account")
+
     init_event = events_pyo3.pop(0)
     calculate_account_state = account_pyo3.calculate_account_state
     account = from_account_state_pyo3_to_account_cython(init_event, calculate_account_state)
+
     for account_state_pyo3 in events_pyo3:
         event = transform_account_state_pyo3_to_cython(account_state_pyo3)
         account.apply(event)
+
     return account
 
 
@@ -362,6 +387,7 @@ def transform_account_from_pyo3(account_pyo3) -> Account:
 ################################################################################
 def transform_trade_tick_to_pyo3(trade: TradeTick) -> nautilus_pyo3.TradeTick:
     trade_dict = TradeTick.to_dict(trade)
+
     return nautilus_pyo3.TradeTick.from_dict(trade_dict)
 
 
@@ -371,11 +397,13 @@ def transform_trade_tick_from_pyo3(trade_pyo3: nautilus_pyo3.TradeTick) -> Trade
 
 def transform_quote_tick_to_pyo3(quote: QuoteTick) -> nautilus_pyo3.QuoteTick:
     quote_tick_dict = QuoteTick.to_dict(quote)
+
     return nautilus_pyo3.QuoteTick.from_dict(quote_tick_dict)
 
 
 def transform_bar_to_pyo3(bar: Bar) -> nautilus_pyo3.Bar:
     bar_dict = Bar.to_dict(bar)
+
     return nautilus_pyo3.Bar.from_dict(bar_dict)
 
 
@@ -402,6 +430,7 @@ def transform_signal_from_pyo3(signal_cls: type, signal_pyo3: nautilus_pyo3.Sign
 def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
     data_cls = data_type.type
     fully_qualified_name = data_cls.__module__ + ":" + data_cls.__qualname__
+
     return nautilus_pyo3.DataType(
         fully_qualified_name,
         data_type.metadata,  # PyO3 expects a `String` for this parameter
@@ -411,6 +440,7 @@ def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
 def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> DataType:
     module_name, type_name = data_type_pyo3.type_name.rsplit(":", 1)
     data_cls = getattr(module_name, type_name)
+
     return DataType(
         data_cls,
         data_type_pyo3.metadata,
@@ -419,6 +449,7 @@ def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> Dat
 
 def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
     data_type_pyo3 = transform_data_type_to_pyo3(data.data_type)
+
     return nautilus_pyo3.CustomData(
         data_type_pyo3,
         value=msgspec.json.encode(data.data.to_dict()),
@@ -430,4 +461,5 @@ def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
 def transform_custom_data_from_pyo3(data: nautilus_pyo3.CustomData) -> CustomData:
     data_type = transform_data_type_from_pyo3(data.data_type)
     data = Data(data.value, data.ts_event, data.ts_init)
+
     return CustomData(data_type, data)

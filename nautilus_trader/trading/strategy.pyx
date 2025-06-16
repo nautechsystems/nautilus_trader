@@ -137,6 +137,7 @@ cdef class Strategy(Actor):
     def __init__(self, config: StrategyConfig | None = None):
         if config is None:
             config = StrategyConfig()
+
         Condition.type(config, StrategyConfig, "config")
 
         super().__init__()
@@ -148,6 +149,7 @@ cdef class Strategy(Actor):
         self._log = Logger(name=component_id)
 
         oms_type = config.oms_type or OmsType.UNSPECIFIED
+
         if isinstance(oms_type, str):
             oms_type = oms_type_from_str(config.oms_type.upper())
 
@@ -183,9 +185,11 @@ cdef class Strategy(Actor):
             return []
 
         order_claims: list[InstrumentId] = []
+
         for instrument_id in config_claims:
             if isinstance(instrument_id, str):
                 instrument_id = InstrumentId.from_str(instrument_id)
+
             order_claims.append(instrument_id)
 
         return order_claims
@@ -382,6 +386,7 @@ cdef class Strategy(Actor):
                     if self._clock.timestamp_ns() >= order.expire_time_ns:
                         self.cancel_order(order)
                         continue
+
                     if not self._has_gtd_expiry_timer(order.client_order_id):
                         self._set_gtd_expiry(order)
 
@@ -785,6 +790,7 @@ cdef class Strategy(Actor):
         """
         Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
+
         if order._fsm.state != OrderStatus.INITIALIZED:  # Check predicate first for efficiency
             Condition.is_true(
                 order.status_c() == OrderStatus.INITIALIZED,
@@ -872,6 +878,7 @@ cdef class Strategy(Actor):
         Condition.not_none(order_list, "order_list")
 
         cdef Order order
+
         for order in order_list.orders:
             Condition.equal(order.status_c(), OrderStatus.INITIALIZED, "order", "order_status")
             # Publish initialized event
@@ -898,6 +905,7 @@ cdef class Strategy(Actor):
                         order,
                         reason=f"duplicate {repr(order.client_order_id)}",
                     )
+
                 return
 
         for order in order_list.orders:
@@ -993,6 +1001,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
             params=params,
         )
+
         if command is None:
             return
 
@@ -1027,6 +1036,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
             params=params,
         )
+
         if command is None:
             return
 
@@ -1073,11 +1083,11 @@ cdef class Strategy(Actor):
         Condition.list_type(orders, Order, "orders")
 
         cdef list cancels = []
-
         cdef:
             Order order
             Order first = None
             CancelOrder cancel
+
         for order in orders:
             if first is None:
                 first = order
@@ -1088,6 +1098,7 @@ cdef class Strategy(Actor):
                         f"{first.instrument_id} vs {order.instrument_id}",
                     )
                     return
+
                 if order.is_emulated_c():
                     self._log.error(
                         "Cannot include emulated orders in a batch cancel"
@@ -1098,8 +1109,10 @@ cdef class Strategy(Actor):
                 order=order,
                 client_id=client_id,
             )
+
             if cancel is None:
                 continue
+
             cancels.append(cancel)
 
         if not cancels:
@@ -1163,6 +1176,7 @@ cdef class Strategy(Actor):
         )
 
         cdef str order_side_str = " " + order_side_to_str(order_side) if order_side != OrderSide.NO_ORDER_SIDE else ""
+
         if not open_orders and not emulated_orders:
             self.log.info(
                 f"No {instrument_id.to_str()} open or emulated{order_side_str} "
@@ -1170,6 +1184,7 @@ cdef class Strategy(Actor):
             return
 
         cdef int open_count = len(open_orders)
+
         if open_count:
             self.log.info(
                 f"Canceling {open_count} open{order_side_str} "
@@ -1177,6 +1192,7 @@ cdef class Strategy(Actor):
             )
 
         cdef int emulated_count = len(emulated_orders)
+
         if emulated_count:
             self.log.info(
                 f"Canceling {emulated_count} emulated{order_side_str} "
@@ -1186,10 +1202,13 @@ cdef class Strategy(Actor):
         cdef:
             OrderPendingCancel event
             Order order
+
         for order in open_orders + emulated_orders:
             if order.status_c() == OrderStatus.INITIALIZED or order.is_emulated_c():
                 continue
+
             event = self._generate_order_pending_cancel(order)
+
             try:
                 order.apply(event)
             except InvalidStateTrigger as e:
@@ -1203,8 +1222,10 @@ cdef class Strategy(Actor):
 
         cdef:
             ExecAlgorithmId exec_algorithm_id
+
         for exec_algorithm_id in exec_algorithm_ids:
             exec_algorithm_orders = self.cache.orders_for_exec_algorithm(exec_algorithm_id)
+
             for order in exec_algorithm_orders:
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
@@ -1341,6 +1362,7 @@ cdef class Strategy(Actor):
         )
 
         cdef str position_side_str = " " + position_side_to_str(position_side) if position_side != PositionSide.NO_POSITION_SIDE else ""
+
         if not positions_open:
             self.log.info(
                 f"No {instrument_id.to_str()} open{position_side_str} positions to close",
@@ -1353,6 +1375,7 @@ cdef class Strategy(Actor):
         )
 
         cdef Position position
+
         for position in positions_open:
             self.close_position(position, client_id, tags, time_in_force, reduce_only, params)
 
@@ -1412,6 +1435,7 @@ cdef class Strategy(Actor):
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
+
             if price != order.price:
                 updating = True
 
@@ -1420,6 +1444,7 @@ cdef class Strategy(Actor):
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
+
             if trigger_price != order.trigger_price:
                 updating = True
 
@@ -1441,9 +1466,11 @@ cdef class Strategy(Actor):
             return None  # Cannot send command
 
         cdef OrderPendingUpdate event
+
         if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
+
             try:
                 order.apply(event)
             except InvalidStateTrigger as e:
@@ -1481,11 +1508,12 @@ cdef class Strategy(Actor):
             return None  # Cannot send command
 
         cdef OrderStatus order_status = order.status_c()
-
         cdef OrderPendingCancel event
+
         if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
+
             try:
                 order.apply(event)
             except InvalidStateTrigger as e:
@@ -1544,6 +1572,7 @@ cdef class Strategy(Actor):
 
     cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id):
         cdef str timer_name = self._get_gtd_expiry_timer_name(client_order_id)
+
         return timer_name in self._clock.timer_names
 
     cdef void _set_gtd_expiry(self, Order order):
@@ -1562,6 +1591,7 @@ cdef class Strategy(Actor):
     cpdef void _expire_gtd_order(self, TimeEvent event):
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
         cdef Order order = self.cache.order(client_order_id)
+
         if order is None:
             self._log.warning(
                 f"Order with {repr(client_order_id)} not found in the cache to apply {event}"
@@ -1600,8 +1630,10 @@ cdef class Strategy(Actor):
             self.log.info(f"{RECV}{EVT} {event}")
 
         cdef Order order
+
         if self.manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
+
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
@@ -1744,6 +1776,7 @@ cdef class Strategy(Actor):
 
     cdef void _deny_order_list(self, OrderList order_list, str reason):
         cdef Order order
+
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)

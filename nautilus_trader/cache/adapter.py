@@ -74,16 +74,20 @@ class CachePostgresAdapter(CacheDatabaseFacade):
 
     def load(self):
         data = self._backing.load()
+
         return {key: bytes(value) for key, value in data.items()}
 
     def load_currencies(self) -> dict[str, Currency]:
         currencies = self._backing.load_currencies()
+
         return {currency.code: transform_currency_from_pyo3(currency) for currency in currencies}
 
     def load_currency(self, code: str) -> Currency | None:
         currency_pyo3 = self._backing.load_currency(code)
+
         if currency_pyo3:
             return transform_currency_from_pyo3(currency_pyo3)
+
         return None
 
     def load_instrument(self, instrument_id: InstrumentId) -> Instrument:
@@ -94,28 +98,35 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     def load_order(self, client_order_id: ClientOrderId):
         order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
         order_pyo3 = self._backing.load_order(order_id_pyo3)
+
         if order_pyo3:
             return transform_order_from_pyo3(order_pyo3)
+
         return None
 
     def load_orders(self):
         orders = self._backing.load_orders()
+
         return [transform_order_from_pyo3(order) for order in orders]
 
     def load_account(self, account_id: AccountId):
         account_id_pyo3 = nautilus_pyo3.AccountId.from_str(str(account_id))
         account_pyo3 = self._backing.load_account(account_id_pyo3)
+
         if account_pyo3:
             return transform_account_from_pyo3(account_pyo3)
+
         return None
 
     def load_signals(self, data_cls: type, name: str):
         signals_pyo3 = self._backing.load_signals(name)
+
         return [transform_signal_from_pyo3(data_cls, s) for s in signals_pyo3]
 
     def load_custom_data(self, data_type: DataType):
         data_type_pyo3 = transform_data_type_to_pyo3(data_type)
         data_pyo3 = self._backing.load_custom_data(data_type_pyo3)
+
         return [transform_custom_data_from_pyo3(d) for d in data_pyo3]
 
     def load_order_snapshot(
@@ -124,6 +135,7 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     ) -> nautilus_pyo3.OrderSnapshot | None:
         client_order_id_pyo3 = nautilus_pyo3.ClientOrderId.from_str(str(client_order_id))
         snapshot_pyo3 = self._backing.load_order_snapshot(client_order_id_pyo3)
+
         return snapshot_pyo3
 
     def load_position_snapshot(
@@ -132,21 +144,25 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     ) -> nautilus_pyo3.PositionSnapshot | None:
         position_id_pyo3 = nautilus_pyo3.PositionId.from_str(str(position_id))
         snapshot_pyo3 = self._backing.load_position_snapshot(position_id_pyo3)
+
         return snapshot_pyo3
 
     def load_quotes(self, instrument_id: InstrumentId) -> list[QuoteTick]:
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         quotes = self._backing.load_quotes(instrument_id_pyo3)
+
         return [QuoteTick.from_pyo3(quote_pyo3) for quote_pyo3 in quotes]
 
     def load_trades(self, instrument_id: InstrumentId) -> list[TradeTick]:
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         trades = self._backing.load_trades(instrument_id_pyo3)
+
         return [transform_trade_tick_from_pyo3(trade) for trade in trades]
 
     def load_bars(self, instrument_id: InstrumentId):
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         bars = self._backing.load_bars(instrument_id_pyo3)
+
         return [Bar.from_pyo3(bar_pyo3) for bar_pyo3 in bars]
 
     def add(self, key: str, value: bytes):

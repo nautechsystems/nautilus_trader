@@ -182,8 +182,10 @@ cdef class SimulatedExchange:
         Condition.not_empty(starting_balances, "starting_balances")
         Condition.list_type(starting_balances, Money, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
+
         if base_currency:
             Condition.is_true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
+
         if default_leverage and default_leverage > 1 or leverages:
             Condition.is_true(account_type == AccountType.MARGIN, "leverages defined when account type is not `MARGIN`")
 
@@ -226,6 +228,7 @@ cdef class SimulatedExchange:
 
         # Load modules
         self.modules = []
+
         for module in modules:
             Condition.not_in(module, self.modules, "module", "modules")
             module.register_venue(self)
@@ -285,8 +288,8 @@ cdef class SimulatedExchange:
         Condition.not_none(fill_model, "fill_model")
 
         self.fill_model = fill_model
-
         cdef OrderMatchingEngine matching_engine
+
         for matching_engine in self._matching_engines.values():
             matching_engine.set_fill_model(fill_model)
             self._log.info(
@@ -393,6 +396,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(instrument_id)
+
         if matching_engine is None:
             return None
 
@@ -415,6 +419,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(instrument_id)
+
         if matching_engine is None:
             return None
 
@@ -437,6 +442,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(instrument_id)
+
         if matching_engine is None:
             return None
 
@@ -479,8 +485,8 @@ cdef class SimulatedExchange:
 
         """
         cdef dict books = {}
-
         cdef OrderMatchingEngine matching_engine
+
         for matching_engine in self._matching_engines.values():
             books[matching_engine.instrument.id] = matching_engine.get_book()
 
@@ -501,14 +507,17 @@ cdef class SimulatedExchange:
 
         """
         cdef OrderMatchingEngine matching_engine
+
         if instrument_id is not None:
             matching_engine = self._matching_engines.get(instrument_id)
+
             if matching_engine is None:
                 return []
             else:
                 return matching_engine.get_open_orders()
 
         cdef list open_orders = []
+
         for matching_engine in self._matching_engines.values():
             open_orders += matching_engine.get_open_orders()
 
@@ -529,14 +538,17 @@ cdef class SimulatedExchange:
 
         """
         cdef OrderMatchingEngine matching_engine
+
         if instrument_id is not None:
             matching_engine = self._matching_engines.get(instrument_id)
+
             if matching_engine is None:
                 return []
             else:
                 return matching_engine.get_open_bid_orders()
 
         cdef list open_bid_orders = []
+
         for matching_engine in self._matching_engines.values():
             open_bid_orders += matching_engine.get_open_bid_orders()
 
@@ -557,14 +569,17 @@ cdef class SimulatedExchange:
 
         """
         cdef OrderMatchingEngine matching_engine
+
         if instrument_id is not None:
             matching_engine = self._matching_engines.get(instrument_id)
+
             if matching_engine is None:
                 return []
             else:
                 return matching_engine.get_open_ask_orders()
 
         cdef list open_ask_orders = []
+
         for matching_engine in self._matching_engines.values():
             open_ask_orders += matching_engine.get_open_ask_orders()
 
@@ -601,6 +616,7 @@ cdef class SimulatedExchange:
             return  # Nothing to adjust
 
         cdef Account account = self.cache.account_for_venue(self.exec_client.venue)
+
         if account is None:
             self._log.error(
                 f"Cannot adjust account: no account found for {self.exec_client.venue}"
@@ -608,6 +624,7 @@ cdef class SimulatedExchange:
             return
 
         cdef AccountBalance balance = account.balance(adjustment.currency)
+
         if balance is None:
             self._log.error(
                 f"Cannot adjust account: no balance found for {adjustment.currency}"
@@ -618,6 +635,7 @@ cdef class SimulatedExchange:
         balance.free = Money(balance.free + adjustment, adjustment.currency)
 
         cdef list margins = []
+
         if account.is_margin_account:
             margins = list(account.margins().values())
 
@@ -642,6 +660,7 @@ cdef class SimulatedExchange:
         Condition.not_none(instrument, "instrument")
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(instrument.id)
+
         if matching_engine is None:
             self.add_instrument(instrument)
             return
@@ -669,6 +688,7 @@ cdef class SimulatedExchange:
 
     cdef tuple generate_inflight_command(self, TradingCommand command):
         cdef uint64_t ts
+
         if isinstance(command, (SubmitOrder, SubmitOrderList)):
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
@@ -677,10 +697,13 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:
             raise ValueError(f"invalid `TradingCommand`, was {command}")  # pragma: no cover (design-time error)
+
         if ts not in self._inflight_counter:
             self._inflight_counter[ts] = 0
+
         self._inflight_counter[ts] += 1
         cdef (uint64_t, uint64_t) key = (ts, self._inflight_counter[ts])
+
         return key, command
 
     cpdef void process_order_book_delta(self, OrderBookDelta delta):
@@ -696,14 +719,18 @@ cdef class SimulatedExchange:
         Condition.not_none(delta, "delta")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(delta)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(delta.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[delta.instrument_id]
 
@@ -722,14 +749,18 @@ cdef class SimulatedExchange:
         Condition.not_none(deltas, "deltas")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(deltas)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(deltas.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {deltas.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[deltas.instrument_id]
 
@@ -748,14 +779,18 @@ cdef class SimulatedExchange:
         Condition.not_none(depth, "depth")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(depth)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(depth.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(depth.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {depth.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[depth.instrument_id]
 
@@ -776,14 +811,18 @@ cdef class SimulatedExchange:
         Condition.not_none(tick, "tick")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(tick)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(tick.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[tick.instrument_id]
 
@@ -804,14 +843,18 @@ cdef class SimulatedExchange:
         Condition.not_none(tick, "tick")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(tick)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(tick.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[tick.instrument_id]
 
@@ -832,14 +875,18 @@ cdef class SimulatedExchange:
         Condition.not_none(bar, "bar")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(bar)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.bar_type.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(bar.bar_type.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[bar.bar_type.instrument_id]
 
@@ -858,14 +905,18 @@ cdef class SimulatedExchange:
         Condition.not_none(data, "data")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(data)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(data.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {data.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[data.instrument_id]
 
@@ -884,14 +935,18 @@ cdef class SimulatedExchange:
         Condition.not_none(close, "close")
 
         cdef SimulationModule module
+
         for module in self.modules:
             module.pre_process(close)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(close.instrument_id)
+
         if matching_engine is None:
             instrument = self.cache.instrument(close.instrument_id)
+
             if instrument is None:
                 raise RuntimeError(f"No matching engine found for {close.instrument_id}")
+
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[close.instrument_id]
 
@@ -916,6 +971,7 @@ cdef class SimulatedExchange:
         while self._inflight_queue:
             # Peek at timestamp of next in-flight message
             ts = self._inflight_queue[0][0][0]
+
             if ts <= ts_now:
                 # Place message on queue to be processed
                 self._message_queue.appendleft(self._inflight_queue.pop(0)[1])
@@ -924,12 +980,14 @@ cdef class SimulatedExchange:
                 break
 
         cdef TradingCommand command
+
         while self._message_queue:
             command = self._message_queue.pop()
             self._process_trading_command(command)
 
         # Iterate over modules
         cdef SimulationModule module
+
         for module in self.modules:
             module.process(ts_now)
 
@@ -957,12 +1015,14 @@ cdef class SimulatedExchange:
 
     cdef void _process_trading_command(self, TradingCommand command):
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(command.instrument_id)
+
         if matching_engine is None:
             raise RuntimeError(f"Cannot process command: no matching engine for {command.instrument_id}")
 
         cdef:
             Order order
             list[Order] orders
+
         if isinstance(command, SubmitOrder):
             matching_engine.process_order(command.order, self.exec_client.account_id)
         elif isinstance(command, SubmitOrderList):
@@ -998,8 +1058,10 @@ cdef class SimulatedExchange:
 
         # Set leverages
         cdef Account account = self.get_account()
+
         if account.is_margin_account:
             account.set_default_leverage(self.default_leverage)
+
             # Set instrument specific leverages
             for instrument_id, leverage in self.leverages.items():
                 account.set_leverage(instrument_id, leverage)

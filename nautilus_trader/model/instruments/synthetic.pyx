@@ -283,8 +283,8 @@ cdef class SyntheticInstrument(Data):
         Condition.not_empty(inputs, "inputs")
 
         cdef uint64_t len_ = len(inputs)
-
         cdef uint64_t components_count = synthetic_instrument_components_count(&self._mem)
+
         if len_ != components_count:
             raise ValueError(
                 f"error calculating {self.id} `SyntheticInstrument` price: "
@@ -292,21 +292,25 @@ cdef class SyntheticInstrument(Data):
             )
 
         cdef double value
+
         for value in inputs:
             if isnan(value):
                 raise ValueError(f"NaN detected in inputs {inputs}")
 
         # Create a C doubles buffer
         cdef double* data = <double *>PyMem_Malloc(len_ * sizeof(double))
+
         if not data:
             raise MemoryError()
 
         cdef uint64_t i
+
         for i in range(len_):
             data[i] = <double>inputs[i]
 
         # Create CVec
         cdef CVec* cvec = <CVec *>PyMem_Malloc(1 * sizeof(CVec))
+
         if not cvec:
             raise MemoryError()
 
@@ -315,6 +319,7 @@ cdef class SyntheticInstrument(Data):
         cvec.cap = len_
 
         cdef Price_t mem = synthetic_instrument_calculate(&self._mem, cvec)
+
         if mem.precision == ERROR_PRICE.precision:
             raise RuntimeError(
                 f"error calculating {self.id} `SyntheticInstrument` price from {inputs}",
@@ -330,6 +335,7 @@ cdef class SyntheticInstrument(Data):
     @staticmethod
     cdef SyntheticInstrument from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return SyntheticInstrument(
             symbol=Symbol(values["symbol"]),
             price_precision=values["price_precision"],
@@ -342,6 +348,7 @@ cdef class SyntheticInstrument(Data):
     @staticmethod
     cdef dict to_dict_c(SyntheticInstrument obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "SyntheticInstrument",
             "symbol": obj.id.symbol.value,

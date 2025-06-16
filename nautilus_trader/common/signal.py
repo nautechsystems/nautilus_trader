@@ -124,6 +124,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
             }[value_type],
         },
     )
+
     # Register for arrow serialization (only if not already registered)
     try:
         register_arrow(

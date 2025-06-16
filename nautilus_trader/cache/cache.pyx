@@ -394,6 +394,7 @@ cdef class Cache(CacheFacade):
         cdef:
             Order order
             list orders
+
         for order in self._orders.values():
             if order.order_list_id is not None:
                 orders = order_list_index.get(order.order_list_id)
@@ -408,6 +409,7 @@ cdef class Cache(CacheFacade):
         cdef:
             OrderListId order_list_id
             OrderList order_list
+
         for order_list_id, orders in order_list_index.items():
             order_list = OrderList(
                 order_list_id=order_list_id,
@@ -478,6 +480,7 @@ cdef class Cache(CacheFacade):
             AccountId account_id
             Order order
             Position position
+
         for account_id in self._accounts:
             if Venue(account_id.get_issuer()) not in self._index_venue_account:
                 self._log.error(
@@ -493,36 +496,42 @@ cdef class Cache(CacheFacade):
                     f"{repr(client_order_id)} not found in self._index_order_strategy"
                 )
                 error_count += 1
+
             if client_order_id not in self._index_orders:
                 self._log.error(
                     f"{failure} in _cached_orders: "
                     f"{repr(client_order_id)} not found in self._index_orders"
                 )
                 error_count += 1
+
             if order.is_inflight_c() and client_order_id not in self._index_orders_inflight:
                 self._log.error(
                     f"{failure} in _cached_orders: "
                     f"{repr(client_order_id)} not found in self._index_orders_inflight"
                 )
                 error_count += 1
+
             if order.is_open_c() and client_order_id not in self._index_orders_open:
                 self._log.error(
                     f"{failure} in _cached_orders: "
                     f"{repr(client_order_id)} not found in self._index_orders_open"
                 )
                 error_count += 1
+
             if order.is_closed_c() and client_order_id not in self._index_orders_closed:
                 self._log.error(
                     f"{failure} in _cached_orders "
                     f"{repr(client_order_id)} not found in self._index_orders_closed"
                 )
                 error_count += 1
+
             if order.exec_algorithm_id is not None and order.exec_algorithm_id not in self._index_exec_algorithm_orders:
                 self._log.error(
                     f"{failure} in _cached_orders "
                     f"{repr(order.exec_algorithm_id)} not found in self._index_exec_algorithm_orders"
                 )
                 error_count += 1
+
             if order.exec_algorithm_id is not None and order.exec_spawn_id is None and order.client_order_id not in self._index_exec_spawn_orders:
                 self._log.error(
                     f"{failure} in _cached_orders "
@@ -537,24 +546,28 @@ cdef class Cache(CacheFacade):
                     f"{repr(position_id)} not found in self._index_position_strategy"
                 )
                 error_count += 1
+
             if position_id not in self._index_position_orders:
                 self._log.error(
                     f"{failure} in _cached_positions: "
                     f"{repr(position_id)} not found in self._index_position_orders"
                 )
                 error_count += 1
+
             if position_id not in self._index_positions:
                 self._log.error(
                     f"{failure} in _cached_positions: "
                     f"{repr(position_id)} not found in self._index_positions"
                 )
                 error_count += 1
+
             if position.is_open_c() and position_id not in self._index_positions_open:
                 self._log.error(
                     f"{failure} in _cached_positions: "
                     f"{repr(position_id)} not found in self._index_positions_open"
                 )
                 error_count += 1
+
             if position.is_closed_c() and position_id not in self._index_positions_closed:
                 self._log.error(
                     f"{failure} in _cached_positions: "
@@ -797,10 +810,10 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Purging closed orders{buffer_secs_str}", LogColor.MAGENTA)
 
         cdef uint64_t buffer_ns = nautilus_pyo3.secs_to_nanos(buffer_secs)
-
         cdef:
             ClientOrderId client_order_id
             Order order
+
         for client_order_id in self._index_orders_closed.copy():
             order = self._orders.get(client_order_id)
 
@@ -824,10 +837,10 @@ cdef class Cache(CacheFacade):
         cdef str buffer_secs_str = f" with {buffer_secs=:_}" if buffer_secs else ""
         self._log.debug(f"Purging closed positions{buffer_secs_str}", LogColor.MAGENTA)
         cdef uint64_t buffer_ns = nautilus_pyo3.secs_to_nanos(buffer_secs)
-
         cdef:
             PositionId position_id
             Position position
+
         for position_id in self._index_positions_closed.copy():
             position = self._positions.get(position_id)
 
@@ -933,6 +946,7 @@ cdef class Cache(CacheFacade):
 
         cdef:
             Account account
+
         for account in self._accounts.values():
             event_count = account.event_count_c()
             account.purge_account_events(ts_now, lookback_secs)
@@ -1125,6 +1139,7 @@ cdef class Cache(CacheFacade):
         cdef ClientOrderId client_order_id
         cdef PositionId position_id
         cdef Position position
+
         for position_id, position in self._positions.items():
             # 1: Build _index_venue_positions -> {Venue, {PositionId}}
             if position.instrument_id.venue not in self._index_venue_positions:
@@ -1174,6 +1189,7 @@ cdef class Cache(CacheFacade):
         cdef:
             ClientOrderId client_order_id
             Order contingent_order
+
         for client_order_id in order.linked_order_ids or []:
             contingent_order = self._orders.get(client_order_id)
 
@@ -2628,10 +2644,10 @@ cdef class Cache(CacheFacade):
             raise ValueError(f"Invalid `PriceType`, was {price_type}")
 
         cdef dict[InstrumentId, Price] prices_map = {}
-
         cdef:
             InstrumentId instrument_id
             Price price
+
         for instrument_id in sorted(instrument_ids):
             price = self.price(instrument_id, price_type)
 
@@ -3198,7 +3214,6 @@ cdef class Cache(CacheFacade):
     cdef tuple _build_quote_table(self, Venue venue):
         cdef dict bid_quotes = {}
         cdef dict ask_quotes = {}
-
         cdef:
             InstrumentId instrument_id
             str base_quote
@@ -3206,6 +3221,7 @@ cdef class Cache(CacheFacade):
             Price ask_price
             Bar bid_bar
             Bar ask_bar
+
         for instrument_id, base_quote in self._xrate_symbols.items():
             if instrument_id.venue != venue:
                 continue
@@ -4637,6 +4653,7 @@ cdef class Cache(CacheFacade):
             Order spawn_order
             uint8_t precision = 0
             uint64_t raw_filled_qty = 0
+
         for spawn_order in exec_spawn_orders:
             precision = spawn_order.filled_qty._mem.precision
 
@@ -4678,6 +4695,7 @@ cdef class Cache(CacheFacade):
             Order spawn_order
             uint8_t precision = 0
             uint64_t raw_leaves_qty = 0
+
         for spawn_order in exec_spawn_orders:
             precision = spawn_order.leaves_qty._mem.precision
 

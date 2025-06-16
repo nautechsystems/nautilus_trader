@@ -99,6 +99,7 @@ cdef class LinearRegression(Indicator):
 
         cdef np.ndarray residuals = np.zeros(self.period, dtype=np.float64)
         cdef int i
+
         for i in np.arange(self.period):
             residuals[i] = self.slope * x_arr[i] + self.intercept - y_arr[i]
 
@@ -109,6 +110,7 @@ cdef class LinearRegression(Indicator):
         # Compute R2 with handling for zero variance in y_arr
         cdef double ssr = sum(residuals * residuals)
         cdef double sst = sum((y_arr - mean(y_arr)) * (y_arr - mean(y_arr)))
+
         if sst == 0.0:
             self.R2 = -np.inf
         else:

@@ -33,6 +33,7 @@ class MinWinner(PortfolioStatistic):
 
         # Calculate statistic
         winners = [x for x in realized_pnls if x > 0.0]
+
         if not winners:
             return 0.0
 

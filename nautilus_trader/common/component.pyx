@@ -702,6 +702,7 @@ cdef class TestClock(Clock):
 
         if start_time_ns == 0:
             start_time_ns = ts_now
+
         if stop_time_ns:
             Condition.is_true(stop_time_ns > ts_now, "`stop_time_ns` was < `ts_now`")
             Condition.is_true(start_time_ns + interval_ns <= stop_time_ns, "`start_time_ns` + `interval_ns` was > `stop_time_ns`")
@@ -736,6 +737,7 @@ cdef class TestClock(Clock):
 
     cpdef uint64_t next_time_ns(self, str name):
         Condition.valid_string(name, "name")
+
         return test_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
@@ -789,7 +791,6 @@ cdef class TestClock(Clock):
         cdef CVec raw_handler_vec = self.advance_time_c(to_time_ns, set_time)
         cdef TimeEventHandler_t* raw_handlers = <TimeEventHandler_t*>raw_handler_vec.ptr
         cdef list event_handlers = []
-
         cdef:
             uint64_t i
             object callback
@@ -797,6 +798,7 @@ cdef class TestClock(Clock):
             TimeEventHandler_t raw_handler
             TimeEventHandler event_handler
             PyObject *raw_callback
+
         for i in range(raw_handler_vec.len):
             raw_handler = <TimeEventHandler_t>raw_handlers[i]
             event = TimeEvent.from_mem_c(raw_handler.event)
@@ -835,6 +837,7 @@ cdef class LiveClock(Clock):
     @property
     def timer_names(self) -> list[str]:
         cdef str timer_names = cstr_to_pystr(live_clock_timer_names(&self._mem))
+
         if not timer_names:
             return []
 
@@ -956,6 +959,7 @@ cdef class LiveClock(Clock):
 
     cpdef uint64_t next_time_ns(self, str name):
         Condition.valid_string(name, "name")
+
         return live_clock_next_time(&self._mem, pystr_to_cstr(name))
 
     cpdef void cancel_timer(self, str name):
@@ -966,6 +970,7 @@ cdef class LiveClock(Clock):
 
     cpdef void cancel_timers(self):
         cdef str name
+
         for name in self.timer_names:
             # Using a list of timer names from the property and passing this
             # to cancel_timer() handles the clean removal of both the handler
@@ -1096,6 +1101,7 @@ cdef class TimeEvent(Event):
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = mem
+
         return event
 
 
@@ -1103,6 +1109,7 @@ cdef inline TimeEvent capsule_to_time_event(capsule):
     cdef TimeEvent_t* ptr = <TimeEvent_t*>PyCapsule_GetPointer(capsule, NULL)
     cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
     event._mem = ptr[0]
+
     return event
 
 
@@ -1268,8 +1275,10 @@ cpdef LogGuard init_logging(
     """
     if trader_id is None:
         trader_id = TraderId("TRADER-000")
+
     if machine_id is None:
         machine_id = socket.gethostname()
+
     if instance_id is None:
         instance_id = UUID4()
 
@@ -1294,6 +1303,7 @@ cpdef LogGuard init_logging(
 
     cdef LogGuard log_guard = LogGuard.__new__(LogGuard)
     log_guard._mem = log_guard_api
+
     return log_guard
 
 
@@ -1303,6 +1313,7 @@ LOGGING_PYO3 = False
 cpdef bint is_logging_initialized():
     if LOGGING_PYO3:
         return True
+
     return <bint>logging_is_initialized()
 
 
@@ -1511,6 +1522,7 @@ cdef class Logger:
 
         cdef str stack_trace_lines = ""
         cdef str line
+
         for line in stack_trace[:len(stack_trace) - 1]:
             stack_trace_lines += line
 
@@ -1668,8 +1680,10 @@ cdef class Component:
     ):
         if component_id is None:
             component_id = ComponentId(type(self).__name__)
+
         if component_name is None:
             component_name = component_id.value
+
         Condition.valid_string(component_name, "component_name")
         Condition.type_or_none(config, NautilusConfig, "config")
 
@@ -2209,11 +2223,15 @@ cdef class MessageBus:
 
         if instance_id is None:
             instance_id = UUID4()
+
         if name is None:
             name = type(self).__name__
+
         Condition.valid_string(name, "name")
+
         if config is None:
             config = MessageBusConfig()
+
         Condition.type(config, MessageBusConfig, "config")
 
         self.trader_id = trader_id
@@ -2246,6 +2264,7 @@ cdef class MessageBus:
 
         # Copy and clear `types_filter` before passing down to the core MessageBus
         cdef list types_filter = copy.copy(config.types_filter)
+
         if config.types_filter is not None:
             config.types_filter.clear()
 
@@ -2254,8 +2273,10 @@ cdef class MessageBus:
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
+
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+
         self._streaming_types = set()
         self._resolved = False
 
@@ -2304,6 +2325,7 @@ cdef class MessageBus:
         """
         if pattern is None:
             pattern = "*"  # Wildcard
+
         Condition.valid_string(pattern, "pattern")
 
         return [s for s in self._subscriptions if is_matching(s.topic, pattern)]
@@ -2501,6 +2523,7 @@ cdef class MessageBus:
         Condition.not_none(msg, "msg")
 
         handler = self._endpoints.get(endpoint)
+
         if handler is None:
             self._log.error(
                 f"Cannot send message: no endpoint registered at '{endpoint}'",
@@ -2561,6 +2584,7 @@ cdef class MessageBus:
         Condition.not_none(response, "response")
 
         callback = self._correlation_index.pop(response.correlation_id, None)
+
         if callback is None:
             self._log.error(
                 f"Cannot handle response: "
@@ -2626,9 +2650,9 @@ cdef class MessageBus:
 
         cdef list matches = []
         cdef list patterns = list(self._patterns.keys())
-
         cdef str pattern
         cdef list subs
+
         for pattern in patterns:
             if is_matching(topic, pattern):
                 subs = list(self._patterns[pattern])
@@ -2638,7 +2662,6 @@ cdef class MessageBus:
                 matches.append(pattern)
 
         self._subscriptions[sub] = sorted(matches)
-
         self._resolved = False
 
         self._log.debug(f"Added {sub}")
@@ -2667,7 +2690,6 @@ cdef class MessageBus:
         Condition.callable(handler, "handler")
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
-
         cdef list patterns = self._subscriptions.get(sub)
 
         # Check if exists
@@ -2676,6 +2698,7 @@ cdef class MessageBus:
             return
 
         cdef str pattern
+
         for pattern in patterns:
             subs = list(self._patterns[pattern])
             subs.remove(sub)
@@ -2716,6 +2739,7 @@ cdef class MessageBus:
         # Get all subscriptions matching topic pattern
         # Note: cannot use truthiness on array
         cdef Subscription[:] subs = self._patterns.get(topic)
+
         if subs is None or (not self._resolved and len(subs) == 0):
             # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
@@ -2725,12 +2749,14 @@ cdef class MessageBus:
         cdef:
             int i
             Subscription sub
+
         for i in range(len(subs)):
             sub = subs[i]
             sub.handler(msg)
 
         # Publish externally (if configured)
         cdef bytes payload_bytes = None
+
         if isinstance(msg, self._publishable_types):
             if external_pub and self._database is not None and not self._database.is_closed():
                 if isinstance(msg, bytes):
@@ -2760,6 +2786,7 @@ cdef class MessageBus:
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
         cdef Subscription existing_sub
+
         # Copy to handle subscription changes on iteration
         for existing_sub in self._subscriptions.copy():
             if is_matching(topic, existing_sub.topic):
@@ -2768,12 +2795,14 @@ cdef class MessageBus:
         subs_list = sorted(subs_list, reverse=True)
         cdef Subscription[:] subs_array = np.ascontiguousarray(subs_list, dtype=Subscription)
         self._patterns[topic] = subs_array
-
         cdef list matches
+
         for sub in subs_array:
             matches = self._subscriptions.get(sub, [])
+
             if topic not in matches:
                 matches.append(topic)
+
             self._subscriptions[sub] = sorted(matches)
 
         return subs_array
@@ -3008,6 +3037,7 @@ cdef class Throttler:
 
         # Check msg rate
         cdef int64_t delta_next = self._delta_next()
+
         if delta_next <= 0:
             self._send_msg(msg)
         else:
@@ -3018,9 +3048,11 @@ cdef class Throttler:
         if not self._warm:
             if self.sent_count < self.limit:
                 return 0
+
             self._warm = True
 
         cdef int64_t diff = self._clock.timestamp_ns() - self._timestamps[-1]
+
         return self._interval_ns - diff
 
     cdef void _limit_msg(self, msg):
@@ -3057,9 +3089,11 @@ cdef class Throttler:
 
         # Send remaining messages if within rate
         cdef int64_t delta_next
+
         while self._buffer:
             delta_next = self._delta_next()
             msg = self._buffer.pop()
+
             if delta_next <= 0:
                 self._send_msg(msg)
             else:

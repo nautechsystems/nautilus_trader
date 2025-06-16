@@ -75,6 +75,7 @@ cdef class EfficiencyRatio(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if len(self._inputs) < 2:
                 return  # Not enough data
             elif len(self._inputs) >= self.period:

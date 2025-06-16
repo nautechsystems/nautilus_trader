@@ -113,6 +113,7 @@ class LiveExecutionEngine(ExecutionEngine):
     ) -> None:
         if config is None:
             config = LiveExecEngineConfig()
+
         PyCondition.type(config, LiveExecEngineConfig, "config")
         super().__init__(
             msgbus=msgbus,

@@ -131,7 +131,6 @@ cdef class ExecAlgorithm(Actor):
         list[str] tags=*,
         bint reduce_primary=*,
     )
-
     cpdef LimitOrder spawn_limit(
         self,
         Order primary,
@@ -146,7 +145,6 @@ cdef class ExecAlgorithm(Actor):
         list[str] tags=*,
         bint reduce_primary=*,
     )
-
     cpdef MarketToLimitOrder spawn_market_to_limit(
         self,
         Order primary,
@@ -159,7 +157,6 @@ cdef class ExecAlgorithm(Actor):
         list[str] tags=*,
         bint reduce_primary=*,
     )
-
     cpdef void submit_order(self, Order order)
     cpdef void modify_order(
         self,

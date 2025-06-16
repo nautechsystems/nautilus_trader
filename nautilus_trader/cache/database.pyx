@@ -138,6 +138,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
     ) -> None:
         if config is None:
             config = CacheConfig()
+
         Condition.type(config, CacheConfig, "config")
         super().__init__(config)
 
@@ -262,8 +263,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict general = {}
-
         cdef list general_keys = self._backing.keys(f"{_GENERAL}:*")
+
         if not general_keys:
             return general
 
@@ -271,10 +272,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             list result
             bytes value_bytes
+
         for key in general_keys:
             key = key.split(':', maxsplit=1)[1]
             result = self._backing.read(key)
             value_bytes = result[0]
+
             if value_bytes is not None:
                 key = key.split(':', maxsplit=1)[1]
                 general[key] = value_bytes
@@ -291,8 +294,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict currencies = {}
-
         cdef list currency_keys = self._backing.keys(f"{_CURRENCIES}*")
+
         if not currency_keys:
             return currencies
 
@@ -300,6 +303,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             str currency_code
             Currency currency
+
         for key in currency_keys:
             currency_code = key.rsplit(':', maxsplit=1)[1]
             currency = self.load_currency(currency_code)
@@ -319,8 +323,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict instruments = {}
-
         cdef list instrument_keys = self._backing.keys(f"{_INSTRUMENTS}*")
+
         if not instrument_keys:
             return instruments
 
@@ -328,6 +332,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             InstrumentId instrument_id
             Instrument instrument
+
         for key in instrument_keys:
             instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
             instrument = self.load_instrument(instrument_id)
@@ -347,8 +352,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict synthetics = {}
-
         cdef list synthetic_keys = self._backing.keys(f"{_SYNTHETICS}*")
+
         if not synthetic_keys:
             return synthetics
 
@@ -356,6 +361,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             InstrumentId instrument_id
             SyntheticInstrument synthetic
+
         for key in synthetic_keys:
             instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
             synthetic = self.load_synthetic(instrument_id)
@@ -375,8 +381,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict accounts = {}
-
         cdef list account_keys = self._backing.keys(f"{_ACCOUNTS}*")
+
         if not account_keys:
             return accounts
 
@@ -385,6 +391,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str account_str
             AccountId account_id
             Account account
+
         for key in account_keys:
             account_id = AccountId(key.rsplit(':', maxsplit=1)[1])
             account = self.load_account(account_id)
@@ -404,8 +411,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict orders = {}
-
         cdef list order_keys = self._backing.keys(f"{_ORDERS}*")
+
         if not order_keys:
             return orders
 
@@ -413,6 +420,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             ClientOrderId client_order_id
             Order order
+
         for key in order_keys:
             client_order_id = ClientOrderId(key.rsplit(':', maxsplit=1)[1])
             order = self.load_order(client_order_id)
@@ -432,8 +440,8 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef dict positions = {}
-
         cdef list position_keys = self._backing.keys(f"{_POSITIONS}*")
+
         if not position_keys:
             return positions
 
@@ -441,6 +449,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             str key
             PositionId position_id
             Position position
+
         for key in position_keys:
             position_id = PositionId(key.rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
@@ -460,10 +469,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef list result = self._backing.read(_INDEX_ORDER_POSITION)
+
         if not result:
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
+
         return {ClientOrderId(k): PositionId(v) for k, v in raw_index.items()}
 
     cpdef dict load_index_order_client(self):
@@ -476,10 +487,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         cdef list result = self._backing.read(_INDEX_ORDER_CLIENT)
+
         if not result:
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
+
         return {ClientOrderId(k): ClientId(v) for k, v in raw_index.items()}
 
     cpdef Currency load_currency(self, str code):
@@ -533,6 +546,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str key = f"{_INSTRUMENTS}:{instrument_id.to_str()}"
         cdef list result = self._backing.read(key)
+
         if not result:
             return None
 
@@ -565,6 +579,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str key = f"{_SYNTHETICS}:{instrument_id.to_str()}"
         cdef list result = self._backing.read(key)
+
         if not result:
             return None
 
@@ -590,13 +605,14 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str key = f"{_ACCOUNTS}:{account_id.to_str()}"
         cdef list result = self._backing.read(key)
+
         if not result:
             return None
 
         cdef bytes initial_event = result.pop(0)
         cdef Account account = AccountFactory.create_c(self._serializer.deserialize(initial_event))
-
         cdef bytes event
+
         for event in result:
             account.apply(event=self._serializer.deserialize(event))
 
@@ -631,6 +647,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         cdef int event_count = 0
         cdef bytes event_bytes
         cdef OrderEvent event
+
         for event_bytes in result:
             try:
                 event = self._serializer.deserialize(event_bytes)
@@ -682,6 +699,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef OrderFilled initial_fill = self._serializer.deserialize(result.pop(0))
         cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
+
         if instrument is None:
             self._log.error(
                 f"Cannot load position: "
@@ -690,10 +708,10 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return
 
         cdef Position position = Position(instrument, initial_fill)
-
         cdef:
             bytes event_bytes
             OrderFilled fill
+
         for event_bytes in result:
             event = self._serializer.deserialize(event_bytes)
 
@@ -723,6 +741,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str key = f"{_ACTORS}:{component_id.to_str()}:state"
         cdef list result = self._backing.read(key)
+
         if not result:
             return {}
 
@@ -763,6 +782,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
         cdef list result = self._backing.read(key)
+
         if not result:
             return {}
 
@@ -914,6 +934,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         if position_id is not None:
             self.index_order_position(order.client_order_id, position_id)
+
         if client_id is not None:
             payload = [client_order_id_bytes, client_id.to_str().encode()]
             self._backing.insert(_INDEX_ORDER_CLIENT, payload)

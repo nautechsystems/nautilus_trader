@@ -286,6 +286,7 @@ cdef class CryptoOption(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return CryptoOption(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -320,6 +321,7 @@ cdef class CryptoOption(Instrument):
     @staticmethod
     cdef dict to_dict_c(CryptoOption obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "CryptoOption",
             "id": obj.id.to_str(),
@@ -356,6 +358,7 @@ cdef class CryptoOption(Instrument):
     @staticmethod
     cdef CryptoOption from_pyo3_c(pyo3_instrument):
         Condition.not_none(pyo3_instrument, "pyo3_instrument")
+
         return CryptoOption(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),

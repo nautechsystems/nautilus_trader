@@ -110,6 +110,7 @@ cdef class DoubleExponentialMovingAverage(MovingAverage):
 
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma2.initialized:
                 self._set_initialized(True)
 

@@ -94,6 +94,7 @@ cdef class ShutdownSystem(Command):
     @staticmethod
     cdef ShutdownSystem from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return ShutdownSystem(
             trader_id=TraderId(values["trader_id"]),
             component_id=ComponentId(values["component_id"]),
@@ -257,6 +258,7 @@ cdef class ComponentStateChanged(Event):
     @staticmethod
     cdef ComponentStateChanged from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return ComponentStateChanged(
             trader_id=TraderId(values["trader_id"]),
             component_id=ComponentId(values["component_id"]),
@@ -271,6 +273,7 @@ cdef class ComponentStateChanged(Event):
     @staticmethod
     cdef dict to_dict_c(ComponentStateChanged obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "ComponentStateChanged",
             "trader_id": obj.trader_id.to_str(),
@@ -478,6 +481,7 @@ cdef class TradingStateChanged(RiskEvent):
     @staticmethod
     cdef TradingStateChanged from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return TradingStateChanged(
             trader_id=TraderId(values["trader_id"]),
             state=trading_state_from_str(values["state"]),

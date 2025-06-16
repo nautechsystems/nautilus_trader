@@ -156,6 +156,7 @@ cdef class Account:
 
         """
         cdef AccountBalance b
+
         return {c: b.total for c, b in self._balances.items()}
 
     cpdef dict balances_free(self):
@@ -168,6 +169,7 @@ cdef class Account:
 
         """
         cdef AccountBalance b
+
         return {c: b.free for c, b in self._balances.items()}
 
     cpdef dict balances_locked(self):
@@ -180,6 +182,7 @@ cdef class Account:
 
         """
         cdef AccountBalance b
+
         return {c: b.locked for c, b in self._balances.items()}
 
     cpdef dict commissions(self):
@@ -217,6 +220,7 @@ cdef class Account:
         """
         if currency is None:
             currency = self.base_currency
+
         Condition.not_none(currency, "currency")
 
         return self._balances.get(currency)
@@ -250,11 +254,14 @@ cdef class Account:
         """
         if currency is None:
             currency = self.base_currency
+
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
+
         if balance is None:
             return None
+
         return balance.total
 
     cpdef Money balance_free(self, Currency currency = None):
@@ -286,11 +293,14 @@ cdef class Account:
         """
         if currency is None:
             currency = self.base_currency
+
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
+
         if balance is None:
             return None
+
         return balance.free
 
     cpdef Money balance_locked(self, Currency currency = None):
@@ -322,11 +332,14 @@ cdef class Account:
         """
         if currency is None:
             currency = self.base_currency
+
         Condition.not_none(currency, "currency")
 
         cdef AccountBalance balance = self._balances.get(currency)
+
         if balance is None:
             return None
+
         return balance.locked
 
     cpdef Money commission(self, Currency currency):
@@ -408,15 +421,18 @@ cdef class Account:
         Condition.not_empty(balances, "balances")
 
         cdef AccountBalance balance
+
         for balance in balances:
             if not balance.total._mem.raw > 0:
                 if balance.total._mem.raw < 0:
                     raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
+
                 if balance.total.is_zero() and not allow_zero:
                     raise AccountBalanceNegative(balance.total.as_decimal(), balance.currency)
                 else:
                     # Clear asset balance
                     self._balances.pop(balance.currency, None)
+
             self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission):
@@ -462,11 +478,9 @@ cdef class Account:
 
         """
         cdef uint64_t lookback_ns = nautilus_pyo3.secs_to_nanos(lookback_secs)
-
         cdef list[AccountState] retained_events = []
+        cdef AccountState event
 
-        cdef:
-            AccountState event
         for event in self._events:
             if event.ts_event + lookback_ns > ts_now:
                 retained_events.append(event)

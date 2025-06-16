@@ -237,6 +237,7 @@ cdef class Order:
         cdef str exec_algorithm_id_str = "" if self.exec_algorithm_id is None else f", exec_algorithm_id={self.exec_algorithm_id.to_str()}"
         cdef str exec_algorithm_params_str = "" if self.exec_algorithm_params is None else f", exec_algorithm_params={self.exec_algorithm_params}"
         cdef str exec_spawn_id_str = "" if self.exec_spawn_id is None else f", exec_spawn_id={self.exec_spawn_id.to_str()}"
+
         return (
             f"{type(self).__name__}("
             f"{self.info()}, "
@@ -407,6 +408,7 @@ cdef class Order:
     cdef bint is_open_c(self):
         if self.emulation_trigger != TriggerType.NO_TRIGGER:
             return False
+
         return (
             self._fsm.state == OrderStatus.ACCEPTED
             or self._fsm.state == OrderStatus.TRIGGERED
@@ -453,6 +455,7 @@ cdef class Order:
             raise TypeError(f"Cannot initialize {self.type_string_c()} order as `nautilus_pyo3.OwnBookOrder`, no price")
 
         cdef Price price = self.price
+
         return nautilus_pyo3.OwnBookOrder(
             trader_id=nautilus_pyo3.TraderId(self.trader_id.value),
             client_order_id=nautilus_pyo3.ClientOrderId(self.client_order_id.value),
@@ -1007,6 +1010,7 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
+
         if self.venue_order_id is not None and event.venue_order_id is not None and not isinstance(event, OrderUpdated):
             Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
@@ -1071,6 +1075,7 @@ cdef class Order:
                 self.venue_order_id = event.venue_order_id
             else:
                 Condition.not_in(event.trade_id, self._trade_ids, "event.trade_id", "_trade_ids")
+
             # Fill order
             self._filled(event)
         else:
@@ -1125,6 +1130,7 @@ cdef class Order:
         self.strategy_id = fill.strategy_id
         self._trade_ids.append(fill.trade_id)
         self.last_trade_id = fill.trade_id
+
         if self.ts_accepted == 0:
             # Set ts_accepted to time of first fill if not previously set
             self.ts_accepted = fill.ts_event
@@ -1133,6 +1139,7 @@ cdef class Order:
 
         # Using `PriceRaw` as temporary hack to access int128_t so that negative values can be represented
         cdef PriceRaw raw_leaves_qty = self.quantity._mem.raw - raw_filled_qty
+
         if raw_leaves_qty < 0:
             raise ValueError(
                 f"invalid order.leaves_qty: was {raw_leaves_qty / FIXED_SCALAR}, "
@@ -1141,6 +1148,7 @@ cdef class Order:
                 f"fill.last_qty={fill.last_qty}, "
                 f"fill={fill}",
             )
+
         self.filled_qty.add_assign(fill.last_qty)
         self.leaves_qty = Quantity.from_raw_c(<QuantityRaw>raw_leaves_qty, fill.last_qty._mem.precision)
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
@@ -1159,6 +1167,7 @@ cdef class Order:
 
         cdef double filled_qty_f64 = self.filled_qty.as_f64_c()
         cdef double total_qty = filled_qty_f64 + last_qty
+
         if total_qty > 0:  # Protect divide by zero
             return ((self.avg_px * filled_qty_f64) + (last_px * last_qty)) / total_qty
 
@@ -1168,8 +1177,8 @@ cdef class Order:
     @staticmethod
     cdef void _hydrate_initial_events(Order original, Order transformed):
         cdef list original_events = original.events_c()
-
         cdef OrderEvent event
+
         for event in reversed(original_events):
             # Insert each event to the beginning of the events list in reverse
             # to preserve correct order of events.

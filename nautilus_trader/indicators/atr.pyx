@@ -101,6 +101,7 @@ cdef class AverageTrueRange(Indicator):
         if self._use_previous:
             if not self.has_inputs:
                 self._previous_close = close
+
             self._ma.update_raw(max(self._previous_close, high) - min(low, self._previous_close))
             self._previous_close = close
         else:
@@ -121,6 +122,7 @@ cdef class AverageTrueRange(Indicator):
     cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma.initialized:
                 self._set_initialized(True)
 

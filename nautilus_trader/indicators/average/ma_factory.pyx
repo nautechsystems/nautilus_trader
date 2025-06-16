@@ -61,21 +61,15 @@ cdef class MovingAverageFactory:
 
         if ma_type == MovingAverageType.SIMPLE:
             return SimpleMovingAverage(period)
-
         elif ma_type == MovingAverageType.EXPONENTIAL:
             return ExponentialMovingAverage(period)
-
         elif ma_type == MovingAverageType.WEIGHTED:
             return WeightedMovingAverage(period, **kwargs)
-
         elif ma_type == MovingAverageType.HULL:
             return HullMovingAverage(period)
-
         elif ma_type == MovingAverageType.WILDER:
             return WilderMovingAverage(period)
-
         elif ma_type == MovingAverageType.DOUBLE_EXPONENTIAL:
             return DoubleExponentialMovingAverage(period)
-
         elif ma_type == MovingAverageType.VARIABLE_INDEX_DYNAMIC:
             return VariableIndexDynamicAverage(period, **kwargs)

@@ -203,6 +203,7 @@ class LiveExecutionClient(ExecutionClient):
         task: Task,
     ) -> None:
         e: BaseException | None = task.exception()
+
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
@@ -217,6 +218,7 @@ class LiveExecutionClient(ExecutionClient):
                         f"Failed triggering action {actions.__name__} on '{task.get_name()}'",
                         e,
                     )
+
             if success_msg:
                 self._log.info(success_msg, success_color)
 
@@ -430,6 +432,7 @@ class LiveExecutionClient(ExecutionClient):
         )
 
         since: pd.Timestamp | None = None
+
         if lookback_mins is not None:
             since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 

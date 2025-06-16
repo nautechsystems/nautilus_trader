@@ -122,7 +122,6 @@ cdef class ExecutionClient(Component):
         )
 
         self._cache = cache
-
         self.trader_id = msgbus.trader_id
         self.venue = venue
         self.oms_type = oms_type
@@ -311,7 +310,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_account_state(account_state)
 
     cpdef void generate_order_submitted(
@@ -347,7 +345,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(submitted)
 
     cpdef void generate_order_rejected(
@@ -387,7 +384,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(rejected)
 
     cpdef void generate_order_accepted(
@@ -427,7 +423,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(accepted)
 
     cpdef void generate_order_modify_rejected(
@@ -471,7 +466,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(modify_rejected)
 
     cpdef void generate_order_cancel_rejected(
@@ -515,7 +509,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(cancel_rejected)
 
     cpdef void generate_order_updated(
@@ -561,6 +554,7 @@ cdef class ExecutionClient(Component):
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
             existing = self._cache.venue_order_id(client_order_id)
+
             if existing is not None:
                 Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
             else:
@@ -581,7 +575,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(updated)
 
     cpdef void generate_order_canceled(
@@ -621,7 +614,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(canceled)
 
     cpdef void generate_order_triggered(
@@ -661,7 +653,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(triggered)
 
     cpdef void generate_order_expired(
@@ -701,7 +692,6 @@ cdef class ExecutionClient(Component):
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
         )
-
         self._send_order_event(expired)
 
     cpdef void generate_order_filled(
@@ -786,7 +776,6 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
             info=info,
         )
-
         self._send_order_event(fill)
 
 # --------------------------------------------------------------------------------------------------

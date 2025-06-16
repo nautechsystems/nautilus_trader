@@ -124,9 +124,8 @@ cdef class Position:
 
         cdef list[OrderFilled] events = []
         cdef list[TradeId] trade_ids = []
+        cdef OrderFilled event
 
-        cdef:
-            OrderFilled event
         for event in self._events:
             if event.client_order_id != client_order_id:
                 events.append(event)
@@ -662,6 +661,7 @@ cdef class Position:
         Condition.not_none(price, "price")
 
         cdef double realized_pnl = self.realized_pnl.as_f64_c() if self.realized_pnl is not None else 0.0
+
         return Money(realized_pnl + self.unrealized_pnl(price).as_f64_c(), self.settlement_currency)
 
     cpdef list commissions(self):
@@ -677,11 +677,12 @@ cdef class Position:
 
     cdef void _check_duplicate_trade_id(self, OrderFilled fill):
         # Check all previous fills for matching trade ID and composite key
-        cdef:
-            OrderFilled p_fill
+        cdef OrderFilled p_fill
+
         for p_fill in self._events:
             if fill.trade_id != p_fill.trade_id:
                 continue
+
             if (
                 fill.order_side == p_fill.order_side
                 and fill.last_px == p_fill.last_px
@@ -692,6 +693,7 @@ cdef class Position:
     cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
+
         if fill.commission.currency == self.settlement_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
@@ -700,6 +702,7 @@ cdef class Position:
         cdef double last_px = fill.last_px.as_f64_c()
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
+
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
             last_qty_obj = Quantity(last_qty, self.size_precision)
 
@@ -724,6 +727,7 @@ cdef class Position:
     cdef void _handle_sell_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
+
         if fill.commission.currency == self.settlement_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
@@ -732,6 +736,7 @@ cdef class Position:
         cdef double last_px = fill.last_px.as_f64_c()
         cdef double last_qty = fill.last_qty.as_f64_c()
         cdef Quantity last_qty_obj = fill.last_qty
+
         if self.base_currency is not None and fill.commission.currency == self.base_currency:
             last_qty_obj = Quantity(last_qty, self.size_precision)
 
@@ -771,6 +776,7 @@ cdef class Position:
     ):
         cdef double start_cost = avg_px * qty
         cdef double event_cost = last_px * last_qty
+
         return (start_cost + event_cost) / (qty + last_qty)
 
     cdef double _calculate_points(self, double avg_px_open, double avg_px_close):

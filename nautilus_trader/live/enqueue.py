@@ -118,6 +118,7 @@ class ThrottledEnqueuer(Generic[T]):
 
         # Throttle logging to once per second
         now_ns = self._clock.timestamp_ns()
+
         if now_ns > self._ts_last_logged + NANOSECONDS_IN_SECOND:
             self._log.warning(
                 f"{self._qname} at capacity ({self._queue.qsize():_}/{self._queue.maxsize}), "

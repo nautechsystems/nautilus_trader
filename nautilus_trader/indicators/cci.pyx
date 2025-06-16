@@ -111,12 +111,14 @@ cdef class CommodityChannelIndex(Indicator):
             values=np.asarray(self._prices, dtype=np.float64),
             mean=self._ma.value,
         )
+
         if self._ma.initialized:
             self.value = (typical_price - self._ma.value) / (self.scalar * self._mad)
 
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma.initialized:
                 self._set_initialized(True)
 

@@ -96,6 +96,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
         writer.close()
 
         data: bytes = sink.getvalue().to_pybytes()
+
         return self._inner.process_record_batch_bytes(data)
 
     def from_pandas(
@@ -131,6 +132,7 @@ class OrderBookDeltaDataWranglerV2(WranglerBase):
 
         if "action" not in df.columns:
             df["action"] = 0
+
         if "flags" not in df.columns:
             df["flags"] = 0
 
@@ -274,6 +276,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
 
         if "bid_size" not in df.columns:
             df["bid_size"] = default_size
+
         if "ask_size" not in df.columns:
             df["ask_size"] = default_size
 
@@ -338,6 +341,7 @@ class QuoteTickDataWranglerV2(WranglerBase):
         ]
 
         table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+
         return self.from_arrow(table)
 
 
@@ -379,6 +383,7 @@ class TradeTickDataWranglerV2(WranglerBase):
         writer.close()
 
         data: bytes = sink.getvalue().to_pybytes()
+
         return self._inner.process_record_batch_bytes(data)
 
     def from_json(
@@ -470,6 +475,7 @@ class TradeTickDataWranglerV2(WranglerBase):
         ]
 
         table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+
         return self.from_arrow(table)
 
 
@@ -522,6 +528,7 @@ class BarDataWranglerV2(WranglerBase):
         writer.close()
 
         data = sink.getvalue().to_pybytes()
+
         return self._inner.process_record_batch_bytes(data)
 
     def from_pandas(
@@ -624,4 +631,5 @@ class BarDataWranglerV2(WranglerBase):
         ]
 
         table = pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+
         return self.from_arrow(table)

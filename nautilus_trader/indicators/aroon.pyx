@@ -98,6 +98,7 @@ cdef class AroonOscillator(Indicator):
         # Initialization logic
         if not self.initialized:
             self._set_has_inputs(True)
+
             if len(self._high_inputs) >= self.period + 1:
                 self._set_initialized(True)
 

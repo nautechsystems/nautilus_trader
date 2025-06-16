@@ -92,15 +92,17 @@ cdef class VerticalHorizontalFilter(Indicator):
         cdef double min_price = min(self._prices)
 
         self._ma.update_raw(fabs(close - self._previous_close))
+
         if self.initialized:
             self.value = fabs(max_price - min_price) / self.period / self._ma.value
-        self._previous_close = close
 
+        self._previous_close = close
         self._check_initialized()
 
     cdef void _check_initialized(self):
         if not self.initialized:
             self._set_has_inputs(True)
+
             if self._ma.initialized and len(self._prices) >= self.period:
                 self._set_initialized(True)
 

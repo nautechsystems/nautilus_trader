@@ -107,6 +107,7 @@ cdef class Swings(Indicator):
         if is_swing_high and not is_swing_low:
             if self.direction == -1:
                 self.changed = True
+
             self.high_price = high
             self.high_datetime = timestamp
             self.direction = 1
@@ -115,6 +116,7 @@ cdef class Swings(Indicator):
         elif is_swing_low and not is_swing_high:
             if self.direction == 1:
                 self.changed = True
+
             self.low_price = low
             self.low_datetime = timestamp
             self.direction = -1
@@ -132,6 +134,7 @@ cdef class Swings(Indicator):
         # Calculate current values
         else:
             self.length = self.high_price - self.low_price
+
             if self.direction == 1:
                 self.duration = self.since_low
             else:

@@ -187,6 +187,7 @@ cdef class TrailingStopLimitOrder(Order):
         else:
             # Should not have an expire time
             Condition.is_true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
+
         Condition.is_true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="`display_qty` was negative or greater than `quantity`",
@@ -251,11 +252,14 @@ cdef class TrailingStopLimitOrder(Order):
         if self.venue_order_id is not None and event.venue_order_id is not None and self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
+
         if event.quantity is not None:
             self.quantity = event.quantity
             self.leaves_qty = Quantity.from_raw_c(self.quantity._mem.raw - self.filled_qty._mem.raw, self.quantity._mem.precision)
+
         if event.price is not None:
             self.price = event.price
+
         if event.trigger_price is not None:
             self.trigger_price = event.trigger_price
 
@@ -274,6 +278,7 @@ cdef class TrailingStopLimitOrder(Order):
         # 'activated' is just included in ACCEPTED state.
 
         Condition.is_false(self.is_activated, "set_activated() is invoked when already activated", RuntimeError)
+
         if self.activation_price is None:
             Condition.not_none(activation_price, "activation_price")
             self.activation_price = activation_price
@@ -314,6 +319,7 @@ cdef class TrailingStopLimitOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {unix_nanos_to_iso8601(self.expire_time_ns, nanos_precision=False)}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
+
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
@@ -336,6 +342,7 @@ cdef class TrailingStopLimitOrder(Order):
 
         """
         cdef ClientOrderId o
+
         return {
             "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),

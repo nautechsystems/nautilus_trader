@@ -156,6 +156,7 @@ cdef class CurrencyPair(Instrument):
             asset_class = AssetClass.CRYPTOCURRENCY
         else:
             asset_class = AssetClass.FX
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -208,6 +209,7 @@ cdef class CurrencyPair(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return CurrencyPair(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -236,6 +238,7 @@ cdef class CurrencyPair(Instrument):
     @staticmethod
     cdef dict to_dict_c(CurrencyPair obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "CurrencyPair",
             "id": obj.id.to_str(),

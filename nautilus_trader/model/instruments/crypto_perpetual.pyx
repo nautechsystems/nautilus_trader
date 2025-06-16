@@ -176,6 +176,7 @@ cdef class CryptoPerpetual(Instrument):
 
         self.base_currency = base_currency
         self.settlement_currency = settlement_currency
+
         if settlement_currency != base_currency and settlement_currency != quote_currency:
             self.is_quanto = True
         else:
@@ -212,6 +213,7 @@ cdef class CryptoPerpetual(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
+
         return CryptoPerpetual(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -242,6 +244,7 @@ cdef class CryptoPerpetual(Instrument):
     @staticmethod
     cdef dict to_dict_c(CryptoPerpetual obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "CryptoPerpetual",
             "id": obj.id.to_str(),

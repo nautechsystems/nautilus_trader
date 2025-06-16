@@ -75,6 +75,7 @@ cdef class BacktestExecClient(ExecutionClient):
         )
 
         self._set_account_id(AccountId(f"{exchange.id.value}-001"))
+
         if not frozen_account:
             AccountFactory.register_calculated_account(exchange.id.value)
 
@@ -102,13 +103,13 @@ cdef class BacktestExecClient(ExecutionClient):
             client_order_id=command.order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-
         self._exchange.send(command)
 
     cpdef void submit_order_list(self, SubmitOrderList command):
         Condition.is_true(self.is_connected, "not connected")
 
         cdef Order order
+
         for order in command.order_list.orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,

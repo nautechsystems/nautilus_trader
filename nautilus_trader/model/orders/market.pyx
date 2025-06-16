@@ -229,6 +229,7 @@ cdef class MarketOrder(Order):
 
         """
         cdef ClientOrderId o
+
         return {
             "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),
@@ -336,6 +337,7 @@ cdef class MarketOrder(Order):
         Condition.not_none(order, "order")
 
         cdef list original_events = order.events_c()
+
         cdef MarketOrder transformed = MarketOrder(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,

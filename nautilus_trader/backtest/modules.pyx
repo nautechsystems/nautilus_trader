@@ -100,8 +100,8 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     def __init__(self, config: FXRolloverInterestConfig):
         super().__init__(config)
-
         rate_data = config.rate_data
+
         if not isinstance(rate_data, pd.DataFrame):
             rate_data = pd.read_json(msgspec.json.decode(rate_data))
 
@@ -123,6 +123,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         """
         cdef datetime now = pd.Timestamp(ts_now, tz="UTC")
         cdef datetime rollover_local
+
         if self._day_number != now.day:
             # Set account statistics for new day
             self._day_number = now.day
@@ -143,7 +144,6 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
     cdef void _apply_rollover_interest(self, datetime timestamp, int iso_week_day):
         cdef list open_positions = self.exchange.cache.positions_open()
-
         cdef Position position
         cdef Instrument instrument
         cdef OrderBook book
@@ -153,21 +153,28 @@ cdef class FXRolloverInterestModule(SimulationModule):
         cdef double rollover
         cdef double xrate
         cdef Money rollover_total
+
         for position in open_positions:
             instrument = self.exchange.instruments[position.instrument_id]
+
             if instrument.asset_class != AssetClass.FX:
                 continue  # Only applicable to FX
 
             mid = mid_prices.get(instrument.id, 0.0)
+
             if mid == 0.0:
                 book = self.exchange.get_book(instrument.id)
                 mid = book.midpoint()
+
                 if mid is None:
                     mid = book.best_bid_price()
+
                 if mid is None:
                     mid = book.best_ask_price()
+
                 if mid is None:  # pragma: no cover
                     raise RuntimeError("cannot apply rollover interest, no market prices")
+
                 mid_prices[instrument.id] = Price(float(mid), precision=instrument.price_precision)
 
             interest_rate = self._calculator.calc_overnight_rate(
@@ -196,7 +203,6 @@ cdef class FXRolloverInterestModule(SimulationModule):
 
             rollover_total = Money(self._rollover_totals.get(currency, 0.0) + rollover, currency)
             self._rollover_totals[currency] = rollover_total
-
             self.exchange.adjust_account(Money(-rollover, currency))
 
     cpdef void log_diagnostics(self, Logger logger):

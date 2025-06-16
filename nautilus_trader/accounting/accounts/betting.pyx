@@ -68,6 +68,7 @@ cdef class BettingAccount(CashAccount):
         Condition.not_equal(use_quote_for_inverse, True, "use_quote_for_inverse", "True")
 
         locked: Decimal = liability(quantity, price, side)
+
         return Money(locked, instrument.quote_currency)
 
     cpdef Money balance_impact(
@@ -78,6 +79,7 @@ cdef class BettingAccount(CashAccount):
         OrderSide order_side,
     ):
         cdef Money notional
+
         if order_side == OrderSide.SELL:
             notional = instrument.notional_value(quantity, price)
             return Money(-notional.as_f64_c(), notional.currency)

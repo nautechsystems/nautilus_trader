@@ -317,6 +317,7 @@ cdef class OrderManager:
         Condition.not_none(rejected, "rejected")
 
         cdef Order order = self._cache.order(rejected.client_order_id)
+
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderRejected`: "
@@ -331,6 +332,7 @@ cdef class OrderManager:
         Condition.not_none(canceled, "canceled")
 
         cdef Order order = self._cache.order(canceled.client_order_id)
+
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderCanceled`: "
@@ -345,6 +347,7 @@ cdef class OrderManager:
         Condition.not_none(expired, "expired")
 
         cdef Order order = self._cache.order(expired.client_order_id)
+
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderExpired`: "
@@ -359,6 +362,7 @@ cdef class OrderManager:
         Condition.not_none(updated, "updated")
 
         cdef Order order = self._cache.order(updated.client_order_id)
+
         if order is None:
             self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderUpdated`: "
@@ -376,6 +380,7 @@ cdef class OrderManager:
             self._log.info(f"Handling fill for {filled.client_order_id}", LogColor.MAGENTA)
 
         cdef Order order = self._cache.order(filled.client_order_id)
+
         if order is None:  # pragma: no cover (design-time error)
             self._log.error(
                 "Cannot handle `OrderFilled`: "
@@ -391,6 +396,7 @@ cdef class OrderManager:
             Order primary_order
             Order spawn_order
             Quantity parent_filled_qty
+
         if order.contingency_type == ContingencyType.OTO:
             Condition.not_empty(order.linked_order_ids, "order.linked_order_ids")
 
@@ -405,6 +411,7 @@ cdef class OrderManager:
 
             for client_order_id in order.linked_order_ids:
                 child_order = self._cache.order(client_order_id)
+
                 if child_order is None:
                     raise RuntimeError(f"Cannot find OTO child order for {repr(client_order_id)}")  # pragma: no cover
 
@@ -434,6 +441,7 @@ cdef class OrderManager:
             # Cancel all OCO orders
             for client_order_id in order.linked_order_ids:
                 contingent_order = self._cache.order(client_order_id)
+
                 if contingent_order is None:
                     raise RuntimeError(f"Cannot find OCO contingent order for {repr(client_order_id)}")  # pragma: no cover
 
@@ -442,8 +450,10 @@ cdef class OrderManager:
 
                 if not self.should_manage_order(contingent_order):
                     continue  # Not being managed
+
                 if contingent_order.is_closed_c():
                     continue  # Already completed
+
                 if contingent_order.client_order_id != order.client_order_id:
                     self.cancel_order(contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
@@ -462,6 +472,7 @@ cdef class OrderManager:
             Quantity filled_qty
             Quantity leaves_qty
             bint is_spawn_active = False
+
         if order.exec_spawn_id is not None:
             # Determine total quantities of execution spawn sequence
             filled_qty = self._cache.exec_spawn_total_filled_qty(order.exec_spawn_id)
@@ -473,14 +484,19 @@ cdef class OrderManager:
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
+
         for client_order_id in order.linked_order_ids:
             contingent_order = self._cache.order(client_order_id)
+
             if contingent_order is None:
                 raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+
             if not self.should_manage_order(contingent_order):
                 continue  # Not being managed
+
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
+
             if contingent_order.is_closed_c():
                 self._submit_order_commands.pop(order.client_order_id, None)
                 continue  # Already completed
@@ -489,6 +505,7 @@ cdef class OrderManager:
                 if self.debug:
                     self._log.info(f"Processing OTO child order {contingent_order}", LogColor.MAGENTA)
                     self._log.info(f"{filled_qty=}, {contingent_order.quantity=}", LogColor.YELLOW)
+
                 if order.is_closed_c() and filled_qty._mem.raw == 0 and (order.exec_spawn_id is None or not is_spawn_active):
                     self.cancel_order(contingent_order)
                 elif filled_qty._mem.raw > 0 and filled_qty._mem.raw != contingent_order.quantity._mem.raw:
@@ -496,11 +513,13 @@ cdef class OrderManager:
             elif order.contingency_type == ContingencyType.OCO:
                 if self.debug:
                     self._log.info(f"Processing OCO contingent order {client_order_id}", LogColor.MAGENTA)
+
                 if order.is_closed_c() and (order.exec_spawn_id is None or not is_spawn_active):
                     self.cancel_order(contingent_order)
             elif order.contingency_type == ContingencyType.OUO:
                 if self.debug:
                     self._log.info(f"Processing OUO contingent order {client_order_id}, {leaves_qty=}, {contingent_order.leaves_qty=}", LogColor.MAGENTA)
+
                 if leaves_qty._mem.raw == 0 and order.exec_spawn_id is not None:
                     self.cancel_order(contingent_order)
                 elif order.is_closed_c() and (order.exec_spawn_id is None or not is_spawn_active):
@@ -518,6 +537,7 @@ cdef class OrderManager:
 
         cdef:
             Quantity quantity
+
         if order.exec_spawn_id is not None:
             # Determine total quantity of execution spawn sequence
             quantity = self._cache.exec_spawn_total_quantity(order.exec_spawn_id, active_only=True)
@@ -529,15 +549,19 @@ cdef class OrderManager:
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
+
         for client_order_id in order.linked_order_ids:
             contingent_order = self._cache.order(client_order_id)
+
             if contingent_order is None:
                 raise RuntimeError(f"Cannot find OCO contingent order for {repr(client_order_id)}")  # pragma: no cover
 
             if not self.should_manage_order(contingent_order):
                 continue  # Not being managed
+
             if client_order_id == order.client_order_id:
                 continue  # Already being handled  # pragma: no cover
+
             if contingent_order.is_closed_c():
                 continue  # Already completed  # pragma: no cover
 
@@ -559,6 +583,7 @@ cdef class OrderManager:
 
         if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} [Emulator] {command}")  # pragma: no cover  (no logging in tests)
+
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cpdef void send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id):
@@ -567,6 +592,7 @@ cdef class OrderManager:
 
         if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} [Algorithm] {command}")  # pragma: no cover  (no logging in tests)
+
         self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
 
     cpdef void send_risk_command(self, TradingCommand command):
@@ -574,6 +600,7 @@ cdef class OrderManager:
 
         if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} [Risk] {command}")  # pragma: no cover  (no logging in tests)
+
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cpdef void send_exec_command(self, TradingCommand command):
@@ -581,6 +608,7 @@ cdef class OrderManager:
 
         if self.log_commands and is_logging_initialized():
             self._log.info(f"{CMD}{SENT} [Execution] {command}")  # pragma: no cover  (no logging in tests)
+
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cpdef void send_risk_event(self, OrderEvent event):
@@ -588,6 +616,7 @@ cdef class OrderManager:
 
         if self.log_events and is_logging_initialized():
             self._log.info(f"{EVT}{SENT} {event}")  # pragma: no cover  (no logging in tests)
+
         self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
     cpdef void send_exec_event(self, OrderEvent event):
@@ -595,4 +624,5 @@ cdef class OrderManager:
 
         if self.log_events and is_logging_initialized():
             self._log.info(f"{EVT}{SENT} {event}")  # pragma: no cover (no logging in tests)
+
         self._msgbus.send(endpoint="ExecEngine.process", msg=event)

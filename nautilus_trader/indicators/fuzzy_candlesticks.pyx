@@ -251,6 +251,7 @@ cdef class FuzzyCandlesticks(Indicator):
         # Initialization logic
         if self.initialized is False:
             self._set_has_inputs(True)
+
             if len(self._lengths) >= self.period:
                 self._set_initialized(True)
 
@@ -278,26 +279,31 @@ cdef class FuzzyCandlesticks(Indicator):
         # -------------------------------------
         # CandleSize.VERY_SMALL
         x = mean_length - (sd_lengths * self._threshold2)
+
         if length <= x:
             return CandleSize.VERY_SMALL
 
         # CandleSize.SMALL
         x = mean_length + (sd_lengths * self._threshold1)
+
         if length <= x:
             return CandleSize.SMALL
 
         # CandleSize.MEDIUM
         x = sd_lengths * self._threshold2
+
         if length <= x:
             return CandleSize.MEDIUM
 
         # CandleSize.LARGE
         x = mean_length + (sd_lengths * self._threshold3)
+
         if length <= x:
             return CandleSize.LARGE
 
         # CandleSize.VERY_LARGE
         x = mean_length + (sd_lengths * self._threshold4)
+
         if length <= x:
             return CandleSize.VERY_LARGE
 
@@ -318,16 +324,19 @@ cdef class FuzzyCandlesticks(Indicator):
         # -----------------------------------------
         # CandleBodySize.SMALL
         x = mean_body_percent - (sd_body_percents * self._threshold1)
+
         if body_percent <= x:
             return CandleBodySize.SMALL
 
         # CandleBodySize.MEDIUM
         x = mean_body_percent + (sd_body_percents * self._threshold1)
+
         if body_percent <= x:
             return CandleBodySize.MEDIUM
 
         # CandleBodySize.LARGE
         x = mean_body_percent + (sd_body_percents * self._threshold2)
+
         if body_percent <= x:
             return CandleBodySize.LARGE
 
@@ -348,11 +357,13 @@ cdef class FuzzyCandlesticks(Indicator):
         # -----------------------------------------
         # CandleWickSize.SMALL
         x = mean_wick_percent - (sd_wick_percents * self._threshold1)
+
         if wick_percent <= x:
             return CandleWickSize.SMALL
 
         # CandleWickSize.MEDIUM
         x = mean_wick_percent + (sd_wick_percents * self._threshold2)
+
         if wick_percent <= x:
             return CandleWickSize.MEDIUM
 

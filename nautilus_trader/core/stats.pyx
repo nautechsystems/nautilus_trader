@@ -50,6 +50,7 @@ cpdef double fast_mean(np.ndarray values):
 
     cdef double total = 0.0
     cdef int i
+
     with nogil:
         for i in range(length):
             total += mv[i]
@@ -162,6 +163,7 @@ cpdef double fast_std_with_mean(np.ndarray values, double mean):
     cdef double std_dev = 0.0
     cdef double v
     cdef int i
+
     with nogil:
         for i in range(length):
             v = mv[i] - mean
@@ -217,6 +219,7 @@ cpdef double fast_mad_with_mean(np.ndarray values, double mean):
     cdef double mad = 0.0
     cdef double v
     cdef int i
+
     with nogil:
         for i in range(length):
             v = abs(mv[i] - mean)

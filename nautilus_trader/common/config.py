@@ -72,51 +72,69 @@ def resolve_path(path: str) -> type:
     module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
     cls: type = getattr(mod, cls_str)
+
     return cls
 
 
 def resolve_config_path(path: str) -> type[NautilusConfig]:
     config = resolve_path(path)
+
     if not issubclass(config, NautilusConfig):
         raise TypeError(f"expected a subclass of `NautilusConfig`, was `{type(config)}`")
+
     return config
 
 
 def nautilus_schema_hook(type_: type[Any]) -> dict[str, Any]:
     if issubclass(type_, Identifier):
         return {"type": "string"}
+
     if type_ in (Currency, Price, Quantity, Money, BarType, BarSpecification):
         return {"type": "string"}
+
     if type_ in (Decimal, UUID4):
         return {"type": "string"}
+
     if type_ == pd.Timestamp:
         return {"type": "string", "format": "date-time"}
+
     if type_ == pd.Timedelta:
         return {"type": "string"}
+
     if type_ == Environment:
         return {"type": "string"}
+
     if type_ is type:  # Handle <class 'type'>
         return {"type": "string"}  # Represent type objects as strings
+
     raise TypeError(f"Unsupported type for schema generation: {type_}")
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, Decimal):
         return str(obj)
+
     if isinstance(obj, UUID4):
         return obj.value
+
     if isinstance(obj, Identifier):
         return obj.value
+
     if isinstance(obj, (BarType | BarSpecification)):
         return str(obj)
+
     if isinstance(obj, (Price | Quantity | Money | Currency)):
         return str(obj)
+
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
+
     if isinstance(obj, Environment):
         return obj.value
+
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
+
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
@@ -127,26 +145,37 @@ def msgspec_encoding_hook(obj: Any) -> Any:
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:  # noqa: C901 (too complex)
     if obj_type in (Decimal, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
+
     if obj_type == UUID4:
         return UUID4.from_str(obj)
+
     if obj_type == InstrumentId:
         return InstrumentId.from_str(obj)
+
     if issubclass(obj_type, Identifier):
         return obj_type(obj)
+
     if obj_type == BarSpecification:
         return BarSpecification.from_str(obj)
+
     if obj_type == BarType:
         return BarType.from_str(obj)
+
     if obj_type == Price:
         return Price.from_str(obj)
+
     if obj_type == Quantity:
         return Quantity.from_str(obj)
+
     if obj_type == Money:
         return Money.from_str(obj)
+
     if obj_type == Currency:
         return Currency.from_str(obj)
+
     if obj_type == Environment:
         return obj_type(obj)
+
     if obj_type in CUSTOM_DECODINGS:
         func = CUSTOM_DECODINGS[obj_type]
         return func(obj)
@@ -316,11 +345,13 @@ class DatabaseConfig(NautilusConfig, frozen=True):
 
     def __repr__(self) -> str:
         redacted_password = "None"
+
         if self.password:
             if len(self.password) >= 4:
                 redacted_password = f"{self.password[:2]}...{self.password[-2:]}"
             else:
                 redacted_password = self.password
+
         return (
             f"{type(self).__name__}("
             f"type={self.type}, "
@@ -518,6 +549,7 @@ class ActorFactory:
         config_cls = resolve_config_path(config.config_path)
         json = msgspec.json.encode(config.config, enc_hook=msgspec_encoding_hook)
         config = config_cls.parse(json)
+
         return actor_cls(config)
 
 
@@ -610,4 +642,5 @@ class ImportableConfig(NautilusConfig, frozen=True):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config, enc_hook=msgspec_encoding_hook)
+
         return msgspec.json.decode(cfg, type=cls)

@@ -90,6 +90,7 @@ cdef class AccountFactory:
         # Create account
         if account_cls is not None:
             return account_cls(event, calculated)
+
         if event.account_type == AccountType.CASH:
             return CashAccount(event, calculated)
         elif event.account_type == AccountType.MARGIN:

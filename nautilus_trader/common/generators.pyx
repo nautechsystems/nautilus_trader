@@ -49,6 +49,7 @@ cdef class IdentifierGenerator:
 
         """
         cdef datetime now = self._clock.utc_now()
+
         return (
             f"{now.year}"
             f"{now.month:02d}"

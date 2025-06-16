@@ -81,16 +81,20 @@ cdef class CashAccount(Account):
         Condition.not_none(values, "values")
         calculate_account_state = values["calculate_account_state"]
         events = values["events"]
+
         if len(events) == 0:
             return None
+
         init_event = events[0]
         other_events = events[1:]
         account = CashAccount(
             event=AccountState.from_dict_c(init_event),
             calculate_account_state=calculate_account_state
         )
+
         for event in other_events:
             account.apply(AccountState.from_dict_c(event))
+
         return account
 
     @staticmethod
@@ -138,6 +142,7 @@ cdef class CashAccount(Account):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Money locked = self._balances_locked.pop(instrument_id, None)
+
         if locked is not None:
             self._recalculate_balance(locked.currency)
 
@@ -148,17 +153,19 @@ cdef class CashAccount(Account):
 
     cdef void _recalculate_balance(self, Currency currency):
         cdef AccountBalance current_balance = self._balances.get(currency)
+
         if current_balance is None:
             # TODO: Temporary pending reimplementation of accounting
             print("Cannot recalculate balance when no current balance")
             return
 
         total_locked = Decimal(0)
-
         cdef Money locked
+
         for locked in self._balances_locked.values():
             if locked.currency != currency:
                 continue
+
             total_locked += locked.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
@@ -342,10 +349,12 @@ cdef class CashAccount(Account):
         if fill.order_side == OrderSide.BUY:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(last_qty, base_currency)
+
             pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
         elif fill.order_side == OrderSide.SELL:
             if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-last_qty, base_currency)
+
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
@@ -360,6 +369,7 @@ cdef class CashAccount(Account):
         OrderSide order_side,
     ):
         cdef Money notional = instrument.notional_value(quantity, price)
+
         if order_side == OrderSide.BUY:
             return Money.from_raw_c(-notional._mem.raw, notional.currency)
         elif order_side == OrderSide.SELL:

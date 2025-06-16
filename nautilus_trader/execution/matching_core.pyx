@@ -161,10 +161,12 @@ cdef class MatchingCore:
 
     cpdef Order get_order(self, ClientOrderId client_order_id):
         Condition.not_none(client_order_id, "client_order_id")
+
         return self._orders.get(client_order_id)
 
     cpdef bint order_exists(self, ClientOrderId client_order_id):
         Condition.not_none(client_order_id, "client_order_id")
+
         return client_order_id in self._orders
 
     cpdef list get_orders(self):
@@ -242,9 +244,11 @@ cdef class MatchingCore:
 
     cpdef void iterate(self, uint64_t timestamp_ns):
         cdef Order order
+
         for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
             if order.is_closed_c():
                 continue  # Orders state has changed since iteration started  # pragma: no cover
+
             self.match_order(order)
 
 # -- MATCHING -------------------------------------------------------------------------------------
@@ -310,9 +314,11 @@ cdef class MatchingCore:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
                 self._fill_limit_order(order)
+
             return
 
         cdef LiquiditySide liquidity_side
+
         if self.is_stop_triggered(order.side, order.trigger_price):
             order.set_triggered_price_c(order.trigger_price)
             order.liquidity_side = self._determine_order_liquidity(
@@ -339,12 +345,15 @@ cdef class MatchingCore:
             if self.is_limit_matched(order.side, order.price):
                 order.liquidity_side = LiquiditySide.MAKER
                 self._fill_limit_order(order)
+
             return
 
         cdef LiquiditySide liquidity_side
+
         if self.is_touch_triggered(order.side, order.trigger_price):
             if not initial:
                 order.set_triggered_price_c(order.trigger_price)
+
             order.liquidity_side = self._determine_order_liquidity(
                 initial,
                 order.side,
@@ -368,10 +377,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw <= price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw >= price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
@@ -382,10 +393,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw >= trigger_price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw <= trigger_price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
@@ -396,10 +409,12 @@ cdef class MatchingCore:
         if side == OrderSide.BUY:
             if not self.is_ask_initialized:
                 return False  # No market
+
             return self.ask_raw <= trigger_price._mem.raw
         elif side == OrderSide.SELL:
             if not self.is_bid_initialized:
                 return False  # No market
+
             return self.bid_raw >= trigger_price._mem.raw
         else:
             raise ValueError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
@@ -425,6 +440,7 @@ cdef class MatchingCore:
 cdef inline int64_t order_sort_key(Order order):
     cdef Price trigger_price
     cdef Price price
+
     if order.order_type == OrderType.LIMIT:
         price = order.price
         return price._mem.raw

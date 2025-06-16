@@ -248,11 +248,11 @@ cdef class Portfolio(PortfolioFacade):
 
         # Update initial (order) margins to initialize portfolio
         cdef bint initialized = True
-
         cdef:
             Order o
             list orders_open
             bint result
+
         for instrument_id in instruments:
             instrument = self._cache.instrument(instrument_id)
 
@@ -321,6 +321,7 @@ cdef class Portfolio(PortfolioFacade):
             list positions_open
             Account account
             bint result
+
         for instrument_id in instruments:
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -852,6 +853,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             InstrumentId instrument_id
             Money pnl
+
         for instrument_id in instrument_ids:
             pnl = self._realized_pnls.get(instrument_id)
 
@@ -896,6 +898,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef:
             InstrumentId instrument_id
             Money pnl
+
         for instrument_id in instrument_ids:
             pnl = self._unrealized_pnls.get(instrument_id)
 
@@ -988,6 +991,7 @@ cdef class Portfolio(PortfolioFacade):
             double xrate
             double net_exposure
             double total_net_exposure
+
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
 
@@ -1206,6 +1210,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             double xrate
             Money notional_value
+
         for position in positions_open:
             price = price or self._get_price(position)
 
@@ -1481,6 +1486,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             double pnl
             double xrate
+
         for position in positions:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate
@@ -1571,6 +1577,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             double pnl
             double xrate
+
         for position in positions_open:
             if position.instrument_id != instrument_id:
                 continue  # Nothing to calculate

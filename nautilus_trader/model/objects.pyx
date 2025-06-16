@@ -123,14 +123,17 @@ cdef class Quantity:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
+
         if isnan(value):
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
+
         if value > RUST_QUANTITY_MAX:
             raise ValueError(
                 f"invalid `value` greater than `QUANTITY_MAX` {RUST_QUANTITY_MAX:_}, was {value:_}",
             )
+
         if value < RUST_QUANTITY_MIN:
             raise ValueError(
                 f"invalid `value` less than `QUANTITY_MIN` {RUST_QUANTITY_MIN:_}, was {value:_}",
@@ -162,61 +165,73 @@ cdef class Quantity:
     def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
     def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Quantity._extract_decimal(a) + Quantity._extract_decimal(b)
 
     def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
     def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Quantity._extract_decimal(a) - Quantity._extract_decimal(b)
 
     def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
     def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
     def __truediv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
+
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
     def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
+
         return Quantity._extract_decimal(a) / Quantity._extract_decimal(b)
 
     def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
     def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Quantity._extract_decimal(a) // Quantity._extract_decimal(b)
 
     def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Quantity._extract_decimal(a) % Quantity._extract_decimal(b)
 
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Quantity._extract_decimal(a) * Quantity._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
@@ -311,6 +326,7 @@ cdef class Quantity:
 
     cdef void add_assign(self, Quantity other):
         self._mem.raw += other._mem.raw
+
         if self._mem.precision == 0:
             self._mem.precision = other.precision
 
@@ -440,6 +456,7 @@ cdef class Quantity:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
+
         return Quantity.from_raw_c(raw, precision)
 
     @staticmethod
@@ -573,14 +590,17 @@ cdef class Price:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
+
         if isnan(value):
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
+
         if value > RUST_PRICE_MAX:
             raise ValueError(
                 f"invalid `value` greater than `PRICE_MAX` {RUST_PRICE_MAX:_}, was {value:_}",
             )
+
         if value < RUST_PRICE_MIN:
             raise ValueError(
                 f"invalid `value` less than `PRICE_MIX` {RUST_PRICE_MIN:_}, was {value:_}",
@@ -612,61 +632,73 @@ cdef class Price:
     def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
     def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Price._extract_decimal(a) + Price._extract_decimal(b)
 
     def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
     def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Price._extract_decimal(a) - Price._extract_decimal(b)
 
     def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
     def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
     def __truediv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
+
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
     def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
+
         return Price._extract_decimal(a) / Price._extract_decimal(b)
 
     def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
     def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Price._extract_decimal(a) // Price._extract_decimal(b)
 
     def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Price._extract_decimal(a) % Price._extract_decimal(b)
 
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Price._extract_decimal(a) * Price._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
@@ -735,6 +767,7 @@ cdef class Price:
     @staticmethod
     cdef object _extract_decimal(object obj):
         assert not isinstance(obj, float)  # Design-time error
+
         if hasattr(obj, "as_decimal"):
             return obj.as_decimal()
         else:
@@ -852,6 +885,7 @@ cdef class Price:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
             )
+
         return Price.from_raw_c(raw, precision)
 
     @staticmethod
@@ -971,10 +1005,12 @@ cdef class Money:
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
+
         if value_f64 > RUST_MONEY_MAX:
             raise ValueError(
                 f"invalid `value` greater than `MONEY_MAX` {RUST_MONEY_MAX:_}, was {value:_}",
             )
+
         if value_f64 < RUST_MONEY_MIN:
             raise ValueError(
                 f"invalid `value` less than `MONEY_MIN` {RUST_MONEY_MIN:_}, was {value:_}",
@@ -1017,31 +1053,37 @@ cdef class Money:
     def __add__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Money._extract_decimal(a) + Money._extract_decimal(b)
 
     def __radd__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) + float(b)
+
         return Money._extract_decimal(a) + Money._extract_decimal(b)
 
     def __sub__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Money._extract_decimal(a) - Money._extract_decimal(b)
 
     def __rsub__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) - float(b)
+
         return Money._extract_decimal(a) - Money._extract_decimal(b)
 
     def __mul__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Money._extract_decimal(a) * Money._extract_decimal(b)
 
     def __rmul__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) * float(b)
+
         return Money._extract_decimal(a) * Money._extract_decimal(b)
 
     def __truediv__(a, b) -> decimal.Decimal | float:
@@ -1052,26 +1094,31 @@ cdef class Money:
     def __rtruediv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) / float(b)
+
         return Money._extract_decimal(a) / Money._extract_decimal(b)
 
     def __floordiv__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Money._extract_decimal(a) // Money._extract_decimal(b)
 
     def __rfloordiv__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) // float(b)
+
         return Money._extract_decimal(a) // Money._extract_decimal(b)
 
     def __mod__(a, b) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Money._extract_decimal(a) % Money._extract_decimal(b)
 
     def __rmod__(b, a) -> decimal.Decimal | float:
         if isinstance(a, float) or isinstance(b, float):
             return float(a) % float(b)
+
         return Money._extract_decimal(a) * Money._extract_decimal(b)
 
     def __neg__(self) -> decimal.Decimal:
@@ -1327,6 +1374,7 @@ cdef class Currency:
     ) -> None:
         Condition.valid_string(code, "code")
         Condition.valid_string(name, "name")
+
         if precision > FIXED_PRECISION:
             raise ValueError(
                 f"invalid `precision` greater than max {FIXED_PRECISION}, was {precision}"
@@ -1361,6 +1409,7 @@ cdef class Currency:
     def __eq__(self, Currency other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
+
         return strcmp(self._mem.code, other._mem.code) == 0
 
     def __hash__(self) -> int:
@@ -1438,24 +1487,31 @@ cdef class Currency:
     @staticmethod
     cdef void register_c(Currency currency, bint overwrite=False):
         cdef Currency existing = Currency.from_internal_map_c(currency.code)
+
         if existing is not None and not overwrite:
             return  # Already exists in internal map
+
         currency_register(currency._mem)
 
     @staticmethod
     cdef Currency from_internal_map_c(str code):
         cdef const char* code_ptr = pystr_to_cstr(code)
+
         if not currency_exists(code_ptr):
             return None
+
         cdef Currency currency = Currency.__new__(Currency)
         currency._mem = currency_from_cstr(code_ptr)
+
         return currency
 
     @staticmethod
     cdef Currency from_str_c(str code, bint strict=False):
         cdef Currency currency = Currency.from_internal_map_c(code)
+
         if currency is not None:
             return currency
+
         if strict:
             return None
 
@@ -1474,6 +1530,7 @@ cdef class Currency:
     @staticmethod
     cdef bint is_fiat_c(str code):
         cdef Currency currency = Currency.from_internal_map_c(code)
+
         if currency is None:
             return False
 
@@ -1482,6 +1539,7 @@ cdef class Currency:
     @staticmethod
     cdef bint is_crypto_c(str code):
         cdef Currency currency = Currency.from_internal_map_c(code)
+
         if currency is None:
             return False
 

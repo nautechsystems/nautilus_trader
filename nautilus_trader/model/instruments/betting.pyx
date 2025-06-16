@@ -138,8 +138,10 @@ cdef class BettingInstrument(Instrument):
             tick_scheme_name=tick_scheme_name,
             info=info or {},
         )
+
         if not min_price and tick_scheme_name:
             self.min_price = self._tick_scheme.min_price
+
         if not max_price and tick_scheme_name:
             self.max_price = self._tick_scheme.max_price
 
@@ -151,53 +153,65 @@ cdef class BettingInstrument(Instrument):
         data["market_start_time"] = pd.Timestamp(data["market_start_time"], tz="UTC")
 
         max_quantity = data.get("max_quantity")
+
         if max_quantity:
             data["max_quantity"] = Quantity.from_str(max_quantity)
 
         min_quantity = data.get("min_quantity")
+
         if min_quantity:
             data["min_quantity"] = Quantity.from_str(min_quantity)
 
         max_notional = data.get("max_notional")
+
         if max_notional:
             data["max_notional"] = Money.from_str(max_notional)
 
         min_notional = data.get("min_notional")
+
         if min_notional:
             data["min_notional"] = Money.from_str(min_notional)
 
         max_price = data.get("max_price")
+
         if max_price:
             data["max_price"] = Price.from_str(max_price)
 
         min_price = data.get("min_price")
+
         if min_price:
             data["min_price"] = Price.from_str(min_price)
 
         margin_init = data.get("margin_init")
+
         if margin_init:
             data["margin_init"] = Decimal(margin_init)
 
         margin_maint = data.get("margin_maint")
+
         if margin_maint:
             data["margin_maint"] = Decimal(margin_maint)
 
         maker_fee = data.get("maker_fee")
+
         if maker_fee:
             data["maker_fee"] = Decimal(maker_fee)
 
         taker_fee = data.get("taker_fee")
+
         if taker_fee:
             data["taker_fee"] = Decimal(taker_fee)
 
         data.pop("raw_symbol", None)
         data.pop("price_increment", None)
         data.pop("size_increment", None)
+
         return BettingInstrument(**{k: v for k, v in data.items() if k not in ("id", "type")})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "BettingInstrument",
             "id": obj.id.to_str(),
@@ -270,6 +284,7 @@ cdef class BettingInstrument(Instrument):
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
         Condition.not_none(quantity, "quantity")
+
         return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
 
 
@@ -290,11 +305,13 @@ cpdef Symbol make_symbol(
 
     cdef str value = f"{market_id}-{selection_id}-{handicap}".replace(" ", "").replace(":", "")
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
+
     return Symbol(value)
 
 
 cpdef double null_handicap():
     cdef double NULL_HANDICAP = -9999999.0
+
     return NULL_HANDICAP
 
 

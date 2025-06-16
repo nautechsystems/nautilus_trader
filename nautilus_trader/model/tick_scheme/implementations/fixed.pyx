@@ -76,7 +76,9 @@ cdef class FixedTickScheme(TickScheme):
         """
         if value > self.max_price:
             return None
+
         cdef double rounded = round_up(value=value, base=self._increment) + (n * self._increment)
+
         return Price(rounded, precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int n=0):
@@ -99,7 +101,9 @@ cdef class FixedTickScheme(TickScheme):
         """
         if value < self.min_price:
             return None
+
         cdef double rounded = round_down(value=value, base=self._increment) - (n * self._increment)
+
         return Price(rounded, precision=self.price_precision)
 
 

@@ -154,10 +154,12 @@ class LiveRiskEngine(RiskEngine):
         self._log.warning("Killing engine")
         self._kill = True
         self.stop()
+
         if self._cmd_queue_task:
             self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
+
         if self._evt_queue_task:
             self._log.debug(f"Canceling task '{self._evt_queue_task.get_name()}'")
             self._evt_queue_task.cancel()
@@ -220,6 +222,7 @@ class LiveRiskEngine(RiskEngine):
     def _on_stop(self) -> None:
         if self._kill:
             return  # Avoids queuing redundant sentinel messages
+
         # This will stop the queues processing as soon as they see the sentinel message
         self._enqueue_sentinel()
 
@@ -227,11 +230,14 @@ class LiveRiskEngine(RiskEngine):
         self._log.debug(
             f"Command message queue processing (qsize={self.cmd_qsize()})",
         )
+
         try:
             while True:
                 command: Command | None = await self._cmd_queue.get()
+
                 if command is self._sentinel:
                     break
+
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_cmd_queue'")
@@ -239,6 +245,7 @@ class LiveRiskEngine(RiskEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "Command message queue stopped"
+
             if not self._cmd_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.cmd_qsize()} message(s) on queue")
             else:
@@ -248,11 +255,14 @@ class LiveRiskEngine(RiskEngine):
         self._log.debug(
             f"Event message queue processing starting (qsize={self.evt_qsize()})",
         )
+
         try:
             while True:
                 event: Event | None = await self._evt_queue.get()
+
                 if event is self._sentinel:
                     break
+
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Canceled task 'run_evt_queue'")
@@ -260,6 +270,7 @@ class LiveRiskEngine(RiskEngine):
             self._log.exception(f"{e!r}", e)
         finally:
             stopped_msg = "Event message queue stopped"
+
             if not self._evt_queue.empty():
                 self._log.warning(f"{stopped_msg} with {self.evt_qsize()} message(s) on queue")
             else:

@@ -133,6 +133,7 @@ cdef class OptionContract(Instrument):
     ) -> None:
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
+
         super().__init__(
             instrument_id=instrument_id,
             raw_symbol=raw_symbol,
@@ -222,6 +223,7 @@ cdef class OptionContract(Instrument):
     @staticmethod
     cdef OptionContract from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return OptionContract(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -249,6 +251,7 @@ cdef class OptionContract(Instrument):
     @staticmethod
     cdef dict to_dict_c(OptionContract obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "OptionContract",
             "id": obj.id.to_str(),
@@ -283,6 +286,7 @@ cdef class OptionContract(Instrument):
     @staticmethod
     cdef OptionContract from_pyo3_c(pyo3_instrument):
         Condition.not_none(pyo3_instrument, "pyo3_instrument")
+
         return OptionContract(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
             raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),

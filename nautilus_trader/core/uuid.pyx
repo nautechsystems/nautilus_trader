@@ -68,6 +68,7 @@ cdef class UUID4:
     cdef UUID4 from_mem_c(UUID4_t mem):
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
         uuid4._mem = mem
+
         return uuid4
 
     @staticmethod
@@ -79,6 +80,7 @@ cdef class UUID4:
 
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
         uuid4._mem = uuid4_from_cstr(pystr_to_cstr(value))
+
         return uuid4
 
     @staticmethod

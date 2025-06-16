@@ -112,6 +112,7 @@ cdef class IndexInstrument(Instrument):
     @staticmethod
     cdef IndexInstrument from_dict_c(dict values):
         Condition.not_none(values, "values")
+
         return IndexInstrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -128,6 +129,7 @@ cdef class IndexInstrument(Instrument):
     @staticmethod
     cdef dict to_dict_c(IndexInstrument obj):
         Condition.not_none(obj, "obj")
+
         return {
             "type": "IndexInstrument",
             "id": obj.id.to_str(),
