@@ -18,6 +18,8 @@ import asyncio
 import pytest
 
 from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -27,7 +29,8 @@ from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders.list import OrderList
@@ -55,7 +58,6 @@ async def test_connect(exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.skip(reason="Sandbox WIP")
 @pytest.mark.asyncio()
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
@@ -68,14 +70,13 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
 
     # Assert
     print(events)
-    _, submitted, _, accepted, _, filled, _ = events
+    _, submitted, _, accepted, filled, _, _ = events
     assert isinstance(submitted, OrderSubmitted)
     assert isinstance(accepted, OrderAccepted)
     assert isinstance(filled, OrderFilled)
     assert accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
-@pytest.mark.skip(reason="Sandbox WIP")
 @pytest.mark.asyncio()
 async def test_submit_orders_list_success(
     exec_client,
@@ -85,9 +86,23 @@ async def test_submit_orders_list_success(
 ):
     # Arrange
     exec_client.connect()
-    limit_order = TestExecStubs.limit_order(instrument=instrument)
-    market_order = TestExecStubs.market_order(instrument=instrument)
-    order_list = OrderList(order_list_id=OrderListId("0"), orders=[limit_order, market_order])
+    factory = OrderFactory(
+        trader_id=TraderId("TESTER-000"),
+        strategy_id=StrategyId("S-001"),
+        clock=TestClock(),
+    )
+    first_order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=factory.generate_client_order_id(),
+    )
+    second_order = TestExecStubs.limit_order(
+        instrument=instrument,
+        client_order_id=factory.generate_client_order_id(),
+    )
+    order_list = OrderList(
+        order_list_id=factory.generate_order_list_id(),
+        orders=[first_order, second_order],
+    )
 
     # Act
     strategy.submit_order_list(order_list=order_list)
@@ -96,26 +111,29 @@ async def test_submit_orders_list_success(
     # Assert
     print(events)
     (
-        _,  # limit initialized
-        _,  # market initialized
-        limit_submitted,
-        market_submitted,
-        _,
-        limit_accepted,
-        market_accepted,
-        _,
-        limit_filled,
-        market_filled,
-        _,
+        _,  # first initialized
+        _,  # second initialized
+        first_submitted,
+        second_submitted,
+        _,  # account state
+        first_accepted,
+        _,  # account state
+        second_accepted,
+        first_filled,
+        _,  # account state
+        _,  # position opened
+        second_filled,
+        _,  # account state
+        _,  # position changed
     ) = events
-    assert isinstance(limit_submitted, OrderSubmitted)
-    assert isinstance(market_submitted, OrderSubmitted)
-    assert isinstance(limit_accepted, OrderAccepted)
-    assert isinstance(market_accepted, OrderAccepted)
-    assert isinstance(limit_filled, OrderFilled)
-    assert isinstance(market_filled, OrderFilled)
-    assert limit_accepted.venue_order_id.value.startswith("SANDBOX-")
-    assert market_accepted.venue_order_id.value.startswith("SANDBOX-")
+    assert isinstance(first_submitted, OrderSubmitted)
+    assert isinstance(second_submitted, OrderSubmitted)
+    assert isinstance(first_accepted, OrderAccepted)
+    assert isinstance(second_accepted, OrderAccepted)
+    assert isinstance(first_filled, OrderFilled)
+    assert isinstance(second_filled, OrderFilled)
+    assert first_accepted.venue_order_id.value.startswith("SANDBOX-")
+    assert second_accepted.venue_order_id.value.startswith("SANDBOX-")
 
 
 @pytest.mark.asyncio()
