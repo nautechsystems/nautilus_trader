@@ -187,6 +187,9 @@ class SandboxExecutionClient(LiveExecutionClient):
     def submit_order(self, command):
         return self._client.submit_order(command)
 
+    def submit_order_list(self, command):
+        return self._client.submit_order_list(command)
+
     def modify_order(self, command):
         return self._client.modify_order(command)
 
