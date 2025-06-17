@@ -13,9 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use aws_lc_rs::hmac;
 use base64::prelude::*;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use ustr::Ustr;
 
 /// Coinbase International API credentials for signing requests.
@@ -62,11 +61,9 @@ impl Credential {
         let message = format!("{timestamp}{method}{request_path}{body}");
         tracing::trace!("Signing message: {message}");
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.api_secret)
-            .expect("HMAC can take key of any size");
-        mac.update(message.as_bytes());
-        let result = mac.finalize();
-        BASE64_STANDARD.encode(result.into_bytes())
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        BASE64_STANDARD.encode(tag.as_ref())
     }
 
     /// Signs a WebSocket authentication message.
@@ -78,11 +75,9 @@ impl Credential {
         let message = format!("{timestamp}{}CBINTLMD{}", self.api_key, self.api_passphrase);
         tracing::trace!("Signing message: {message}");
 
-        let mut mac = Hmac::<Sha256>::new_from_slice(&self.api_secret)
-            .expect("HMAC can take key of any size");
-        mac.update(message.as_bytes());
-        let result = mac.finalize();
-        BASE64_STANDARD.encode(result.into_bytes())
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        BASE64_STANDARD.encode(tag.as_ref())
     }
 }
 

@@ -1129,6 +1129,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fcc8f365936c834db5514fc45aee5b1202d677e6b40e48468aaaa8183ca8c7"
 dependencies = [
  "aws-lc-sys",
+ "untrusted 0.7.1",
  "zeroize",
 ]
 
@@ -4407,11 +4408,11 @@ version = "0.49.0"
 dependencies = [
  "anyhow",
  "async-stream",
+ "aws-lc-rs",
  "base64",
  "chrono",
  "derive_builder",
  "futures-util",
- "hmac",
  "indexmap 2.9.0",
  "log",
  "nautilus-common",
@@ -4427,7 +4428,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sha2",
  "strum",
  "thiserror 2.0.12",
  "tokio",
@@ -4507,19 +4507,17 @@ name = "nautilus-cryptography"
 version = "0.49.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "base64",
  "criterion",
  "ed25519-dalek",
  "hex",
- "hmac",
  "nautilus-core",
  "pem",
  "pyo3",
  "rand 0.9.1",
- "rsa",
  "rstest",
  "rustls",
- "sha2",
  "tracing",
  "webpki-roots 1.0.0",
 ]
@@ -4950,6 +4948,7 @@ name = "nautilus-testkit"
 version = "0.49.0"
 dependencies = [
  "anyhow",
+ "aws-lc-rs",
  "axum",
  "hex",
  "nautilus-common",
@@ -4959,7 +4958,6 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
 ]
@@ -6390,7 +6388,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.2.16",
  "libc",
- "untrusted",
+ "untrusted 0.9.0",
  "windows-sys 0.52.0",
 ]
 
@@ -6688,7 +6686,7 @@ dependencies = [
  "aws-lc-rs",
  "ring",
  "rustls-pki-types",
- "untrusted",
+ "untrusted 0.9.0",
 ]
 
 [[package]]
@@ -8134,6 +8132,12 @@ name = "unindent"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7264e107f553ccae879d21fbea1d6724ac785e8c3bfc762137959b5802826ef3"
+
+[[package]]
+name = "untrusted"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "untrusted"

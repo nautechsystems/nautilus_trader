@@ -13,18 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use aws_lc_rs::{hmac, rand as lc_rand, rsa::KeyPair, signature as lc_signature};
 use base64::prelude::*;
 use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey};
 use hex;
-use hmac::{Hmac, Mac};
-use rsa::{
-    RsaPrivateKey,
-    pkcs1v15::SigningKey as RsaSigningKey,
-    pkcs8::DecodePrivateKey,
-    rand_core::OsRng,
-    signature::{RandomizedSigner, SignatureEncoding},
-};
-use sha2::Sha256;
 
 /// Generates an HMAC-SHA256 signature for the given data using the provided secret.
 ///
@@ -36,10 +28,9 @@ use sha2::Sha256;
 ///
 /// Returns an error if signature generation fails due to key or cryptographic errors.
 pub fn hmac_signature(secret: &str, data: &str) -> anyhow::Result<String> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())?;
-    mac.update(data.as_bytes());
-    let result = mac.finalize();
-    Ok(hex::encode(result.into_bytes()))
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
+    let tag = hmac::sign(&key, data.as_bytes());
+    Ok(hex::encode(tag.as_ref()))
 }
 
 /// Signs `data` using RSA PKCS#1 v1.5 SHA-256 with the provided private key in PEM format.
@@ -55,17 +46,33 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
         anyhow::bail!("Query string cannot be empty");
     }
 
-    let private_key = RsaPrivateKey::from_pkcs8_pem(private_key_pem)
-        .map_err(|e| anyhow::anyhow!("Failed to parse RSA private key: {e}"))?;
+    // Remove PEM headings and decode to DER bytes using the `pem` crate
+    let pem = pem::parse(private_key_pem.trim())
+        .map_err(|e| anyhow::anyhow!("Failed to parse PEM: {e}"))?;
 
-    let signing_key = RsaSigningKey::<Sha256>::new_unprefixed(private_key);
-    let mut rng = OsRng;
+    // Ensure this is a private key
+    if !pem.tag().ends_with("PRIVATE KEY") {
+        anyhow::bail!("PEM does not contain a private key");
+    }
 
-    let signature = signing_key
-        .sign_with_rng(&mut rng, data.as_bytes())
-        .to_bytes();
+    // Construct RSA key pair from PKCS#8 DER bytes
+    let key_pair = KeyPair::from_pkcs8(pem.contents())
+        .map_err(|_| anyhow::anyhow!("Failed to decode RSA private key"))?;
 
-    Ok(BASE64_STANDARD.encode(&signature))
+    // Prepare RNG and output buffer (signature length = modulus length)
+    let rng = lc_rand::SystemRandom::new();
+    let mut signature = vec![0u8; key_pair.public_modulus_len()];
+
+    key_pair
+        .sign(
+            &lc_signature::RSA_PKCS1_SHA256,
+            &rng,
+            data.as_bytes(),
+            &mut signature,
+        )
+        .map_err(|_| anyhow::anyhow!("Failed to generate RSA signature"))?;
+
+    Ok(BASE64_STANDARD.encode(signature))
 }
 
 /// Signs `data` using Ed25519 with the provided private key seed.

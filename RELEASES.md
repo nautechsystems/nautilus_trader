@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Ported data catalog refactor to Rust (#2681), thanks @faysou
 - Consolidated the clocks and timers v2 feature from @twitu
 - Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
+- Consolidated on `aws-lc-rs` cryptography for FIPS compliance
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
