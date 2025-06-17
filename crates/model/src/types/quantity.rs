@@ -235,6 +235,7 @@ impl Quantity {
     /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
+        #[cfg(feature = "defi")]
         if self.precision > MAX_FLOAT_PRECISION {
             panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
         }
@@ -250,6 +251,11 @@ impl Quantity {
     /// Panics if precision is beyond [`MAX_FLOAT_PRECISION`] (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
+        #[cfg(feature = "defi")]
+        if self.precision > MAX_FLOAT_PRECISION {
+            panic!("Invalid f64 conversion beyond `MAX_FLOAT_PRECISION` (16)");
+        }
+
         fixed_u64_to_f64(self.raw)
     }
 
