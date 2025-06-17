@@ -34,7 +34,7 @@ use nautilus_model::{
 };
 
 // Requires capnp installed on the machine
-// Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync,python`
+// Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

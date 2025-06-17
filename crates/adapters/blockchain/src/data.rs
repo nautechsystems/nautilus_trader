@@ -473,6 +473,7 @@ impl BlockchainDataClient {
     /// Returns an error if fetching token info or adding to cache fails.
     pub async fn process_token(&mut self, token_address: String) -> anyhow::Result<()> {
         let token_address = validate_address(&token_address)?;
+
         if self.cache.get_token(&token_address).is_none() {
             let token_info = self.tokens.fetch_token_info(&token_address).await?;
             let token = Token::new(
@@ -485,6 +486,7 @@ impl BlockchainDataClient {
             tracing::info!("Saving fetched token {token} in the cache.");
             self.cache.add_token(token).await?;
         }
+
         Ok(())
     }
 
@@ -509,7 +511,7 @@ impl BlockchainDataClient {
     /// Registers a decentralized exchange with the client.
     pub async fn register_exchange(&mut self, dex: DexExtended) -> anyhow::Result<()> {
         let dex_id = dex.id();
-        tracing::info!("Registering blockchain exchange {}", &dex_id);
+        tracing::info!("Registering blockchain exchange {dex_id}");
         self.cache.add_dex(dex_id, dex).await?;
         Ok(())
     }
@@ -527,11 +529,7 @@ impl BlockchainDataClient {
     }
 
     fn log_blockchain_data(&self, data_type: &str, data_info: &str) {
-        tracing::debug!(
-            "📡 Blockchain data processed: {} - {}",
-            data_type,
-            data_info
-        );
+        tracing::debug!("📡 Blockchain data processed: {data_type} - {data_info}");
     }
 
     fn send_swap(&self, swap: &Swap) {
@@ -577,6 +575,10 @@ impl BlockchainDataClient {
                     Ok(msg) => match msg {
                         BlockchainMessage::Block(block) => {
                             tracing::info!("{block}");
+                            let data = DefiData::Block(block);
+                            if let Err(e) = self.data_sender.send(DataEvent::DeFi(data)) {
+                                tracing::error!("Failed to send block: {e}");
+                            }
                         }
                     },
                     Err(e) => {

@@ -31,7 +31,7 @@ use nautilus_model::{
 };
 use tokio::sync::Notify;
 
-// Run with `cargo run -p nautilus-blockchain --bin sync_pool_events --features hypersync,python`
+// Run with `cargo run -p nautilus-blockchain --bin sync_pool_events --features hypersync`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
