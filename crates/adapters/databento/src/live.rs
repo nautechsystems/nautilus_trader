@@ -228,13 +228,15 @@ impl DatabentoFeedHandler {
                 handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)
                     .map_err(|e| anyhow::anyhow!("Error updating symbol map: {e}"))?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                if self.use_exchange_as_venue {
+                let exchange = msg.exchange()?;
+
+                if self.use_exchange_as_venue && !exchange.is_empty() {
                     update_instrument_id_map_with_exchange(
                         &symbol_map,
                         &self.symbol_venue_map,
                         &mut instrument_id_map,
                         msg.hd.instrument_id,
-                        msg.exchange()?,
+                        exchange,
                     )?;
                 }
                 let data = {
