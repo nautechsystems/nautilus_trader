@@ -60,6 +60,7 @@ Released on TBD (UTC).
 - Fixed incorrect logging of trigger type for Binance
 - Fixed trade ticks unsubscribe for Binance which was not differentiating aggregated trades
 - Fixed pending update hot cache cleanup for Betfair execution client
+- Fixed invalid session information on account update for Betfair execution client
 - Fixed order book snapshots unsubscribe for Tardis data client
 - Fixed Arrow schema registration for `BinanceBar`
 - Fixed gRPC server shutdown warning when running dYdX integration tests
