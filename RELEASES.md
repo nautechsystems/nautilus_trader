@@ -73,6 +73,7 @@ Released on TBD (UTC).
 - Fixed Partially filled bracket order and SL triggered for IBKR (#2704, #2717), thanks @bartlaw
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
+- Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
 
 ### Documentation Updates
 None
