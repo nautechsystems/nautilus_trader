@@ -39,12 +39,10 @@ anyhow = { workspace = true }
 base64 = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
-hmac = { workspace = true }
+aws-lc-rs = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
-rsa = { workspace = true }
 rustls = { workspace = true }
-sha2 = { workspace = true }
 tracing = { workspace = true }
 pem = { workspace = true }
 webpki-roots = { workspace = true }
