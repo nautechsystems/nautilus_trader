@@ -224,20 +224,19 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
                 instrument_id_map.remove(&msg.hd.instrument_id);
-
-                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)
-                    .map_err(|e| anyhow::anyhow!("Error updating symbol map: {e}"))?;
+                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                let exchange = msg.exchange()?;
-
-                if self.use_exchange_as_venue && !exchange.is_empty() {
-                    update_instrument_id_map_with_exchange(
-                        &symbol_map,
-                        &self.symbol_venue_map,
-                        &mut instrument_id_map,
-                        msg.hd.instrument_id,
-                        exchange,
-                    )?;
+                if self.use_exchange_as_venue {
+                    let exchange = msg.exchange()?;
+                    if !exchange.is_empty() {
+                        update_instrument_id_map_with_exchange(
+                            &symbol_map,
+                            &self.symbol_venue_map,
+                            &mut instrument_id_map,
+                            msg.hd.instrument_id,
+                            exchange,
+                        )?;
+                    }
                 }
                 let data = {
                     let sym_map = self
