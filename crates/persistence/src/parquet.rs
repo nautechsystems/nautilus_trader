@@ -485,7 +485,7 @@ fn create_azure_store(
 
     let path_segments: Vec<&str> = url.path().trim_start_matches('/').split('/').collect();
     if path_segments.is_empty() || path_segments[0].is_empty() {
-        return Err(anyhow::anyhow!("Invalid Azure URI: missing container"));
+        anyhow::bail!("Invalid Azure URI: missing container");
     }
 
     let container = path_segments[0];
