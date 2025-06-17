@@ -713,7 +713,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, actor.clock)
 
         self._actors.clear()
-        self._log.info("Cleared all actors")
+        self._log.info("Cleared actors")
 
     def clear_strategies(self) -> None:
         """
@@ -734,7 +734,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, strategy.clock)
 
         self._strategies.clear()
-        self._log.info("Cleared all trading strategies")
+        self._log.info("Cleared trading strategies")
 
     def clear_exec_algorithms(self) -> None:
         """
@@ -755,7 +755,7 @@ class Trader(Component):
             deregister_component_clock(self._instance_id, exec_algorithm.clock)
 
         self._exec_algorithms.clear()
-        self._log.info("Cleared all execution algorithms")
+        self._log.info("Cleared execution algorithms")
 
     def subscribe(self, topic: str, handler: Callable[[Any], None]) -> None:
         """
