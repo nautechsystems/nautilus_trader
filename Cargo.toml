@@ -70,7 +70,7 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.49.0" }
 nautilus-tardis = { path = "crates/adapters/tardis", version = "0.49.0" }
 
 ahash = "0.8.12"
-alloy = { version = "1.0.9", default-features = false, features = ["sol-types", "contract"] }
+alloy = { version = "1.0.11", default-features = false, features = ["sol-types", "contract"] }
 alloy-primitives = { version = "1.2.0", features = ["serde"] }
 anyhow = "1.0.98"
 arraydeque = "0.5.1"

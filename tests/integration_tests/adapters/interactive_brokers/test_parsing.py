@@ -50,9 +50,8 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 # fmt: on
 
-
+# fmt: off
 simplified_symbology_params = [
-    # fmt: off
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR/USD.IDEALPRO"),
     (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL230217P00155000.SMART"),
     (IBContract(secType="CONTFUT", exchange="CME", symbol="ES"), "ES.CME"),
@@ -73,11 +72,11 @@ simplified_symbology_params = [
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC/USD.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "^SPX.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "^XJO.ASX"),
-    # fmt: on
 ]
+# fmt: on
 
+# fmt: off
 raw_symbology_params = [
-    # fmt: off
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR.USD=CASH.IDEALPRO"),
     (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000=OPT.SMART"),
     (IBContract(secType="FUT", exchange="CME", localSymbol="ESH3"), "ESH3=FUT.CME"),
@@ -120,8 +119,8 @@ raw_symbology_params = [
     (IBContract(secType="CRYPTO", exchange="PAXOS", localSymbol="BTC.USD"), "BTC.USD=CRYPTO.PAXOS"),
     (IBContract(secType="IND", exchange="CBOE", localSymbol="SPX"), "SPX=IND.CBOE"),
     (IBContract(secType="IND", exchange="ASX", localSymbol="XJO"), "XJO=IND.ASX"),
-    # fmt: on
 ]
+# fmt: on
 
 
 @pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
@@ -213,14 +212,13 @@ def test_regular_expression_crypto():
     assert result == expected
 
 
+# fmt: off
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
         ("AAPL230217P00155000", {"symbol": "AAPL", "expiry": "230217", "right": "P", "strike": "00155", "decimal": "000"}),
         ("A230217P00150000", {"symbol": "A", "expiry": "230217", "right": "P", "strike": "00150", "decimal": "000"}),
         ("CMCSA230217P00039500", {"symbol": "CMCSA", "expiry": "230217", "right": "P", "strike": "00039", "decimal": "500"}),
-        # fmt: on
     ],
 )
 def test_regular_expression_option(symbol, expected):
@@ -229,6 +227,7 @@ def test_regular_expression_option(symbol, expected):
 
     # Act, Assert
     assert result == expected
+# fmt: on
 
 
 @pytest.mark.parametrize(
@@ -276,13 +275,12 @@ def test_regular_expression_future_original(symbol, expected):
     assert result == expected
 
 
+# fmt: off
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
         ("EX2G23P4080", {"symbol": "EX2", "month": "G", "year": "23", "right": "P", "strike": "4080"}),
         ("DXH23P103.5", {"symbol": "DX", "month": "H", "year": "23", "right": "P", "strike": "103.5"}),
-        # fmt: on
     ],
 )
 def test_regular_expression_future_options(symbol, expected):
@@ -291,15 +289,15 @@ def test_regular_expression_future_options(symbol, expected):
 
     # Assert
     assert result == expected
+# fmt: on
 
 
+# fmt: off
 @pytest.mark.parametrize(
     ("symbol", "expected"),
     [
-        # fmt: off
         ("EX2G3 P4080", {"symbol": "EX2", "month": "G", "year": "3", "right": "P", "strike": "4080"}),
         ("DXH3 P103.5", {"symbol": "DX", "month": "H", "year": "3", "right": "P", "strike": "103.5"}),
-        # fmt: on
     ],
 )
 def test_regular_expression_future_options_original(symbol, expected):
@@ -308,6 +306,7 @@ def test_regular_expression_future_options_original(symbol, expected):
 
     # Assert
     assert result == expected
+# fmt: on
 
 
 @pytest.mark.parametrize(

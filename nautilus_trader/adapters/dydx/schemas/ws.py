@@ -16,7 +16,6 @@
 Define websocket message of the dYdX venue.
 """
 
-# ruff: noqa: N815
 
 import datetime
 from decimal import Decimal

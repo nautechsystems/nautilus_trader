@@ -16,7 +16,6 @@
 Define the candles / bars endpoint.
 """
 
-# ruff: noqa: N815
 
 import datetime
 
