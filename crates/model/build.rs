@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Build script for the `nautilus-model` crate.
+//!
+//! In addition to the common tasks performed by the other build scripts (header generation,
+//! rerun-tracking, docs.rs early-exit) this script also toggles *high-precision* mode for the
+//! generated bindings based on either:
+//!
+//! 1. The `HIGH_PRECISION` environment variable, **or**
+//! 2. The compile-time `high-precision` cargo feature.
+//!
+//! When enabled the flag is forwarded to the Cython bindings via a `DEF HIGH_PRECISION` macro so
+//! that the Python layer compiles in a compatible configuration.
+
 #[cfg(feature = "ffi")]
 use std::env;
 
