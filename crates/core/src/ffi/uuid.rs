@@ -13,6 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! FFI helpers for the [`UUID4`](crate::UUID4) wrapper type.
+//!
+//! The functions exported here make it possible for C/Python code to create, compare, and hash
+//! UUID values *without* having to understand the internal representation chosen by
+//! NautilusTrader.
+
 use std::{
     collections::hash_map::DefaultHasher,
     ffi::{CStr, c_char},
@@ -21,6 +27,7 @@ use std::{
 
 use crate::UUID4;
 
+/// Generate a new random (version-4) UUID and return it by value.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
@@ -43,16 +50,22 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     UUID4::from(value)
 }
 
+/// Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
+///
+/// The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+/// not** attempt to free it.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
     uuid.to_cstr().as_ptr()
 }
 
+/// Compare two UUID values, returning `1` when they are equal and `0` otherwise.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
     u8::from(lhs == rhs)
 }
 
+/// Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
 #[unsafe(no_mangle)]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
     let mut h = DefaultHasher::new();

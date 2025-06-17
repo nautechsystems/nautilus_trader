@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Date/time utility wrappers exposed to Python.
+
 use pyo3::prelude::*;
 
 use super::to_pyvalue_err;
