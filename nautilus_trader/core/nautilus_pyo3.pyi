@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# ruff: noqa: UP007 PYI021 PYI044 PYI053
+# ruff: noqa: UP007, PYI021
 # fmt: off
 
 import datetime as dt
