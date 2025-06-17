@@ -16,7 +16,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use nautilus_core::consts::NAUTILUS_USER_AGENT;
-use nautilus_model::defi::{block::Block, chain::Chain, rpc::RpcNodeWssResponse};
+use nautilus_model::defi::{Block, Chain, rpc::RpcNodeWssResponse};
 use nautilus_network::websocket::{Consumer, WebSocketClient, WebSocketConfig};
 use reqwest::header::USER_AGENT;
 use tokio_tungstenite::tungstenite::Message;

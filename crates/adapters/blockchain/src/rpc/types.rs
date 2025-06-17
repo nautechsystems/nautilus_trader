@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::defi::block::Block;
+use nautilus_model::defi::Block;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 

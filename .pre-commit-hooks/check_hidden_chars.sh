@@ -46,7 +46,7 @@ fi
 suspicious_strings=""
 if [ ${#files_to_check[@]} -gt 0 ]; then
     suspicious_strings=$(grep --binary-files=without-match -nP "[A-Za-z0-9+/]{500,}={0,2}" "${files_to_check[@]}" 2>/dev/null | \
-        grep -v 'crates/model/src/defi/block.rs:.*"logsBloom":' | \
+        grep -v 'crates/model/src/defi/data/block.rs:.*"logsBloom":' | \
         grep -v '#.*SECURITY_EXCLUSION:' | \
         grep -v '//.*SECURITY_EXCLUSION:' || true)
 fi

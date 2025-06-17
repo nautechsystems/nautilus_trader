@@ -66,7 +66,7 @@ use nautilus_core::{
     datetime::millis_to_nanos,
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::DefiData;
+use nautilus_model::defi::data::DefiData;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,

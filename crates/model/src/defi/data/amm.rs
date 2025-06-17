@@ -20,8 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data::GetTsInit,
-    defi::{chain::SharedChain, dex::Dex, token::Token},
+    defi::{chain::SharedChain, data::GetTsInit, dex::Dex, token::Token},
     identifiers::InstrumentId,
 };
 
