@@ -46,9 +46,11 @@ fn bench_matching(c: &mut Criterion) {
         for ele in [1, 10, 100, 1000] {
             let topics = create_topics(ele, &mut rng);
 
+            // Compile regex once; measure only matching performance
             regex_group.bench_function(format!("{ele} topics"), |b| {
+                let regex = Regex::new(pattern).unwrap();
+
                 b.iter(|| {
-                    let regex = Regex::new(pattern).unwrap();
                     for topic in &topics {
                         black_box(regex.is_match(topic));
                     }
