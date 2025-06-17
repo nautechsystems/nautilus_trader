@@ -18,7 +18,7 @@ use std::{borrow::Cow, fmt::Display, sync::Arc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    defi::{amm::Pool, chain::Chain},
+    defi::{chain::Chain, data::amm::Pool},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair},
     types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity},

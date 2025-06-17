@@ -20,7 +20,7 @@ use strum::{Display, EnumString};
 
 use crate::{
     data::GetTsInit,
-    defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
+    defi::{chain::SharedChain, data::amm::SharedPool, dex::SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
 };

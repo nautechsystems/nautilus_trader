@@ -15,7 +15,7 @@
 
 use hypersync_client::format::Hex;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-use nautilus_model::defi::{block::Block, hex::from_str_hex_to_u64};
+use nautilus_model::defi::{Block, hex::from_str_hex_to_u64};
 use ustr::Ustr;
 
 /// Converts a HyperSync block format to our internal Block type.

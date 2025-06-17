@@ -22,7 +22,7 @@ use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_model::defi::{block::Block, chain::SharedChain};
+use nautilus_model::defi::{Block, SharedChain};
 use reqwest::Url;
 
 use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};

@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use nautilus_model::defi::chain::Chain;
+use nautilus_model::defi::Chain;
 
 /// Configuration for blockchain data clients.
 #[derive(Debug, Clone)]
