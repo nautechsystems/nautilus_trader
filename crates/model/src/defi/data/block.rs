@@ -16,7 +16,7 @@
 use std::fmt::{Display, Formatter};
 
 use nautilus_core::UnixNanos;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::defi::{
@@ -25,7 +25,7 @@ use crate::defi::{
 };
 
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     /// The unique identifier hash of the block.
     pub hash: String,
@@ -79,6 +79,14 @@ impl Block {
         self.chain = Some(chain);
     }
 }
+
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+    }
+}
+
+impl Eq for Block {}
 
 impl Display for Block {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

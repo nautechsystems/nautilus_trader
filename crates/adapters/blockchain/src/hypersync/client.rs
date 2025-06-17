@@ -39,7 +39,7 @@ pub struct HyperSyncClient {
     /// The underlying HyperSync Rust client for making API requests.
     client: Arc<Client>,
     /// Background task handle for the block subscription task.
-    blocks_subscription_task: Option<tokio::task::JoinHandle<()>>,
+    blocks_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
 }
@@ -63,7 +63,7 @@ impl HyperSyncClient {
         Self {
             chain,
             client: Arc::new(client),
-            blocks_subscription_task: None,
+            blocks_task: None,
             tx,
         }
     }
@@ -160,6 +160,7 @@ impl HyperSyncClient {
             .stream(query, Default::default())
             .await
             .unwrap();
+
         async_stream::stream! {
             while let Some(response) = rx.recv().await {
                 let response = response.unwrap();
@@ -209,7 +210,7 @@ impl HyperSyncClient {
                 query.from_block = response.next_block;
             }
         });
-        self.blocks_subscription_task = Some(task);
+        self.blocks_task = Some(task);
     }
 
     /// Constructs a HyperSync query for fetching blocks with all available fields within the specified range.
@@ -234,7 +235,7 @@ impl HyperSyncClient {
 
     /// Unsubscribes to the new blocks by stopping the background watch task.
     pub fn unsubscribe_blocks(&mut self) {
-        if let Some(task) = self.blocks_subscription_task.take() {
+        if let Some(task) = self.blocks_task.take() {
             task.abort();
         }
     }

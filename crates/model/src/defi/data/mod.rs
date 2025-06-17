@@ -40,6 +40,7 @@ pub use transaction::Transaction;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DefiData {
+    Block(Block),
     /// A token swap transaction on a decentralized exchange.
     Swap(Swap),
     /// A liquidity update event (mint/burn) in a DEX pool.
@@ -53,6 +54,7 @@ impl DefiData {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
+            Self::Block(_) => todo!("Not implemented yet"),
             Self::Swap(swap) => swap.instrument_id(),
             Self::PoolLiquidityUpdate(update) => update.instrument_id(),
             Self::Pool(pool) => pool.instrument_id(),
@@ -63,6 +65,7 @@ impl DefiData {
 impl GetTsInit for DefiData {
     fn ts_init(&self) -> UnixNanos {
         match self {
+            Self::Block(block) => block.timestamp,
             Self::Swap(swap) => swap.ts_init,
             Self::PoolLiquidityUpdate(update) => update.ts_init,
             Self::Pool(pool) => pool.ts_init,
