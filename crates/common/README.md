@@ -5,11 +5,11 @@
 [![crates.io version](https://img.shields.io/crates/v/nautilus-common.svg)](https://crates.io/crates/nautilus-common)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
 
-Common components and infrastructure for [NautilusTrader](http://nautilustrader.io).
+Common componentry for [NautilusTrader](http://nautilustrader.io).
 
-The *common* crate provides shared infrastructure components and utilities that form
-the system foundation for NautilusTrader applications. This includes the actor system,
-message bus, caching layer, and other essential runtime services.
+The *common* crate provides shared components and utilities that form the system foundation for
+NautilusTrader applications. This includes the actor system, message bus, caching layer, and other
+essential services.
 
 ## Platform
 
