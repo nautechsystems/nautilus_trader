@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! FFI helpers for the [`UUID4`](crate::UUID4) wrapper type.
+//! FFI helpers for the [`UUID4`] wrapper type.
 //!
 //! The functions exported here make it possible for C/Python code to create, compare, and hash
 //! UUID values *without* having to understand the internal representation chosen by

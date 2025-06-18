@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Enum wrapper providing a type-erased view over the various concrete [`Account`](super::Account)
-//! implementations.
+//! Enum wrapper providing a type-erased view over the various concrete [`Account`] implementations.
 //!
 //! The `AccountAny` enum is primarily used when heterogeneous account types need to be stored in a
 //! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
