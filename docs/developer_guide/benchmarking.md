@@ -44,7 +44,7 @@ harness = false                    # disable the default libtest harness
 ## Writing Criterion benchmarks
 
 1. Perform **all expensive set-up outside** the timing loop (`b.iter`).
-2. Wrap inputs/outputs in `black_box` to prevent the optimiser from removing
+2. Wrap inputs/outputs in `black_box` to prevent the optimizer from removing
    work.
 3. Group related cases with `benchmark_group!` and set `throughput` or
    `sample_size` when the defaults aren’t ideal.
