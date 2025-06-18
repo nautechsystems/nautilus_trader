@@ -1081,7 +1081,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<OwnOrderBook> {
+    fn get_or_init_own_order_book(&self, instrument_id: &InstrumentId) -> RefMut<'_, OwnOrderBook> {
         let mut cache = self.cache.borrow_mut();
         if cache.own_order_book_mut(instrument_id).is_none() {
             let own_book = OwnOrderBook::new(*instrument_id);
