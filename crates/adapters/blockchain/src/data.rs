@@ -242,6 +242,7 @@ impl BlockchainDataClient {
                 size,
                 price,
             );
+
             self.cache.add_swap(&swap).await?;
 
             self.send_swap(swap);
@@ -316,9 +317,8 @@ impl BlockchainDataClient {
                 mint_event.tick_upper,
                 *timestamp,
             );
-            self.cache
-                .add_pool_liquidity_update(&liquidity_update)
-                .await?;
+
+            self.cache.add_liquidity_update(&liquidity_update).await?;
 
             self.send_liquidity_update(liquidity_update);
         }
@@ -393,11 +393,9 @@ impl BlockchainDataClient {
                 burn_event.tick_upper,
                 *timestamp,
             );
-            self.cache
-                .add_pool_liquidity_update(&liquidity_update)
-                .await?;
 
-            // Send liquidity update data to data engine
+            self.cache.add_liquidity_update(&liquidity_update).await?;
+
             self.send_liquidity_update(liquidity_update);
         }
 
@@ -563,26 +561,25 @@ impl BlockchainDataClient {
     }
 
     fn send_block(&self, block: Block) {
-        tracing::debug!("Sending {block}");
         let data = DataEvent::DeFi(DefiData::Block(block));
         self.send_data(data);
     }
 
     fn send_swap(&self, swap: Swap) {
-        tracing::debug!("Sending {swap}");
         let data = DataEvent::DeFi(DefiData::Swap(swap));
         self.send_data(data);
     }
 
     fn send_liquidity_update(&self, update: PoolLiquidityUpdate) {
-        tracing::debug!("Sending {update}");
         let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update));
         self.send_data(data);
     }
 
     fn send_data(&self, data: DataEvent) {
+        tracing::debug!("Sending {data}");
+
         if let Err(e) = self.data_sender.send(data) {
-            tracing::error!("Failed to send block: {e}");
+            tracing::error!("Failed to send data: {e}");
         }
     }
 }
