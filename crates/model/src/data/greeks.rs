@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Option *Greeks* data structures (delta, gamma, theta, vega, rho) used throughout the platform.
+
 use std::{
     fmt,
     ops::{Add, Mul},

@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Base traits and common types shared by all account implementations.
+//!
+//! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
+//! in this file.
+
 use std::collections::HashMap;
 
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos};

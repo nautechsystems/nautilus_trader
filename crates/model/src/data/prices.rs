@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Domain types representing *price* data (bid/ask, mid-price, mark-price, etc.).
+
 use std::{collections::HashMap, fmt::Display};
 
 use indexmap::IndexMap;

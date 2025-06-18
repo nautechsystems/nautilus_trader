@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Enum wrapper providing a type-erased view over the various concrete [`Account`](super::Account)
+//! implementations.
+//!
+//! The `AccountAny` enum is primarily used when heterogeneous account types need to be stored in a
+//! single collection (e.g. `Vec<AccountAny>`).  Each variant simply embeds one of the concrete
+//! account structs defined in this module.
+
 use std::collections::HashMap;
 
 use enum_dispatch::enum_dispatch;

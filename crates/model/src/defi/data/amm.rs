@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data types specific to automated-market-maker (AMM) protocols.
+
 use std::sync::Arc;
 
 use alloy_primitives::Address;
