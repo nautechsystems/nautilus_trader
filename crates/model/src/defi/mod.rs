@@ -27,6 +27,7 @@
 //! • `messages` – Internal bus / wire-format messages (left empty for now but reserved).
 //! • `rpc`      – Lightweight JSON-RPC helpers used by on-chain adapters.
 
+pub mod amm;
 pub mod chain;
 pub mod data;
 pub mod dex;
@@ -37,10 +38,10 @@ pub mod token;
 pub mod types;
 
 // Re-exports
+pub use amm::{Pool, SharedPool};
 pub use chain::{Blockchain, Chain, SharedChain};
 pub use data::{
     DefiData,
-    amm::{Pool, SharedPool},
     block::Block,
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
     swap::Swap,
