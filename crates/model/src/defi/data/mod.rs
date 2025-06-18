@@ -18,6 +18,8 @@
 //! This module provides core data structures for working with decentralized finance protocols,
 //! including blockchain networks, tokens, liquidity pools, swaps, and other DeFi primitives.
 
+use std::fmt::Display;
+
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +64,17 @@ impl DefiData {
     }
 }
 
+impl Display for DefiData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Block(b) => write!(f, "{b}"),
+            Self::Swap(s) => write!(f, "{s}"),
+            Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
+            Self::Pool(p) => write!(f, "{p}"),
+        }
+    }
+}
+
 impl GetTsInit for DefiData {
     fn ts_init(&self) -> UnixNanos {
         match self {
@@ -74,19 +87,19 @@ impl GetTsInit for DefiData {
 }
 
 impl From<Swap> for DefiData {
-    fn from(value: swap::Swap) -> Self {
+    fn from(value: Swap) -> Self {
         Self::Swap(value)
     }
 }
 
 impl From<PoolLiquidityUpdate> for DefiData {
-    fn from(value: liquidity::PoolLiquidityUpdate) -> Self {
+    fn from(value: PoolLiquidityUpdate) -> Self {
         Self::PoolLiquidityUpdate(value)
     }
 }
 
 impl From<Pool> for DefiData {
-    fn from(value: amm::Pool) -> Self {
+    fn from(value: Pool) -> Self {
         Self::Pool(value)
     }
 }

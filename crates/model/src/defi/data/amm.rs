@@ -100,6 +100,19 @@ impl Pool {
     }
 }
 
+impl std::fmt::Display for Pool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Pool(ticker={}, dex={}, fee={}, address={})",
+            self.ticker(),
+            self.dex.name,
+            self.fee,
+            self.address
+        )
+    }
+}
+
 impl GetTsInit for Pool {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
