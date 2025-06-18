@@ -294,4 +294,9 @@ lto = false
 # -----------------------------------------------------------------------------
 
 [profile.bench]
-inherits = "release-debugging"
+inherits = "release"
+debug = "full"
+strip = false
+lto = false
+incremental = true
+panic = "abort"
