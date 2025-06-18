@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Implementation of a simple *cash* account – an account that cannot hold leveraged positions.
+
 use std::{
     collections::HashMap,
     fmt::Display,

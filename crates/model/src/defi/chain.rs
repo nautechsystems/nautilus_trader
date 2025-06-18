@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Basic structures for representing on-chain blocks and transactions in DeFi integrations.
+
 use std::{
     fmt::{Display, Formatter},
     sync::Arc,
