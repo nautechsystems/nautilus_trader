@@ -63,7 +63,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
-from nautilus_trader.persistence.funcs import urisafe_instrument_id
+from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
@@ -104,16 +104,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
-    min_rows_per_group : int, default 0
-        The minimum number of rows per group. When the value is greater than 0,
-        the dataset writer will batch incoming data and only write the row
-        groups to the disk when sufficient rows have accumulated.
     max_rows_per_group : int, default 5000
         The maximum number of rows per group. If the value is greater than 0,
         then the dataset writer may split up large incoming batches into
-        multiple row groups.  If this value is set, then min_rows_per_group
-        should also be set. Otherwise it could end up with very small row
-        groups.
+        multiple row groups.
     show_query_paths : bool, default False
         If globed query paths should be printed to stdout.
 
@@ -135,7 +129,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
-        min_rows_per_group: int = 0,
         max_rows_per_group: int = 5_000,
         show_query_paths: bool = False,
     ) -> None:
@@ -152,7 +145,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
-        self.min_rows_per_group = min_rows_per_group
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
@@ -276,12 +268,14 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
 
-        def key(obj: Any) -> tuple[str, str | None]:
+        def identifier_function(obj: Any) -> tuple[str, str | None]:
             if isinstance(obj, CustomData):
                 obj = obj.data
 
+            # Class name of an object
             name = type(obj).__name__
 
+            # Identifier
             if isinstance(obj, Instrument):
                 return name, obj.id.value
             elif hasattr(obj, "bar_type"):
@@ -289,6 +283,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             elif hasattr(obj, "instrument_id"):
                 return name, obj.instrument_id.value
 
+            # Custom data case without instrument_id
             return name, None
 
         def obj_to_type(obj: Data) -> type:
@@ -296,12 +291,15 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
 
-        for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
+        for (cls_name, identifier), single_type in groupby(
+            sorted(data, key=identifier_function),
+            key=identifier_function,
+        ):
             chunk = list(single_type)
             self._write_chunk(
                 data=chunk,
                 data_cls=name_to_cls[cls_name],
-                instrument_id=instrument_id,
+                identifier=identifier,
                 start=start,
                 end=end,
             )
@@ -310,7 +308,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         data: list[Data],
         data_cls: type[Data],
-        instrument_id: str | None = None,
+        identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,
     ) -> None:
@@ -318,7 +316,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             data = [d.data for d in data]
 
         table = self._objects_to_table(data, data_cls=data_cls)
-        directory = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
+        directory = self._make_path(data_cls=data_cls, identifier=identifier)
         self.fs.mkdirs(directory, exist_ok=True)
 
         if isinstance(data[0], Instrument):
@@ -348,6 +346,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         PyCondition.not_empty(data, "data")
         PyCondition.list_type(data, data_cls, "data")
+
         sorted_data = sorted(data, key=lambda x: x.ts_init)
 
         # Check data is strictly non-decreasing prior to write
@@ -371,7 +370,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def extend_file_name(
         self,
         data_cls: type[Data],
-        instrument_id: str | None = None,
+        identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,
     ):
@@ -386,7 +385,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type[Data]
             The data class type to extend files for.
-        instrument_id : str, optional
+        identifier : str, optional
             The instrument ID to filter files by. If None, applies to all instruments.
         start : int, optional
             The start timestamp (nanoseconds) of the new range.
@@ -404,7 +403,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if start is None or end is None:
             return
 
-        directory = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
+        directory = self._make_path(data_cls=data_cls, identifier=identifier)
         intervals = self._get_directory_intervals(directory)
 
         for interval in intervals:
@@ -462,7 +461,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def reset_data_file_names(
         self,
         data_cls: type,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
     ) -> None:
         """
         Reset the filenames of parquet files for a specific data class and instrument
@@ -477,7 +476,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type
             The data class type to reset filenames for (e.g., QuoteTick, TradeTick, Bar).
-        instrument_id : str, optional
+        identifier : str, optional
             The specific instrument ID to reset filenames for. If None, resets filenames
             for all instruments of the specified data class.
 
@@ -492,7 +491,7 @@ class ParquetDataCatalog(BaseDataCatalog):
           without processing the entire catalog.
 
         """
-        directory = self._make_path(data_cls, instrument_id)
+        directory = self._make_path(data_cls, identifier)
         self._reset_file_names(directory)
 
     def _reset_file_names(self, directory: str) -> None:
@@ -562,7 +561,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def consolidate_data(
         self,
         data_cls: type,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
     ) -> None:
@@ -578,7 +577,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type
             The data class type to consolidate (e.g., QuoteTick, TradeTick, Bar).
-        instrument_id : str, optional
+        identifier : str, optional
             The specific instrument ID to consolidate data for. If None, consolidates data
             for all instruments of the specified data class.
         start : TimestampLike, optional
@@ -599,7 +598,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         - After consolidation, the original files are removed and replaced with a single file.
 
         """
-        directory = self._make_path(data_cls, instrument_id)
+        directory = self._make_path(data_cls, identifier)
         self._consolidate_directory(directory, start, end)
 
     def _consolidate_directory(
@@ -672,7 +671,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _query_subclasses(
         self,
         base_cls: type,
-        instrument_ids: list[str] | None = None,
+        identifiers: list[str] | None = None,
         filter_expr: Callable | None = None,
         **kwargs: Any,
     ) -> list[Data]:
@@ -684,7 +683,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 data_list = self.query(
                     data_cls=cls,
                     filter_expr=filter_expr,
-                    instrument_ids=instrument_ids,
+                    identifiers=identifiers,
                     raise_on_empty=False,
                     **kwargs,
                 )
@@ -711,8 +710,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def query(
         self,
         data_cls: type,
-        instrument_ids: list[str] | None = None,
-        bar_types: list[str] | None = None,
+        identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
@@ -729,11 +727,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type
             The data class type to query for.
-        instrument_ids : list[str], optional
+        identifiers : list[str], optional
             A list of instrument IDs to filter by. If None, all instruments are included.
-        bar_types : list[str], optional
-            A list of bar types to filter by (only applicable when querying Bar data).
-            If None, all bar types are included.
         start : TimestampLike, optional
             The start timestamp for the query range. If None, no lower bound is applied.
         end : TimestampLike, optional
@@ -768,8 +763,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ):
             data = self._query_rust(
                 data_cls=data_cls,
-                instrument_ids=instrument_ids,
-                bar_types=bar_types,
+                identifiers=identifiers,
                 start=start,
                 end=end,
                 where=where,
@@ -778,8 +772,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         else:
             data = self._query_pyarrow(
                 data_cls=data_cls,
-                instrument_ids=instrument_ids,
-                bar_types=bar_types,
+                identifiers=identifiers,
                 start=start,
                 end=end,
                 where=where,
@@ -798,8 +791,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _query_rust(
         self,
         data_cls: type,
-        instrument_ids: list[str] | None = None,
-        bar_types: list[str] | None = None,
+        identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
@@ -808,8 +800,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         query_data_cls = OrderBookDelta if data_cls == OrderBookDeltas else data_cls
         session = self.backend_session(
             data_cls=query_data_cls,
-            instrument_ids=instrument_ids,
-            bar_types=bar_types,
+            identifiers=identifiers,
             start=start,
             end=end,
             where=where,
@@ -833,8 +824,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def backend_session(
         self,
         data_cls: type,
-        instrument_ids: list[str] | None = None,
-        bar_types: list[str] | None = None,
+        identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
@@ -852,11 +842,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type
             The data class type to query for.
-        instrument_ids : list[str], optional
+        identifiers : list[str], optional
             A list of instrument IDs to filter by. If None, all instruments are included.
-        bar_types : list[str], optional
-            A list of bar types to filter by (only applicable when querying Bar data).
-            If None, all bar types are included.
         start : TimestampLike, optional
             The start timestamp for the query range. If None, no lower bound is applied.
         end : TimestampLike, optional
@@ -889,7 +876,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
-        files = self._query_files(data_cls, instrument_ids, bar_types, start, end)
+        files = self._query_files(data_cls, identifiers, start, end)
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
@@ -903,7 +890,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
-                # instrument_ids=None, # Filtering by filename for now
                 start=start,
                 end=end,
                 where=where,
@@ -1023,15 +1009,14 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _query_pyarrow(
         self,
         data_cls: type,
-        instrument_ids: list[str] | None = None,
-        bar_types: list[str] | None = None,
+        identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         # Load dataset
-        files = self._query_files(data_cls, instrument_ids, bar_types, start, end)
+        files = self._query_files(data_cls, identifiers, start, end)
 
         if not files:
             return []
@@ -1065,35 +1050,39 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _query_files(
         self,
         data_cls: type,
-        instrument_ids: list[str] | None = None,
-        bar_types: list[str] | None = None,
+        identifiers: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
     ):
         file_prefix = class_to_filename(data_cls)
-        # Remove trailing slash from path to avoid double slashes
         base_path = self.path.rstrip("/")
         glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
-        files: list[str] = self.fs.glob(glob_path)
-        instrument_ids = instrument_ids or bar_types
+        file_names: list[str] = self.fs.glob(glob_path)
 
-        if instrument_ids:
-            if not isinstance(instrument_ids, list):
-                instrument_ids = [instrument_ids]
+        if identifiers:
+            if not isinstance(identifiers, list):
+                identifiers = [identifiers]
 
-            files = [
-                fn for fn in files if any(urisafe_instrument_id(x) in fn for x in instrument_ids)
+            safe_identifiers = [urisafe_identifier(identifier) for identifier in identifiers]
+            file_names = [
+                file_name
+                for file_name in file_names
+                if any(safe_identifier in file_name for safe_identifier in safe_identifiers)
             ]
 
         used_start: pd.Timestamp | None = time_object_to_dt(start)
         used_end: pd.Timestamp | None = time_object_to_dt(end)
-        files = [fn for fn in files if _query_intersects_filename(fn, used_start, used_end)]
+        file_names = [
+            file_name
+            for file_name in file_names
+            if _query_intersects_filename(file_name, used_start, used_end)
+        ]
 
         if self.show_query_paths:
-            for file in files:
-                print(file)
+            for file_name in file_names:
+                print(file_name)
 
-        return files
+        return file_names
 
     @staticmethod
     def _handle_table_nautilus(
@@ -1124,12 +1113,12 @@ class ParquetDataCatalog(BaseDataCatalog):
     def query_last_timestamp(
         self,
         data_cls: type,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
     ) -> pd.Timestamp | None:
         subclasses = [data_cls, *data_cls.__subclasses__()]
 
         for cls in subclasses:
-            intervals = self.get_intervals(cls, instrument_id)
+            intervals = self.get_intervals(cls, identifier)
 
             if intervals:
                 return time_object_to_dt(intervals[-1][1])
@@ -1141,7 +1130,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: int,
         end: int,
         data_cls: type,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
     ) -> list[tuple[int, int]]:
         """
         Find the missing time intervals for a specific data class and instrument ID.
@@ -1158,7 +1147,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             The end timestamp (nanoseconds) of the request range.
         data_cls : type
             The data class type to check for.
-        instrument_id : str, optional
+        identifier : str, optional
             The instrument ID to check for. If None, checks across all instruments.
 
         Returns
@@ -1176,14 +1165,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         - If no data is available in the entire range, a single tuple (start, end) is returned.
 
         """
-        intervals = self.get_intervals(data_cls, instrument_id)
+        intervals = self.get_intervals(data_cls, identifier)
 
         return _query_interval_diff(start, end, intervals)
 
     def get_intervals(
         self,
         data_cls: type,
-        instrument_id: str | None = None,
+        identifier: str | None = None,
     ) -> list[tuple[int, int]]:
         """
         Get the time intervals covered by parquet files for a specific data class and
@@ -1198,7 +1187,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data_cls : type
             The data class type to get intervals for.
-        instrument_id : str, optional
+        identifier : str, optional
             The instrument ID to get intervals for. If None, gets intervals across all instruments
             for the specified data class.
 
@@ -1218,7 +1207,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         - Used internally by methods like `get_missing_intervals_for_request` and `_query_last_timestamp`.
 
         """
-        directory = self._make_path(data_cls, instrument_id)
+        directory = self._make_path(data_cls, identifier)
 
         return self._get_directory_intervals(directory)
 
@@ -1239,16 +1228,16 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _make_path(
         self,
         data_cls: type[Data],
-        instrument_id: str | None = None,
+        identifier: str | None = None,
     ) -> str:
         file_prefix = class_to_filename(data_cls)
         # Remove trailing slash from path to avoid double slashes
         base_path = self.path.rstrip("/")
         directory = f"{base_path}/data/{file_prefix}"
 
-        # instrument_id can be an instrument_id or a bar_type
-        if instrument_id is not None:
-            directory += f"/{urisafe_instrument_id(instrument_id)}"
+        # identifier can be an instrument_id or a bar_type
+        if identifier is not None:
+            directory += f"/{urisafe_identifier(identifier)}"
 
         return directory
 
@@ -1378,7 +1367,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         kind: str,
         instance_id: str,
     ) -> Generator[FeatherFile, None, None]:
-        prefix = f"{self.path}/{kind}/{urisafe_instrument_id(instance_id)}"
+        prefix = f"{self.path}/{kind}/{urisafe_identifier(instance_id)}"
 
         # Non-instrument feather files
         for path_str in self.fs.glob(f"{prefix}/*.feather"):

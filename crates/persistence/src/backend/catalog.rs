@@ -200,12 +200,20 @@ impl ParquetDataCatalog {
 
     /// Creates a new [`ParquetDataCatalog`] instance from a URI with optional storage options.
     ///
-    /// Supports various URI schemes including local file paths, S3 URIs, and other
-    /// object store backends supported by the `object_store` crate.
+    /// Supports various URI schemes including local file paths and multiple cloud storage backends
+    /// supported by the `object_store` crate.
+    ///
+    /// # Supported URI Schemes
+    ///
+    /// - **AWS S3**: `s3://bucket/path`
+    /// - **Google Cloud Storage**: `gs://bucket/path` or `gcs://bucket/path`
+    /// - **Azure Blob Storage**: `azure://account/container/path` or `abfs://container@account.dfs.core.windows.net/path`
+    /// - **HTTP/WebDAV**: `http://` or `https://`
+    /// - **Local files**: `file://path` or plain paths
     ///
     /// # Parameters
     ///
-    /// - `uri`: The URI for the data storage location (e.g., "<s3://bucket/path>", "/local/path").
+    /// - `uri`: The URI for the data storage location.
     /// - `storage_options`: Optional `HashMap` containing storage-specific configuration options:
     ///   - For S3: `endpoint_url`, region, `access_key_id`, `secret_access_key`, `session_token`, etc.
     ///   - For GCS: `service_account_path`, `service_account_key`, `project_id`, etc.
@@ -239,7 +247,19 @@ impl ParquetDataCatalog {
     ///     None, None, None, None
     /// )?;
     ///
-    /// // S3 with custom endpoint
+    /// // Google Cloud Storage
+    /// let gcs_catalog = ParquetDataCatalog::from_uri(
+    ///     "gs://my-bucket/nautilus-data",
+    ///     None, None, None, None
+    /// )?;
+    ///
+    /// // Azure Blob Storage
+    /// let azure_catalog = ParquetDataCatalog::from_uri(
+    ///     "azure://account/container/nautilus-data",
+    ///     None, None, None, None
+    /// )?;
+    ///
+    /// // S3 with custom endpoint and credentials
     /// let mut storage_options = HashMap::new();
     /// storage_options.insert("endpoint_url".to_string(), "https://my-s3-endpoint.com".to_string());
     /// storage_options.insert("access_key_id".to_string(), "my-key".to_string());
@@ -720,16 +740,31 @@ impl ParquetDataCatalog {
         })
     }
 
-    /// Helper method to reconstruct full URI for S3 paths
+    /// Helper method to reconstruct full URI for remote object store paths
     fn reconstruct_full_uri(&self, path_str: &str) -> String {
-        if self.original_uri.starts_with("s3://") {
-            // Extract bucket from the original URI
-            let url = url::Url::parse(&self.original_uri).unwrap();
-            let bucket = url.host_str().unwrap();
-            format!("s3://{bucket}/{path_str}")
-        } else {
-            path_str.to_string()
+        // Check if this is a remote URI scheme that needs reconstruction
+        if self.is_remote_uri() {
+            // Extract the base URL (scheme + host) from the original URI
+            if let Ok(url) = url::Url::parse(&self.original_uri) {
+                if let Some(host) = url.host_str() {
+                    return format!("{}://{}/{}", url.scheme(), host, path_str);
+                }
+            }
         }
+
+        // For local paths or if URL parsing fails, return the path as-is
+        path_str.to_string()
+    }
+
+    /// Helper method to check if the original URI uses a remote object store scheme
+    fn is_remote_uri(&self) -> bool {
+        self.original_uri.starts_with("s3://")
+            || self.original_uri.starts_with("gs://")
+            || self.original_uri.starts_with("gcs://")
+            || self.original_uri.starts_with("azure://")
+            || self.original_uri.starts_with("abfs://")
+            || self.original_uri.starts_with("http://")
+            || self.original_uri.starts_with("https://")
     }
 
     /// Consolidates all data files in the catalog by merging multiple files into single files per directory.
@@ -1135,12 +1170,12 @@ impl ParquetDataCatalog {
     where
         T: DecodeDataFromRecordBatch + CatalogPathPrefix,
     {
-        // Register the object store with the session
-        if self.original_uri.starts_with("s3://") {
+        // Register the object store with the session for remote URIs
+        if self.is_remote_uri() {
             let url = url::Url::parse(&self.original_uri)?;
             let host = url
                 .host_str()
-                .ok_or_else(|| anyhow::anyhow!("S3 URI missing bucket name"))?;
+                .ok_or_else(|| anyhow::anyhow!("Remote URI missing host/bucket name"))?;
             let base_url = url::Url::parse(&format!("{}://{}", url.scheme(), host))?;
             self.session
                 .register_object_store(&base_url, self.object_store.clone());
@@ -2076,5 +2111,99 @@ mod tests {
                 .as_ref()
                 .starts_with(base_dir.to_string_lossy().as_ref())
         );
+    }
+
+    #[test]
+    fn test_is_remote_uri() {
+        // Test S3 URIs
+        let s3_catalog =
+            ParquetDataCatalog::from_uri("s3://bucket/path", None, None, None, None).unwrap();
+        assert!(s3_catalog.is_remote_uri());
+
+        // Test GCS URIs
+        let gcs_catalog =
+            ParquetDataCatalog::from_uri("gs://bucket/path", None, None, None, None).unwrap();
+        assert!(gcs_catalog.is_remote_uri());
+
+        let gcs2_catalog =
+            ParquetDataCatalog::from_uri("gcs://bucket/path", None, None, None, None).unwrap();
+        assert!(gcs2_catalog.is_remote_uri());
+
+        // Test Azure URIs
+        let azure_catalog =
+            ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
+                .unwrap();
+        assert!(azure_catalog.is_remote_uri());
+
+        let abfs_catalog = ParquetDataCatalog::from_uri(
+            "abfs://container@account.dfs.core.windows.net/path",
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(abfs_catalog.is_remote_uri());
+
+        // Test HTTP URIs
+        let http_catalog =
+            ParquetDataCatalog::from_uri("http://example.com/path", None, None, None, None)
+                .unwrap();
+        assert!(http_catalog.is_remote_uri());
+
+        let https_catalog =
+            ParquetDataCatalog::from_uri("https://example.com/path", None, None, None, None)
+                .unwrap();
+        assert!(https_catalog.is_remote_uri());
+
+        // Test local paths (should not be remote)
+        let tmp = tempfile::tempdir().unwrap();
+        let local_catalog =
+            ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+        assert!(!local_catalog.is_remote_uri());
+
+        let tmp_file = tempfile::tempdir().unwrap();
+        let file_uri = format!("file://{}", tmp_file.path().display());
+        let file_catalog = ParquetDataCatalog::from_uri(&file_uri, None, None, None, None).unwrap();
+        assert!(!file_catalog.is_remote_uri());
+    }
+
+    #[test]
+    fn test_reconstruct_full_uri() {
+        // Test S3 URI reconstruction
+        let s3_catalog =
+            ParquetDataCatalog::from_uri("s3://bucket/base/path", None, None, None, None).unwrap();
+        let reconstructed = s3_catalog.reconstruct_full_uri("data/quotes/file.parquet");
+        assert_eq!(reconstructed, "s3://bucket/data/quotes/file.parquet");
+
+        // Test GCS URI reconstruction
+        let gcs_catalog =
+            ParquetDataCatalog::from_uri("gs://bucket/base/path", None, None, None, None).unwrap();
+        let reconstructed = gcs_catalog.reconstruct_full_uri("data/trades/file.parquet");
+        assert_eq!(reconstructed, "gs://bucket/data/trades/file.parquet");
+
+        // Test Azure URI reconstruction
+        let azure_catalog =
+            ParquetDataCatalog::from_uri("azure://account/container/path", None, None, None, None)
+                .unwrap();
+        let reconstructed = azure_catalog.reconstruct_full_uri("data/bars/file.parquet");
+        assert_eq!(reconstructed, "azure://account/data/bars/file.parquet");
+
+        // Test HTTP URI reconstruction
+        let http_catalog =
+            ParquetDataCatalog::from_uri("https://example.com/base/path", None, None, None, None)
+                .unwrap();
+        let reconstructed = http_catalog.reconstruct_full_uri("data/quotes/file.parquet");
+        assert_eq!(
+            reconstructed,
+            "https://example.com/data/quotes/file.parquet"
+        );
+
+        // Test local path (should return path as-is)
+        let tmp = tempfile::tempdir().unwrap();
+        let local_catalog =
+            ParquetDataCatalog::new(tmp.path().to_path_buf(), None, None, None, None);
+        let reconstructed = local_catalog.reconstruct_full_uri("data/quotes/file.parquet");
+        assert_eq!(reconstructed, "data/quotes/file.parquet");
     }
 }

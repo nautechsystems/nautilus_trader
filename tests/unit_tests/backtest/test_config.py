@@ -91,7 +91,7 @@ class TestBacktestConfig:
         # Assert
         assert result == {
             "data_cls": QuoteTick,
-            "instrument_ids": [InstrumentId.from_str("AUD/USD.SIM")],
+            "identifiers": [InstrumentId.from_str("AUD/USD.SIM")],
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,

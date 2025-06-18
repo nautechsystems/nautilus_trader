@@ -36,7 +36,7 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.funcs import class_to_filename
-from nautilus_trader.persistence.funcs import urisafe_instrument_id
+from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
@@ -298,7 +298,7 @@ class StreamingFeatherWriter:
         self.fs.makedirs(folder, exist_ok=True)
 
         timestamp = self.clock.timestamp_ns()
-        full_path = f"{folder}/{urisafe_instrument_id(obj.instrument_id.value)}_{timestamp}.feather"
+        full_path = f"{folder}/{urisafe_identifier(obj.instrument_id.value)}_{timestamp}.feather"
 
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
