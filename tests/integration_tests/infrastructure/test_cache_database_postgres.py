@@ -61,6 +61,7 @@ from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import Strategy
 
 
+_TEST_TIMEOUT = 5.0
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 # Requirements:
@@ -135,7 +136,7 @@ class TestCachePostgresAdapter:
         self.database.add(key, str(bar).encode())
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load())
+        await eventually(lambda: self.database.load(), timeout=_TEST_TIMEOUT)
 
         # Assert
         assert self.database.load() == {key: str(bar).encode()}
@@ -176,7 +177,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(betting.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: self.database.load_currencies(), timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["GBP"]
@@ -185,7 +186,7 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(betting)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(betting.id))
+        await eventually(lambda: self.database.load_instrument(betting.id), timeout=_TEST_TIMEOUT)
 
         # Assert
         assert betting == self.database.load_instrument(betting.id)
@@ -200,7 +201,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(binary_option.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: self.database.load_currencies(), timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USDC"]
@@ -209,7 +210,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(binary_option)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(binary_option.id))
+        await eventually(
+            lambda: self.database.load_instrument(binary_option.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         assert binary_option == self.database.load_instrument(binary_option.id)
@@ -226,7 +230,10 @@ class TestCachePostgresAdapter:
         self.database.add_currency(btc_usdt_crypto_future.settlement_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: len(self.database.load_currencies().keys()) >= 2)
+        await eventually(
+            lambda: len(self.database.load_currencies().keys()) >= 2,
+            timeout=_TEST_TIMEOUT,
+        )
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["BTC", "USDT"]
@@ -235,7 +242,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(btc_usdt_crypto_future)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(btc_usdt_crypto_future.id))
+        await eventually(
+            lambda: self.database.load_instrument(btc_usdt_crypto_future.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         result = self.database.load_instrument(btc_usdt_crypto_future.id)
@@ -252,7 +262,10 @@ class TestCachePostgresAdapter:
         self.database.add_currency(eth_usdt_crypto_perpetual.settlement_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: len(self.database.load_currencies().keys()) >= 2)
+        await eventually(
+            lambda: len(self.database.load_currencies().keys()) >= 2,
+            timeout=_TEST_TIMEOUT,
+        )
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["ETH", "USDT"]
@@ -261,7 +274,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(eth_usdt_crypto_perpetual)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(eth_usdt_crypto_perpetual.id))
+        await eventually(
+            lambda: self.database.load_instrument(eth_usdt_crypto_perpetual.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         result = self.database.load_instrument(eth_usdt_crypto_perpetual.id)
@@ -276,7 +292,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: len(self.database.load_currencies()) >= 2)
+        await eventually(lambda: len(self.database.load_currencies()) >= 2, timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["AUD", "USD"]
@@ -284,7 +300,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(_AUDUSD_SIM)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(_AUDUSD_SIM.id))
+        await eventually(
+            lambda: self.database.load_instrument(_AUDUSD_SIM.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         assert _AUDUSD_SIM == self.database.load_instrument(_AUDUSD_SIM.id)
@@ -321,6 +340,7 @@ class TestCachePostgresAdapter:
         await eventually(
             lambda: self.database.load_instrument(_AUDUSD_SIM.id).min_price
             == Price.from_str("111"),
+            timeout=_TEST_TIMEOUT,
         )
 
         # Assert
@@ -339,7 +359,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(appl_equity.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: len(self.database.load_currencies()) >= 1)
+        await eventually(lambda: len(self.database.load_currencies()) >= 1, timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USD"]
@@ -348,7 +368,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(appl_equity)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(appl_equity.id))
+        await eventually(
+            lambda: self.database.load_instrument(appl_equity.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         assert appl_equity == self.database.load_instrument(appl_equity.id)
@@ -362,7 +385,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(es_futures.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: len(self.database.load_currencies()) >= 1)
+        await eventually(lambda: len(self.database.load_currencies()) >= 1, timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USD"]
@@ -371,7 +394,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(es_futures)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(es_futures.id))
+        await eventually(
+            lambda: self.database.load_instrument(es_futures.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         assert es_futures == self.database.load_instrument(es_futures.id)
@@ -385,7 +411,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(aapl_option.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: self.database.load_currencies(), timeout=_TEST_TIMEOUT)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USD"]
@@ -394,7 +420,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(aapl_option)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_instrument(aapl_option.id))
+        await eventually(
+            lambda: self.database.load_instrument(aapl_option.id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         assert aapl_option == self.database.load_instrument(aapl_option.id)
@@ -420,7 +449,10 @@ class TestCachePostgresAdapter:
         self.database.add_order(order)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_order(order.client_order_id))
+        await eventually(
+            lambda: self.database.load_order(order.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         # Assert
         result = self.database.load_order(order.client_order_id)
@@ -444,7 +476,10 @@ class TestCachePostgresAdapter:
         self.database.add_order(order)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_order(order.client_order_id))
+        await eventually(
+            lambda: self.database.load_order(order.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
@@ -461,7 +496,10 @@ class TestCachePostgresAdapter:
         order.apply(fill)
         self.database.update_order(order)
 
-        await eventually(lambda: len(self.database.load_order(order.client_order_id).events) >= 4)
+        await eventually(
+            lambda: len(self.database.load_order(order.client_order_id).events) >= 4,
+            timeout=_TEST_TIMEOUT,
+        )
 
         result = self.database.load_order(order.client_order_id)
         assert result == order
@@ -484,7 +522,10 @@ class TestCachePostgresAdapter:
 
         self.database.add_order(order)
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_order(order.client_order_id))
+        await eventually(
+            lambda: self.database.load_order(order.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
 
         order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
@@ -494,7 +535,10 @@ class TestCachePostgresAdapter:
         # Act
         self.database.update_order(order)
 
-        await eventually(lambda: len(self.database.load_order(order.client_order_id).events) >= 3)
+        await eventually(
+            lambda: len(self.database.load_order(order.client_order_id).events) >= 3,
+            timeout=_TEST_TIMEOUT,
+        )
 
         result = self.database.load_order(order.client_order_id)
         assert result == order
@@ -530,9 +574,18 @@ class TestCachePostgresAdapter:
         self.database.add_order_snapshot(order2)
         self.database.add_order_snapshot(order3)
 
-        await eventually(lambda: self.database.load_order_snapshot(order1.client_order_id))
-        await eventually(lambda: self.database.load_order_snapshot(order2.client_order_id))
-        await eventually(lambda: self.database.load_order_snapshot(order3.client_order_id))
+        await eventually(
+            lambda: self.database.load_order_snapshot(order1.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
+        await eventually(
+            lambda: self.database.load_order_snapshot(order2.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
+        await eventually(
+            lambda: self.database.load_order_snapshot(order3.client_order_id),
+            timeout=_TEST_TIMEOUT,
+        )
         snapshot1 = self.database.load_order_snapshot(order1.client_order_id)
         snapshot2 = self.database.load_order_snapshot(order2.client_order_id)
         snapshot3 = self.database.load_order_snapshot(order3.client_order_id)
@@ -567,7 +620,10 @@ class TestCachePostgresAdapter:
 
         self.database.add_position_snapshot(position, Money.from_str("2.00 USD"))
 
-        await eventually(lambda: self.database.load_position_snapshot(position.id))
+        await eventually(
+            lambda: self.database.load_position_snapshot(position.id),
+            timeout=_TEST_TIMEOUT,
+        )
         snapshot = self.database.load_position_snapshot(position.id)
 
         assert isinstance(snapshot, nautilus_pyo3.PositionSnapshot)
@@ -583,7 +639,7 @@ class TestCachePostgresAdapter:
         self.database.add_account(account)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_account(account.id))
+        await eventually(lambda: self.database.load_account(account.id), timeout=_TEST_TIMEOUT)
 
         assert self.database.load_account(account.id) == account
         # apply modified account event
@@ -609,7 +665,10 @@ class TestCachePostgresAdapter:
 
         self.database.update_account(account)
 
-        await eventually(lambda: len(self.database.load_account(account.id).events) >= 2)
+        await eventually(
+            lambda: len(self.database.load_account(account.id).events) >= 2,
+            timeout=_TEST_TIMEOUT,
+        )
 
         result = self.database.load_account(account.id)
         assert result == account
@@ -623,7 +682,7 @@ class TestCachePostgresAdapter:
         self.database.add_account(account)
 
         # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_account(account.id))
+        await eventually(lambda: self.database.load_account(account.id), timeout=_TEST_TIMEOUT)
 
         # Act
         self.database.update_account(account)
@@ -654,7 +713,10 @@ class TestCachePostgresAdapter:
         )
         self.database.add_trade(trade)
 
-        await eventually(lambda: len(self.database.load_trades(instrument.id)) > 0)
+        await eventually(
+            lambda: len(self.database.load_trades(instrument.id)) > 0,
+            timeout=_TEST_TIMEOUT,
+        )
 
         trades = self.database.load_trades(instrument.id)
         assert len(trades) == 1
@@ -686,7 +748,10 @@ class TestCachePostgresAdapter:
         )
         self.database.add_quote(quote)
 
-        await eventually(lambda: len(self.database.load_quotes(instrument.id)) > 0)
+        await eventually(
+            lambda: len(self.database.load_quotes(instrument.id)) > 0,
+            timeout=_TEST_TIMEOUT,
+        )
 
         quotes = self.database.load_quotes(instrument.id)
         assert len(quotes) == 1
@@ -720,7 +785,10 @@ class TestCachePostgresAdapter:
         )
         self.database.add_bar(bar)
 
-        await eventually(lambda: len(self.database.load_bars(instrument.id)) > 0)
+        await eventually(
+            lambda: len(self.database.load_bars(instrument.id)) > 0,
+            timeout=_TEST_TIMEOUT,
+        )
 
         bars = self.database.load_bars(instrument.id)
         assert len(bars) == 1
@@ -743,7 +811,10 @@ class TestCachePostgresAdapter:
 
         self.database.add_signal(signal)
 
-        await eventually(lambda: len(self.database.load_signals(signal_cls, signal_name)) > 0)
+        await eventually(
+            lambda: len(self.database.load_signals(signal_cls, signal_name)) > 0,
+            timeout=_TEST_TIMEOUT,
+        )
 
         signals = self.database.load_signals(signal_cls, signal_name)
         assert len(signals) == 1
@@ -765,7 +836,7 @@ class TestCachePostgresAdapter:
         self.database.add_custom_data(data)
 
         # TODO: WIP - loading needs more work
-        # await eventually(lambda: len(self.database.load_custom_data(data_type)) > 0)
+        # await eventually(lambda: len(self.database.load_custom_data(data_type)) > 0, timeout=_TEST_TIMEOUT)
         #
         # signals = self.database.load_custom_data(data_type)
         # assert len(signals) == 1
