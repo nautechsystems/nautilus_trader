@@ -94,6 +94,44 @@ iai::main!(bench_add);
 
 Criterion writes HTML reports to `target/criterion/`; open `target/criterion/report/index.html` in your browser.
 
+### Generating a flamegraph
+
+`cargo-flamegraph` (a thin wrapper around Linux `perf`) lets you see a sampled
+call-stack profile of a single benchmark.
+
+1. Install once per machine (the crate is called `flamegraph`; it installs a
+   `cargo flamegraph` subcommand automatically). Linux requires `perf` to be
+   available (`sudo apt install linux-tools-common linux-tools-$(uname -r)` on
+   Debian/Ubuntu):
+
+   ```bash
+   cargo install flamegraph
+   ```
+
+2. Run a specific bench with the symbol-rich `bench` profile:
+
+   ```bash
+   # example: the matching benchmark in nautilus-common
+   cargo flamegraph --bench matching -p nautilus-common --profile bench
+   ```
+
+3. Open the generated `flamegraph.svg` (or `.png`) in your browser and zoom
+   into hot paths.
+
+   If you see an error mentioning `perf_event_paranoid` you need to relax the
+   kernel’s perf restrictions for the current session (root required):
+
+   ```bash
+   sudo sh -c 'echo 1 > /proc/sys/kernel/perf_event_paranoid'
+   ```
+
+   A value of `1` is typically enough; set it back to `2` (default) or make
+   the change permanent via `/etc/sysctl.conf` if desired.
+
+Because `[profile.bench]` keeps full debug symbols the SVG will show readable
+function names without bloating production binaries (which still use
+`panic = "abort"` and are built via `[profile.release]`).
+
 > **Note** Benchmark binaries are compiled with the custom `[profile.bench]`
 > defined in the workspace `Cargo.toml`.  That profile inherits from
 > `release-debugging`, preserving full optimisation *and* debug symbols so that
