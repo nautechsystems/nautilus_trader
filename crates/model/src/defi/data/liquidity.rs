@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
@@ -134,6 +136,20 @@ impl PoolLiquidityUpdate {
     #[must_use]
     pub fn instrument_id(&self) -> InstrumentId {
         self.pool.instrument_id()
+    }
+}
+
+impl Display for PoolLiquidityUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PoolLiquidityUpdate(kind={}, pool={}, amount0={}, amount1={}, liquidity={})",
+            self.kind,
+            self.pool.ticker(),
+            self.amount0,
+            self.amount1,
+            self.position_liquidity
+        )
     }
 }
 
