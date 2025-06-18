@@ -28,7 +28,7 @@ Released on TBD (UTC).
 - Added property-based testing for `TestTimer` in Rust
 - Added property-based testing for `network` crate in Rust
 - Added chaos testing with `turmoil` for socket clients in Rust
-- Ported data catalog refactor to Rust (#2681), thanks @faysou
+- Ported data catalog refactor to Rust (#2681, #2720), thanks @faysou
 - Consolidated the clocks and timers v2 feature from @twitu
 - Consolidated on pure Rust cryptography crates with no dependencies on native certs or openssl
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance
@@ -45,7 +45,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.27.0
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
-- Upgraded `redis` crate to v0.32.0
+- Upgraded `redis` crate to v0.32.1
 - Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
