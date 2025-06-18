@@ -865,8 +865,8 @@ mod tests {
 
     use super::*;
 
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
+    // TODO: Flaky in CI, potentially from syncing large test data files from cache
+    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -899,8 +899,8 @@ mod tests {
         assert_eq!(deltas[0].ts_init, 1585699200355684000);
     }
 
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
+    // TODO: Flaky in CI, potentially from syncing large test data files from cache
+    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -941,8 +941,8 @@ mod tests {
         assert_eq!(depths[0].sequence, 0);
     }
 
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
+    // TODO: Flaky in CI, potentially from syncing large test data files from cache
+    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(2), Some(3))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -983,8 +983,8 @@ mod tests {
         assert_eq!(depths[0].sequence, 0);
     }
 
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
+    // TODO: Flaky in CI, potentially from syncing large test data files from cache
+    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
@@ -1015,8 +1015,8 @@ mod tests {
         assert_eq!(quotes[0].ts_init, 1588291201234268000);
     }
 
-    // TODO: Flakey in CI, potentially to do with syncing large test data files from cache
-    #[ignore = "Flakey test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
+    // TODO: Flaky in CI, potentially from syncing large test data files from cache
+    #[ignore = "Flaky test: called `Result::unwrap()` on an `Err` value: Error(Io(Kind(UnexpectedEof)))"]
     #[rstest]
     #[case(Some(1), Some(0))] // Explicit precisions
     #[case(None, None)] // Inferred precisions
