@@ -283,3 +283,15 @@ incremental = true
 debug = "full"
 strip = false
 lto = false
+
+# -----------------------------------------------------------------------------
+# Benchmarks
+# -----------------------------------------------------------------------------
+# Criterion/iai benchmarks should retain debug symbols so that tools like
+# `cargo flamegraph` or `perf` produce human-readable stack traces.  We inherit
+# from the `release-debugging` profile defined above which keeps optimisation
+# level 3 but preserves symbols and disables LTO for faster compile times.
+# -----------------------------------------------------------------------------
+
+[profile.bench]
+inherits = "release-debugging"
