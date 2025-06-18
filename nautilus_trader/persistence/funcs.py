@@ -35,11 +35,11 @@ def class_to_filename(cls: type) -> str:
     return name
 
 
-def urisafe_instrument_id(instrument_id: InstrumentId | BarType | str) -> str:
+def urisafe_identifier(identifier: InstrumentId | BarType | str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
     """
-    return str(instrument_id).replace("/", "")
+    return str(identifier).replace("/", "")
 
 
 def combine_filters(*filters):

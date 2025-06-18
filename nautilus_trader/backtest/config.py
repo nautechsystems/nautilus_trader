@@ -294,22 +294,22 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         else:
             filter_expr = self.filter_expr
 
-        used_instrument_ids = None
+        used_identifiers = None
 
         if self.instrument_id is not None:
-            used_instrument_ids = [self.instrument_id]
+            used_identifiers = [self.instrument_id]
         elif self.instrument_ids is not None:
-            used_instrument_ids = self.instrument_ids
+            used_identifiers = self.instrument_ids
         elif self.bar_types is not None:
             bar_types: list[BarType] = [
                 BarType.from_str(bar_type) if type(bar_type) is str else bar_type
                 for bar_type in self.bar_types
             ]
-            used_instrument_ids = [bar_type.instrument_id for bar_type in bar_types]
+            used_identifiers = [bar_type.instrument_id for bar_type in bar_types]
 
         return {
             "data_cls": self.data_type,
-            "instrument_ids": used_instrument_ids,
+            "identifiers": used_identifiers,
             "start": self.start_time,
             "end": self.end_time,
             "filter_expr": parse_filters_expr(filter_expr),

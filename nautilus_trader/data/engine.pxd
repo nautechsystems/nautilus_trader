@@ -225,7 +225,7 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments, bint update_catalog = *, bint force_update_catalog = *)
-    cpdef tuple[datetime, object] _catalog_last_timestamp(self, type data_cls, instrument_id: str | None = *)
+    cpdef tuple[datetime, object] _catalog_last_timestamp(self, type data_cls, identifier: str | None = *)
     cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
     cpdef DataResponse _handle_query_group(self, DataResponse response)
     cdef DataResponse _handle_query_group_aux(self, DataResponse response)
