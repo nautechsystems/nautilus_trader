@@ -104,7 +104,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     data_client.connect().await?;
     data_client.register_exchange(univ3.clone()).await?;
 
-    // Main loop to keep the app running
     loop {
         tokio::select! {
             () = notify.notified() => break,

@@ -63,8 +63,7 @@ impl DataClientFactory for BlockchainDataClientFactory {
             .downcast_ref::<BlockchainDataClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BlockchainDataClientFactory. Expected BlockchainDataClientConfig, got {:?}",
-                    config
+                    "Invalid config type for BlockchainDataClientFactory. Expected `BlockchainDataClientConfig`, was {config:?}"
                 )
             })?;
 
