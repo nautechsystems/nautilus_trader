@@ -16,10 +16,12 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 ### Comment conventions
 
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
-2. Use *sentence case* – capitalise the first letter, keep the rest lowercase unless proper nouns.
-3. **Single-line comments** (“// like this” or “# like this”) **must not** end with a period.
-4. **Multi-line comments** may end with a period on the final line.
-5. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+2. Use *sentence case* – capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
+3. Do not use double spaces after periods.
+4. **Single-line comments** (“// like this” or “# like this”) **must not** end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
+5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *may* end with a period.
+6. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+7. Avoid emoji symbols in text.
 
 ### Doc comment / docstring mood
 
