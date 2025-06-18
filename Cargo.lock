@@ -4594,35 +4594,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-demo"
-version = "0.49.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "futures",
- "log",
- "nautilus-common",
- "nautilus-core",
- "nautilus-data",
- "nautilus-model",
- "nautilus-network",
- "nautilus-testkit",
- "pyo3",
- "pyo3-async-runtimes",
- "reqwest",
- "rstest",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
- "tracing-test",
- "ustr",
- "uuid",
-]
-
-[[package]]
 name = "nautilus-execution"
 version = "0.49.0"
 dependencies = [

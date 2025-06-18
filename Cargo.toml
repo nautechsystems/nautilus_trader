@@ -2,7 +2,10 @@
 resolver = "2"
 members = [
     "crates",
-    "crates/adapters/*",
+    "crates/adapters/blockchain",
+    "crates/adapters/coinbase_intx",
+    "crates/adapters/databento",
+    "crates/adapters/tardis",
     "crates/analysis",
     "crates/backtest",
     "crates/cli",

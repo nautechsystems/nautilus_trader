@@ -123,7 +123,7 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _set_feature_flags() -> list[str]:
-    features = "ffi,python,extension-module"
+    features = "ffi,python,extension-module,postgres"
     flags = ["--no-default-features", "--features"]
 
     if HIGH_PRECISION:
@@ -142,14 +142,24 @@ def _build_rust_libs() -> None:
         if RUSTUP_TOOLCHAIN not in ("stable", "nightly"):
             raise ValueError(f"Invalid `RUSTUP_TOOLCHAIN` '{RUSTUP_TOOLCHAIN}'")
 
-        build_options = " --release" if BUILD_MODE == "release" else ""
+        needed_crates = [
+            "nautilus-backtest",
+            "nautilus-common",
+            "nautilus-core",
+            "nautilus-infrastructure",
+            "nautilus-model",
+            "nautilus-persistence",
+            "nautilus-pyo3",
+        ]
 
+        build_options = " --release" if BUILD_MODE == "release" else ""
         features = _set_feature_flags()
 
         cmd_args = [
             "cargo",
             "build",
             "--lib",
+            *itertools.chain.from_iterable(("-p", p) for p in needed_crates),
             *build_options.split(),
             *features,
         ]
