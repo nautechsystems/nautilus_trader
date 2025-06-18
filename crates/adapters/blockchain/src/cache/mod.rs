@@ -106,6 +106,51 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Loads tokens from the database into the in-memory cache.
+    async fn load_tokens(&mut self) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            let tokens = database.load_tokens(self.chain.clone()).await?;
+            log::info!("Loading {} tokens from cache database", tokens.len());
+
+            for token in tokens {
+                self.tokens.insert(token.address, token);
+            }
+        }
+        Ok(())
+    }
+
+    /// Loads block timestamps from the database starting `from_block` number
+    /// into the in-memory cache.
+    async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            let block_timestamps = database
+                .load_block_timestamps(self.chain.clone(), from_block)
+                .await?;
+
+            // Verify block number sequence consistency
+            if !block_timestamps.is_empty() {
+                let first = block_timestamps.first().unwrap().number;
+                let last = block_timestamps.last().unwrap().number;
+                let expected_len = (last - first + 1) as usize;
+                if block_timestamps.len() != expected_len {
+                    anyhow::bail!(
+                        "Block timestamps are not consistent and sequential. Expected {expected_len} blocks but got {}",
+                        block_timestamps.len()
+                    );
+                }
+            }
+
+            log::info!(
+                "Loading {} blocks timestamps from the cache database",
+                block_timestamps.len()
+            );
+            for block in block_timestamps {
+                self.block_timestamps.insert(block.number, block.timestamp);
+            }
+        }
+        Ok(())
+    }
+
     /// Adds a block to the cache and persists it to the database if available.
     pub async fn add_block(&mut self, block: Block) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
@@ -149,50 +194,6 @@ impl BlockchainCache {
         Ok(())
     }
 
-    /// Loads tokens from the database into the in-memory cache.
-    async fn load_tokens(&mut self) -> anyhow::Result<()> {
-        if let Some(database) = &self.database {
-            let tokens = database.load_tokens(self.chain.clone()).await?;
-            log::info!("Loading {} tokens from cache database", tokens.len());
-
-            for token in tokens {
-                self.tokens.insert(token.address, token);
-            }
-        }
-        Ok(())
-    }
-
-    /// Loads block timestamps from the database starting from the specified block number.
-    async fn load_blocks(&mut self, from_block: u64) -> anyhow::Result<()> {
-        if let Some(database) = &self.database {
-            let block_timestamps = database
-                .load_block_timestamps(self.chain.clone(), from_block)
-                .await?;
-
-            // Verify block number sequence consistency
-            if !block_timestamps.is_empty() {
-                let first = block_timestamps.first().unwrap().number;
-                let last = block_timestamps.last().unwrap().number;
-                let expected_len = (last - first + 1) as usize;
-                if block_timestamps.len() != expected_len {
-                    anyhow::bail!(
-                        "Block timestamps are not consistent and sequential. Expected {expected_len} blocks but got {}",
-                        block_timestamps.len()
-                    );
-                }
-            }
-
-            log::info!(
-                "Loading {} blocks timestamps from the cache database",
-                block_timestamps.len()
-            );
-            for block in block_timestamps {
-                self.block_timestamps.insert(block.number, block.timestamp);
-            }
-        }
-        Ok(())
-    }
-
     /// Adds a [`Swap`] to the cache database if available.
     pub async fn add_swap(&self, swap: &Swap) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
@@ -203,7 +204,7 @@ impl BlockchainCache {
     }
 
     /// Adds a [`PoolLiquidityUpdate`] to the cache database if available.
-    pub async fn add_pool_liquidity_update(
+    pub async fn add_liquidity_update(
         &self,
         liquidity_update: &PoolLiquidityUpdate,
     ) -> anyhow::Result<()> {
