@@ -299,4 +299,3 @@ debug = "full"
 strip = false
 lto = false
 incremental = true
-panic = "abort"
