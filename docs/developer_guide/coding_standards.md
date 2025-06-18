@@ -18,8 +18,8 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
 2. Use *sentence case* – capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
 3. Do not use double spaces after periods.
-4. **Single-line comments** (“// like this” or “# like this”) **must not** end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
-5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *may* end with a period.
+4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
+5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *should* end with a period.
 6. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
 7. Avoid emoji symbols in text.
 
@@ -30,12 +30,6 @@ The following applies to **all** source files (Rust, Python, Cython, shell, etc.
 
 These conventions align with the prevailing styles of each language ecosystem and make generated
 documentation feel natural to end-users.
-
-### Black
-
-[Black](https://github.com/psf/black) is a PEP-8 compliant opinionated formatter and used during the pre-commit step.
-
-We agree with Black’s style, but Black does not format Cython files. We therefore manually maintain Black-style formatting in Cython code for consistency.
 
 ### Formatting
 
