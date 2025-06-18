@@ -23,16 +23,14 @@ use std::fmt::Display;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
-use crate::{data::GetTsInit, identifiers::InstrumentId};
+use crate::{data::GetTsInit, defi::Pool, identifiers::InstrumentId};
 
-pub mod amm;
 pub mod block;
 pub mod liquidity;
 pub mod swap;
 pub mod transaction;
 
 // Re-exports
-pub use amm::{Pool, SharedPool};
 pub use block::Block;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
 pub use swap::Swap;

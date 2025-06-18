@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     data::GetTsInit,
-    defi::{chain::SharedChain, data::amm::SharedPool, dex::SharedDex},
+    defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     enums::OrderSide,
     identifiers::InstrumentId,
     types::{Price, Quantity},
