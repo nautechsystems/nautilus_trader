@@ -62,8 +62,29 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
-      - name: Run nautilus_core tests
+      - name: Run Rust tests
         run: make cargo-test
+
+      - name: Run Rust benchmarks crate-by-crate
+        run: |
+          # Workspace-wide `cargo bench` fails due to mixed panic strategies
+          # (`abort` from our cdylib/staticlib targets vs `unwind` from
+          # Criterion/iai).  Invoking benches one crate at a time keeps each
+          # link step internally consistent while Cargo reuses artifacts so we
+          # don't pay the full compile cost for every crate.
+
+          CRATES=(
+            nautilus-common
+            nautilus-core
+            nautilus-model
+            nautilus-persistence
+            nautilus-network
+          )
+
+          for crate in "${CRATES[@]}"; do
+            echo "▶▶ Running benches for $crate"
+            cargo bench -p "$crate" --benches --no-fail-fast --profile bench
+          done
 
       - name: Build and install wheel
         uses: ./.github/actions/common-wheel-build
