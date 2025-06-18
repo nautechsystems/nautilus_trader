@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::{GetTsInit, order::BookOrder};
+use super::{HasTsInit, order::BookOrder};
 use crate::{identifiers::InstrumentId, types::fixed::FIXED_SIZE_BINARY};
 
 pub const DEPTH10_LEN: usize = 10;
@@ -58,7 +58,7 @@ pub struct OrderBookDepth10 {
     pub sequence: u64,
     /// UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -189,7 +189,7 @@ impl Display for OrderBookDepth10 {
 
 impl Serializable for OrderBookDepth10 {}
 
-impl GetTsInit for OrderBookDepth10 {
+impl HasTsInit for OrderBookDepth10 {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

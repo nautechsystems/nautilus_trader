@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
@@ -50,7 +50,7 @@ pub struct TradeTick {
     pub trade_id: TradeId,
     /// UNIX timestamp (nanoseconds) when the trade event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -158,7 +158,7 @@ impl Display for TradeTick {
 
 impl Serializable for TradeTick {}
 
-impl GetTsInit for TradeTick {
+impl HasTsInit for TradeTick {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

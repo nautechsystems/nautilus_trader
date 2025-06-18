@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use crate::{
-    data::GetTsInit,
+    data::HasTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
@@ -85,7 +85,7 @@ pub struct PoolLiquidityUpdate {
     pub tick_upper: i32,
     /// The timestamp of the liquidity update in Unix nanoseconds.
     pub timestamp: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -153,7 +153,7 @@ impl Display for PoolLiquidityUpdate {
     }
 }
 
-impl GetTsInit for PoolLiquidityUpdate {
+impl HasTsInit for PoolLiquidityUpdate {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

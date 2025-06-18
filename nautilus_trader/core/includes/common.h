@@ -276,7 +276,7 @@ typedef struct TimeEvent_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the instance was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } TimeEvent_t;

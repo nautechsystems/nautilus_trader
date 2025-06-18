@@ -21,7 +21,7 @@ use datafusion::{
 };
 use futures::StreamExt;
 use nautilus_core::{UnixNanos, ffi::cvec::CVec};
-use nautilus_model::data::{Data, GetTsInit};
+use nautilus_model::data::{Data, HasTsInit};
 use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };

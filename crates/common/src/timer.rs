@@ -70,7 +70,7 @@ pub struct TimeEvent {
     pub event_id: UUID4,
     /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 

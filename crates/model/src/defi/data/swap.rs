@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data::GetTsInit,
+    data::HasTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -100,7 +100,7 @@ impl Swap {
     }
 }
 
-impl GetTsInit for Swap {
+impl HasTsInit for Swap {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

@@ -23,7 +23,7 @@ use std::fmt::Display;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
-use crate::{data::GetTsInit, defi::Pool, identifiers::InstrumentId};
+use crate::{data::HasTsInit, defi::Pool, identifiers::InstrumentId};
 
 pub mod block;
 pub mod liquidity;
@@ -73,7 +73,7 @@ impl Display for DefiData {
     }
 }
 
-impl GetTsInit for DefiData {
+impl HasTsInit for DefiData {
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Block(block) => block.timestamp,

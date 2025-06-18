@@ -22,7 +22,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data::GetTsInit,
+    data::HasTsInit,
     defi::{chain::SharedChain, dex::Dex, token::Token},
     identifiers::InstrumentId,
 };
@@ -52,7 +52,7 @@ pub struct Pool {
     pub fee: u32,
     /// The minimum tick spacing for positions in concentrated liquidity AMMs.
     pub tick_spacing: u32,
-    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -114,7 +114,7 @@ impl std::fmt::Display for Pool {
     }
 }
 
-impl GetTsInit for Pool {
+impl HasTsInit for Pool {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
