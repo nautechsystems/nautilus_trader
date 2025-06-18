@@ -104,7 +104,7 @@ docs-rust:
 
 .PHONY: docsrs-check
 docsrs-check:
-	RUSTDOCFLAGS="--cfg docsrs" cargo hack --workspace doc --no-deps --all-features
+	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
 
 .PHONY: clippy
 clippy:
