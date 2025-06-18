@@ -23,7 +23,7 @@ use std::{
 use implied_vol::{implied_black_volatility, norm_cdf, norm_pdf};
 use nautilus_core::{UnixNanos, datetime::unix_nanos_to_iso8601, math::quadratic_interpolation};
 
-use crate::{data::GetTsInit, identifiers::InstrumentId};
+use crate::{data::HasTsInit, identifiers::InstrumentId};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
@@ -309,7 +309,7 @@ impl Mul<&GreeksData> for f64 {
     }
 }
 
-impl GetTsInit for GreeksData {
+impl HasTsInit for GreeksData {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -416,7 +416,7 @@ impl From<GreeksData> for PortfolioGreeks {
     }
 }
 
-impl GetTsInit for PortfolioGreeks {
+impl HasTsInit for PortfolioGreeks {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -470,7 +470,7 @@ impl fmt::Display for YieldCurveData {
     }
 }
 
-impl GetTsInit for YieldCurveData {
+impl HasTsInit for YieldCurveData {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

@@ -1073,7 +1073,7 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -1137,7 +1137,7 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
@@ -1171,7 +1171,7 @@ typedef struct QuoteTick_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -1222,7 +1222,7 @@ typedef struct TradeTick_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1338,7 +1338,7 @@ typedef struct Bar_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } Bar_t;
@@ -1360,7 +1360,7 @@ typedef struct MarkPriceUpdate_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } MarkPriceUpdate_t;
@@ -1382,7 +1382,7 @@ typedef struct IndexPriceUpdate_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } IndexPriceUpdate_t;
@@ -1408,7 +1408,7 @@ typedef struct InstrumentClose_t {
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
 } InstrumentClose_t;

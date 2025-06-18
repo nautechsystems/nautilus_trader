@@ -593,7 +593,7 @@ cdef extern from "../includes/model.h":
         uint64_t sequence;
         # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
@@ -633,7 +633,7 @@ cdef extern from "../includes/model.h":
         uint64_t sequence;
         # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a quote tick in a market.
@@ -650,7 +650,7 @@ cdef extern from "../includes/model.h":
         Quantity_t ask_size;
         # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
@@ -679,7 +679,7 @@ cdef extern from "../includes/model.h":
         TradeId_t trade_id;
         # UNIX timestamp (nanoseconds) when the trade event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a bar aggregation specification including a step, aggregation
@@ -741,7 +741,7 @@ cdef extern from "../includes/model.h":
         Quantity_t volume;
         # UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents a mark price update.
@@ -752,7 +752,7 @@ cdef extern from "../includes/model.h":
         Price_t value;
         # UNIX timestamp (nanoseconds) when the price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents an index price update.
@@ -763,7 +763,7 @@ cdef extern from "../includes/model.h":
         Price_t value;
         # UNIX timestamp (nanoseconds) when the price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Represents an instrument close at a venue.
@@ -776,7 +776,7 @@ cdef extern from "../includes/model.h":
         InstrumentCloseType close_type;
         # UNIX timestamp (nanoseconds) when the close price event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # A built-in Nautilus data type.

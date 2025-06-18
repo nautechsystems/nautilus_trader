@@ -79,7 +79,7 @@ use nautilus_core::{
     datetime::{iso8601_to_unix_nanos, unix_nanos_to_iso8601},
 };
 use nautilus_model::data::{
-    Bar, Data, GetTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
+    Bar, Data, HasTsInit, IndexPriceUpdate, MarkPriceUpdate, OrderBookDelta, OrderBookDepth10,
     QuoteTick, TradeTick, close::InstrumentClose,
 };
 use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
@@ -440,7 +440,7 @@ impl ParquetDataCatalog {
         end: Option<UnixNanos>,
     ) -> anyhow::Result<PathBuf>
     where
-        T: GetTsInit + EncodeToRecordBatch + CatalogPathPrefix,
+        T: HasTsInit + EncodeToRecordBatch + CatalogPathPrefix,
     {
         if data.is_empty() {
             return Ok(PathBuf::new());
@@ -542,7 +542,7 @@ impl ParquetDataCatalog {
         write_metadata: bool,
     ) -> anyhow::Result<PathBuf>
     where
-        T: GetTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
+        T: HasTsInit + Serialize + CatalogPathPrefix + EncodeToRecordBatch,
     {
         if data.is_empty() {
             return Ok(PathBuf::new());
@@ -603,7 +603,7 @@ impl ParquetDataCatalog {
     /// # Panics
     ///
     /// Panics if any timestamp is less than the previous timestamp.
-    fn check_ascending_timestamps<T: GetTsInit>(data: &[T], type_name: &str) -> anyhow::Result<()> {
+    fn check_ascending_timestamps<T: HasTsInit>(data: &[T], type_name: &str) -> anyhow::Result<()> {
         if !data.windows(2).all(|w| w[0].ts_init() <= w[1].ts_init()) {
             anyhow::bail!("{type_name} timestamps must be in ascending order");
         }
@@ -633,7 +633,7 @@ impl ParquetDataCatalog {
     /// Returns an error if record batch encoding fails for any chunk.
     pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> anyhow::Result<Vec<RecordBatch>>
     where
-        T: GetTsInit + EncodeToRecordBatch,
+        T: HasTsInit + EncodeToRecordBatch,
     {
         let mut batches = Vec::new();
 
@@ -2069,14 +2069,14 @@ fn interval_to_tuple(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::data::GetTsInit;
+    use nautilus_model::data::HasTsInit;
 
     use super::*;
 
     #[derive(Clone)]
     struct DummyData(u64);
 
-    impl GetTsInit for DummyData {
+    impl HasTsInit for DummyData {
         fn ts_init(&self) -> UnixNanos {
             UnixNanos::from(self.0)
         }

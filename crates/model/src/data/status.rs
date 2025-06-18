@@ -22,7 +22,7 @@ use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{enums::MarketStatusAction, identifiers::InstrumentId};
 
 /// Represents an event that indicates a change in an instrument market status.
@@ -40,7 +40,7 @@ pub struct InstrumentStatus {
     pub action: MarketStatusAction,
     /// UNIX timestamp (nanoseconds) when the status event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
     /// Additional details about the cause of the status change.
     pub reason: Option<Ustr>,
@@ -103,7 +103,7 @@ impl Display for InstrumentStatus {
 
 impl Serializable for InstrumentStatus {}
 
-impl GetTsInit for InstrumentStatus {
+impl HasTsInit for InstrumentStatus {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
