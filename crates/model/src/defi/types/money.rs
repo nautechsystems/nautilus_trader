@@ -32,9 +32,10 @@ impl Money {
     /// # Examples
     ///
     /// ```rust
-    /// use nautilus_model::types::{Money, Currency, CurrencyType};
+    /// use nautilus_model::types::{Money, Currency};
+    /// use nautilus_model::enums::CurrencyType;
     /// use alloy_primitives::U256;
-    /// use rust_decimal::macros::dec;
+    /// use rust_decimal_macros::dec;
     ///
     /// # #[cfg(feature = "defi")]
     /// # {
@@ -51,6 +52,12 @@ impl Money {
         let raw_u128: u128 = raw_u256
             .try_into()
             .expect("raw WEI value exceeds 128-bit range");
+
+        assert!(
+            raw_u128 <= i128::MAX as u128,
+            "raw WEI value exceeds signed 128-bit range"
+        );
+
         let raw_i128: i128 = raw_u128 as i128;
         Self::from_raw(raw_i128, currency)
     }
@@ -66,13 +73,15 @@ impl Money {
     /// # Examples
     ///
     /// ```rust
-    /// use nautilus_model::types::{Money, Currency, CurrencyType};
+    /// use nautilus_model::types::{Money, Currency};
+    /// use nautilus_model::enums::CurrencyType;
     /// use alloy_primitives::U256;
     ///
     /// # #[cfg(feature = "defi")]
     /// # {
     /// let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
-    /// let money = Money::new(1.0, eth); // 1 ETH
+    /// // Construct via raw WEI to ensure correct 18-dec precision.
+    /// let money = Money::from_wei(U256::from(1_000_000_000_000_000_000_u64), eth); // 1 ETH
     /// let wei_value = money.to_wei();
     /// assert_eq!(wei_value, U256::from(1_000_000_000_000_000_000_u64));
     /// # }
@@ -153,14 +162,14 @@ mod tests {
         assert_eq!(money.to_wei(), U256::ZERO);
     }
 
+    // The largest `u128` value does not fit into an *signed* 128-bit integer and therefore must
+    // trigger a safety panic.
     #[rstest]
+    #[should_panic(expected = "raw WEI value exceeds signed 128-bit range")]
     fn test_from_wei_maximum_u128() {
         let eth = Currency::new("ETH", 18, 0, "Ethereum", CurrencyType::Crypto);
         let max_wei = U256::from(u128::MAX);
-        let money = Money::from_wei(max_wei, eth);
-
-        assert_eq!(money.to_wei(), max_wei);
-        assert!(!money.is_zero());
+        let _ = Money::from_wei(max_wei, eth);
     }
 
     #[rstest]

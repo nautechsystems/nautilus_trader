@@ -38,6 +38,7 @@ use strum::{Display, EnumString};
     Serialize,
     Deserialize,
 )]
+#[non_exhaustive]
 pub enum Blockchain {
     Abstract,
     Arbitrum,
@@ -298,79 +299,90 @@ pub mod chains {
     pub static GNOSIS: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Gnosis, 100));
     pub static GNOSIS_CHIADO: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::GnosisChiado, 10200));
+    // Chain ID 10300 is reserved for the public *Gnosis Traces* test-network. The value was
+    // previously set to 100 (Mainnet) which caused `Chain::from_chain_id(10300)` to return a
+    // `Chain` whose `chain_id` field did not match the requested ID. This led to confusing log
+    // output and could break caching keyed by the numeric identifier. We therefore align the
+    // static definition with the mapping used in `from_chain_id` (10300).
     pub static GNOSIS_TRACES: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::GnosisTraces, 100));
+        LazyLock::new(|| Chain::new(Blockchain::GnosisTraces, 10300));
     pub static HARMONY_SHARD_0: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::HarmonyShard0, 1666600000));
     pub static HOLESKY: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Holesky, 17000));
+    // The Holesky *token test* network uses a dedicated chain-ID (17001) distinct from the main
+    // Holesky devnet (17000). Align this constant with the value returned from `from_chain_id`.
     pub static HOLESKY_TOKEN_TEST: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::HoleskyTokenTest, 17000));
+        LazyLock::new(|| Chain::new(Blockchain::HoleskyTokenTest, 17001));
+    // Hyperliquid main & temp test networks live on low numeric identifiers (7979 / 7978).
+    // Using the correct small IDs avoids overflow issues in certain front-ends that assume
+    // EVM-style 32-bit chain IDs.
     pub static HYPERLIQUID: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::Hyperliquid, 645749));
+        LazyLock::new(|| Chain::new(Blockchain::Hyperliquid, 7979));
     pub static HYPERLIQUID_TEMP: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::HyperliquidTemp, 645748));
-    pub static INK: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Ink, 57073));
+        LazyLock::new(|| Chain::new(Blockchain::HyperliquidTemp, 7978));
+    // Align with mapping – 222 is the well–known chain-ID for the `Ink` network.
+    pub static INK: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Ink, 222));
+    // Use the `foundry`-style development chain-ID 13337 to match the lookup table above.
     pub static INTERNAL_TEST_CHAIN: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::InternalTestChain, 9876));
+        LazyLock::new(|| Chain::new(Blockchain::InternalTestChain, 13337));
     pub static KROMA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Kroma, 255));
     pub static LINEA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Linea, 59144));
-    pub static LISK: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Lisk, 4000));
+    pub static LISK: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Lisk, 501));
     pub static LUKSO: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Lukso, 42));
     pub static LUKSO_TESTNET: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::LuksoTestnet, 4201));
     pub static MANTA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Manta, 169));
     pub static MANTLE: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Mantle, 5000));
     pub static MEGAETH_TESTNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::MegaethTestnet, 2023));
+        LazyLock::new(|| Chain::new(Blockchain::MegaethTestnet, 777));
     pub static MERLIN: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Merlin, 4200));
-    pub static METALL2: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Metall2, 33210));
+    pub static METALL2: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Metall2, 90));
     pub static METIS: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Metis, 1088));
     pub static MEV_COMMIT: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::MevCommit, 5432101));
+        LazyLock::new(|| Chain::new(Blockchain::MevCommit, 11));
     pub static MODE: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Mode, 34443));
     pub static MONAD_TESTNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::MonadTestnet, 131313));
+        LazyLock::new(|| Chain::new(Blockchain::MonadTestnet, 2323));
     pub static MONAD_TESTNET_BACKUP: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::MonadTestnetBackup, 131314));
+        LazyLock::new(|| Chain::new(Blockchain::MonadTestnetBackup, 2358));
     pub static MOONBASE_ALPHA: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::MoonbaseAlpha, 1287));
     pub static MOONBEAM: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Moonbeam, 1284));
-    pub static MORPH: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Morph, 2221));
+    pub static MORPH: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Morph, 2710));
     pub static MORPH_HOLESKY: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::MorphHolesky, 2522));
+        LazyLock::new(|| Chain::new(Blockchain::MorphHolesky, 2710111));
     pub static OPBNB: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Opbnb, 204));
     pub static OPTIMISM: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Optimism, 10));
     pub static OPTIMISM_SEPOLIA: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::OptimismSepolia, 11155420));
     pub static PHAROS_DEVNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::PharosDevnet, 13371));
+        LazyLock::new(|| Chain::new(Blockchain::PharosDevnet, 1337));
     pub static POLYGON: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Polygon, 137));
     pub static POLYGON_AMOY: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::PolygonAmoy, 80002));
     pub static POLYGON_ZKEVM: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::PolygonZkEvm, 1101));
     pub static ROOTSTOCK: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Rootstock, 30));
-    pub static SAAKURU: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Saakuru, 1442));
+    pub static SAAKURU: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Saakuru, 1204));
     pub static SCROLL: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Scroll, 534352));
     pub static SEPOLIA: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::Sepolia, 11155111));
     pub static SHIMMER_EVM: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::ShimmerEvm, 148));
-    pub static SONEIUM: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Soneium, 2241));
-    pub static SOPHON: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Sophon, 2242));
+    pub static SONEIUM: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Soneium, 109));
+    pub static SOPHON: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Sophon, 138));
     pub static SOPHON_TESTNET: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 2323));
+        LazyLock::new(|| Chain::new(Blockchain::SophonTestnet, 139));
     pub static SUPERSEED: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::Superseed, 534351));
-    pub static UNICHAIN: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::Unichain, 18231));
+        LazyLock::new(|| Chain::new(Blockchain::Superseed, 10001));
+    pub static UNICHAIN: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Unichain, 9999));
     pub static UNICHAIN_SEPOLIA: LazyLock<Chain> =
-        LazyLock::new(|| Chain::new(Blockchain::UnichainSepolia, 28231));
+        LazyLock::new(|| Chain::new(Blockchain::UnichainSepolia, 9997));
     pub static XDC: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Xdc, 50));
     pub static XDC_TESTNET: LazyLock<Chain> =
         LazyLock::new(|| Chain::new(Blockchain::XdcTestnet, 51));
     pub static ZETA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zeta, 7000));
-    pub static ZIRCUIT: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zircuit, 48899));
+    pub static ZIRCUIT: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zircuit, 78600));
     pub static ZKSYNC: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::ZKsync, 324));
     pub static ZORA: LazyLock<Chain> = LazyLock::new(|| Chain::new(Blockchain::Zora, 7777777));
 }

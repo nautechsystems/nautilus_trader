@@ -34,15 +34,16 @@ impl Price {
         U: Into<U256>,
     {
         let raw_u256: U256 = raw_wei.into();
-
         let raw_u128: u128 = raw_u256
             .try_into()
             .expect("raw WEI value exceeds 128-bit range");
 
-        // SAFETY: we just ensured the value is <= u128::MAX and therefore <= i128::MAX for all
-        // positive numbers. DeFi prices are non-negative, so the cast is safe.
-        let raw_i128: i128 = raw_u128 as i128;
+        assert!(
+            raw_u128 <= i128::MAX as u128,
+            "raw WEI value exceeds signed 128-bit range"
+        );
 
+        let raw_i128: i128 = raw_u128 as i128;
         Self::from_raw(raw_i128, 18)
     }
 
@@ -57,13 +58,13 @@ impl Price {
     pub fn as_wei(&self) -> U256 {
         if self.precision != 18 {
             panic!(
-                "Cannot convert price with precision {} to WEI (requires precision 18)",
+                "Failed to convert price with precision {} to WEI (requires precision 18)",
                 self.precision
             );
         }
 
         if self.raw < 0 {
-            panic!("Cannot convert negative price to WEI");
+            panic!("Failed to convert negative price to WEI");
         }
 
         // SAFETY: We've checked that raw is non-negative, so casting to u128 is safe
@@ -115,7 +116,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Cannot convert price with precision 2 to WEI (requires precision 18)"
+        expected = "Failed to convert price with precision 2 to WEI (requires precision 18)"
     )]
     fn test_as_wei_wrong_precision() {
         let price = Price::new(1.23, 2);
@@ -123,7 +124,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "Cannot convert negative price")]
+    #[should_panic(expected = "Failed to convert negative price")]
     fn test_as_wei_negative_price() {
         let price = Price::from_raw(-1_000_000_000_000_000_000_i128, 18);
         let _ = price.as_wei();

@@ -26,6 +26,7 @@ use crate::defi::{
 
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Block {
     /// The unique identifier hash of the block.
     pub hash: String,
@@ -33,15 +34,14 @@ pub struct Block {
     #[serde(deserialize_with = "deserialize_hex_number")]
     pub number: u64,
     /// Hash of the parent block.
-    #[serde(rename = "parentHash")]
     pub parent_hash: String,
     /// Address of the miner or validator who produced this block.
     pub miner: Ustr,
     /// Maximum amount of gas allowed in this block.
-    #[serde(rename = "gasLimit", deserialize_with = "deserialize_hex_number")]
+    #[serde(deserialize_with = "deserialize_hex_number")]
     pub gas_limit: u64,
     /// Total gas actually used by all transactions in this block.
-    #[serde(rename = "gasUsed", deserialize_with = "deserialize_hex_number")]
+    #[serde(deserialize_with = "deserialize_hex_number")]
     pub gas_used: u64,
     /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]

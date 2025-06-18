@@ -40,6 +40,7 @@ use crate::{
     Deserialize,
 )]
 /// Represents the type of liquidity update operation in a DEX pool.
+#[non_exhaustive]
 pub enum PoolLiquidityUpdateType {
     /// Liquidity is being added to the pool
     Mint,
