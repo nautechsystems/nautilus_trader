@@ -26,7 +26,6 @@ use nautilus_model::{
         SharedPool, Swap, Token,
     },
     identifiers::{ClientId, Venue},
-    types::{Quantity, fixed::FIXED_PRECISION},
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -34,10 +33,10 @@ use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
     contracts::erc20::Erc20Contract,
+    decode::u256_to_quantity,
     events::pool_created::PoolCreatedEvent,
     exchanges::extended::DexExtended,
     hypersync::client::HyperSyncClient,
-    math::convert_u256_to_f64,
     rpc::{
         BlockchainRpcClient, BlockchainRpcClientAny,
         chains::{
@@ -292,24 +291,13 @@ impl BlockchainDataClient {
                 );
                 continue;
             };
-            let liquidity = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(
-                    U256::from(mint_event.amount),
-                    self.chain.native_currency_decimals
-                )?,
-                precision = FIXED_PRECISION as usize
-            ));
-            let amount0 = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(mint_event.amount0, pool.token0.decimals)?,
-                precision = FIXED_PRECISION as usize
-            ));
-            let amount1 = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(mint_event.amount1, pool.token1.decimals)?,
-                precision = FIXED_PRECISION as usize
-            ));
+            let liquidity = u256_to_quantity(
+                U256::from(mint_event.amount),
+                self.chain.native_currency_decimals,
+            )?;
+            let amount0 = u256_to_quantity(mint_event.amount0, pool.token0.decimals)?;
+            let amount1 = u256_to_quantity(mint_event.amount1, pool.token1.decimals)?;
+
             let liquidity_update = PoolLiquidityUpdate::new(
                 self.chain.clone(),
                 dex_extended.dex.clone(),
@@ -380,24 +368,13 @@ impl BlockchainDataClient {
                 );
                 continue;
             };
-            let liquidity = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(
-                    U256::from(burn_event.amount),
-                    self.chain.native_currency_decimals
-                )?,
-                precision = FIXED_PRECISION as usize
-            ));
-            let amount0 = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(burn_event.amount0, pool.token0.decimals)?,
-                precision = FIXED_PRECISION as usize
-            ));
-            let amount1 = Quantity::from(format!(
-                "{:.precision$}",
-                convert_u256_to_f64(burn_event.amount1, pool.token1.decimals)?,
-                precision = FIXED_PRECISION as usize
-            ));
+            let liquidity = u256_to_quantity(
+                U256::from(burn_event.amount),
+                self.chain.native_currency_decimals,
+            )?;
+            let amount0 = u256_to_quantity(burn_event.amount0, pool.token0.decimals)?;
+            let amount1 = u256_to_quantity(burn_event.amount1, pool.token1.decimals)?;
+
             let liquidity_update = PoolLiquidityUpdate::new(
                 self.chain.clone(),
                 dex_extended.dex.clone(),

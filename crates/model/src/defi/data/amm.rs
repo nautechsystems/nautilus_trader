@@ -45,9 +45,9 @@ pub struct Pool {
     /// (1e-6) of one unit – identical to Uniswap-V3’s fee representation.
     ///
     /// Examples:
-    /// • `500`   → 0.05 %  (5 bps)
-    /// • `3_000` → 0.30 %  (30 bps)
-    /// • `10_000`→ 1.00 %
+    /// • `500`   →  0.05 %  (5 bps)
+    /// • `3_000` →  0.30 %  (30 bps)
+    /// • `10_000`→  1.00 %
     pub fee: u32,
     /// The minimum tick spacing for positions in concentrated liquidity AMMs.
     pub tick_spacing: u32,

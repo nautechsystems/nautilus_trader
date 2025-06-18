@@ -42,6 +42,7 @@
 
 pub mod config;
 pub mod contracts;
+pub mod decode;
 pub mod events;
 pub mod math;
 pub mod rpc;
