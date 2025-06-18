@@ -22,8 +22,8 @@ use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
-        Blockchain, DefiData, Dex, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType, SharedChain,
-        SharedPool, Swap, Token,
+        Block, Blockchain, DefiData, Dex, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
+        SharedChain, SharedPool, Swap, Token,
     },
     identifiers::{ClientId, Venue},
 };
@@ -242,9 +242,9 @@ impl BlockchainDataClient {
                 size,
                 price,
             );
-            self.cache.add_swap(swap.clone()).await?;
+            self.cache.add_swap(&swap).await?;
 
-            self.send_swap(&swap);
+            self.send_swap(swap);
         }
         tracing::info!("Finished syncing pool swaps");
         Ok(())
@@ -317,10 +317,10 @@ impl BlockchainDataClient {
                 *timestamp,
             );
             self.cache
-                .add_pool_liquidity_update(liquidity_update.clone())
+                .add_pool_liquidity_update(&liquidity_update)
                 .await?;
 
-            self.send_liquidity_update(&liquidity_update);
+            self.send_liquidity_update(liquidity_update);
         }
 
         tracing::info!("Finished syncing pool mints");
@@ -394,11 +394,11 @@ impl BlockchainDataClient {
                 *timestamp,
             );
             self.cache
-                .add_pool_liquidity_update(liquidity_update.clone())
+                .add_pool_liquidity_update(&liquidity_update)
                 .await?;
 
             // Send liquidity update data to data engine
-            self.send_liquidity_update(&liquidity_update);
+            self.send_liquidity_update(liquidity_update);
         }
 
         tracing::info!("Finished syncing pool burns");
@@ -498,70 +498,25 @@ impl BlockchainDataClient {
         while let Some(msg) = self.hypersync_rx.recv().await {
             match msg {
                 BlockchainMessage::Block(block) => {
-                    tracing::info!("{block}");
-                    // Note: Block data publishing could be added here if needed
+                    self.send_block(block);
                 }
             }
         }
     }
 
-    fn log_blockchain_data(&self, data_type: &str, data_info: &str) {
-        tracing::debug!("📡 Blockchain data processed: {data_type} - {data_info}");
-    }
-
-    fn send_swap(&self, swap: &Swap) {
-        let data = DataEvent::DeFi(DefiData::Swap(swap.clone())); // TODO: Optimize clone
-        if let Err(e) = self.data_sender.send(data) {
-            tracing::error!("Failed to send blockchain data: {e}");
-        } else {
-            self.log_blockchain_data(
-                "Swap",
-                &format!(
-                    "{}@{} {} {}",
-                    swap.pool.ticker(),
-                    swap.price,
-                    swap.side,
-                    swap.quantity
-                ),
-            );
-        }
-    }
-
-    fn send_liquidity_update(&self, update: &PoolLiquidityUpdate) {
-        let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update.clone())); // TODO: Optimize clone
-        if let Err(e) = self.data_sender.send(data) {
-            tracing::error!("Failed to send blockchain data: {e}");
-        } else {
-            self.log_blockchain_data(
-                "LiquidityUpdate",
-                &format!(
-                    "{} {} liquidity={}",
-                    update.pool.ticker(),
-                    update.kind,
-                    update.position_liquidity
-                ),
-            );
-        }
-    }
-
     /// Processes incoming messages from the RPC client.
     pub async fn process_rpc_message(&mut self) {
-        if let Some(rpc_client) = self.rpc_client.as_mut() {
-            loop {
-                match rpc_client.next_rpc_message().await {
-                    Ok(msg) => match msg {
-                        BlockchainMessage::Block(block) => {
-                            tracing::info!("{block}");
-                            let data = DefiData::Block(block);
-                            if let Err(e) = self.data_sender.send(DataEvent::DeFi(data)) {
-                                tracing::error!("Failed to send block: {e}");
-                            }
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Error processing rpc message: {e}");
-                    }
+        loop {
+            let msg = {
+                match self.rpc_client.as_mut() {
+                    Some(client) => client.next_rpc_message().await,
+                    None => break,
                 }
+            };
+
+            match msg {
+                Ok(BlockchainMessage::Block(block)) => self.send_block(block),
+                Err(e) => tracing::error!("Error processing RPC message: {e}"),
             }
         }
     }
@@ -604,6 +559,30 @@ impl BlockchainDataClient {
         match self.cache.get_pool(&pool_address) {
             Some(pool) => Ok(pool),
             None => anyhow::bail!("Pool {pool_address} is not registered"),
+        }
+    }
+
+    fn send_block(&self, block: Block) {
+        tracing::debug!("Sending {block}");
+        let data = DataEvent::DeFi(DefiData::Block(block));
+        self.send_data(data);
+    }
+
+    fn send_swap(&self, swap: Swap) {
+        tracing::debug!("Sending {swap}");
+        let data = DataEvent::DeFi(DefiData::Swap(swap));
+        self.send_data(data);
+    }
+
+    fn send_liquidity_update(&self, update: PoolLiquidityUpdate) {
+        tracing::debug!("Sending {update}");
+        let data = DataEvent::DeFi(DefiData::PoolLiquidityUpdate(update));
+        self.send_data(data);
+    }
+
+    fn send_data(&self, data: DataEvent) {
+        if let Err(e) = self.data_sender.send(data) {
+            tracing::error!("Failed to send block: {e}");
         }
     }
 }

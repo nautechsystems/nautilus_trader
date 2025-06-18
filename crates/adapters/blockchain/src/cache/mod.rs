@@ -194,9 +194,9 @@ impl BlockchainCache {
     }
 
     /// Adds a [`Swap`] to the cache database if available.
-    pub async fn add_swap(&self, swap: Swap) -> anyhow::Result<()> {
+    pub async fn add_swap(&self, swap: &Swap) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
-            database.add_swap(self.chain.chain_id, &swap).await?;
+            database.add_swap(self.chain.chain_id, swap).await?;
         }
 
         Ok(())
@@ -205,11 +205,11 @@ impl BlockchainCache {
     /// Adds a [`PoolLiquidityUpdate`] to the cache database if available.
     pub async fn add_pool_liquidity_update(
         &self,
-        liquidity_update: PoolLiquidityUpdate,
+        liquidity_update: &PoolLiquidityUpdate,
     ) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database
-                .add_pool_liquidity_update(self.chain.chain_id, &liquidity_update)
+                .add_pool_liquidity_update(self.chain.chain_id, liquidity_update)
                 .await?;
         }
 
