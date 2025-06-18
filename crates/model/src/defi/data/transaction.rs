@@ -20,6 +20,7 @@ use crate::defi::{chain::Chain, hex::deserialize_hex_number};
 
 /// Represents a transaction on an EVM based blockchain.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Transaction {
     /// The blockchain network identifier where this transaction occurred.
     #[serde(rename = "chainId", deserialize_with = "deserialize_chain")]
@@ -27,10 +28,9 @@ pub struct Transaction {
     /// The unique identifier (hash) of the transaction.
     pub hash: String,
     /// The hash of the block containing this transaction.
-    #[serde(rename = "blockHash")]
     pub block_hash: String,
     /// The block number in which this transaction was included.
-    #[serde(rename = "blockNumber", deserialize_with = "deserialize_hex_number")]
+    #[serde(deserialize_with = "deserialize_hex_number")]
     pub block_number: u64,
     /// The address of the sender (transaction originator).
     pub from: Address,
@@ -39,15 +39,11 @@ pub struct Transaction {
     /// The amount of Ether transferred in the transaction, in wei.
     pub value: U256,
     /// The index of the transaction within its containing block.
-    #[serde(
-        rename = "transactionIndex",
-        deserialize_with = "deserialize_hex_number"
-    )]
+    #[serde(deserialize_with = "deserialize_hex_number")]
     pub transaction_index: u64,
     /// The amount of gas allocated for transaction execution.
     pub gas: U256,
     /// The price of gas in wei per gas unit.
-    #[serde(rename = "gasPrice")]
     pub gas_price: U256,
 }
 

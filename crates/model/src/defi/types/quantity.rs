@@ -26,18 +26,17 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if the supplied `raw_wei` cannot fit into an unsigned 128-bit integer (this would
-    /// exceed the numeric range of the internal `QuantityRaw` representation).
+    /// Panics if the supplied `raw_wei` cannot fit into an **unsigned** 128-bit integer (this
+    /// would exceed the numeric range of the internal `QuantityRaw` representation).
     #[must_use]
     pub fn from_wei<U>(raw_wei: U) -> Self
     where
         U: Into<U256>,
     {
         let raw_u256: U256 = raw_wei.into();
-
         let raw_u128: u128 = raw_u256
             .try_into()
-            .expect("raw WEI value exceeds 128-bit range");
+            .expect("raw WEI value exceeds unsigned 128-bit range");
 
         Self::from_raw(raw_u128, 18)
     }
@@ -53,7 +52,7 @@ impl Quantity {
     pub fn as_wei(&self) -> U256 {
         if self.precision != 18 {
             panic!(
-                "Cannot convert quantity with precision {} to WEI (requires precision 18)",
+                "Failed to convert quantity with precision {} to WEI (requires precision 18)",
                 self.precision
             );
         }
@@ -88,7 +87,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Cannot convert quantity with precision 2 to WEI (requires precision 18)"
+        expected = "Failed to convert quantity with precision 2 to WEI (requires precision 18)"
     )]
     fn test_as_wei_wrong_precision() {
         let quantity = Quantity::new(1.23, 2);
@@ -142,7 +141,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "raw WEI value exceeds 128-bit range")]
+    #[should_panic(expected = "raw WEI value exceeds unsigned 128-bit range")]
     fn test_from_wei_overflow() {
         let overflow_wei = U256::from(u128::MAX) + U256::from(1_u64);
         let _ = Quantity::from_wei(overflow_wei);

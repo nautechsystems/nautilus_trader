@@ -26,6 +26,7 @@ use crate::{
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum AmmType {
     /// Constant Product Automated Market Maker.
     CPAMM,
@@ -95,14 +96,12 @@ impl Dex {
         }
     }
 
-    /// Returns a unique identifier for this DEX, combining chain and name.
-    ///
-    /// Format: "{chain_id}:{name_snake_case}"
+    /// Returns a unique identifier for this DEX, combining chain and protocol name.
     pub fn id(&self) -> String {
         format!(
             "{}:{}",
             self.chain.name,
-            self.name.to_lowercase().replace(" ", "_")
+            self.name.to_lowercase().replace(' ', "_")
         )
     }
 }
