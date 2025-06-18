@@ -61,11 +61,24 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
             await self._receive_server_info()
             self._eclient.setConnState(EClient.CONNECTED)
+            # check encoding when connection initializes
+            conn_time_str = self._eclient.connTime.decode('utf-8')
             self._log.info(
                 f"Connected to Interactive Brokers (v{self._eclient.serverVersion_}) "
-                f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
-                f"with client id: {self._client_id}",
+                f"at {conn_time_str} from {self._host}:{self._port} " 
+                f"with client id: {self._client_id}.",
             )
+        except UnicodeDecodeError:
+            encodings = ['gbk', 'latin-1', 'cp1252'] 
+            conn_time_str = None
+            for enc in encodings:
+                try:
+                    conn_time_str = self._eclient.connTime.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if conn_time_str is None: 
+                conn_time_str = self._eclient.connTime.decode('cp1252', errors='replace')       
         except ConnectionError:
             self._log.error("Connection failed")
             if self._eclient.wrapper:
