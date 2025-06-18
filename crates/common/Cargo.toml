@@ -91,3 +91,8 @@ harness = false
 name = "matching"
 path = "benches/matching.rs"
 harness = false
+
+[[bench]]
+name = "cache_query_sets"
+path = "benches/cache/query_sets.rs"
+harness = false

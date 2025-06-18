@@ -94,6 +94,11 @@ iai::main!(bench_add);
 
 Criterion writes HTML reports to `target/criterion/`; open `target/criterion/report/index.html` in your browser.
 
+> **Note** Benchmark binaries are compiled with the custom `[profile.bench]`
+> defined in the workspace `Cargo.toml`.  That profile inherits from
+> `release-debugging`, preserving full optimisation *and* debug symbols so that
+> tools like `cargo flamegraph` or `perf` produce human-readable stack traces.
+
 ---
 
 ## Templates
