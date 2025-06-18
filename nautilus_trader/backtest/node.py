@@ -548,8 +548,7 @@ class BacktestNode:
 
             session = catalog.backend_session(
                 data_cls=config.data_type,
-                instrument_ids=used_instrument_ids,
-                bar_types=(used_bar_types if len(used_bar_types) > 0 else None),
+                identifiers=(used_bar_types or used_instrument_ids),
                 start=used_start,
                 end=used_end,
                 session=session,
