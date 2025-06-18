@@ -5,6 +5,30 @@
 The current codebase can be used as a guide for formatting conventions.
 Additional guidelines are provided below.
 
+### Universal formatting rules
+
+The following applies to **all** source files (Rust, Python, Cython, shell, etc.):
+
+- Use **spaces only**, never hard tab characters.
+- Lines should generally stay below **100 characters**; wrap thoughtfully when necessary.
+- Prefer American English spelling (`color`, `serialize`, `behavior`).
+
+### Comment conventions
+
+1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
+2. Use *sentence case* – capitalise the first letter, keep the rest lowercase unless proper nouns.
+3. **Single-line comments** (“// like this” or “# like this”) **must not** end with a period.
+4. **Multi-line comments** may end with a period on the final line.
+5. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+
+### Doc comment / docstring mood
+
+- **Python** docstrings should be written in the **imperative mood** – e.g. *“Return a cached client.”*
+- **Rust** doc comments should be written in the **indicative mood** – e.g. *“Returns a cached client.”*
+
+These conventions align with the prevailing styles of each language ecosystem and make generated
+documentation feel natural to end-users.
+
 ### Black
 
 [Black](https://github.com/psf/black) is a PEP-8 compliant opinionated formatter and used during the pre-commit step.

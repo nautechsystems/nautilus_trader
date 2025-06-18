@@ -9,6 +9,11 @@ For development we recommend using the PyCharm *Professional* edition IDE, as it
 NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust should be installed on your system as well
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
+:::info
+NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
+mind (use `std::path::Path`, avoid Bash-isms in shell scripts, etc.).
+:::
+
 ## Setup
 
 The following steps are for UNIX-like systems, and only need to be completed once.
@@ -37,6 +42,16 @@ make install-debug
 ```bash
 pre-commit install
 ```
+
+Before opening a pull-request run the formatting and lint suite locally so that CI passes on the
+first attempt:
+
+```bash
+make format
+make pre-commit
+```
+
+Make sure the Rust compiler reports **zero errors** – broken builds slow everyone down.
 
 3. **Optional**: For frequent Rust development, configure the `PYO3_PYTHON` variable in `.cargo/config.toml` with the path to the Python interpreter. This helps reduce recompilation times for IDE/rust-analyzer based `cargo check`:
 
