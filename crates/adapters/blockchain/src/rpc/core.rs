@@ -118,7 +118,7 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::info!("Subscribing to new blocks on chain {}", self.chain.name);
+            log::info!("Subscribing to new blocks on chain '{}'", self.chain.name);
             let msg = serde_json::json!({
                 "method": "eth_subscribe",
                 "id": self.request_id,
@@ -219,8 +219,7 @@ impl CoreBlockchainRpcClient {
                                         >(json)
                                         {
                                             Ok(block_response) => {
-                                                let mut block = block_response.params.result;
-                                                block.set_chain(self.chain.clone());
+                                                let block = block_response.params.result;
                                                 Ok(BlockchainMessage::Block(block))
                                             }
                                             Err(e) => {

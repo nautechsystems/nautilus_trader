@@ -18,6 +18,7 @@
 #![allow(unused_variables)]
 
 use std::{
+    any::Any,
     cell::{Ref, RefCell},
     rc::Rc,
 };
@@ -45,7 +46,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::engine::DataEngine;
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_model::{data::Data, identifiers::TraderId};
+use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_risk::engine::RiskEngine;
 use ustr::Ustr;
@@ -161,10 +162,12 @@ impl NautilusKernel {
         // Register DataEngine process handler
         let data_engine_ref = data_engine.clone();
         let endpoint = MessagingSwitchboard::data_engine_process();
-        let handler =
-            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |data: &Data| {
-                data_engine_ref.borrow_mut().process_data(data.clone()); // TODO: Optimize clone
-            })));
+        // TODO: Optimize this back to a typed handler
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::with_any(
+            move |data: &dyn Any| {
+                data_engine_ref.borrow_mut().process(data);
+            },
+        )));
         msgbus::register(endpoint, handler);
 
         // Register DataEngine response handler

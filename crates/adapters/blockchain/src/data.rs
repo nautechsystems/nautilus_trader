@@ -73,9 +73,11 @@ pub struct BlockchainDataClient {
     /// Client for the HyperSync data indexing service.
     hypersync_client: HyperSyncClient,
     /// Channel receiver for messages from the HyperSync client.
-    hypersync_rx: tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>,
+    hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
     /// Channel sender for publishing data events to the `AsyncRunner`.
     data_sender: UnboundedSender<DataEvent>,
+    /// Background task forwarding live data (HyperSync or RPC).
+    process_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl BlockchainDataClient {
@@ -110,8 +112,9 @@ impl BlockchainDataClient {
             rpc_client,
             tokens: erc20_contract,
             hypersync_client,
-            hypersync_rx,
+            hypersync_rx: Some(hypersync_rx),
             data_sender,
+            process_task: None,
         }
     }
 
@@ -148,6 +151,31 @@ impl BlockchainDataClient {
         self.cache
             .initialize_database(pg_connect_options.into())
             .await;
+    }
+
+    /// Spawns a background task that forwards HyperSync block messages to the global runner.
+    fn spawn_hypersync_forwarder(&mut self) {
+        let rx = match self.hypersync_rx.take() {
+            Some(r) => r,
+            None => {
+                tracing::warn!("HyperSync receiver already taken, not spawning forwarder");
+                return;
+            }
+        };
+
+        let sender = self.data_sender.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(msg) = rx.recv().await {
+                let BlockchainMessage::Block(block) = msg;
+                if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Block(block))) {
+                    tracing::error!("Failed to send data: {e}");
+                }
+            }
+        });
+
+        self.process_task = Some(handle);
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
@@ -459,7 +487,7 @@ impl BlockchainDataClient {
                 token_info.symbol,
                 token_info.decimals,
             );
-            tracing::info!("Saving fetched token {token} in the cache.");
+            tracing::info!("Saving fetched token {token} in the cache");
             self.cache.add_token(token).await?;
         }
 
@@ -493,8 +521,18 @@ impl BlockchainDataClient {
     }
 
     /// Processes incoming messages from the HyperSync client.
-    pub async fn process_hypersync_message(&mut self) {
-        while let Some(msg) = self.hypersync_rx.recv().await {
+    pub async fn process_hypersync_messages(&mut self) {
+        tracing::info!("Starting task 'process_hypersync_messages'");
+
+        let mut rx = match self.hypersync_rx.take() {
+            Some(r) => r,
+            None => {
+                tracing::warn!("HyperSync receiver already taken, not spawning forwarder");
+                return;
+            }
+        };
+
+        while let Some(msg) = rx.recv().await {
             match msg {
                 BlockchainMessage::Block(block) => {
                     self.send_block(block);
@@ -504,7 +542,9 @@ impl BlockchainDataClient {
     }
 
     /// Processes incoming messages from the RPC client.
-    pub async fn process_rpc_message(&mut self) {
+    pub async fn process_rpc_messages(&mut self) {
+        tracing::info!("Starting task 'process_rpc_messages'");
+
         loop {
             let msg = {
                 match self.rpc_client.as_mut() {
@@ -525,12 +565,14 @@ impl BlockchainDataClient {
     /// # Panics
     ///
     /// Panics if using the RPC client and the block subscription request fails.
-    pub async fn subscribe_blocks(&mut self) {
+    pub async fn subscribe_blocks(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.subscribe_blocks().await.unwrap();
+            rpc_client.subscribe_blocks().await?;
         } else {
             self.hypersync_client.subscribe_blocks();
         }
+
+        Ok(())
     }
 
     /// Unsubscribes from block events.
@@ -598,28 +640,31 @@ impl DataClient for BlockchainDataClient {
     }
 
     fn start(&self) -> anyhow::Result<()> {
-        tracing::info!("Starting blockchain data client for {}", self.chain.name);
+        tracing::info!("Starting blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
     fn stop(&self) -> anyhow::Result<()> {
-        tracing::info!("Stopping blockchain data client for {}", self.chain.name);
+        tracing::info!("Stopping blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
     fn reset(&self) -> anyhow::Result<()> {
-        tracing::info!("Resetting blockchain data client for {}", self.chain.name);
+        tracing::info!("Resetting blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
     fn dispose(&self) -> anyhow::Result<()> {
-        tracing::info!("Disposing blockchain data client for {}", self.chain.name);
+        tracing::info!("Disposing blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
     /// Establishes connections to the data providers and cache, then starts block syncing.
     async fn connect(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Connecting blockchain data client for {}", self.chain.name);
+        tracing::info!(
+            "Connecting blockchain data client for '{}'",
+            self.chain.name
+        );
 
         if let Some(ref mut rpc_client) = self.rpc_client {
             rpc_client.connect().await?;
@@ -628,6 +673,18 @@ impl DataClient for BlockchainDataClient {
         let from_block = self.config.from_block.unwrap_or(0);
         self.cache.connect(from_block).await?;
         self.sync_blocks(self.config.from_block).await?;
+        self.subscribe_blocks().await?;
+
+        if self.process_task.is_none() {
+            if self.config.use_hypersync_for_live_data {
+                self.spawn_hypersync_forwarder();
+            } else {
+                // TODO: WIP
+                tracing::warn!(
+                    "use_hypersync_for_live_data=false not yet supported for live RPC forwarding"
+                );
+            }
+        }
 
         Ok(())
     }
@@ -635,11 +692,15 @@ impl DataClient for BlockchainDataClient {
     /// Gracefully disconnects from all data providers.
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
-            "Disconnecting blockchain data client for {}",
+            "Disconnecting blockchain data client for '{}'",
             self.chain.name
         );
 
         self.hypersync_client.disconnect();
+
+        if let Some(handle) = self.process_task.take() {
+            handle.abort();
+        }
 
         Ok(())
     }

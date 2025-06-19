@@ -161,12 +161,14 @@ impl HyperSyncClient {
             .await
             .unwrap();
 
+        let chain = self.chain.name;
+
         async_stream::stream! {
             while let Some(response) = rx.recv().await {
                 let response = response.unwrap();
                 for batch in response.data.blocks {
                         for received_block in batch {
-                            let block = transform_hypersync_block(received_block).unwrap();
+                            let block = transform_hypersync_block(chain, received_block).unwrap();
                             yield block
                         }
                     }
@@ -176,10 +178,13 @@ impl HyperSyncClient {
 
     /// Starts a background task that continuously polls for new blockchain blocks.
     pub fn subscribe_blocks(&mut self) {
+        let chain = self.chain.name;
         let client = self.client.clone();
         let tx = self.tx.clone();
-        let chain = self.chain.clone();
+
         let task = tokio::spawn(async move {
+            tracing::debug!("Starting task 'blocks_feed");
+
             let current_block_height = client.get_height().await.unwrap();
             let mut query = Self::construct_block_query(current_block_height, None);
 
@@ -187,8 +192,7 @@ impl HyperSyncClient {
                 let response = client.get(&query).await.unwrap();
                 for batch in response.data.blocks {
                     for received_block in batch {
-                        let mut block = transform_hypersync_block(received_block).unwrap();
-                        block.set_chain(chain.as_ref().clone());
+                        let block = transform_hypersync_block(chain, received_block).unwrap();
                         let msg = BlockchainMessage::Block(block);
                         if let Err(e) = tx.send(msg) {
                             log::error!("Error sending message: {e}");
@@ -210,6 +214,7 @@ impl HyperSyncClient {
                 query.from_block = response.next_block;
             }
         });
+
         self.blocks_task = Some(task);
     }
 

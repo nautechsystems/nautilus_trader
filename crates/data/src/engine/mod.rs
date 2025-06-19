@@ -608,38 +608,25 @@ impl DataEngine {
 
     /// Processes DeFi-specific data events.
     #[cfg(feature = "defi")]
-    pub fn process_defi_data(&mut self, _data: DefiData) {
-        todo!("Implement");
-        // match data {
-        //     DefiData::Swap(swap) => {
-        //         // TODO: Implement cache storage for swaps
-        //         log::info!("Processed DeFi swap: {}", swap.pool.ticker());
-        //
-        //         // Publish swap data to message bus for strategies
-        //         let topic = format!("data.defi.swap.{}", swap.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &swap as &dyn std::any::Any);
-        //     }
-        //     DefiData::PoolLiquidityUpdate(update) => {
-        //         // TODO: Implement cache storage for liquidity updates
-        //         log::info!(
-        //             "Processed DeFi liquidity update: {} {}",
-        //             update.pool.ticker(),
-        //             update.kind
-        //         );
-        //
-        //         // Publish liquidity update to message bus for strategies
-        //         let topic = format!("data.defi.liquidity.{}", update.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &update as &dyn std::any::Any);
-        //     }
-        //     DefiData::Pool(pool) => {
-        //         // TODO: Implement cache storage for pools
-        //         log::info!("Processed DeFi pool: {}", pool.ticker());
-        //
-        //         // Publish pool data to message bus for strategies
-        //         let topic = format!("data.defi.pool.{}", pool.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &pool as &dyn std::any::Any);
-        //     }
-        // }
+    pub fn process_defi_data(&mut self, data: DefiData) {
+        match data {
+            DefiData::Block(block) => {
+                let topic = switchboard::get_defi_blocks_topic(block.chain());
+                msgbus::publish(topic, &block as &dyn Any);
+            }
+            DefiData::Pool(pool) => {
+                let topic = switchboard::get_defi_pool_topic(pool.address);
+                msgbus::publish(topic, &pool as &dyn Any);
+            }
+            DefiData::Swap(swap) => {
+                let topic = switchboard::get_defi_swaps_topic(swap.pool.address);
+                msgbus::publish(topic, &swap as &dyn Any);
+            }
+            DefiData::PoolLiquidityUpdate(update) => {
+                let topic = switchboard::get_defi_liquidity_topic(update.pool.address);
+                msgbus::publish(topic, &update as &dyn Any);
+            }
+        }
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.

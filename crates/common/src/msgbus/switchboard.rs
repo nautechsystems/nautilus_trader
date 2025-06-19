@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
+use ahash::AHashMap;
+#[cfg(feature = "defi")]
+use alloy_primitives::Address;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Blockchain;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientOrderId, InstrumentId, PositionId, StrategyId, Venue},
@@ -161,49 +164,101 @@ pub fn get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic> {
         .get_event_positions_topic(strategy_id)
 }
 
+#[cfg(feature = "defi")]
+#[must_use]
+pub fn get_defi_blocks_topic(chain: Blockchain) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_defi_blocks_topic(chain)
+}
+
+#[cfg(feature = "defi")]
+#[must_use]
+pub fn get_defi_pool_topic(address: Address) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_defi_pool_topic(address)
+}
+
+#[cfg(feature = "defi")]
+#[must_use]
+pub fn get_defi_swaps_topic(address: Address) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_defi_swaps_topic(address)
+}
+
+#[cfg(feature = "defi")]
+#[must_use]
+pub fn get_defi_liquidity_topic(address: Address) -> MStr<Topic> {
+    get_message_bus()
+        .borrow_mut()
+        .switchboard
+        .get_defi_liquidity_topic(address)
+}
+
 /// Represents a switchboard of built-in messaging endpoint names.
 #[derive(Clone, Debug)]
 pub struct MessagingSwitchboard {
-    custom_topics: HashMap<DataType, MStr<Topic>>,
-    instruments_topics: HashMap<Venue, MStr<Topic>>,
-    instrument_topics: HashMap<InstrumentId, MStr<Topic>>,
-    book_deltas_topics: HashMap<InstrumentId, MStr<Topic>>,
-    book_depth10_topics: HashMap<InstrumentId, MStr<Topic>>,
-    book_snapshots_topics: HashMap<InstrumentId, MStr<Topic>>,
-    quote_topics: HashMap<InstrumentId, MStr<Topic>>,
-    trade_topics: HashMap<InstrumentId, MStr<Topic>>,
-    bar_topics: HashMap<BarType, MStr<Topic>>,
-    mark_price_topics: HashMap<InstrumentId, MStr<Topic>>,
-    index_price_topics: HashMap<InstrumentId, MStr<Topic>>,
-    instrument_status_topics: HashMap<InstrumentId, MStr<Topic>>,
-    instrument_close_topics: HashMap<InstrumentId, MStr<Topic>>,
-    event_orders_topics: HashMap<StrategyId, MStr<Topic>>,
-    event_positions_topics: HashMap<StrategyId, MStr<Topic>>,
-    order_snapshots_topics: HashMap<ClientOrderId, MStr<Topic>>,
-    positions_snapshots_topics: HashMap<PositionId, MStr<Topic>>,
+    custom_topics: AHashMap<DataType, MStr<Topic>>,
+    instruments_topics: AHashMap<Venue, MStr<Topic>>,
+    instrument_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    book_deltas_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    book_depth10_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    book_snapshots_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    quote_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    trade_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    bar_topics: AHashMap<BarType, MStr<Topic>>,
+    mark_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    index_price_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    instrument_status_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    instrument_close_topics: AHashMap<InstrumentId, MStr<Topic>>,
+    event_orders_topics: AHashMap<StrategyId, MStr<Topic>>,
+    event_positions_topics: AHashMap<StrategyId, MStr<Topic>>,
+    order_snapshots_topics: AHashMap<ClientOrderId, MStr<Topic>>,
+    positions_snapshots_topics: AHashMap<PositionId, MStr<Topic>>,
+    #[cfg(feature = "defi")]
+    defi_block_topics: AHashMap<Blockchain, MStr<Topic>>,
+    #[cfg(feature = "defi")]
+    defi_pool_topics: AHashMap<Address, MStr<Topic>>,
+    #[cfg(feature = "defi")]
+    defi_swap_topics: AHashMap<Address, MStr<Topic>>,
+    #[cfg(feature = "defi")]
+    defi_liquidity_topics: AHashMap<Address, MStr<Topic>>,
 }
 
 impl Default for MessagingSwitchboard {
     /// Creates a new default [`MessagingSwitchboard`] instance.
     fn default() -> Self {
         Self {
-            custom_topics: HashMap::new(),
-            instruments_topics: HashMap::new(),
-            instrument_topics: HashMap::new(),
-            book_deltas_topics: HashMap::new(),
-            book_snapshots_topics: HashMap::new(),
-            book_depth10_topics: HashMap::new(),
-            quote_topics: HashMap::new(),
-            trade_topics: HashMap::new(),
-            mark_price_topics: HashMap::new(),
-            index_price_topics: HashMap::new(),
-            bar_topics: HashMap::new(),
-            instrument_status_topics: HashMap::new(),
-            instrument_close_topics: HashMap::new(),
-            order_snapshots_topics: HashMap::new(),
-            event_orders_topics: HashMap::new(),
-            event_positions_topics: HashMap::new(),
-            positions_snapshots_topics: HashMap::new(),
+            custom_topics: AHashMap::new(),
+            instruments_topics: AHashMap::new(),
+            instrument_topics: AHashMap::new(),
+            book_deltas_topics: AHashMap::new(),
+            book_snapshots_topics: AHashMap::new(),
+            book_depth10_topics: AHashMap::new(),
+            quote_topics: AHashMap::new(),
+            trade_topics: AHashMap::new(),
+            mark_price_topics: AHashMap::new(),
+            index_price_topics: AHashMap::new(),
+            bar_topics: AHashMap::new(),
+            instrument_status_topics: AHashMap::new(),
+            instrument_close_topics: AHashMap::new(),
+            order_snapshots_topics: AHashMap::new(),
+            event_orders_topics: AHashMap::new(),
+            event_positions_topics: AHashMap::new(),
+            positions_snapshots_topics: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            defi_block_topics: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            defi_pool_topics: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            defi_swap_topics: AHashMap::new(),
+            #[cfg(feature = "defi")]
+            defi_liquidity_topics: AHashMap::new(),
         }
     }
 }
@@ -427,6 +482,42 @@ impl MessagingSwitchboard {
             .event_positions_topics
             .entry(strategy_id)
             .or_insert_with(|| format!("events.position.{strategy_id}").into())
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn get_defi_blocks_topic(&mut self, chain: Blockchain) -> MStr<Topic> {
+        *self
+            .defi_block_topics
+            .entry(chain)
+            .or_insert_with(|| format!("data.defi.blocks.{chain}").into())
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn get_defi_pool_topic(&mut self, address: Address) -> MStr<Topic> {
+        *self
+            .defi_pool_topics
+            .entry(address)
+            .or_insert_with(|| format!("data.defi.pool.{address}").into())
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn get_defi_swaps_topic(&mut self, address: Address) -> MStr<Topic> {
+        *self
+            .defi_swap_topics
+            .entry(address)
+            .or_insert_with(|| format!("data.defi.swaps.{address}").into())
+    }
+
+    #[cfg(feature = "defi")]
+    #[must_use]
+    pub fn get_defi_liquidity_topic(&mut self, address: Address) -> MStr<Topic> {
+        *self
+            .defi_liquidity_topics
+            .entry(address)
+            .or_insert_with(|| format!("data.defi.liquidity.{address}").into())
     }
 }
 

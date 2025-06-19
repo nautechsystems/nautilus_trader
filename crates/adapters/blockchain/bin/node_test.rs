@@ -29,12 +29,13 @@ use nautilus_common::{
 use nautilus_core::env::get_env_var;
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    defi::{Blockchain, Chain, Pool, PoolLiquidityUpdate, Swap, chain::chains},
+    defi::{Pool, PoolLiquidityUpdate, Swap, chain::chains},
     identifiers::{ClientId, TraderId},
 };
 
 // Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
+// To see additional tracing logs `export RUST_LOG=debug,h2=off`
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,21 +45,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let trader_id = TraderId::default();
     let node_name = "TESTER-001".to_string();
 
-    let chain: Chain = match std::env::var("CHAIN")
-        .ok()
-        .and_then(|s| s.parse::<Blockchain>().ok())
-    {
-        Some(Blockchain::Ethereum) => chains::ETHEREUM.clone(),
-        Some(Blockchain::Base) => chains::BASE.clone(),
-        Some(Blockchain::Arbitrum) => chains::ARBITRUM.clone(),
-        Some(Blockchain::Polygon) => chains::POLYGON.clone(),
-        _ => {
-            println!("⚠️  No valid CHAIN env var found, using Ethereum as default");
-            chains::ETHEREUM.clone()
-        }
-    };
+    let chain = chains::ARBITRUM.clone();
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
+    // let from_block = 22_735_000_u64; // Ethereum
+    let from_block = 348_860_000_u64; // Arbitrum
 
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
@@ -66,8 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),
-        false, // Don't use hypersync for live data
-        None,  // from_block
+        true,             // Use HyperSync for live data
+        Some(from_block), // from_block
     );
 
     let mut node = LiveNode::builder(node_name, trader_id, environment)?
@@ -83,9 +74,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and register a blockchain subscriber actor
     let client_id = ClientId::new("BLOCKCHAIN");
     let pool_addresses = vec![
-        // Example pool addresses - these would be real pool addresses for testing
+        "0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443".to_string(), // WETH/USDC Arbitrum One
         "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640".to_string(), // USDC/ETH 0.05% on Uniswap V3
-                                                                  // Add more pool addresses as needed for testing
     ];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, pool_addresses);

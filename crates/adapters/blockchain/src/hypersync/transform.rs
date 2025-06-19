@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy::primitives::U256;
 use hypersync_client::format::Hex;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
-use nautilus_model::defi::{Block, hex::from_str_hex_to_u64};
+use nautilus_model::defi::{Block, Blockchain, hex::from_str_hex_to_u64};
 use ustr::Ustr;
 
 /// Converts a HyperSync block format to our internal Block type.
 pub fn transform_hypersync_block(
+    chain: Blockchain,
     received_block: hypersync_client::simple_types::Block,
 ) -> Result<Block, anyhow::Error> {
     let number = received_block
@@ -47,7 +49,7 @@ pub fn transform_hypersync_block(
             .as_str(),
     )?;
 
-    Ok(Block::new(
+    let mut block = Block::new(
         received_block
             .hash
             .ok_or_else(|| anyhow::anyhow!("Missing hash"))?
@@ -67,5 +69,34 @@ pub fn transform_hypersync_block(
         gas_limit,
         gas_used,
         UnixNanos::new(timestamp * NANOSECONDS_IN_SECOND),
-    ))
+        Some(chain),
+    );
+
+    if let Some(base_fee_hex) = received_block.base_fee_per_gas {
+        let s = base_fee_hex.encode_hex();
+        let val = U256::from_str_radix(s.trim_start_matches("0x"), 16)?;
+        block = block.with_base_fee(val);
+    }
+
+    if let (Some(used_hex), Some(excess_hex)) =
+        (received_block.blob_gas_used, received_block.excess_blob_gas)
+    {
+        let used = U256::from_str_radix(used_hex.encode_hex().trim_start_matches("0x"), 16)?;
+        let excess = U256::from_str_radix(excess_hex.encode_hex().trim_start_matches("0x"), 16)?;
+        block = block.with_blob_gas(used, excess);
+    }
+
+    // TODO: HyperSync does not yet publush L1 gas metadata fields
+    // if let (Some(price_hex), Some(l1_used_hex), Some(scalar_hex)) = (
+    //     received_block.l1_gas_price,
+    //     received_block.l1_gas_used,
+    //     received_block.l1_fee_scalar,
+    // ) {
+    //     let price = U256::from_str_radix(price_hex.encode_hex().trim_start_matches("0x"), 16)?;
+    //     let used = from_str_hex_to_u64(l1_used_hex.encode_hex().as_str())?;
+    //     let scalar = from_str_hex_to_u64(scalar_hex.encode_hex().as_str())?;
+    //     block = block.with_l1_fee_components(price, used, scalar);
+    // }
+
+    Ok(block)
 }

@@ -91,12 +91,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data_client = BlockchainDataClient::new(blockchain_config);
 
     data_client.connect().await?;
-    data_client.subscribe_blocks().await;
+    data_client.subscribe_blocks().await?;
 
     loop {
         tokio::select! {
             () = notify.notified() => break,
-            () = data_client.process_hypersync_message() => {}
+            () = data_client.process_hypersync_messages() => {}
         }
     }
 

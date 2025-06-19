@@ -158,7 +158,7 @@ impl AsyncRunner {
                 else => return, // Sentinel event ends run
             };
 
-            tracing::debug!("Received {next_msg:?}");
+            tracing::trace!("Received {next_msg:?}");
 
             if let Some(msg) = next_msg {
                 match msg {

@@ -20,24 +20,27 @@ crate-type = ["rlib", "staticlib"]
 [features]
 default = ["indicators", "rstest"]
 extension-module = [
-  "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
   "nautilus-indicators/extension-module",
+  "pyo3/extension-module",
 ]
 ffi = [
-  "cbindgen",
   "nautilus-core/ffi",
   "nautilus-model/ffi",
+  "cbindgen",
 ]
 indicators = ["nautilus-indicators"]
 python = [
-  "pyo3",
-  "pyo3-async-runtimes",
   "nautilus-core/python",
   "nautilus-model/python",
+  "pyo3",
+  "pyo3-async-runtimes",
 ]
-defi = ["nautilus-model/defi"]
+defi = [
+  "nautilus-model/defi",
+  "alloy-primitives",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -49,6 +52,7 @@ nautilus-indicators = { workspace = true, optional = true }
 nautilus-model = { workspace = true, features = ["stubs"] }
 
 ahash = { workspace = true }
+alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
