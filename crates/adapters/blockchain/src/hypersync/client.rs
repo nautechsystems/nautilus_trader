@@ -18,7 +18,6 @@ use std::{collections::BTreeSet, sync::Arc};
 use alloy::primitives::keccak256;
 use futures_util::Stream;
 use hypersync_client::{
-    Client, ClientConfig,
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
@@ -37,7 +36,7 @@ pub struct HyperSyncClient {
     /// The target blockchain identifier (e.g. Ethereum, Arbitrum).
     chain: SharedChain,
     /// The underlying HyperSync Rust client for making API requests.
-    client: Arc<Client>,
+    client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
@@ -55,11 +54,12 @@ impl HyperSyncClient {
         chain: SharedChain,
         tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
     ) -> Self {
-        let mut config = ClientConfig::default();
+        let mut config = hypersync_client::ClientConfig::default();
         let hypersync_url =
             Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
         config.url = Some(hypersync_url);
-        let client = Client::new(config).unwrap();
+        let client = hypersync_client::Client::new(config).unwrap();
+
         Self {
             chain,
             client: Arc::new(client),

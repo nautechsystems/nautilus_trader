@@ -48,11 +48,11 @@ pub struct Swap {
     pub sender: Address,
     /// The direction of the swap from the perspective of the base token.
     pub side: OrderSide,
-    /// The amount of tokens being swapped
-    pub quantity: Quantity,
+    /// The amount of tokens swapped.
+    pub size: Quantity,
     /// The exchange rate at which the swap occurred.
     pub price: Price,
-    /// The timestamp of the swap in Unix nanoseconds.
+    /// UNIX timestamp (nanoseconds) when the swap occurred.
     pub timestamp: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
@@ -73,7 +73,7 @@ impl Swap {
         timestamp: UnixNanos,
         sender: Address,
         side: OrderSide,
-        quantity: Quantity,
+        size: Quantity,
         price: Price,
     ) -> Self {
         Self {
@@ -87,7 +87,7 @@ impl Swap {
             timestamp,
             sender,
             side,
-            quantity,
+            size,
             price,
             ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
         }
@@ -115,7 +115,7 @@ impl Display for Swap {
             self.dex.name,
             self.pool.ticker(),
             self.side,
-            self.quantity,
+            self.size,
             self.price,
         )
     }

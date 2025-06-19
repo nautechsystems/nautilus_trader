@@ -55,9 +55,9 @@ pub struct Dex {
     pub pool_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect swap events.
     pub swap_created_event: Cow<'static, str>,
-    /// The event signature or identifier used to detect mint events
+    /// The event signature or identifier used to detect mint events.
     pub mint_created_event: Cow<'static, str>,
-    /// The event signature or identifier used to detect burn events
+    /// The event signature or identifier used to detect burn events.
     pub burn_created_event: Cow<'static, str>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
