@@ -309,6 +309,12 @@ CREATE TABLE IF NOT EXISTS "block" (
     gas_limit BIGINT,
     gas_used BIGINT,
     timestamp TEXT,
+    base_fee_per_gas TEXT,
+    blob_gas_used TEXT,
+    excess_blob_gas TEXT,
+    l1_gas_price TEXT,
+    l1_gas_used BIGINT,
+    l1_fee_scalar BIGINT,
     PRIMARY KEY (chain_id, number)
 );
 
@@ -354,7 +360,7 @@ CREATE TABLE IF NOT EXISTS "pool_swap" (
     log_index INTEGER NOT NULL,
     sender TEXT NOT NULL,
     side TEXT NOT NULL,
-    quantity TEXT NOT NULL,
+    size TEXT NOT NULL,
     price TEXT NOT NULL,
     FOREIGN KEY (chain_id, pool_address) REFERENCES pool(chain_id, address),
     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),

@@ -75,8 +75,8 @@ runs:
         override: true
 
     - name: Install cargo-nextest
-      # https://github.com/taiki-e/install-action # v2.50.10
-      uses: taiki-e/install-action@83254c543806f3224380bf1001d6fac8feaf2d0b
+      # https://github.com/taiki-e/install-action # v2.53.2
+      uses: taiki-e/install-action@d12e869b89167df346dd0ff65da342d1fb1202fb
       with:
         tool: nextest
 
