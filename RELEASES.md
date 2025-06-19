@@ -10,8 +10,9 @@ Released on TBD (UTC).
 - Added support for DEX swaps for blockchain adapter (#2683), thanks @filipmacek
 - Added support for Pool liquidity updates for blockchain adapter (#2692), thanks @filipmacek
 - Added fill report reconciliation warning when discrepancy with existing fill (#2706), thanks @faysou
-- Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
+- Added optional metadata function for custom data query (#2724), thanks @faysou
 - Added support for order-list submission in the sandbox execution client (#2714), thanks @petioptrv
+- Added `bid_levels` and `ask_levels` for `OrderBook.pprint`
 
 ### Breaking Changes
 - Changed timer `allow_past=False` behavior: now validates the `next_event_time` instead of the `start_time`. This allows timers with past start times as long as their next scheduled event is still in the future
