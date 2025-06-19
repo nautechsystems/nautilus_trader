@@ -24,8 +24,10 @@ from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TradeId
@@ -387,3 +389,96 @@ def test_list_live_runs(
 
     # Assert
     assert result == ["abc"]
+
+
+# Custom data class for testing metadata functionality
+@customdataclass
+class TestCustomData(Data):
+    value: str = "test"
+    number: int = 42
+
+
+def test_catalog_query_with_static_metadata(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method with static (non-callable) metadata.
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+        TestCustomData(value="data2", number=2, ts_event=2, ts_init=2),
+    ]
+    catalog.write_data(test_data)
+
+    static_metadata = {"source": "test", "version": "1.0"}
+
+    # Act
+    result = catalog.query(TestCustomData, metadata=static_metadata)
+
+    # Assert
+    assert len(result) == 2
+    assert all(isinstance(item, CustomData) for item in result)
+
+    # Check that all items have the same static metadata
+    for item in result:
+        assert item.data_type.metadata == static_metadata
+        assert item.data_type.type == TestCustomData
+
+
+def test_catalog_query_with_callable_metadata(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method with callable metadata that generates different metadata per data
+    item.
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+        TestCustomData(value="data2", number=2, ts_event=2, ts_init=2),
+        TestCustomData(value="data3", number=3, ts_event=3, ts_init=3),
+    ]
+    catalog.write_data(test_data)
+
+    # Define a callable metadata function that generates metadata based on the data
+    def metadata_func(data_item):
+        return {
+            "value": data_item.value,
+            "number_category": "even" if data_item.number % 2 == 0 else "odd",
+            "timestamp": str(data_item.ts_event),
+        }
+
+    # Act
+    result = catalog.query(TestCustomData, metadata=metadata_func)
+
+    # Assert
+    assert len(result) == 3
+    assert all(isinstance(item, CustomData) for item in result)
+
+    # Check that each item has different metadata based on its data
+    expected_metadata = [
+        {"value": "data1", "number_category": "odd", "timestamp": "1"},
+        {"value": "data2", "number_category": "even", "timestamp": "2"},
+        {"value": "data3", "number_category": "odd", "timestamp": "3"},
+    ]
+
+    for i, item in enumerate(result):
+        assert item.data_type.metadata == expected_metadata[i]
+        assert item.data_type.type == TestCustomData
+
+
+def test_catalog_query_without_metadata_parameter(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method without metadata parameter (should default to None).
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+    ]
+    catalog.write_data(test_data)
+
+    # Act
+    result = catalog.query(TestCustomData)
+
+    # Assert
+    assert len(result) == 1
+    assert isinstance(result[0], CustomData)
+    assert result[0].data_type.metadata == {}
+    assert result[0].data_type.type == TestCustomData

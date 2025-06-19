@@ -782,9 +782,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not is_nautilus_class(data_cls):
             # Special handling for generic data
             metadata = kwargs.get("metadata")
-            data = [
-                CustomData(data_type=DataType(data_cls, metadata=metadata), data=d) for d in data
-            ]
+
+            if callable(metadata):
+                data = [
+                    CustomData(data_type=DataType(data_cls, metadata=metadata(d)), data=d)
+                    for d in data
+                ]
+            else:
+                data = [
+                    CustomData(data_type=DataType(data_cls, metadata=metadata), data=d)
+                    for d in data
+                ]
 
         return data
 
