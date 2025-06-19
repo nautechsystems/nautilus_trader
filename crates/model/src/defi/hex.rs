@@ -18,6 +18,7 @@
 //! This module provides functions for converting hexadecimal strings (commonly used in blockchain
 //! APIs and JSON-RPC responses) to native Rust types, with specialized support for timestamps.
 
+use alloy_primitives::U256;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use serde::{Deserialize, Deserializer};
 
@@ -63,6 +64,60 @@ where
     from_str_hex_to_u64(hex_string.as_str()).map_err(serde::de::Error::custom)
 }
 
+/// Custom deserializer that converts an optional hexadecimal string into an `Option<u64>`.
+///
+/// The field is treated as optional – if the JSON field is `null` or absent the function returns
+/// `Ok(None)`. When the value **is** present it is parsed via [`from_str_hex_to_u64`] and wrapped
+/// in `Some(..)`.
+///
+/// # Errors
+///
+/// Returns a [`serde::de::Error`] if the provided string is not valid hexadecimal or if the value
+/// is larger than the `u64` range.
+pub fn deserialize_opt_hex_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // We first deserialize the value into an `Option<String>` so that missing / null JSON keys
+    // gracefully map to `None`.
+    let opt = Option::<String>::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(hex_string) => from_str_hex_to_u64(hex_string.as_str())
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// Custom deserializer that converts an optional hexadecimal string into an `Option<U256>`.
+/// A `None` result indicates the field was absent or explicitly `null`.
+///
+/// # Errors
+///
+/// Returns a [`serde::de::Error`] if the string is not valid hex or cannot be parsed into `U256`.
+pub fn deserialize_opt_hex_u256<'de, D>(deserializer: D) -> Result<Option<U256>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<String>::deserialize(deserializer)?;
+
+    match opt {
+        None => Ok(None),
+        Some(hex_string) => {
+            let without_prefix = if hex_string.starts_with("0x") || hex_string.starts_with("0X") {
+                &hex_string[2..]
+            } else {
+                hex_string.as_str()
+            };
+
+            U256::from_str_radix(without_prefix, 16)
+                .map(Some)
+                .map_err(serde::de::Error::custom)
+        }
+    }
+}
+
 /// Custom deserializer function for hex timestamps to convert hex seconds to `UnixNanos`.
 ///
 /// # Errors
@@ -84,6 +139,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::U256;
+
     use super::*;
 
     #[test]
@@ -125,5 +182,19 @@ mod tests {
             from_str_hex_to_u64(timestamp_hex).unwrap() * NANOSECONDS_IN_SECOND,
             expected_nanos
         );
+    }
+
+    #[test]
+    fn test_deserialize_opt_hex_u256_present() {
+        let json = "\"0x1a\"";
+        let value: Option<U256> = serde_json::from_str(json).unwrap();
+        assert_eq!(value, Some(U256::from(26u8)));
+    }
+
+    #[test]
+    fn test_deserialize_opt_hex_u256_null() {
+        let json = "null";
+        let value: Option<U256> = serde_json::from_str(json).unwrap();
+        assert!(value.is_none());
     }
 }

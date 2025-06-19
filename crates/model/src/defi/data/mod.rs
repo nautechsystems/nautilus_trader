@@ -76,7 +76,7 @@ impl Display for DefiData {
 impl HasTsInit for DefiData {
     fn ts_init(&self) -> UnixNanos {
         match self {
-            Self::Block(block) => block.timestamp,
+            Self::Block(block) => block.timestamp, // TODO: TBD
             Self::Swap(swap) => swap.ts_init,
             Self::PoolLiquidityUpdate(update) => update.ts_init,
             Self::Pool(pool) => pool.ts_init,

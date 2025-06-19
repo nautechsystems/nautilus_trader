@@ -15,13 +15,17 @@
 
 use std::fmt::Display;
 
+use alloy_primitives::U256;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::defi::{
     chain::Chain,
-    hex::{deserialize_hex_number, deserialize_hex_timestamp},
+    hex::{
+        deserialize_hex_number, deserialize_hex_timestamp, deserialize_opt_hex_u64,
+        deserialize_opt_hex_u256,
+    },
 };
 
 /// Represents an Ethereum-compatible blockchain block with essential metadata.
@@ -43,6 +47,24 @@ pub struct Block {
     /// Total gas actually used by all transactions in this block.
     #[serde(deserialize_with = "deserialize_hex_number")]
     pub gas_used: u64,
+    /// EIP-1559 base fee per gas (wei); absent on pre-1559 or non-EIP chains.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub base_fee_per_gas: Option<U256>,
+    /// Blob gas used in this block (EIP-4844); absent on chains without blobs.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub blob_gas_used: Option<U256>,
+    /// Excess blob gas remaining after block execution (EIP-4844); None if not applicable.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub excess_blob_gas: Option<U256>,
+    /// L1 gas price used for posting this block's calldata (wei); Arbitrum only.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u256")]
+    pub l1_gas_price: Option<U256>,
+    /// L1 calldata gas units consumed when posting this block; Arbitrum only.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u64")]
+    pub l1_gas_used: Option<u64>,
+    /// Fixed-point (1e-6) scalar applied to the raw L1 fee; Arbitrum only.
+    #[serde(default, deserialize_with = "deserialize_opt_hex_u64")]
+    pub l1_fee_scalar: Option<u64>,
     /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]
     pub timestamp: UnixNanos,
@@ -70,6 +92,12 @@ impl Block {
             gas_used,
             gas_limit,
             timestamp,
+            base_fee_per_gas: None,
+            blob_gas_used: None,
+            excess_blob_gas: None,
+            l1_gas_price: None,
+            l1_gas_used: None,
+            l1_fee_scalar: None,
             chain: None,
         }
     }
@@ -77,6 +105,37 @@ impl Block {
     /// Sets the blockchain network (chain) associated with this block.
     pub fn set_chain(&mut self, chain: Chain) {
         self.chain = Some(chain);
+    }
+
+    /// Attaches chain metadata and returns the updated Block for chaining.
+    #[must_use]
+    pub fn with_chain(mut self, chain: Chain) -> Self {
+        self.chain = Some(chain);
+        self
+    }
+
+    /// Sets the EIP-1559 base fee and returns `self` for chaining.
+    #[must_use]
+    pub fn with_base_fee(mut self, fee: U256) -> Self {
+        self.base_fee_per_gas = Some(fee);
+        self
+    }
+
+    /// Sets blob-gas metrics (EIP-4844) and returns `self` for chaining.
+    #[must_use]
+    pub fn with_blob_gas(mut self, used: U256, excess: U256) -> Self {
+        self.blob_gas_used = Some(used);
+        self.excess_blob_gas = Some(excess);
+        self
+    }
+
+    /// Sets L1 fee components relevant for Arbitrum cost calculation and returns `self` for chaining.
+    #[must_use]
+    pub fn with_l1_fee_components(mut self, price: U256, gas_used: u64, scalar: u64) -> Self {
+        self.l1_gas_price = Some(price);
+        self.l1_gas_used = Some(gas_used);
+        self.l1_fee_scalar = Some(scalar);
+        self
     }
 }
 
@@ -106,12 +165,14 @@ impl Display for Block {
 
 #[cfg(test)]
 mod tests {
+    use alloy_primitives::U256;
     use chrono::{TimeZone, Utc};
     use nautilus_core::UnixNanos;
     use rstest::{fixture, rstest};
+    use ustr::Ustr;
 
     use super::Block;
-    use crate::defi::rpc::RpcNodeWssResponse;
+    use crate::defi::{chain::chains, rpc::RpcNodeWssResponse};
 
     #[fixture]
     fn eth_rpc_block_response() -> String {
@@ -270,6 +331,10 @@ mod tests {
         );
         assert_eq!(block.gas_used, 14563593);
         assert_eq!(block.gas_limit, 35894433);
+
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x1862a795u64)));
+        assert_eq!(block.blob_gas_used, Some(U256::from(0xc0000u64)));
+        assert_eq!(block.excess_blob_gas, Some(U256::from(0x4840000u64)));
     }
 
     #[rstest]
@@ -300,6 +365,9 @@ mod tests {
         );
         assert_eq!(block.gas_used, 19336980);
         assert_eq!(block.gas_limit, 30000000);
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x19eu64)));
+        assert!(block.blob_gas_used.is_none()); // Not applicable on Polygon
+        assert!(block.excess_blob_gas.is_none()); // Not applicable on Polygon
     }
 
     #[rstest]
@@ -330,6 +398,10 @@ mod tests {
         );
         assert_eq!(block.gas_used, 91213350);
         assert_eq!(block.gas_limit, 120000000);
+
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0xaae54u64)));
+        assert_eq!(block.blob_gas_used, Some(U256::ZERO));
+        assert_eq!(block.excess_blob_gas, Some(U256::ZERO));
     }
 
     #[rstest]
@@ -360,14 +432,14 @@ mod tests {
         );
         assert_eq!(block.gas_used, 97012);
         assert_eq!(block.gas_limit, 1125899906842624);
+
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(0x989680u64)));
+        assert!(block.blob_gas_used.is_none());
+        assert!(block.excess_blob_gas.is_none());
     }
 
     #[rstest]
     fn test_block_set_chain() {
-        use ustr::Ustr;
-
-        use crate::defi::chain::chains;
-
         let mut block = Block::new(
             "0x1234567890abcdef".to_string(),
             "0xabcdef1234567890".to_string(),
@@ -385,5 +457,32 @@ mod tests {
 
         assert!(block.chain.is_some());
         assert_eq!(block.chain.unwrap().chain_id, chain.chain_id);
+    }
+
+    #[rstest]
+    fn test_block_builder_helpers() {
+        let base_block = Block::new(
+            "0xabc".into(),
+            "0xdef".into(),
+            1,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            100_000,
+            50_000,
+            UnixNanos::from(1_700_000_000u64),
+        );
+
+        let block = base_block
+            .with_base_fee(U256::from(1_000u64))
+            .with_blob_gas(U256::from(0x10u8), U256::from(0x20u8))
+            .with_l1_fee_components(U256::from(30_000u64), 1_234, 1_000_000)
+            .with_chain(chains::ARBITRUM.clone());
+
+        assert_eq!(block.base_fee_per_gas, Some(U256::from(1_000u64)));
+        assert_eq!(block.blob_gas_used, Some(U256::from(0x10u8)));
+        assert_eq!(block.excess_blob_gas, Some(U256::from(0x20u8)));
+        assert_eq!(block.l1_gas_price, Some(U256::from(30_000u64)));
+        assert_eq!(block.l1_gas_used, Some(1_234));
+        assert_eq!(block.l1_fee_scalar, Some(1_000_000));
+        assert_eq!(block.chain.unwrap().name, chains::ARBITRUM.name);
     }
 }

@@ -133,7 +133,7 @@ pub struct Chain {
     pub hypersync_url: String,
     /// URL endpoint for the default RPC connection.
     pub rpc_url: Option<String>,
-    /// The number of decimals for the native currency
+    /// The number of decimals for the native currency.
     pub native_currency_decimals: u8,
 }
 

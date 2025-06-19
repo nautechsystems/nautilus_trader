@@ -224,7 +224,7 @@ impl BlockchainDataClient {
                 );
                 continue;
             };
-            let (order_side, size, price) = dex_extended
+            let (side, size, price) = dex_extended
                 .convert_to_trade_data(&pool.token0, &pool.token1, &swap_event)
                 .expect("Failed to convert swap event to trade data");
 
@@ -238,7 +238,7 @@ impl BlockchainDataClient {
                 swap_event.log_index,
                 *timestamp,
                 swap_event.sender,
-                order_side,
+                side,
                 size,
                 price,
             );
@@ -247,6 +247,7 @@ impl BlockchainDataClient {
 
             self.send_swap(swap);
         }
+
         tracing::info!("Finished syncing pool swaps");
         Ok(())
     }
