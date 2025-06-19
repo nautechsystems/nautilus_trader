@@ -278,12 +278,9 @@ jobs:
     name: build - python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Pause job on develop branch for now (takes ~1 hr)
-    # if: >
-    #   !( (github.event_name == 'push' && github.ref_name == 'develop')
-    #   || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
-    # TODO: Pause windows build until fixed
     if: >
-      github.event_name == 'push' && github.ref == 'refs/heads/master'
+      !( (github.event_name == 'push' && github.ref_name == 'develop')
+      || (github.event_name == 'pull_request' && github.base_ref == 'develop') )
     needs:
       - pre-commit
     env:
