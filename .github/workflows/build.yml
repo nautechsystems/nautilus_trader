@@ -271,7 +271,7 @@ jobs:
         python-version:
           - "3.11"
           - "3.12"
-          - "3.13"
+          - "3.13.2" # pinned to 3.13.2, see https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/getting_started/installation.md
     defaults:
       run:
         shell: bash
@@ -316,9 +316,12 @@ jobs:
       - name: Cached test data
         uses: ./.github/actions/common-test-data
 
+      - name: Install test dependencies
+        run: make install-just-deps
+
       - name: Run tests
         run: |
-          uv run --no-sync pytest --ignore=tests/performance_tests
+          uv run --no-sync python -m pytest --ignore=tests/performance_tests
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
