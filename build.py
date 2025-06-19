@@ -230,28 +230,31 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-pipe")
 
     if IS_WINDOWS:
+        # Standard Windows system libraries required when linking Cython extensions.
+        # Keep this list lowercase and alphabetically sorted for easy maintenance
+        # and to avoid duplicates sneaking in.
         extra_link_args += [
-            "AdvAPI32.Lib",
+            "advapi32.lib",
             "bcrypt.lib",
-            "Crypt32.lib",
-            "Iphlpapi.lib",
-            "Kernel32.lib",
+            "crypt32.lib",
+            "iphlpapi.lib",
+            "kernel32.lib",
             "ncrypt.lib",
-            "Netapi32.lib",
+            "netapi32.lib",
             "ntdll.lib",
-            "Ole32.lib",
-            "OleAut32.lib",
-            "Pdh.lib",
-            "PowrProf.lib",
-            "Propsys.lib",
-            "Psapi.lib",
+            "ole32.lib",
+            "oleaut32.lib",
+            "pdh.lib",
+            "powrprof.lib",
+            "propsys.lib",
+            "psapi.lib",
             "runtimeobject.lib",
             "schannel.lib",
             "secur32.lib",
-            "Shell32.lib",
-            "User32.Lib",
-            "UserEnv.Lib",
-            "WS2_32.Lib",
+            "shell32.lib",
+            "user32.lib",
+            "userenv.lib",
+            "ws2_32.lib",
         ]
 
     print("Creating C extension modules...")
@@ -374,6 +377,54 @@ def _get_rustc_version() -> str:
         ) from e
 
 
+def _ensure_windows_python_import_lib() -> None:
+    """
+    Ensure that the *t* suffixed Python import library exists on Windows.
+
+    On some official CPython Windows builds the import library is named
+    ``pythonXY.lib`` (for example ``python313.lib``). However, when building
+    C-extensions ``distutils``/``setuptools`` may ask the MSVC linker for the
+    file ``pythonXYt.lib`` - note the additional *t* suffix. The *t* variant
+    historically referred to a *thread-safe* build but is no longer shipped.
+
+    When the file is missing the linker exits with
+    ``LINK : fatal error LNK1104: cannot open file 'pythonXYt.lib'`` which
+    breaks the CI build on Windows. To work around this we simply create a
+    copy of the existing import library with the expected name **before** the
+    extension build starts.
+
+    """
+    if not IS_WINDOWS:
+        return
+
+    try:
+        # The virtual environment as well as the base installation may both
+        # participate in the link search path.  Attempt the fix in both
+        # locations to maximise the chance of success.
+        candidate_roots = {Path(sys.base_prefix), Path(sys.prefix)}
+
+        # Example: for Python 3.13 -> '313'
+        major, minor, *_ = platform.python_version_tuple()
+        version_compact = f"{major}{minor}"
+
+        for root in candidate_roots:
+            libs_dir = root / "libs"
+            if not libs_dir.exists():
+                continue
+
+            src = libs_dir / f"python{version_compact}.lib"
+            dst = libs_dir / f"python{version_compact}t.lib"
+
+            if src.exists() and not dst.exists():
+                print(
+                    "Creating missing Windows import lib " f"{dst} (copying from {src})",
+                )
+                shutil.copyfile(src, dst)
+    except Exception as exc:  # pragma: no cover - defensive
+        # Never fail the build because of this helper, just show the warning
+        print(f"Warning: failed to create *t* suffixed Python import library: {exc}")
+
+
 def _strip_unneeded_symbols() -> None:
     try:
         print("Stripping unneeded symbols from binaries...")
@@ -429,6 +480,7 @@ def build() -> None:
     """
     Construct the extensions and distribution.
     """
+    _ensure_windows_python_import_lib()
     _build_rust_libs()
     _copy_rust_dylibs_to_project()
 
