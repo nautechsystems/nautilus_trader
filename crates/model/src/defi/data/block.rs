@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::defi::{
-    chain::Chain,
+    Blockchain,
     hex::{
         deserialize_hex_number, deserialize_hex_timestamp, deserialize_opt_hex_u64,
         deserialize_opt_hex_u256,
@@ -32,6 +32,9 @@ use crate::defi::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Block {
+    /// The blockchain network this block is part of.
+    #[serde(skip)]
+    pub chain: Option<Blockchain>, // TODO: We should make this required eventually
     /// The unique identifier hash of the block.
     pub hash: String,
     /// The block height/number in the blockchain.
@@ -68,13 +71,11 @@ pub struct Block {
     /// Unix timestamp when the block was created.
     #[serde(deserialize_with = "deserialize_hex_timestamp")]
     pub timestamp: UnixNanos,
-    /// The blockchain that this block is part of.
-    #[serde(skip)]
-    pub chain: Option<Chain>,
 }
 
 impl Block {
     /// Creates a new [`Block`] instance with the specified properties.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         hash: String,
         parent_hash: String,
@@ -83,8 +84,10 @@ impl Block {
         gas_limit: u64,
         gas_used: u64,
         timestamp: UnixNanos,
+        chain: Option<Blockchain>,
     ) -> Self {
         Self {
+            chain,
             hash,
             parent_hash,
             number,
@@ -98,20 +101,24 @@ impl Block {
             l1_gas_price: None,
             l1_gas_used: None,
             l1_fee_scalar: None,
-            chain: None,
         }
     }
 
-    /// Sets the blockchain network (chain) associated with this block.
-    pub fn set_chain(&mut self, chain: Chain) {
-        self.chain = Some(chain);
+    /// Returns the blockchain for this block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `chain` has not been set.
+    pub fn chain(&self) -> Blockchain {
+        if let Some(chain) = self.chain {
+            chain
+        } else {
+            panic!("Must have the `chain` field set")
+        }
     }
 
-    /// Attaches chain metadata and returns the updated Block for chaining.
-    #[must_use]
-    pub fn with_chain(mut self, chain: Chain) -> Self {
-        self.chain = Some(chain);
-        self
+    pub fn set_chain(&mut self, chain: Blockchain) {
+        self.chain = Some(chain)
     }
 
     /// Sets the EIP-1559 base fee and returns `self` for chaining.
@@ -151,11 +158,8 @@ impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Block({}number={}, timestamp={}, hash={})",
-            self.chain
-                .as_ref()
-                .map(|c| format!("chain={}, ", c.name))
-                .unwrap_or_default(),
+            "Block(chain={}, number={}, timestamp={}, hash={})",
+            self.chain(),
             self.number,
             self.timestamp.to_rfc3339(),
             self.hash
@@ -172,7 +176,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::Block;
-    use crate::defi::{chain::chains, rpc::RpcNodeWssResponse};
+    use crate::defi::{Blockchain, chain::chains, rpc::RpcNodeWssResponse};
 
     #[fixture]
     fn eth_rpc_block_response() -> String {
@@ -304,15 +308,38 @@ mod tests {
     }
 
     #[rstest]
+    fn test_block_set_chain() {
+        let mut block = Block::new(
+            "0x1234567890abcdef".to_string(),
+            "0xabcdef1234567890".to_string(),
+            12345,
+            Ustr::from("0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"),
+            21000,
+            20000,
+            UnixNanos::from(1_640_995_200_000_000_000u64),
+            None,
+        );
+
+        assert!(block.chain.is_none());
+
+        let chain = Blockchain::Ethereum;
+        block.set_chain(chain);
+
+        assert_eq!(block.chain, Some(chain));
+    }
+
+    #[rstest]
     fn test_ethereum_block_parsing(eth_rpc_block_response: String) {
-        let block = match serde_json::from_str::<RpcNodeWssResponse<Block>>(&eth_rpc_block_response)
-        {
-            Ok(rpc_response) => rpc_response.params.result,
-            Err(e) => panic!("Failed to deserialize block response with error {}", e),
-        };
+        let mut block =
+            match serde_json::from_str::<RpcNodeWssResponse<Block>>(&eth_rpc_block_response) {
+                Ok(rpc_response) => rpc_response.params.result,
+                Err(e) => panic!("Failed to deserialize block response with error {}", e),
+            };
+        block.set_chain(Blockchain::Ethereum);
+
         assert_eq!(
             block.to_string(),
-            "Block(number=22294175, timestamp=2025-04-18T06:44:11+00:00, hash=0x71ece187051700b814592f62774e6ebd8ebdf5efbb54c90859a7d1522ce38e0a)".to_string(),
+            "Block(chain=Ethereum, number=22294175, timestamp=2025-04-18T06:44:11+00:00, hash=0x71ece187051700b814592f62774e6ebd8ebdf5efbb54c90859a7d1522ce38e0a)".to_string(),
         );
         assert_eq!(
             block.hash,
@@ -339,14 +366,16 @@ mod tests {
 
     #[rstest]
     fn test_polygon_block_parsing(polygon_rpc_block_response: String) {
-        let block =
+        let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&polygon_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
                 Err(e) => panic!("Failed to deserialize block response with error {}", e),
             };
+        block.set_chain(Blockchain::Polygon);
+
         assert_eq!(
             block.to_string(),
-            "Block(number=70453741, timestamp=2025-04-18T13:17:09+00:00, hash=0x38ca655a2009e1748097f5559a0c20de7966243b804efeb53183614e4bebe199)".to_string(),
+            "Block(chain=Polygon, number=70453741, timestamp=2025-04-18T13:17:09+00:00, hash=0x38ca655a2009e1748097f5559a0c20de7966243b804efeb53183614e4bebe199)".to_string(),
         );
         assert_eq!(
             block.hash,
@@ -372,14 +401,16 @@ mod tests {
 
     #[rstest]
     fn test_base_block_parsing(base_rpc_block_response: String) {
-        let block =
+        let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&base_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
                 Err(e) => panic!("Failed to deserialize block response with error {}", e),
             };
+        block.set_chain(Blockchain::Base);
+
         assert_eq!(
             block.to_string(),
-            "Block(number=29139628, timestamp=2025-04-19T13:16:43+00:00, hash=0x14575c65070d455e6d20d5ee17be124917a33ce4437dd8615a56d29e8279b7ad)".to_string(),
+            "Block(chain=Base, number=29139628, timestamp=2025-04-19T13:16:43+00:00, hash=0x14575c65070d455e6d20d5ee17be124917a33ce4437dd8615a56d29e8279b7ad)".to_string(),
         );
         assert_eq!(
             block.hash,
@@ -406,14 +437,16 @@ mod tests {
 
     #[rstest]
     fn test_arbitrum_block_parsing(arbitrum_rpc_block_response: String) {
-        let block =
+        let mut block =
             match serde_json::from_str::<RpcNodeWssResponse<Block>>(&arbitrum_rpc_block_response) {
                 Ok(rpc_response) => rpc_response.params.result,
                 Err(e) => panic!("Failed to deserialize block response with error {}", e),
             };
+        block.set_chain(Blockchain::Arbitrum);
+
         assert_eq!(
             block.to_string(),
-            "Block(number=328014516, timestamp=2025-04-19T13:32:54+00:00, hash=0x724a0af4720fd7624976f71b16163de25f8532e87d0e7058eb0c1d3f6da3c1f8)".to_string(),
+            "Block(chain=Arbitrum, number=328014516, timestamp=2025-04-19T13:32:54+00:00, hash=0x724a0af4720fd7624976f71b16163de25f8532e87d0e7058eb0c1d3f6da3c1f8)".to_string(),
         );
         assert_eq!(
             block.hash,
@@ -439,29 +472,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_block_set_chain() {
-        let mut block = Block::new(
-            "0x1234567890abcdef".to_string(),
-            "0xabcdef1234567890".to_string(),
-            12345,
-            Ustr::from("0x742E4422b21FB8B4dF463F28689AC98bD56c39e0"),
-            21000,
-            20000,
-            UnixNanos::from(1_640_995_200_000_000_000u64),
-        );
-
-        assert!(block.chain.is_none());
-
-        let chain = chains::ETHEREUM.clone();
-        block.set_chain(chain.clone());
-
-        assert!(block.chain.is_some());
-        assert_eq!(block.chain.unwrap().chain_id, chain.chain_id);
-    }
-
-    #[rstest]
     fn test_block_builder_helpers() {
-        let base_block = Block::new(
+        let block = Block::new(
             "0xabc".into(),
             "0xdef".into(),
             1,
@@ -469,20 +481,20 @@ mod tests {
             100_000,
             50_000,
             UnixNanos::from(1_700_000_000u64),
+            Some(Blockchain::Arbitrum),
         );
 
-        let block = base_block
+        let block = block
             .with_base_fee(U256::from(1_000u64))
             .with_blob_gas(U256::from(0x10u8), U256::from(0x20u8))
-            .with_l1_fee_components(U256::from(30_000u64), 1_234, 1_000_000)
-            .with_chain(chains::ARBITRUM.clone());
+            .with_l1_fee_components(U256::from(30_000u64), 1_234, 1_000_000);
 
+        assert_eq!(block.chain, Some(chains::ARBITRUM.name));
         assert_eq!(block.base_fee_per_gas, Some(U256::from(1_000u64)));
         assert_eq!(block.blob_gas_used, Some(U256::from(0x10u8)));
         assert_eq!(block.excess_blob_gas, Some(U256::from(0x20u8)));
         assert_eq!(block.l1_gas_price, Some(U256::from(30_000u64)));
         assert_eq!(block.l1_gas_used, Some(1_234));
         assert_eq!(block.l1_fee_scalar, Some(1_000_000));
-        assert_eq!(block.chain.unwrap().name, chains::ARBITRUM.name);
     }
 }

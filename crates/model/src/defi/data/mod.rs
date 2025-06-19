@@ -40,13 +40,14 @@ pub use transaction::Transaction;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DefiData {
+    /// A block completion in a blockchain network.
     Block(Block),
+    /// A DEX liquidity pool definition or update.
+    Pool(Pool),
     /// A token swap transaction on a decentralized exchange.
     Swap(Swap),
     /// A liquidity update event (mint/burn) in a DEX pool.
     PoolLiquidityUpdate(PoolLiquidityUpdate),
-    /// A DEX liquidity pool definition or update.
-    Pool(Pool),
 }
 
 impl DefiData {
