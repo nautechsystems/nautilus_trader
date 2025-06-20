@@ -41,7 +41,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     """
 
-    async def _connect(self) -> None: # noqa: C901 (too complex)
+    async def _connect(self) -> None: 
         """
         Establish the socket connection with TWS/Gateway.
 
