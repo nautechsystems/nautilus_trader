@@ -24,6 +24,13 @@ The following steps are for UNIX-like systems, and only need to be completed onc
 uv sync --active --all-groups --all-extras
 ```
 
+Alternatively, you can run the helper script to perform the same setup and
+install the pre-commit hook in one step:
+
+```bash
+scripts/setup-env.sh
+```
+
 or
 
 ```bash
