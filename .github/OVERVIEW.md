@@ -44,6 +44,11 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 - **Code Scanning**: CodeQL is enabled for continuous security analysis.
 - **Dependency Pinning**: key tools (pre-commit, Python versions, Rust toolchain,
   mold, cargo-nextest) are locked to fixed versions or SHAs.
+- **Least-Privilege Tokens**: workflows default the `GITHUB_TOKEN` to
+  `contents: read, actions: read` and selectively elevate scopes (e.g.
+  `contents: write`) only for the jobs that need to tag a release or upload
+  assets. This follows the principle of least privilege and limits blast
+  radius if a job is compromised.
 - **Caching**: caches for sccache, pip/site-packages, pre-commit, and test data
   speed up workflows while preserving hermetic builds.
 

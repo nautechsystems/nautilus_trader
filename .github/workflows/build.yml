@@ -1,5 +1,9 @@
 name: build
 
+permissions: # Principle of least privilege
+  contents: read
+  actions: read
+
 on:
   push:
     branches: [master, nightly, develop]
@@ -11,7 +15,7 @@ jobs:
     runs-on: ubuntu-22.04 # (glibc 2.35) wider runtime range than 24.04/glibc 2.39
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -71,7 +75,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -160,7 +164,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -230,7 +234,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -290,7 +294,7 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -326,6 +330,9 @@ jobs:
   publish-wheels-develop:
     name: publish-wheels-develop
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required for deleting artifacts
+      contents: read
     needs:
       - build-linux-x86
       # - build-linux-arm # Reinstate this when/if linux-arm runs on every build
@@ -342,7 +349,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -362,6 +369,9 @@ jobs:
 
   publish-wheels-nightly:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # Required for deleting artifacts
+      contents: read
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -378,7 +388,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -398,6 +408,9 @@ jobs:
 
   publish-wheels-master:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for uploading release assets
+      actions: write  # Required for deleting artifacts
     needs:
       - build-linux-x86
       - build-linux-arm
@@ -415,7 +428,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -464,12 +477,15 @@ jobs:
           done
 
       - name: Publish to PyPI
+        if: success()
         env:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
+        run: |
+          uv publish dist/all
 
       - name: Clean up local dist directory
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
@@ -488,6 +504,9 @@ jobs:
       - build-linux-arm
       - build-macos
       - build-windows
+    permissions:
+      contents: write # Required for pushing tags and upload release assets
+      actions: write  # Required for creating releases
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
@@ -548,7 +567,7 @@ jobs:
       COPY_TO_SOURCE: false # Do not copy built *.so files back into source tree
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           egress-policy: audit
 
@@ -606,7 +625,9 @@ jobs:
           asset_content_type: application/gzip
 
       - name: Publish to PyPI
+        if: success()
         env:
           UV_PUBLISH_USERNAME: ${{ secrets.PYPI_USERNAME }}
           UV_PUBLISH_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: uv publish
+        run: |
+          uv publish dist/all
