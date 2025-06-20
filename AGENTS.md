@@ -1,3 +1,5 @@
+> **Note:** For detailed project plans, strategies, and code architecture, see the `planning/` directory. Specifically, review `planning/plan.md` (strategy and implementation plan) and `planning/engineering.md` (engineering/codebase overview) before starting new code or making architectural decisions.
+
 # Repository Guidelines
 
 This project follows certain conventions for style and tooling.
