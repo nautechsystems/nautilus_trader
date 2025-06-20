@@ -61,9 +61,10 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             )
             await self._receive_server_info()
             self._eclient.setConnState(EClient.CONNECTED)
+            conn_time_str = self._msgspec_decoding_hook(self._eclient.connTime)
             self._log.info(
                 f"Connected to Interactive Brokers (v{self._eclient.serverVersion_}) "
-                f"at {self._eclient.connTime.decode()} from {self._host}:{self._port} "
+                f"at {conn_time_str} from {self._host}:{self._port} "
                 f"with client id: {self._client_id}",
             )
         except ConnectionError:
@@ -80,6 +81,17 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             self._log.exception("Connection failed", e)
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
+
+    def _msgspec_decoding_hook(self, byte_data: bytes) -> str:
+        """
+        Decode connection time from the server for possible more languages.
+        """
+        for enc in ["utf-8", "gbk", "latin-1", "cp1252"]:
+            try:
+                return byte_data.decode(enc)
+            except UnicodeDecodeError:
+                continue
+        return byte_data.decode("utf-8", errors="replace")
 
     async def _disconnect(self) -> None:
         """
