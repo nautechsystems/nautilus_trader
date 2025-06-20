@@ -41,7 +41,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
 
     """
 
-    async def _connect(self) -> None: 
+    async def _connect(self) -> None:
         """
         Establish the socket connection with TWS/Gateway.
 
@@ -64,7 +64,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             conn_time_str = self._msgspec_decoding_hook(self._eclient.connTime)
             self._log.info(
                 f"Connected to Interactive Brokers (v{self._eclient.serverVersion_}) "
-                f"at {conn_time_str} from {self._host}:{self._port} " 
+                f"at {conn_time_str} from {self._host}:{self._port} "
                 f"with client id: {self._client_id}.",
             )
         except ConnectionError:
@@ -82,7 +82,7 @@ class InteractiveBrokersClientConnectionMixin(BaseMixin):
             if self._eclient.wrapper:
                 self._eclient.wrapper.error(NO_VALID_ID, CONNECT_FAIL.code(), CONNECT_FAIL.msg())
 
-    def _msgspec_decoding_hook(self, byte_data: bytes) -> str: 
+    def _msgspec_decoding_hook(self, byte_data: bytes) -> str:
         """decode connection time from the server for possible more languages"""
         for enc in ['utf-8', 'gbk', 'latin-1', 'cp1252']:
             try:
