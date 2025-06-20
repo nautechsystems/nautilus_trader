@@ -71,19 +71,19 @@ impl DataClient for BacktestDataClient {
         Some(self.venue)
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 

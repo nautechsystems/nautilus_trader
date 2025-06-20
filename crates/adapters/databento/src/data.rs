@@ -322,12 +322,12 @@ impl DataClient for DatabentoDataClient {
         None
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Starting Databento data client");
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Stopping Databento data client");
 
         // Signal cancellation to all running tasks
@@ -345,13 +345,13 @@ impl DataClient for DatabentoDataClient {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Resetting Databento data client");
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         tracing::debug!("Disposing Databento data client");
         self.stop()
     }

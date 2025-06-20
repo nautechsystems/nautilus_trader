@@ -122,14 +122,14 @@ pub trait LiveExecutionClient: ExecutionClient {
     /// # Errors
     ///
     /// Returns an error if connection fails.
-    fn connect(&self) -> anyhow::Result<()>;
+    fn connect(&mut self) -> anyhow::Result<()>;
 
     /// Disconnects the live execution client.
     ///
     /// # Errors
     ///
     /// Returns an error if disconnection fails.
-    fn disconnect(&self) -> anyhow::Result<()>;
+    fn disconnect(&mut self) -> anyhow::Result<()>;
 
     /// Generates a single order status report.
     ///

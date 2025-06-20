@@ -246,8 +246,8 @@ impl DataEngine {
     }
 
     /// Starts all registered data clients.
-    pub fn start(&self) {
-        for client in self.get_clients() {
+    pub fn start(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.start() {
                 log::error!("{e}");
             }
@@ -255,8 +255,8 @@ impl DataEngine {
     }
 
     /// Stops all registered data clients.
-    pub fn stop(&self) {
-        for client in self.get_clients() {
+    pub fn stop(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.stop() {
                 log::error!("{e}");
             }
@@ -264,8 +264,8 @@ impl DataEngine {
     }
 
     /// Resets all registered data clients to their initial state.
-    pub fn reset(&self) {
-        for client in self.get_clients() {
+    pub fn reset(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.reset() {
                 log::error!("{e}");
             }
@@ -273,8 +273,8 @@ impl DataEngine {
     }
 
     /// Disposes the engine, stopping all clients and cancelling any timers.
-    pub fn dispose(&self) {
-        for client in self.get_clients() {
+    pub fn dispose(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {
                 log::error!("{e}");
             }
