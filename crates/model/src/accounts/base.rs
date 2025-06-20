@@ -347,11 +347,10 @@ impl BaseAccount {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "stubs"))]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "stubs")]
     #[test]
     fn test_base_purge_account_events_retains_latest_when_all_purged() {
         use crate::{
