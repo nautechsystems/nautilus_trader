@@ -69,6 +69,7 @@ jobs:
       - name: Run Rust tests
         run: make cargo-test
 
+      # TODO: Add nautilus-persistence once required test data available
       - name: Run Rust benchmarks crate-by-crate
         run: |
           # Workspace-wide `cargo bench` fails due to mixed panic strategies
@@ -81,8 +82,6 @@ jobs:
             nautilus-common
             nautilus-core
             nautilus-model
-            nautilus-persistence
-            nautilus-network
           )
 
           for crate in "${CRATES[@]}"; do
