@@ -28,10 +28,10 @@ use alloy::primitives::Address;
 /// # Errors
 ///
 /// Returns an error if:
-/// - The address does not start with '0x' prefix
-/// - The address has invalid length (must be 42 characters including '0x')
-/// - The address contains invalid hexadecimal characters
-/// - The address has an incorrect checksum (for checksummed addresses)
+/// - The address does not start with '0x' prefix.
+/// - The address has invalid length (must be 42 characters including '0x').
+/// - The address contains invalid hexadecimal characters.
+/// - The address has an incorrect checksum (for checksummed addresses).
 pub fn validate_address(address: &str) -> anyhow::Result<Address> {
     // Check if the address starts with "0x"
     if !address.starts_with("0x") {

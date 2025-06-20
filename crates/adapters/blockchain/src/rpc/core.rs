@@ -30,11 +30,12 @@ use crate::rpc::{
 };
 
 /// Core implementation of a blockchain RPC client that serves as the base for all chain-specific clients.
-/// It provides a shared implementation of common blockchain RPC functionality. It handles:
-/// - WebSocket connection management with blockchain RPC node
-/// - Subscription lifecycle (creation, tracking, and termination)
-/// - Message serialization and deserialization of RPC messages
-/// - Event type mapping and dispatching
+///
+/// It provides a shared implementation of common blockchain RPC functionality, handling:
+/// - WebSocket connection management with blockchain RPC node.
+/// - Subscription lifecycle (creation, tracking, and termination).
+/// - Message serialization and deserialization of RPC messages.
+/// - Event type mapping and dispatching.
 #[derive(Debug)]
 pub struct CoreBlockchainRpcClient {
     /// The blockchain network type this client connects to.

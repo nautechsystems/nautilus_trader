@@ -48,8 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain = chains::ARBITRUM.clone();
     let wss_rpc_url = get_env_var("RPC_WSS_URL")?;
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
-    // let from_block = 22_735_000_u64; // Ethereum
-    let from_block = 348_860_000_u64; // Arbitrum
+    // let from_block = Some(22_735_000_u64); // Ethereum
+    // let from_block = Some(348_860_000_u64); // Arbitrum
+    let from_block = None; // No sync
 
     let client_factory = BlockchainDataClientFactory::new();
     let client_config = BlockchainDataClientConfig::new(
@@ -57,8 +58,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_rpc_url,
         None, // RPC requests per second
         Some(wss_rpc_url),
-        true,             // Use HyperSync for live data
-        Some(from_block), // from_block
+        true, // Use HyperSync for live data
+        // Some(from_block), // from_block
+        from_block,
     );
 
     let mut node = LiveNode::builder(node_name, trader_id, environment)?

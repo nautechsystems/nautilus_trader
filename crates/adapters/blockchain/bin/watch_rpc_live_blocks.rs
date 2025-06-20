@@ -34,7 +34,7 @@ use tokio::sync::Notify;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    // Setup logger
+
     let _logger_guard = Logger::init_with_config(
         TraderId::default(),
         UUID4::new(),

@@ -168,9 +168,17 @@ impl BlockchainDataClient {
         let handle = tokio::spawn(async move {
             let mut rx = rx;
             while let Some(msg) = rx.recv().await {
-                let BlockchainMessage::Block(block) = msg;
-                if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Block(block))) {
-                    tracing::error!("Failed to send data: {e}");
+                match msg {
+                    BlockchainMessage::Block(block) => {
+                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Block(block))) {
+                            tracing::error!("Failed to send block: {e}");
+                        }
+                    }
+                    BlockchainMessage::Swap(swap) => {
+                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Swap(swap))) {
+                            tracing::error!("Failed to send swap: {e}");
+                        }
+                    }
                 }
             }
         });
@@ -537,6 +545,9 @@ impl BlockchainDataClient {
                 BlockchainMessage::Block(block) => {
                     self.send_block(block);
                 }
+                BlockchainMessage::Swap(swap) => {
+                    self.send_swap(swap);
+                }
             }
         }
     }
@@ -547,24 +558,29 @@ impl BlockchainDataClient {
 
         loop {
             let msg = {
-                match self.rpc_client.as_mut() {
-                    Some(client) => client.next_rpc_message().await,
-                    None => break,
+                match self
+                    .rpc_client
+                    .as_mut()
+                    .expect("process_rpc_messages: RPC client not initialised")
+                    .next_rpc_message()
+                    .await
+                {
+                    Ok(m) => m,
+                    Err(e) => {
+                        tracing::error!("Error processing RPC message: {e}");
+                        continue;
+                    }
                 }
             };
 
             match msg {
-                Ok(BlockchainMessage::Block(block)) => self.send_block(block),
-                Err(e) => tracing::error!("Error processing RPC message: {e}"),
+                BlockchainMessage::Block(block) => self.send_block(block),
+                BlockchainMessage::Swap(swap) => self.send_swap(swap),
             }
         }
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
-    ///
-    /// # Panics
-    ///
-    /// Panics if using the RPC client and the block subscription request fails.
     pub async fn subscribe_blocks(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_blocks().await?;
@@ -575,17 +591,38 @@ impl BlockchainDataClient {
         Ok(())
     }
 
-    /// Unsubscribes from block events.
-    ///
-    /// # Panics
-    ///
-    /// Panics if using the RPC client and the block unsubscription request fails.
-    pub async fn unsubscribe_blocks(&mut self) {
+    /// Subscribes to new blockchain blocks from the available data source.
+    pub async fn subscribe_swaps(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.unsubscribe_blocks().await.unwrap();
+            rpc_client.subscribe_swaps().await?;
+        } else {
+            todo!("Not implemented")
+            // self.hypersync_client.subscribe_blocks();
+        }
+
+        Ok(())
+    }
+
+    /// Unsubscribes from block events.
+    pub async fn unsubscribe_blocks(&mut self) -> anyhow::Result<()> {
+        if let Some(rpc_client) = self.rpc_client.as_mut() {
+            rpc_client.unsubscribe_blocks().await?;
         } else {
             self.hypersync_client.unsubscribe_blocks();
         }
+
+        Ok(())
+    }
+
+    /// Unsubscribes from swap events.
+    pub async fn unsubscribe_swaps(&mut self) -> anyhow::Result<()> {
+        if let Some(rpc_client) = self.rpc_client.as_mut() {
+            rpc_client.unsubscribe_blocks().await?;
+        } else {
+            self.hypersync_client.unsubscribe_blocks();
+        }
+
+        Ok(())
     }
 
     fn get_dex(&self, dex_id: &str) -> anyhow::Result<&DexExtended> {
@@ -639,22 +676,22 @@ impl DataClient for BlockchainDataClient {
         None
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!("Starting blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         tracing::info!("Stopping blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         tracing::info!("Resetting blockchain data client for '{}'", self.chain.name);
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         tracing::info!("Disposing blockchain data client for '{}'", self.chain.name);
         Ok(())
     }

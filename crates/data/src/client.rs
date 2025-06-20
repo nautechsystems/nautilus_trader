@@ -55,28 +55,28 @@ pub trait DataClient: Any + Sync + Send {
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn start(&self) -> anyhow::Result<()>;
+    fn start(&mut self) -> anyhow::Result<()>;
 
     /// Stops the data client.
     ///
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn stop(&self) -> anyhow::Result<()>;
+    fn stop(&mut self) -> anyhow::Result<()>;
 
     /// Resets the data client to its initial state.
     ///
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn reset(&self) -> anyhow::Result<()>;
+    fn reset(&mut self) -> anyhow::Result<()>;
 
     /// Disposes of client resources and cleans up.
     ///
     /// # Errors
     ///
     /// Returns an error if the operation fails.
-    fn dispose(&self) -> anyhow::Result<()>;
+    fn dispose(&mut self) -> anyhow::Result<()>;
 
     /// Connects external API's if needed.
     ///

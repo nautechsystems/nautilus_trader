@@ -23,10 +23,7 @@ use nautilus_common::logging::{
 use nautilus_core::{UUID4, env::get_env_var};
 use nautilus_data::DataClient;
 use nautilus_live::runner::AsyncRunner;
-use nautilus_model::{
-    defi::chain::{Blockchain, Chain, chains},
-    identifiers::TraderId,
-};
+use nautilus_model::{defi::chain::chains, identifiers::TraderId};
 use tokio::sync::Notify;
 
 // Run with `cargo run -p nautilus-blockchain --bin live_blocks_hypersync --features hypersync`
@@ -34,7 +31,7 @@ use tokio::sync::Notify;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    // Setup logger
+
     let _logger_guard = Logger::init_with_config(
         TraderId::default(),
         UUID4::new(),
@@ -61,23 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Initialize the blockchain data client, connect and subscribe to live blocks with HyperSync watch
-    let chain: Chain = match std::env::var("CHAIN") {
-        Ok(chain_str) => {
-            if let Ok(blockchain) = chain_str.parse::<Blockchain>() {
-                match blockchain {
-                    Blockchain::Ethereum => chains::ETHEREUM.clone(),
-                    Blockchain::Base => chains::BASE.clone(),
-                    Blockchain::Arbitrum => chains::ARBITRUM.clone(),
-                    Blockchain::Polygon => chains::POLYGON.clone(),
-                    _ => panic!("Invalid chain {chain_str}"),
-                }
-            } else {
-                panic!("Invalid chain {chain_str}");
-            }
-        }
-        Err(_) => chains::ETHEREUM.clone(), // default
-    };
-    let chain = Arc::new(chain);
+    let chain = Arc::new(chains::ETHEREUM.clone());
     let http_rpc_url = get_env_var("RPC_HTTP_URL")?;
     let blockchain_config = BlockchainDataClientConfig::new(
         chain.clone(),
