@@ -69,7 +69,7 @@ pub mod ffi;
 #[cfg(feature = "python")]
 pub mod python;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 #[cfg(feature = "defi")]

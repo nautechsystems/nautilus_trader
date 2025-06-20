@@ -37,7 +37,7 @@ pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 // Re-exports

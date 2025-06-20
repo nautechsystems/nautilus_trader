@@ -28,7 +28,7 @@ pub mod quote;
 pub mod status;
 pub mod trade;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 use std::{
