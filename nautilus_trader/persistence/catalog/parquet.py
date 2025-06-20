@@ -63,6 +63,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
+from nautilus_trader.persistence.funcs import filename_to_class
 from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -232,6 +233,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data: list[Data | Event] | list[NautilusRustDataType],
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> None:
         """
         Write the given `data` to the catalog.
@@ -248,6 +250,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             The start timestamp for the data chunk.
         end : int, optional
             The end timestamp for the data chunk.
+        skip_disjoint_check : bool, default False
+            If True, skip the disjoint intervals check.
 
         Warnings
         --------
@@ -291,17 +295,18 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         name_to_cls = {cls.__name__: cls for cls in {obj_to_type(d) for d in data}}
 
-        for (cls_name, identifier), single_type in groupby(
+        for (cls_name, identifier), single_type_data in groupby(
             sorted(data, key=identifier_function),
             key=identifier_function,
         ):
-            chunk = list(single_type)
+            chunk = list(single_type_data)
             self._write_chunk(
                 data=chunk,
                 data_cls=name_to_cls[cls_name],
                 identifier=identifier,
                 start=start,
                 end=end,
+                skip_disjoint_check=skip_disjoint_check,
             )
 
     def _write_chunk(
@@ -311,6 +316,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifier: str | None = None,
         start: int | None = None,
         end: int | None = None,
+        skip_disjoint_check: bool = False,
     ) -> None:
         if isinstance(data[0], CustomData):
             data = [d.data for d in data]
@@ -338,10 +344,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             row_group_size=self.max_rows_per_group,
         )
 
-        intervals = self._get_directory_intervals(directory)
-        assert _are_intervals_disjoint(
-            intervals,
-        ), "Intervals are not disjoint after writing a new file"
+        if not skip_disjoint_check:
+            intervals = self._get_directory_intervals(directory)
+            assert _are_intervals_disjoint(
+                intervals,
+            ), "Intervals are not disjoint after writing a new file"
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         PyCondition.not_empty(data, "data")
@@ -519,6 +526,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
+        ensure_contiguous_files: bool = True,
     ) -> None:
         """
         Consolidate all parquet files across the entire catalog within the specified
@@ -539,6 +547,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             The end timestamp for the consolidation range. Only files with timestamps
             less than or equal to this value will be consolidated. If None, all files
             up to the end of time will be considered.
+        ensure_contiguous_files : bool, default True
+            If True, ensures that files have contiguous timestamps before consolidation.
 
         Notes
         -----
@@ -556,7 +566,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         leaf_directories = self._find_leaf_data_directories()
 
         for directory in leaf_directories:
-            self._consolidate_directory(directory, start, end)
+            self._consolidate_directory(directory, start, end, ensure_contiguous_files)
 
     def consolidate_data(
         self,
@@ -564,6 +574,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         identifier: str | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
+        ensure_contiguous_files: bool = True,
     ) -> None:
         """
         Consolidate multiple parquet files for a specific data class and instrument ID
@@ -588,6 +599,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             The end timestamp for the consolidation range. Only files with timestamps
             less than or equal to this value will be consolidated. If None, all files
             up to the end of time will be considered.
+        ensure_contiguous_files : bool, default True
+            If True, ensures that files have contiguous timestamps before consolidation.
 
         Notes
         -----
@@ -599,7 +612,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         directory = self._make_path(data_cls, identifier)
-        self._consolidate_directory(directory, start, end)
+        self._consolidate_directory(directory, start, end, ensure_contiguous_files)
 
     def _consolidate_directory(
         self,
@@ -622,7 +635,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
             if (
                 interval
-                and (used_start is None or interval[0] >= used_start.value)
+                and (used_start is None or used_start.value <= interval[0])
                 and (used_end is None or interval[1] <= used_end.value)
             ):
                 files_to_consolidate.append(file)
@@ -650,6 +663,450 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         for file in file_list:
             self.fs.rm(file)
+
+    def consolidate_catalog_by_period(
+        self,
+        period: pd.Timedelta = pd.Timedelta(days=1),
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        ensure_contiguous_files: bool = True,
+    ) -> None:
+        """
+        Consolidate all parquet files across the entire catalog by splitting them into
+        fixed time periods.
+
+        This method identifies all leaf directories in the catalog that contain parquet files
+        and consolidates them by period. A leaf directory is one that contains files but no subdirectories.
+        This is a convenience method that effectively calls `consolidate_data_by_period` for all data types
+        and instrument IDs in the catalog.
+
+        Parameters
+        ----------
+        period : pd.Timedelta, default pd.Timedelta(days=1)
+            The period duration for consolidation. Default is 1 day.
+            Examples: pd.Timedelta(hours=1), pd.Timedelta(days=7), pd.Timedelta(minutes=30)
+        start : TimestampLike, optional
+            The start timestamp for the consolidation range. Only files with timestamps
+            greater than or equal to this value will be consolidated. If None, all files
+            from the beginning of time will be considered.
+        end : TimestampLike, optional
+            The end timestamp for the consolidation range. Only files with timestamps
+            less than or equal to this value will be consolidated. If None, all files
+            up to the end of time will be considered.
+        ensure_contiguous_files : bool, default True
+            If True, uses period boundaries for file naming.
+            If False, uses actual data timestamps for file naming.
+
+        Notes
+        -----
+        - This operation can be resource-intensive for large catalogs with many data types
+          and instruments.
+        - The consolidation process splits data into fixed time periods rather than combining
+          all files into a single file per directory.
+        - Uses the same period-based consolidation logic as `consolidate_data_by_period`.
+        - Original files are removed and replaced with period-based consolidated files.
+        - This method is useful for periodic maintenance of the catalog to standardize
+          file organization by time periods.
+
+        """
+        leaf_directories = self._find_leaf_data_directories()
+
+        for directory in leaf_directories:
+            data_cls, identifier = self._extract_data_cls_and_identifier_from_path(directory)
+
+            if data_cls is None:
+                # Skip directories that don't correspond to known data classes
+                return
+
+            # Call the existing consolidate_data_by_period method
+            self.consolidate_data_by_period(
+                data_cls=data_cls,
+                identifier=identifier,
+                period=period,
+                start=start,
+                end=end,
+                ensure_contiguous_files=ensure_contiguous_files,
+            )
+
+    def _extract_data_cls_and_identifier_from_path(
+        self,
+        directory: str,
+    ) -> tuple[type | None, str | None]:
+        # Remove the base catalog path to get the relative path
+        base_path = self.path.rstrip("/")
+        if directory.startswith(base_path):
+            relative_path = directory[len(base_path) :].lstrip("/")
+        else:
+            relative_path = directory
+
+        # Expected format: "data/{data_type_filename}/{identifier}" or "data/{data_type_filename}"
+        path_parts = relative_path.split("/")
+
+        if len(path_parts) < 2 or path_parts[0] != "data":
+            return None, None
+
+        data_type_filename = path_parts[1]
+        identifier = path_parts[2] if len(path_parts) > 2 else None
+
+        # Convert filename back to data class
+        data_cls = filename_to_class(data_type_filename)
+
+        return data_cls, identifier
+
+    def consolidate_data_by_period(  # noqa: C901
+        self,
+        data_cls: type,
+        identifier: str | None = None,
+        period: pd.Timedelta = pd.Timedelta(days=1),
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        ensure_contiguous_files: bool = True,
+    ) -> None:
+        """
+        Consolidate data files by splitting them into fixed time periods.
+
+        This method queries data by period and writes consolidated files immediately,
+        using the skip_disjoint_check parameter to avoid interval conflicts during
+        the consolidation process. When start/end boundaries intersect existing files,
+        the function automatically splits those files to preserve all data.
+
+        Parameters
+        ----------
+        data_cls : type
+            The data class type to consolidate.
+        identifier : str, optional
+            The instrument ID to consolidate. If None, consolidates all instruments.
+        period : pd.Timedelta, default pd.Timedelta(days=1)
+            The period duration for consolidation. Default is 1 day.
+            Examples: pd.Timedelta(hours=1), pd.Timedelta(days=7), pd.Timedelta(minutes=30)
+        start : TimestampLike, optional
+            The start timestamp for consolidation range. If None, uses earliest available data.
+            If specified and intersects existing files, those files will be split to preserve
+            data outside the consolidation range.
+        end : TimestampLike, optional
+            The end timestamp for consolidation range. If None, uses latest available data.
+            If specified and intersects existing files, those files will be split to preserve
+            data outside the consolidation range.
+        ensure_contiguous_files : bool, default True
+            If True, uses period boundaries for file naming.
+            If False, uses actual data timestamps for file naming.
+
+        Notes
+        -----
+        - Uses two-phase approach: first determines all queries, then executes them
+        - Groups intervals into contiguous groups to preserve holes between groups
+        - Allows consolidation across multiple files within each contiguous group
+        - Skips queries if target files already exist for efficiency
+        - Original files are removed immediately after querying each period
+        - Uses skip_disjoint_check to avoid interval conflicts during consolidation
+        - When ensure_contiguous_files=False, file timestamps match actual data range
+        - When ensure_contiguous_files=True, file timestamps use period boundaries
+        - Uses modulo arithmetic for efficient period boundary calculation
+        - Preserves holes in data by preventing queries from spanning across gaps
+        - Automatically splits files at start/end boundaries to preserve all data
+        - Split operations are executed before consolidation to ensure data preservation
+
+        """
+        # Use get_intervals for cleaner implementation
+        intervals = self.get_intervals(data_cls, identifier)
+
+        if not intervals:
+            return  # No files to consolidate
+
+        # Use auxiliary function to prepare all queries for execution
+        queries_to_execute = self._prepare_consolidation_queries(
+            data_cls,
+            identifier,
+            intervals,
+            period,
+            start,
+            end,
+            ensure_contiguous_files,
+        )
+
+        if not queries_to_execute:
+            return  # No queries to execute
+
+        # Get directory for file operations
+        directory = self._make_path(data_cls, identifier)
+        existing_files = sorted(self.fs.glob(os.path.join(directory, "*.parquet")))
+
+        # Track files to remove and maintain existing_files list
+        files_to_remove = set()
+        existing_files = list(existing_files)  # Make it mutable
+
+        # Phase 2: Execute queries, write, and delete
+        for query_info in queries_to_execute:
+            # Query data for this period using existing files
+            period_data = self.query(
+                data_cls=data_cls,
+                identifiers=[identifier] if identifier is not None else None,
+                start=query_info["query_start"],
+                end=query_info["query_end"],
+                files=existing_files,
+            )
+
+            if not period_data:
+                # Skip if no data found
+                continue
+
+            # Determine final file timestamps
+            if query_info["use_period_boundaries"]:
+                # Use period boundaries for file naming
+                file_start_ns = query_info["target_file_start"]
+                file_end_ns = query_info["target_file_end"]
+            else:
+                # Use actual data timestamps for file naming
+                file_start_ns = period_data[0].ts_init
+                file_end_ns = period_data[-1].ts_init
+
+            # Check again if target file exists (in case it was created during this process)
+            target_filename = os.path.join(
+                directory,
+                _timestamps_to_filename(file_start_ns, file_end_ns),
+            )
+
+            if self.fs.exists(target_filename):
+                # Skip if target file already exists
+                continue
+
+            # Write consolidated data for this period
+            # Use skip_disjoint_check since we're managing file removal carefully
+            self.write_data(
+                data=period_data,
+                start=file_start_ns,
+                end=file_end_ns,
+                skip_disjoint_check=True,
+            )
+
+            # Clear the data from memory immediately
+            del period_data
+
+            # Identify files that are completely covered by this period
+            for file in existing_files[:]:  # Use slice copy to avoid modification during iteration
+                interval = _parse_filename_timestamps(file)
+
+                if (
+                    interval
+                    and query_info["query_start"] <= interval[0]
+                    and interval[1] <= query_info["query_end"]
+                ):
+                    files_to_remove.add(file)
+                    existing_files.remove(file)
+
+            # Remove files as soon as we have some to remove
+            if files_to_remove:
+                for file in list(files_to_remove):  # Copy to avoid modification during iteration
+                    self.fs.rm(file)
+                    files_to_remove.remove(file)
+
+        # Remove any remaining files that weren't removed in the loop
+        for file in existing_files:
+            self.fs.rm(file)
+
+    def _prepare_consolidation_queries(  # noqa: C901
+        self,
+        data_cls: type,
+        identifier: str | None,
+        intervals: list[tuple[int, int]],
+        period: pd.Timedelta,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        ensure_contiguous_files: bool = True,
+    ) -> list[dict]:
+        """
+        Prepare all queries for consolidation by filtering, grouping, and handling
+        splits.
+
+        This auxiliary function handles all the preparation logic for consolidation:
+        1. Filters intervals by time range
+        2. Groups intervals into contiguous groups
+        3. Identifies and creates split operations for data preservation
+        4. Generates period-based consolidation queries
+        5. Checks for existing target files
+
+        Parameters
+        ----------
+        data_cls : type
+            The data class type for path generation
+        identifier : str, optional
+            The instrument identifier for path generation
+        intervals : list[tuple[int, int]]
+            List of (start_ts, end_ts) tuples representing existing file intervals
+        period : pd.Timedelta
+            The period duration for consolidation
+        start : TimestampLike, optional
+            The start timestamp for consolidation range
+        end : TimestampLike, optional
+            The end timestamp for consolidation range
+        ensure_contiguous_files : bool, default True
+            If True, uses period boundaries for file naming
+
+        Returns
+        -------
+        list[dict]
+            List of query dictionaries ready for execution
+
+        """
+        # Filter intervals by time range if specified
+        used_start: pd.Timestamp | None = time_object_to_dt(start)
+        used_end: pd.Timestamp | None = time_object_to_dt(end)
+
+        filtered_intervals = []
+        for interval_start, interval_end in intervals:
+            # Check if interval overlaps with the specified range
+            if (used_start is None or used_start.value <= interval_end) and (
+                used_end is None or interval_start <= used_end.value
+            ):
+                filtered_intervals.append((interval_start, interval_end))
+
+        if not filtered_intervals:
+            return []  # No intervals in the specified range
+
+        # Check contiguity of filtered intervals if required
+        if ensure_contiguous_files:
+            assert _are_intervals_contiguous(filtered_intervals), (
+                "Intervals are not contiguous. When ensure_contiguous_files=True, "
+                "all files in the consolidation range must have contiguous timestamps."
+            )
+
+        # Group intervals into contiguous groups to preserve holes between groups
+        # but allow consolidation within each contiguous group
+        contiguous_groups = []
+        current_group = [filtered_intervals[0]]
+
+        for i in range(1, len(filtered_intervals)):
+            prev_interval = filtered_intervals[i - 1]
+            curr_interval = filtered_intervals[i]
+
+            # Check if current interval is contiguous with previous (end + 1 == start)
+            if prev_interval[1] + 1 == curr_interval[0]:
+                current_group.append(curr_interval)
+            else:
+                # Gap found, start new group
+                contiguous_groups.append(current_group)
+                current_group = [curr_interval]
+
+        # Add the last group
+        contiguous_groups.append(current_group)
+
+        # Convert period to nanoseconds for calculations
+        period_in_ns = period.value
+
+        # Start with split queries for data preservation
+        queries_to_execute = []
+
+        # Handle interval splitting by creating split operations for data preservation
+        if filtered_intervals and used_start is not None:
+            first_interval = filtered_intervals[0]
+            if first_interval[0] < used_start.value < first_interval[1]:
+                # Split before start: preserve data from interval_start to start-1
+                queries_to_execute.append(
+                    {
+                        "query_start": first_interval[0],
+                        "query_end": used_start.value - 1,
+                        "target_file_start": first_interval[0],
+                        "target_file_end": used_start.value - 1,
+                        "use_period_boundaries": False,
+                        "is_split": True,
+                    },
+                )
+
+        if filtered_intervals and used_end is not None:
+            last_interval = filtered_intervals[-1]
+            if last_interval[0] < used_end.value < last_interval[1]:
+                # Split after end: preserve data from end+1 to interval_end
+                queries_to_execute.append(
+                    {
+                        "query_start": used_end.value + 1,
+                        "query_end": last_interval[1],
+                        "target_file_start": used_end.value + 1,
+                        "target_file_end": last_interval[1],
+                        "use_period_boundaries": False,
+                        "is_split": True,
+                    },
+                )
+
+        directory = self._make_path(data_cls, identifier)
+
+        # Generate period-based consolidation queries for each contiguous group
+        for group in contiguous_groups:
+            # Get overall time range for this contiguous group
+            group_start_ts = group[0][0]
+            group_end_ts = group[-1][1]
+
+            # Apply user-provided start/end constraints to this group
+            if used_start is not None:
+                group_start_ts = max(group_start_ts, used_start.value)
+
+            if used_end is not None:
+                group_end_ts = min(group_end_ts, used_end.value)
+
+            # Skip group if constraints make it invalid
+            if group_start_ts > group_end_ts:
+                continue
+
+            # Calculate period boundaries for this group using modulo arithmetic
+            period_start_ns = (group_start_ts // period_in_ns) * period_in_ns
+            current_start_ns = period_start_ns
+
+            # Safety check to prevent infinite loops
+            max_iterations = 10000  # Reasonable upper bound
+            iteration_count = 0
+
+            while current_start_ns <= group_end_ts:
+                iteration_count += 1
+                if iteration_count > max_iterations:
+                    # Safety break to prevent infinite loops
+                    break
+
+                current_end_ns = current_start_ns + period_in_ns - 1
+
+                # Adjust end to not exceed the group end timestamp
+                if current_end_ns > group_end_ts:
+                    current_end_ns = group_end_ts
+
+                # Determine target file timestamps based on ensure_contiguous_files
+                if ensure_contiguous_files:
+                    # Use period boundaries for file naming
+                    target_file_start_ns = current_start_ns
+                    target_file_end_ns = current_end_ns
+                else:
+                    # For actual data timestamps, we'll determine this after querying
+                    target_file_start_ns = None
+                    target_file_end_ns = None
+
+                # Create target filename to check if it already exists
+                if target_file_start_ns is not None and target_file_end_ns is not None:
+                    target_filename = os.path.join(
+                        directory,
+                        _timestamps_to_filename(target_file_start_ns, target_file_end_ns),
+                    )
+
+                    # Skip if target file already exists
+                    if self.fs.exists(target_filename):
+                        current_start_ns += period_in_ns
+                        continue
+
+                # Add query to execution list
+                queries_to_execute.append(
+                    {
+                        "query_start": current_start_ns,
+                        "query_end": current_end_ns,
+                        "target_file_start": target_file_start_ns,
+                        "target_file_end": target_file_end_ns,
+                        "use_period_boundaries": ensure_contiguous_files,
+                        "is_split": False,
+                    },
+                )
+
+                # Move to next period
+                current_start_ns += period_in_ns
+
+                if current_start_ns > group_end_ts:
+                    break
+
+        return queries_to_execute
 
     def _find_leaf_data_directories(self) -> list[str]:
         all_paths = self.fs.glob(os.path.join(self.path, "data", "**"))
@@ -714,6 +1171,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
+        files: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data | CustomData]:
         """
@@ -735,6 +1193,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             The end timestamp for the query range. If None, no upper bound is applied.
         where : str, optional
             An additional SQL WHERE clause to filter the data (used in Rust queries).
+        files : list[str], optional
+            A specific list of files to query from. If provided, these files are used
+            instead of discovering files through the normal process. Forces PyArrow backend.
         **kwargs : Any
             Additional keyword arguments passed to the underlying query implementation.
 
@@ -748,19 +1209,24 @@ class ParquetDataCatalog(BaseDataCatalog):
         - For Nautilus built-in data types (OrderBookDelta, QuoteTick, etc.) with the 'file'
           protocol, the Rust implementation is used for better performance.
         - For other data types or protocols, the PyArrow implementation is used.
+        - When files parameter is provided, PyArrow backend is used regardless of data type.
         - Non-Nautilus data classes are wrapped in CustomData objects with the appropriate
           DataType.
 
         """
-        if data_cls in (
-            OrderBookDelta,
-            OrderBookDeltas,
-            OrderBookDepth10,
-            QuoteTick,
-            TradeTick,
-            Bar,
-            MarkPriceUpdate,
-        ):
+        if (
+            data_cls
+            in (
+                OrderBookDelta,
+                OrderBookDeltas,
+                OrderBookDepth10,
+                QuoteTick,
+                TradeTick,
+                Bar,
+                MarkPriceUpdate,
+            )
+            and files is None
+        ):  # Rust backend doesn't support custom files yet
             data = self._query_rust(
                 data_cls=data_cls,
                 identifiers=identifiers,
@@ -776,6 +1242,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 start=start,
                 end=end,
                 where=where,
+                files=files,
                 **kwargs,
             )
 
@@ -1021,15 +1488,19 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
+        files: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
-        # Load dataset
-        files = self._query_files(data_cls, identifiers, start, end)
+        # Load dataset - use provided files or query for them
+        if files is not None:
+            file_list = files
+        else:
+            file_list = self._query_files(data_cls, identifiers, start, end)
 
-        if not files:
+        if not file_list:
             return []
 
-        dataset = pds.dataset(files, filesystem=self.fs)
+        dataset = pds.dataset(file_list, filesystem=self.fs)
 
         # Filter dataset
         used_start: pd.Timestamp | None = time_object_to_dt(start)

@@ -215,7 +215,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         The additional filter expressions for the data catalog query.
     client_id : str, optional
         The client ID for the data configuration.
-    metadata : dict, optional
+    metadata : dict or callable, optional
         The metadata for the data catalog query.
     bar_spec : BarSpecification | str, optional
         The bar specification for the data catalog query.
@@ -238,7 +238,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     end_time: str | int | None = None
     filter_expr: str | None = None
     client_id: str | None = None
-    metadata: dict | None = None
+    metadata: dict | Any | None = None
     bar_spec: str | None = None
     instrument_ids: list[str] | None = None
     bar_types: list[str] | None = None
