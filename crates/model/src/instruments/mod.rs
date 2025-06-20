@@ -29,7 +29,7 @@ pub mod option_contract;
 pub mod option_spread;
 pub mod synthetic;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 use enum_dispatch::enum_dispatch;
