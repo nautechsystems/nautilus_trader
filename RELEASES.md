@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added support for data download during backtest (#2652), thanks @faysou
+- Added consolidate catalog by period (#2727), thanks @faysou
 - Added `fire_immediately` flag parameter for timers where a time event will be fired at the `start` instant and then every interval thereafter (default `False` to retain current behavior) (#2600), thanks for the idea @stastnypremysl
 - Added `time_bars_build_delay` config option for `DataEngineConfig` (#2676), thanks @faysou
 - Added missing serialization mappings for some instruments (#2702), thanks @faysou
@@ -46,7 +47,7 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.27.0
 - Upgraded `datafusion` crate to v48.0.0
 - Upgraded `pyo3` and `pyo3-async-runtimes` crates to v0.25.1
-- Upgraded `redis` crate to v0.32.1
+- Upgraded `redis` crate to v0.32.2
 - Upgraded `tokio-tungstenite` crate to v0.27.0
 
 ### Fixes
@@ -74,6 +75,7 @@ Released on TBD (UTC).
 - Fixed Partially filled bracket order and SL triggered for IBKR (#2704, #2717), thanks @bartlaw
 - Fixed instrument message decoding when no `exchange` value for Databento US equities
 - Fixed fetching single-instrument trading fees for `Binance`, thanks @petioptrv
+- Fixed IB-TWS connection issue with international languages (#2726), thanks @DracheShiki
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
