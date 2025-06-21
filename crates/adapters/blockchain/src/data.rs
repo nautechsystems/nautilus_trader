@@ -20,7 +20,11 @@ use futures_util::StreamExt;
 use nautilus_common::{
     messages::{
         DataEvent,
-        defi::{SubscribeBlocks, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePoolSwaps},
+        defi::{
+            DefiDataCommand, DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks,
+            SubscribePool, SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks,
+            UnsubscribePool, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+        },
     },
     runner::get_data_event_sender,
 };
@@ -33,7 +37,7 @@ use nautilus_model::{
     },
     identifiers::{ClientId, Venue},
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
     cache::BlockchainCache,
@@ -82,7 +86,11 @@ pub struct BlockchainDataClient {
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
     /// Channel sender for publishing data events to the `AsyncRunner`.
     data_sender: UnboundedSender<DataEvent>,
-    /// Background task forwarding live data (HyperSync or RPC).
+    /// Channel sender for commands to be processed asynchronously.
+    command_tx: UnboundedSender<DefiDataCommand>,
+    /// Channel receiver for commands to be processed asynchronously.
+    command_rx: Option<UnboundedReceiver<DefiDataCommand>>,
+    /// Background task for processing messages.
     process_task: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -110,6 +118,7 @@ impl BlockchainDataClient {
         let erc20_contract = Erc20Contract::new(http_rpc_client);
         let cache = BlockchainCache::new(chain.clone());
         let data_sender = get_data_event_sender();
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
             chain,
@@ -120,6 +129,8 @@ impl BlockchainDataClient {
             hypersync_client,
             hypersync_rx: Some(hypersync_rx),
             data_sender,
+            command_tx,
+            command_rx: Some(command_rx),
             process_task: None,
         }
     }
@@ -159,37 +170,193 @@ impl BlockchainDataClient {
             .await;
     }
 
-    /// Spawns a background task that forwards HyperSync block messages to the global runner.
-    fn spawn_hypersync_forwarder(&mut self) {
-        let rx = match self.hypersync_rx.take() {
+    /// Spawns a unified task that handles both commands and data from the same client instances.
+    /// This replaces both the command processor and hypersync forwarder with a single unified handler.
+    fn spawn_process_task(&mut self) {
+        let command_rx = match self.command_rx.take() {
             Some(r) => r,
             None => {
-                tracing::warn!("HyperSync receiver already taken, not spawning forwarder");
+                tracing::error!("Command receiver already taken, not spawning handler");
                 return;
             }
         };
 
-        let sender = self.data_sender.clone();
+        let hypersync_rx = match self.hypersync_rx.take() {
+            Some(r) => r,
+            None => {
+                tracing::error!("HyperSync receiver already taken, not spawning handler");
+                return;
+            }
+        };
+
+        let mut hypersync_client = std::mem::replace(
+            &mut self.hypersync_client,
+            HyperSyncClient::new(self.chain.clone(), tokio::sync::mpsc::unbounded_channel().0),
+        );
+        let mut rpc_client = self.rpc_client.take();
+        let data_sender = self.data_sender.clone();
 
         let handle = tokio::spawn(async move {
-            let mut rx = rx;
-            while let Some(msg) = rx.recv().await {
-                match msg {
-                    BlockchainMessage::Block(block) => {
-                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Block(block))) {
-                            tracing::error!("Failed to send block: {e}");
+            tracing::debug!("Started task 'process'");
+
+            let mut command_rx = command_rx;
+            let mut hypersync_rx = hypersync_rx;
+
+            loop {
+                tokio::select! {
+                    command = command_rx.recv() => {
+                        match command {
+                            Some(cmd) => {
+                                if let Err(e) = Self::process_command(
+                                    cmd,
+                                    &mut hypersync_client,
+                                    rpc_client.as_mut()
+                                ).await {
+                                    tracing::error!("Error processing command: {e}");
+                                }
+                            }
+                            None => {
+                                tracing::debug!("Command channel closed");
+                                break;
+                            }
                         }
                     }
-                    BlockchainMessage::Swap(swap) => {
-                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::PoolSwap(swap))) {
-                            tracing::error!("Failed to send swap: {e}");
+                    data = hypersync_rx.recv() => {
+                        match data {
+                            Some(msg) => {
+                                let data_event = match msg {
+                                    BlockchainMessage::Block(block) => {
+                                        DataEvent::DeFi(DefiData::Block(block))
+                                    }
+                                    BlockchainMessage::Swap(swap) => {
+                                        DataEvent::DeFi(DefiData::PoolSwap(swap))
+                                    }
+                                };
+
+                                if let Err(e) = data_sender.send(data_event) {
+                                    tracing::error!("Failed to send data event: {e}");
+                                    break;
+                                }
+                            }
+                            None => {
+                                tracing::debug!("HyperSync data channel closed");
+                                break;
+                            }
                         }
                     }
                 }
             }
+
+            tracing::debug!("Stopped task 'process'");
         });
 
         self.process_task = Some(handle);
+    }
+
+    async fn process_command(
+        command: DefiDataCommand,
+        hypersync_client: &mut HyperSyncClient,
+        rpc_client: Option<&mut BlockchainRpcClientAny>,
+    ) -> anyhow::Result<()> {
+        match command {
+            DefiDataCommand::Subscribe(cmd) => {
+                Self::handle_subscribe_command(cmd, hypersync_client, rpc_client).await
+            }
+            DefiDataCommand::Unsubscribe(cmd) => {
+                Self::handle_unsubscribe_command(cmd, hypersync_client, rpc_client).await
+            }
+        }
+    }
+
+    /// Handles DeFi subscribe commands with access to mutable client instances.
+    async fn handle_subscribe_command(
+        command: DefiSubscribeCommand,
+        hypersync_client: &mut HyperSyncClient,
+        mut rpc_client: Option<&mut BlockchainRpcClientAny>,
+    ) -> anyhow::Result<()> {
+        match command {
+            DefiSubscribeCommand::Blocks(_cmd) => {
+                tracing::info!("Processing subscribe blocks command");
+
+                // Try RPC client first if available, otherwise use HyperSync
+                if let Some(ref mut rpc) = rpc_client {
+                    if let Err(e) = rpc.subscribe_blocks().await {
+                        tracing::warn!(
+                            "RPC blocks subscription failed: {e}, falling back to HyperSync"
+                        );
+                        hypersync_client.subscribe_blocks();
+                    } else {
+                        tracing::info!("Successfully subscribed to blocks via RPC");
+                    }
+                } else {
+                    tracing::info!("Subscribing to blocks via HyperSync");
+                    hypersync_client.subscribe_blocks();
+                }
+
+                Ok(())
+            }
+            DefiSubscribeCommand::Pool(_cmd) => {
+                tracing::info!("Processing subscribe pool command");
+                // Pool subscriptions are typically handled at the application level
+                // as they involve specific pool addresses and don't require blockchain streaming
+                tracing::warn!("Pool subscriptions are handled at application level");
+                Ok(())
+            }
+            DefiSubscribeCommand::PoolSwaps(_cmd) => {
+                tracing::info!("Processing subscribe pool swaps command");
+                tracing::warn!("Pool swaps subscription not yet implemented");
+                // TODO: Implement actual pool swaps subscription logic
+                Ok(())
+            }
+            DefiSubscribeCommand::PoolLiquidityUpdates(_cmd) => {
+                tracing::info!("Processing subscribe pool liquidity updates command");
+                tracing::warn!("Pool liquidity updates subscription not yet implemented");
+                // TODO: Implement actual pool liquidity updates subscription logic
+                Ok(())
+            }
+        }
+    }
+
+    /// Handles DeFi unsubscribe commands with access to mutable client instances.
+    async fn handle_unsubscribe_command(
+        command: DefiUnsubscribeCommand,
+        hypersync_client: &mut HyperSyncClient,
+        rpc_client: Option<&mut BlockchainRpcClientAny>,
+    ) -> anyhow::Result<()> {
+        match command {
+            DefiUnsubscribeCommand::Blocks(_cmd) => {
+                tracing::info!("Processing unsubscribe blocks command");
+
+                // TODO: Implement RPC unsubscription when available
+                if rpc_client.is_some() {
+                    tracing::warn!("RPC blocks unsubscription not yet implemented");
+                }
+
+                // Use HyperSync client for unsubscription
+                hypersync_client.unsubscribe_blocks();
+                tracing::info!("Unsubscribed from blocks via HyperSync");
+
+                Ok(())
+            }
+            DefiUnsubscribeCommand::Pool(_cmd) => {
+                tracing::info!("Processing unsubscribe pool command");
+                // Pool unsubscriptions are typically handled at the application level
+                tracing::warn!("Pool unsubscriptions are handled at application level");
+                Ok(())
+            }
+            DefiUnsubscribeCommand::PoolSwaps(_cmd) => {
+                tracing::info!("Processing unsubscribe pool swaps command");
+                tracing::warn!("Pool swaps unsubscription not yet implemented");
+                // TODO: Implement pool swaps unsubscription logic
+                Ok(())
+            }
+            DefiUnsubscribeCommand::PoolLiquidityUpdates(_cmd) => {
+                tracing::info!("Processing unsubscribe pool liquidity updates command");
+                tracing::warn!("Pool liquidity updates unsubscription not yet implemented");
+                // TODO: Implement pool liquidity updates unsubscription logic
+                Ok(())
+            }
+        }
     }
 
     /// Synchronizes blockchain data by fetching and caching all blocks from the starting block to the current chain head.
@@ -704,7 +871,6 @@ impl DataClient for BlockchainDataClient {
         Ok(())
     }
 
-    /// Establishes connections to the data providers and cache, then starts block syncing.
     async fn connect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             "Connecting blockchain data client for '{}'",
@@ -721,29 +887,20 @@ impl DataClient for BlockchainDataClient {
         // self.subscribe_blocks().await?;
 
         if self.process_task.is_none() {
-            if self.config.use_hypersync_for_live_data {
-                self.spawn_hypersync_forwarder();
-            } else {
-                // TODO: WIP
-                tracing::warn!(
-                    "use_hypersync_for_live_data=false not yet supported for live RPC forwarding"
-                );
-            }
+            self.spawn_process_task();
         }
 
         Ok(())
     }
 
-    /// Gracefully disconnects from all data providers.
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             "Disconnecting blockchain data client for '{}'",
             self.chain.name
         );
 
-        self.hypersync_client.disconnect();
-
         if let Some(handle) = self.process_task.take() {
+            tracing::debug!("Aborting task 'process'");
             handle.abort();
         }
 
@@ -760,23 +917,59 @@ impl DataClient for BlockchainDataClient {
         !self.is_connected()
     }
 
-    /// Subscribes to new blockchain blocks from the available data source.
-    fn subscribe_blocks(&mut self, _cmd: &SubscribeBlocks) -> anyhow::Result<()> {
-        todo!("Not implemented");
+    fn subscribe_blocks(&mut self, cmd: &SubscribeBlocks) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Blocks(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
     }
 
-    /// Subscribes to pool swap events for a specified address.
-    fn subscribe_pool_swaps(&mut self, _cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
-        todo!("Not implemented");
+    fn subscribe_pool(&mut self, cmd: &SubscribePool) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::Pool(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
     }
 
-    /// Unsubscribes from new blockchain blocks.
-    fn unsubscribe_blocks(&mut self, _cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
-        todo!("Not implemented");
+    fn subscribe_pool_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolSwaps(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
     }
 
-    /// Unsubscribes from pool swap events for a specified address.
-    fn unsubscribe_pool_swaps(&mut self, _cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
-        todo!("Not implemented");
+    fn subscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: &SubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Subscribe(DefiSubscribeCommand::PoolLiquidityUpdates(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::Blocks(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::Pool(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        let command = DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolSwaps(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
+    }
+
+    fn unsubscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: &UnsubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        let command =
+            DefiDataCommand::Unsubscribe(DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd.clone()));
+        self.command_tx.send(command)?;
+        Ok(())
     }
 }

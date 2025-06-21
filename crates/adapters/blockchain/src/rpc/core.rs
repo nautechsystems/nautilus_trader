@@ -82,16 +82,16 @@ impl CoreBlockchainRpcClient {
         let config = WebSocketConfig {
             url: self.wss_rpc_url.clone(),
             headers: vec![user_agent],
+            handler: Consumer::Rust(tx),
             heartbeat: Some(heartbeat_interval),
             heartbeat_msg: None,
-            handler: Consumer::Rust(tx),
             #[cfg(feature = "python")]
             ping_handler: None,
             reconnect_timeout_ms: Some(5_000),
             reconnect_delay_initial_ms: None,
-            reconnect_jitter_ms: None,
-            reconnect_backoff_factor: None,
             reconnect_delay_max_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_jitter_ms: None,
         };
         let client = WebSocketClient::connect(
             config,
