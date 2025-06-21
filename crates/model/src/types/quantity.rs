@@ -517,7 +517,7 @@ impl<T: Into<QuantityRaw>> MulAssign<T> for Quantity {
 
 impl Debug for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{}({})", stringify!(Quantity), self.raw)
         } else {
             write!(
@@ -533,7 +533,7 @@ impl Debug for Quantity {
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{}", self.raw)
         } else {
             write!(f, "{:.*}", self.precision as usize, self.as_f64(),)

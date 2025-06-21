@@ -402,7 +402,7 @@ impl Div<f64> for Money {
 
 impl Debug for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.currency.precision > MAX_FLOAT_PRECISION {
+        if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{}({}, {})", stringify!(Money), self.raw, self.currency)
         } else {
             write!(
@@ -419,7 +419,7 @@ impl Debug for Money {
 
 impl Display for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.currency.precision > MAX_FLOAT_PRECISION {
+        if self.currency.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{} {}", self.raw, self.currency)
         } else {
             write!(
