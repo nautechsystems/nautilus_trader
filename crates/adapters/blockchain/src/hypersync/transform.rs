@@ -170,9 +170,9 @@ pub fn transform_hypersync_swap_log(
     );
 
     let side = if amount0_signed.is_positive() {
-        OrderSide::Buy // Buying token0
+        OrderSide::Sell // Selling token0 (pool received token0)
     } else {
-        OrderSide::Sell // Selling token0
+        OrderSide::Buy // Buying token0 (pool gave token0)
     };
 
     let quantity = if pool.token0.decimals == 18 {
@@ -322,6 +322,7 @@ mod tests {
         );
         let swap = result.unwrap();
 
+        // Assert all fields are correctly transformed
         assert_eq!(swap.block, 0x1581b7e);
         assert_eq!(
             swap.transaction_hash,
@@ -329,6 +330,23 @@ mod tests {
         );
         assert_eq!(swap.transaction_index, 5);
         assert_eq!(swap.log_index, 10);
+        assert_eq!(swap.timestamp, UnixNanos::default());
+        assert_eq!(
+            swap.sender,
+            "0x3fc91a3afd70395cd496c647d5a6cc9d4b2b7fad"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(swap.side, OrderSide::Sell); // amount0 is positive (1 ETH), so selling token0
+
+        // Test data has amount0 = 1 ETH (0x0de0b6b3a7640000) and amount1 = 500 USDT (0x1dcd6500)
+        // amount0 = 1000000000000000000 wei = 1.0 ETH
+        assert_eq!(swap.quantity.as_f64(), 1.0);
+        assert_eq!(swap.quantity.precision, 18);
+
+        // Price should be amount1/amount0 = 500 USDT / 1 ETH = 500.0
+        assert_eq!(swap.price.as_f64(), 500.0);
+        assert_eq!(swap.price.precision, 18);
     }
 
     #[rstest]
@@ -363,7 +381,22 @@ mod tests {
             transformed_block.parent_hash,
             "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         );
+        assert_eq!(
+            transformed_block.miner.as_str(),
+            "0x0000000000000000000000000000000000000000"
+        );
         assert_eq!(transformed_block.gas_limit, 0x1c9c380);
         assert_eq!(transformed_block.gas_used, 0x5208);
+
+        // timestamp 0x61bc3f2d = 1639659309 seconds = 1639659309000000000 nanoseconds
+        let expected_timestamp = UnixNanos::new(1639659309 * NANOSECONDS_IN_SECOND);
+        assert_eq!(transformed_block.timestamp, expected_timestamp);
+
+        assert_eq!(transformed_block.chain, Some(Blockchain::Ethereum));
+
+        // Optional fields should be None when not provided in test data
+        assert!(transformed_block.base_fee.is_none());
+        assert!(transformed_block.blob_gas_used.is_none());
+        assert!(transformed_block.excess_blob_gas.is_none());
     }
 }
