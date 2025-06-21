@@ -374,9 +374,9 @@ mod tests {
     fn mint_event_log() -> Log {
         serde_json::from_str(r#"{
             "removed": null,
-            "log_index": null,
-            "transaction_index": null,
-            "transaction_hash": null,
+            "log_index": "0xa",
+            "transaction_index": "0x5",
+            "transaction_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
             "block_hash": null,
             "block_number": "0x1581756",
             "address": null,

@@ -15,16 +15,21 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use alloy::primitives::keccak256;
+use ahash::AHashMap;
+use alloy::primitives::{Address, keccak256};
 use futures_util::Stream;
 use hypersync_client::{
     net_types::{BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_model::defi::{Block, SharedChain};
+use nautilus_core::UnixNanos;
+use nautilus_model::defi::{AmmType, Block, Dex, Pool, SharedChain, Token};
 use reqwest::Url;
 
-use crate::{hypersync::transform::transform_hypersync_block, rpc::types::BlockchainMessage};
+use crate::{
+    hypersync::transform::{transform_hypersync_block, transform_hypersync_swap_log},
+    rpc::types::BlockchainMessage,
+};
 
 /// The interval in milliseconds at which to check for new blocks when waiting
 /// for the hypersync to index the block.
@@ -39,6 +44,8 @@ pub struct HyperSyncClient {
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
     blocks_task: Option<tokio::task::JoinHandle<()>>,
+    /// Background task handles for swap subscription tasks (keyed by pool address).
+    swaps_tasks: AHashMap<Address, tokio::task::JoinHandle<()>>,
     /// Channel for sending blockchain messages to the adapter data client.
     tx: tokio::sync::mpsc::UnboundedSender<BlockchainMessage>,
 }
@@ -64,6 +71,7 @@ impl HyperSyncClient {
             chain,
             client: Arc::new(client),
             blocks_task: None,
+            swaps_tasks: AHashMap::new(),
             tx,
         }
     }
@@ -140,6 +148,7 @@ impl HyperSyncClient {
     /// Disconnects from the HyperSync service and stops all background tasks.
     pub fn disconnect(&mut self) {
         self.unsubscribe_blocks();
+        self.unsubscribe_all_swaps();
     }
 
     /// Returns the current block
@@ -238,10 +247,162 @@ impl HyperSyncClient {
         }
     }
 
-    /// Unsubscribes to the new blocks by stopping the background watch task.
+    /// Subscribes to swap events for a specific pool address.
+    pub fn subscribe_pool_swaps(&mut self, pool_address: Address) {
+        let chain_ref = self.chain.clone(); // Use existing SharedChain
+        let client = self.client.clone();
+        let tx = self.tx.clone();
+
+        let task = tokio::spawn(async move {
+            tracing::debug!("Starting task 'swaps_feed' for pool: {pool_address}");
+
+            // TODO: These objects should be fetched from cache or RPC calls
+            // For now, create minimal objects just to get compilation working
+            let dex = std::sync::Arc::new(Dex::new(
+                (*chain_ref).clone(),
+                "Uniswap V3",
+                "0x1F98431c8aD98523631AE4a59f267346ea31F984", // Uniswap V3 factory
+                AmmType::CLAMM,
+                "PoolCreated(address,address,uint24,int24,address)",
+                "Swap(address,address,int256,int256,uint160,uint128,int24)",
+                "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+                "Burn(address,int24,int24,uint128,uint256,uint256)",
+            ));
+
+            let token0 = Token::new(
+                chain_ref.clone(),
+                "0xA0b86a33E6441b936662bb6B5d1F8Fb0E2b57A5D"
+                    .parse()
+                    .unwrap(), // WETH
+                "Wrapped Ether".to_string(),
+                "WETH".to_string(),
+                18,
+            );
+
+            let token1 = Token::new(
+                chain_ref.clone(),
+                "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+                    .parse()
+                    .unwrap(), // USDT
+                "Tether USD".to_string(),
+                "USDT".to_string(),
+                6, // USDT has 6 decimals
+            );
+
+            let pool = std::sync::Arc::new(Pool::new(
+                chain_ref.clone(),
+                (*dex).clone(),
+                pool_address,
+                0, // creation block - TODO: fetch from cache
+                token0,
+                token1,
+                3000, // 0.3% fee tier
+                60,   // tick spacing
+                UnixNanos::default(),
+            ));
+
+            let current_block_height = client.get_height().await.unwrap();
+            let mut query =
+                Self::construct_pool_swaps_query(pool_address, current_block_height, None);
+
+            loop {
+                let response = client.get(&query).await.unwrap();
+
+                // Process logs for swap events
+                for batch in response.data.logs {
+                    for log in batch {
+                        if let Ok(swap) = transform_hypersync_swap_log(
+                            chain_ref.clone(),
+                            dex.clone(),
+                            pool.clone(),
+                            UnixNanos::default(), // TODO: block timestamp placeholder
+                            &log,
+                        ) {
+                            let msg = crate::rpc::types::BlockchainMessage::Swap(swap);
+                            if let Err(e) = tx.send(msg) {
+                                tracing::error!("Error sending swap message: {e}");
+                            }
+                        } else {
+                            tracing::warn!(
+                                "Failed to transform swap log from pool: {pool_address}"
+                            );
+                        }
+                    }
+                }
+
+                if let Some(archive_block_height) = response.archive_height {
+                    if archive_block_height < response.next_block {
+                        while client.get_height().await.unwrap() < response.next_block {
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                BLOCK_POLLING_INTERVAL_MS,
+                            ))
+                            .await;
+                        }
+                    }
+                }
+
+                query.from_block = response.next_block;
+            }
+        });
+
+        self.swaps_tasks.insert(pool_address, task);
+    }
+
+    /// Constructs a HyperSync query for fetching swap events from a specific pool.
+    fn construct_pool_swaps_query(
+        pool_address: alloy::primitives::Address,
+        from_block: u64,
+        to_block: Option<u64>,
+    ) -> Query {
+        use hypersync_client::net_types::{FieldSelection, LogSelection, Query};
+
+        Query {
+            from_block,
+            to_block,
+            logs: vec![LogSelection {
+                address: vec![pool_address.to_string().parse().unwrap()],
+                topics: Default::default(),
+                ..Default::default()
+            }],
+            field_selection: FieldSelection {
+                log: vec![
+                    "block_number".to_string(),
+                    "transaction_hash".to_string(),
+                    "transaction_index".to_string(),
+                    "log_index".to_string(),
+                    "address".to_string(),
+                    "data".to_string(),
+                    "topics".to_string(),
+                ]
+                .into_iter()
+                .collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Unsubscribes from swap events for a specific pool address.
+    pub fn unsubscribe_pool_swaps(&mut self, pool_address: Address) {
+        if let Some(task) = self.swaps_tasks.remove(&pool_address) {
+            task.abort();
+            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
+        }
+    }
+
+    /// Unsubscribes from all swap events by stopping all swap background tasks.
+    pub fn unsubscribe_all_swaps(&mut self) {
+        for (pool_address, task) in self.swaps_tasks.drain() {
+            task.abort();
+            tracing::debug!("Unsubscribed from swaps for pool: {}", pool_address);
+        }
+    }
+
+    /// Unsubscribes from new blocks by stopping the background watch task.
     pub fn unsubscribe_blocks(&mut self) {
         if let Some(task) = self.blocks_task.take() {
             task.abort();
+            tracing::debug!("Unsubscribed from blocks");
         }
     }
 }

@@ -196,7 +196,7 @@ cargo-test-crate-%: RUST_BACKTRACE=1
 cargo-test-crate-%: HIGH_PRECISION=true
 cargo-test-crate-%: check-nextest
 cargo-test-crate-%:
-	cargo nextest run --lib --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest -p $*
+	cargo nextest run --lib --no-default-features --all-features --no-fail-fast --cargo-profile nextest -p $*
 
 .PHONY: cargo-bench
 cargo-bench:
