@@ -43,7 +43,6 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.common.component cimport CMD
 from nautilus_trader.common.component cimport RECV
 from nautilus_trader.common.component cimport REQ
@@ -1415,14 +1414,15 @@ cdef class DataEngine(Component):
     cpdef void _handle_request_data(self, DataClient client, RequestData request):
         self._handle_date_range_request(client, request)
 
-    cpdef void _handle_date_range_request(
-        self,
-        DataClient client,
-        RequestData request,
-    ):
+    cpdef void _handle_date_range_request(self, DataClient client, RequestData request):
         cdef DataClient used_client = client
 
-        if type(client) is BacktestMarketDataClient:
+        # Avoid importing `BacktestMarketDataClient` from the `backtest` subpackage at
+        # module import time – doing so creates a circular import between
+        # `nautilus_trader.data` and `nautilus_trader.backtest`.
+        from nautilus_trader.backtest.data_client import BacktestMarketDataClient
+
+        if isinstance(client, BacktestMarketDataClient):
             used_client = None
 
         # Capping dates to the now datetime
