@@ -39,11 +39,7 @@ pub enum DefiDataCommand {
 
 impl PartialEq for DefiDataCommand {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Subscribe(cmd1), Self::Subscribe(cmd2)) => cmd1 == cmd2,
-            (Self::Unsubscribe(cmd1), Self::Unsubscribe(cmd2)) => cmd1 == cmd2,
-            _ => false,
-        }
+        self.command_id() == other.command_id()
     }
 }
 
