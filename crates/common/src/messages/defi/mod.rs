@@ -24,13 +24,19 @@ pub mod subscribe;
 pub mod unsubscribe;
 
 // Re-exports
-pub use subscribe::{SubscribeBlocks, SubscribePoolSwaps};
-pub use unsubscribe::{UnsubscribeBlocks, UnsubscribePoolSwaps};
+pub use subscribe::{
+    SubscribeBlocks, SubscribePool, SubscribePoolLiquidityUpdates, SubscribePoolSwaps,
+};
+pub use unsubscribe::{
+    UnsubscribeBlocks, UnsubscribePool, UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+};
 
 #[derive(Clone, Debug)]
 pub enum DefiSubscribeCommand {
     Blocks(SubscribeBlocks),
+    Pool(SubscribePool),
     PoolSwaps(SubscribePoolSwaps),
+    PoolLiquidityUpdates(SubscribePoolLiquidityUpdates),
 }
 
 impl PartialEq for DefiSubscribeCommand {
@@ -48,14 +54,18 @@ impl DefiSubscribeCommand {
     pub fn command_id(&self) -> UUID4 {
         match self {
             Self::Blocks(cmd) => cmd.command_id,
+            Self::Pool(cmd) => cmd.command_id,
             Self::PoolSwaps(cmd) => cmd.command_id,
+            Self::PoolLiquidityUpdates(cmd) => cmd.command_id,
         }
     }
 
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Blocks(cmd) => cmd.client_id.as_ref(),
+            Self::Pool(cmd) => cmd.client_id.as_ref(),
             Self::PoolSwaps(cmd) => cmd.client_id.as_ref(),
+            Self::PoolLiquidityUpdates(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -63,7 +73,9 @@ impl DefiSubscribeCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Blocks(_) => None,
+            Self::Pool(_) => None,
             Self::PoolSwaps(_) => None,
+            Self::PoolLiquidityUpdates(_) => None,
         }
     }
 
@@ -71,6 +83,8 @@ impl DefiSubscribeCommand {
         match self {
             Self::Blocks(cmd) => cmd.ts_init,
             Self::PoolSwaps(cmd) => cmd.ts_init,
+            Self::PoolLiquidityUpdates(cmd) => cmd.ts_init,
+            Self::Pool(cmd) => cmd.ts_init,
         }
     }
 }
@@ -78,7 +92,9 @@ impl DefiSubscribeCommand {
 #[derive(Clone, Debug)]
 pub enum DefiUnsubscribeCommand {
     Blocks(UnsubscribeBlocks),
+    Pool(UnsubscribePool),
     PoolSwaps(UnsubscribePoolSwaps),
+    PoolLiquidityUpdates(UnsubscribePoolLiquidityUpdates),
 }
 
 impl PartialEq for DefiUnsubscribeCommand {
@@ -96,14 +112,18 @@ impl DefiUnsubscribeCommand {
     pub fn command_id(&self) -> UUID4 {
         match self {
             Self::Blocks(cmd) => cmd.command_id,
+            Self::Pool(cmd) => cmd.command_id,
             Self::PoolSwaps(cmd) => cmd.command_id,
+            Self::PoolLiquidityUpdates(cmd) => cmd.command_id,
         }
     }
 
     pub fn client_id(&self) -> Option<&ClientId> {
         match self {
             Self::Blocks(cmd) => cmd.client_id.as_ref(),
+            Self::Pool(cmd) => cmd.client_id.as_ref(),
             Self::PoolSwaps(cmd) => cmd.client_id.as_ref(),
+            Self::PoolLiquidityUpdates(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -111,14 +131,18 @@ impl DefiUnsubscribeCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Blocks(_) => None,
+            Self::Pool(_) => None,
             Self::PoolSwaps(_) => None,
+            Self::PoolLiquidityUpdates(_) => None,
         }
     }
 
     pub fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Blocks(cmd) => cmd.ts_init,
+            Self::Pool(cmd) => cmd.ts_init,
             Self::PoolSwaps(cmd) => cmd.ts_init,
+            Self::PoolLiquidityUpdates(cmd) => cmd.ts_init,
         }
     }
 }

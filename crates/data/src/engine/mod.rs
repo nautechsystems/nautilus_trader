@@ -463,10 +463,24 @@ impl DataEngine {
     }
 
     #[cfg(feature = "defi")]
-    /// Returns all instrument IDs for which swaps subscriptions exist.
+    /// Returns all pool addresses for which pool subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pools(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pools)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all pool addresses for which swap subscriptions exist.
     #[must_use]
     pub fn subscribed_pool_swaps(&self) -> Vec<Address> {
         self.collect_subscriptions(|client| &client.subscriptions_pool_swaps)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all pool addresses for which liquidity update subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_liquidity_updates(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
     }
 
     // -- COMMANDS --------------------------------------------------------------------------------

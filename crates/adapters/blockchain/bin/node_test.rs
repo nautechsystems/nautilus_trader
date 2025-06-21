@@ -148,18 +148,15 @@ impl DerefMut for BlockchainSubscriberActor {
 
 impl DataActor for BlockchainSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        log::info!(
-            "Starting blockchain subscriber actor for {} pool(s)",
-            self.config.pools.len()
-        );
-
         let client_id = self.config.client_id;
 
         self.subscribe_blocks(self.config.chain, Some(client_id), None);
 
         let pool_addresses = self.config.pools.clone();
         for address in pool_addresses {
-            self.subscribe_pool_swaps(address, Some(client_id), None)
+            self.subscribe_pool(address, Some(client_id), None);
+            self.subscribe_pool_swaps(address, Some(client_id), None);
+            self.subscribe_pool_liquidity_updates(address, Some(client_id), None);
         }
 
         self.clock().set_timer(
@@ -186,13 +183,15 @@ impl DataActor for BlockchainSubscriberActor {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        let pool_addresses = self.config.pools.clone();
         let client_id = self.config.client_id;
 
-        // Unsubscribe from custom data for each pool
+        self.unsubscribe_blocks(self.config.chain, Some(client_id), None);
+
+        let pool_addresses = self.config.pools.clone();
         for address in pool_addresses {
+            self.unsubscribe_pool(address, Some(client_id), None);
             self.unsubscribe_pool_swaps(address, Some(client_id), None);
-            log::info!("Unsubscribing from blockchain data for pool {address}");
+            self.unsubscribe_pool_liquidity_updates(address, Some(client_id), None);
         }
 
         Ok(())
