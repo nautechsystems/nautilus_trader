@@ -27,7 +27,7 @@ use std::{
 use alloy::primitives::Address;
 use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
-    Block, Pool, PoolLiquidityUpdate, SharedChain, SharedPool, Swap, Token,
+    Block, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedPool, Token,
 };
 use sqlx::postgres::PgConnectOptions;
 
@@ -185,7 +185,7 @@ impl BlockchainCache {
         Ok(())
     }
 
-    /// Adds a token to the cache.
+    /// Adds a [`Token`] to the cache.
     pub async fn add_token(&mut self, token: Token) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_token(&token).await?;
@@ -194,8 +194,8 @@ impl BlockchainCache {
         Ok(())
     }
 
-    /// Adds a [`Swap`] to the cache database if available.
-    pub async fn add_swap(&self, swap: &Swap) -> anyhow::Result<()> {
+    /// Adds a [`PoolSwap`] to the cache database if available.
+    pub async fn add_pool_swap(&self, swap: &PoolSwap) -> anyhow::Result<()> {
         if let Some(database) = &self.database {
             database.add_swap(self.chain.chain_id, swap).await?;
         }

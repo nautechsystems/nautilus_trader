@@ -31,9 +31,13 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+#[cfg(feature = "defi")]
+use alloy_primitives::Address;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos, correctness::check_predicate_true};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Block, Blockchain, PoolSwap};
 use nautilus_model::{
     data::{
         Bar, BarType, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
@@ -53,6 +57,8 @@ use super::{
     Actor,
     registry::{get_actor, get_actor_unchecked, try_get_actor_unchecked},
 };
+#[cfg(feature = "defi")]
+use crate::msgbus::switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topic};
 use crate::{
     cache::Cache,
     clock::Clock,
@@ -333,6 +339,26 @@ pub trait DataActor:
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Actions to be performed when receiving a block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the block fails.
+    fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Actions to be performed when receiving a pool swap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the pool swap fails.
+    fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Actions to be performed when receiving historical data.
     ///
     /// # Errors
@@ -563,6 +589,36 @@ pub trait DataActor:
         }
 
         if let Err(e) = self.on_instrument_close(close) {
+            log_error(&e);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles a received block.
+    fn handle_block(&mut self, block: &Block) {
+        log_received(&block);
+
+        if self.not_running() {
+            log_not_running(&block);
+            return;
+        }
+
+        if let Err(e) = self.on_block(block) {
+            log_error(&e);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles a received pool swap.
+    fn handle_pool_swap(&mut self, swap: &PoolSwap) {
+        log_received(&swap);
+
+        if self.not_running() {
+            log_not_running(&swap);
+            return;
+        }
+
+        if let Err(e) = self.on_pool_swap(swap) {
             log_error(&e);
         }
     }
@@ -965,6 +1021,49 @@ pub trait DataActor:
         );
     }
 
+    #[cfg(feature = "defi")]
+    /// Subscribe to streaming [`Block`] data for the `chain`.
+    fn subscribe_blocks(
+        &mut self,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_defi_blocks_topic(chain);
+
+        let handler =
+            ShareableMessageHandler(Rc::new(TypedMessageHandler::from(move |block: &Block| {
+                get_actor_unchecked::<Self>(&actor_id).handle_block(block);
+            })));
+
+        DataActorCore::subscribe_blocks(self, topic, handler, chain, client_id, params);
+    }
+
+    #[cfg(feature = "defi")]
+    /// Subscribe to streaming [`PoolSwap`] data for the `instrument_id`.
+    fn subscribe_pool_swaps(
+        &mut self,
+        address: Address,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.actor_id().inner();
+        let topic = get_defi_pool_swaps_topic(address);
+
+        let handler = ShareableMessageHandler(Rc::new(TypedMessageHandler::from(
+            move |swap: &PoolSwap| {
+                get_actor_unchecked::<Self>(&actor_id).handle_pool_swap(swap);
+            },
+        )));
+
+        DataActorCore::subscribe_pool_swaps(self, topic, handler, address, client_id, params);
+    }
+
     /// Unsubscribe from streaming `data_type` data.
     fn unsubscribe_data(
         &mut self,
@@ -1114,6 +1213,32 @@ pub trait DataActor:
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribe from streaming [`Block`] data for the `chain`.
+    fn unsubscribe_blocks(
+        &mut self,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_blocks(self, chain, client_id, params);
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribe from streaming [`PoolSwap`] data for the `address`.
+    fn unsubscribe_pool_swaps(
+        &mut self,
+        address: Address,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) where
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_pool_swaps(self, address, client_id, params);
     }
 
     /// Request historical custom data of the given `data_type`.
@@ -1998,6 +2123,62 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    #[cfg(feature = "defi")]
+    /// Helper method for registering block subscriptions from the trait.
+    pub fn subscribe_blocks(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiSubscribeCommand, SubscribeBlocks};
+
+        self.check_registered();
+
+        self.topic_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_topic(topic, handler, None);
+
+        let command = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+            chain,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+    }
+
+    #[cfg(feature = "defi")]
+    /// Helper method for registering pool swap subscriptions from the trait.
+    pub fn subscribe_pool_swaps(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: ShareableMessageHandler,
+        address: Address,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiSubscribeCommand, SubscribeBlocks, SubscribePoolSwaps};
+
+        self.check_registered();
+
+        self.topic_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_topic(topic, handler, None);
+
+        let command = DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps {
+            address,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::DefiSubscribe(command));
+    }
+
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
         &self,
@@ -2312,6 +2493,62 @@ impl DataActorCore {
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    #[cfg(feature = "defi")]
+    /// Helper method for unsubscribing from blocks.
+    pub fn unsubscribe_blocks(
+        &mut self,
+        chain: Blockchain,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribeBlocks};
+
+        self.check_registered();
+
+        let topic = get_defi_blocks_topic(chain);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe_topic(topic, handler.clone());
+        };
+
+        let command = DefiUnsubscribeCommand::Blocks(UnsubscribeBlocks {
+            chain,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
+    }
+
+    #[cfg(feature = "defi")]
+    /// Helper method for unsubscribing from pool swaps.
+    pub fn unsubscribe_pool_swaps(
+        &mut self,
+        address: Address,
+        client_id: Option<ClientId>,
+        params: Option<IndexMap<String, String>>,
+    ) {
+        use crate::messages::defi::{DefiUnsubscribeCommand, UnsubscribePoolSwaps};
+
+        self.check_registered();
+
+        let topic = get_defi_pool_swaps_topic(address);
+        if let Some(handler) = self.topic_handlers.get(&topic) {
+            msgbus::unsubscribe_topic(topic, handler.clone());
+        };
+
+        let command = DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps {
+            address,
+            client_id,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::DefiUnsubscribe(command));
     }
 
     /// Helper method for requesting data.

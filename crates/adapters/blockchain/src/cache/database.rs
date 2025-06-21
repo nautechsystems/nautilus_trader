@@ -15,7 +15,7 @@
 
 use alloy::primitives::U256;
 use nautilus_model::defi::{
-    Block, Chain, Dex, Pool, PoolLiquidityUpdate, SharedChain, Swap, Token,
+    Block, Chain, Dex, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, Token,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
@@ -215,7 +215,7 @@ impl BlockchainCacheDatabase {
     }
 
     /// Persists a token swap transaction event to the `pool_swap` table.
-    pub async fn add_swap(&self, chain_id: u32, swap: &Swap) -> anyhow::Result<()> {
+    pub async fn add_swap(&self, chain_id: u32, swap: &PoolSwap) -> anyhow::Result<()> {
         sqlx::query(
             r"
             INSERT INTO pool_swap (

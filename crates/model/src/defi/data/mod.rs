@@ -33,7 +33,7 @@ pub mod transaction;
 // Re-exports
 pub use block::Block;
 pub use liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType};
-pub use swap::Swap;
+pub use swap::PoolSwap;
 pub use transaction::Transaction;
 
 /// Represents DeFi-specific data events in a decentralized exchange ecosystem.
@@ -45,7 +45,7 @@ pub enum DefiData {
     /// A DEX liquidity pool definition or update.
     Pool(Pool),
     /// A token swap transaction on a decentralized exchange.
-    Swap(Swap),
+    PoolSwap(PoolSwap),
     /// A liquidity update event (mint/burn) in a DEX pool.
     PoolLiquidityUpdate(PoolLiquidityUpdate),
 }
@@ -56,7 +56,7 @@ impl DefiData {
     pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Block(_) => todo!("Not implemented yet"),
-            Self::Swap(swap) => swap.instrument_id(),
+            Self::PoolSwap(swap) => swap.instrument_id(),
             Self::PoolLiquidityUpdate(update) => update.instrument_id(),
             Self::Pool(pool) => pool.instrument_id(),
         }
@@ -67,7 +67,7 @@ impl Display for DefiData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Block(b) => write!(f, "{b}"),
-            Self::Swap(s) => write!(f, "{s}"),
+            Self::PoolSwap(s) => write!(f, "{s}"),
             Self::PoolLiquidityUpdate(u) => write!(f, "{u}"),
             Self::Pool(p) => write!(f, "{p}"),
         }
@@ -78,16 +78,16 @@ impl HasTsInit for DefiData {
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Block(block) => block.timestamp, // TODO: TBD
-            Self::Swap(swap) => swap.ts_init,
+            Self::PoolSwap(swap) => swap.ts_init,
             Self::PoolLiquidityUpdate(update) => update.ts_init,
             Self::Pool(pool) => pool.ts_init,
         }
     }
 }
 
-impl From<Swap> for DefiData {
-    fn from(value: Swap) -> Self {
-        Self::Swap(value)
+impl From<PoolSwap> for DefiData {
+    fn from(value: PoolSwap) -> Self {
+        Self::PoolSwap(value)
     }
 }
 

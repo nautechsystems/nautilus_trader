@@ -44,8 +44,15 @@ use nautilus_model::{
 };
 use rstest::{fixture, rstest};
 use ustr::Ustr;
+#[cfg(feature = "defi")]
+use {
+    alloy_primitives::Address,
+    nautilus_model::defi::{Block, Blockchain, PoolSwap},
+};
 
 use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
+#[cfg(feature = "defi")]
+use crate::msgbus::switchboard::{get_defi_blocks_topic, get_defi_pool_swaps_topic};
 use crate::{
     actor::registry::{get_actor, get_actor_unchecked, register_actor},
     cache::Cache,
@@ -85,6 +92,10 @@ struct TestDataActor {
     pub received_index_prices: Vec<IndexPriceUpdate>,
     pub received_status: Vec<InstrumentStatus>,
     pub received_closes: Vec<InstrumentClose>,
+    #[cfg(feature = "defi")]
+    pub received_blocks: Vec<Block>,
+    #[cfg(feature = "defi")]
+    pub received_pool_swaps: Vec<PoolSwap>,
 }
 
 impl Deref for TestDataActor {
@@ -189,6 +200,18 @@ impl DataActor for TestDataActor {
         self.received_closes.push(*close);
         Ok(())
     }
+
+    #[cfg(feature = "defi")]
+    fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        self.received_blocks.push(block.clone());
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+        self.received_pool_swaps.push(swap.clone());
+        Ok(())
+    }
 }
 
 // Custom functionality as required
@@ -208,6 +231,10 @@ impl TestDataActor {
             received_index_prices: Vec::new(),
             received_status: Vec::new(),
             received_closes: Vec::new(),
+            #[cfg(feature = "defi")]
+            received_blocks: Vec::new(),
+            #[cfg(feature = "defi")]
+            received_pool_swaps: Vec::new(),
         }
     }
 
@@ -1265,4 +1292,267 @@ fn test_request_data(
     // Actor should receive the custom data
     assert_eq!(actor.received_data.len(), 1);
     assert_eq!(actor.received_data[0], "Any { .. }");
+}
+
+// ------------------------------------------------------------------------------------------------
+// DeFi Tests
+// ------------------------------------------------------------------------------------------------
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_subscribe_and_receive_blocks(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let blockchain = Blockchain::Ethereum;
+    actor.subscribe_blocks(blockchain, None, None);
+
+    let topic = get_defi_blocks_topic(blockchain);
+    let block = Block::new(
+        "0x123".to_string(),
+        "0x456".to_string(),
+        1u64,
+        "miner".into(),
+        1000000u64,
+        500000u64,
+        UnixNanos::from(1),
+        Some(blockchain),
+    );
+    msgbus::publish(topic, &block);
+
+    assert_eq!(actor.received_blocks.len(), 1);
+    assert_eq!(actor.received_blocks[0], block);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_unsubscribe_blocks(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let blockchain = Blockchain::Ethereum;
+    actor.subscribe_blocks(blockchain, None, None);
+
+    let topic = get_defi_blocks_topic(blockchain);
+    let block1 = Block::new(
+        "0x123".to_string(),
+        "0x456".to_string(),
+        1u64,
+        "miner".into(),
+        1000000u64,
+        500000u64,
+        UnixNanos::from(1),
+        Some(blockchain),
+    );
+    msgbus::publish(topic, &block1);
+
+    // Unsubscribe
+    actor.unsubscribe_blocks(blockchain, None, None);
+
+    let block2 = Block::new(
+        "0x789".to_string(),
+        "0xabc".to_string(),
+        2u64,
+        "miner2".into(),
+        1000001u64,
+        500001u64,
+        UnixNanos::from(2),
+        Some(blockchain),
+    );
+    msgbus::publish(topic, &block2);
+
+    // Should still only have one block
+    assert_eq!(actor.received_blocks.len(), 1);
+    assert_eq!(actor.received_blocks[0], block1);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_subscribe_and_receive_pool_swaps(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let address = Address::from([0x12; 20]);
+    actor.subscribe_pool_swaps(address, None, None);
+
+    let topic = get_defi_pool_swaps_topic(address);
+
+    // Create a minimal pool swap
+    use std::sync::Arc;
+
+    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "Uniswap V3",
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+    );
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        address,
+        0u64,
+        token0.clone(),
+        token1.clone(),
+        500u32,
+        10u32,
+        UnixNanos::from(1),
+    );
+
+    use nautilus_model::{
+        enums::OrderSide,
+        types::{Price, Quantity},
+    };
+
+    let swap = PoolSwap::new(
+        chain,
+        Arc::new(dex),
+        Arc::new(pool),
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        UnixNanos::from(1),
+        address,
+        OrderSide::Buy,
+        Quantity::from("1000"),
+        Price::from("500"),
+    );
+    msgbus::publish(topic, &swap);
+
+    assert_eq!(actor.received_pool_swaps.len(), 1);
+    assert_eq!(actor.received_pool_swaps[0], swap);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_unsubscribe_pool_swaps(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let address = Address::from([0x12; 20]);
+    actor.subscribe_pool_swaps(address, None, None);
+
+    let topic = get_defi_pool_swaps_topic(address);
+
+    // Create a minimal pool swap
+    use std::sync::Arc;
+
+    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "Uniswap V3",
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+    );
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x22; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex.clone(),
+        address,
+        0u64,
+        token0.clone(),
+        token1.clone(),
+        500u32,
+        10u32,
+        UnixNanos::from(1),
+    );
+
+    let swap1 = PoolSwap::new(
+        chain.clone(),
+        Arc::new(dex.clone()),
+        Arc::new(pool.clone()),
+        1000u64,
+        "0x123".to_string(),
+        0,
+        0,
+        UnixNanos::from(1),
+        address,
+        OrderSide::Buy,
+        Quantity::from("1000"),
+        Price::from("500"),
+    );
+    msgbus::publish(topic, &swap1);
+
+    // Unsubscribe
+    actor.unsubscribe_pool_swaps(address, None, None);
+
+    let swap2 = PoolSwap::new(
+        chain,
+        Arc::new(dex),
+        Arc::new(pool),
+        2000u64,
+        "0x456".to_string(),
+        0,
+        0,
+        UnixNanos::from(2),
+        address,
+        OrderSide::Sell,
+        Quantity::from("2000"),
+        Price::from("1000"),
+    );
+    msgbus::publish(topic, &swap2);
+
+    // Should still only have one swap
+    assert_eq!(actor.received_pool_swaps.len(), 1);
+    assert_eq!(actor.received_pool_swaps[0], swap1);
 }

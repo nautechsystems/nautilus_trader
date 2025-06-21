@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Data specific messages such as subscriptions and requests.
+
 use std::{any::Any, sync::Arc};
 
 use nautilus_core::{UUID4, UnixNanos};
@@ -48,11 +50,18 @@ pub use unsubscribe::{
     UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
 };
 
+#[cfg(feature = "defi")]
+use crate::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataCommand {
     Request(RequestCommand),
     Subscribe(SubscribeCommand),
     Unsubscribe(UnsubscribeCommand),
+    #[cfg(feature = "defi")]
+    DefiSubscribe(DefiSubscribeCommand),
+    #[cfg(feature = "defi")]
+    DefiUnsubscribe(DefiUnsubscribeCommand),
 }
 
 impl DataCommand {
