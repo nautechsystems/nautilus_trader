@@ -29,25 +29,20 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, DataType, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
-        close::InstrumentClose,
-        stubs::{stub_instrument_close, stub_instrument_status},
+        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, close::InstrumentClose, stubs::*,
     },
     enums::{BookAction, BookType, OrderSide},
     identifiers::{ClientId, TraderId, Venue},
-    instruments::{
-        CurrencyPair, InstrumentAny,
-        stubs::{audusd_sim, gbpusd_sim},
-    },
+    instruments::{CurrencyPair, InstrumentAny, stubs::*},
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
-use rstest::{fixture, rstest};
+use rstest::*;
 use ustr::Ustr;
 #[cfg(feature = "defi")]
 use {
     alloy_primitives::Address,
-    nautilus_model::defi::{Block, Blockchain, PoolSwap},
+    nautilus_model::defi::{Block, Blockchain, Pool, PoolLiquidityUpdate, PoolSwap},
 };
 
 use super::{Actor, DataActor, DataActorCore, data_actor::DataActorConfig};
@@ -95,7 +90,11 @@ struct TestDataActor {
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
     #[cfg(feature = "defi")]
+    pub received_pools: Vec<Pool>,
+    #[cfg(feature = "defi")]
     pub received_pool_swaps: Vec<PoolSwap>,
+    #[cfg(feature = "defi")]
+    pub received_pool_liquidity_updates: Vec<PoolLiquidityUpdate>,
 }
 
 impl Deref for TestDataActor {
@@ -208,8 +207,20 @@ impl DataActor for TestDataActor {
     }
 
     #[cfg(feature = "defi")]
+    fn on_pool(&mut self, pool: &Pool) -> anyhow::Result<()> {
+        self.received_pools.push(pool.clone());
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.received_pool_swaps.push(swap.clone());
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn on_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) -> anyhow::Result<()> {
+        self.received_pool_liquidity_updates.push(update.clone());
         Ok(())
     }
 }
@@ -234,7 +245,11 @@ impl TestDataActor {
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
             #[cfg(feature = "defi")]
+            received_pools: Vec::new(),
+            #[cfg(feature = "defi")]
             received_pool_swaps: Vec::new(),
+            #[cfg(feature = "defi")]
+            received_pool_liquidity_updates: Vec::new(),
         }
     }
 
@@ -1374,6 +1389,72 @@ fn test_unsubscribe_blocks(
     // Should still only have one block
     assert_eq!(actor.received_blocks.len(), 1);
     assert_eq!(actor.received_blocks[0], block1);
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_subscribe_and_receive_pools(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock.clone(), cache.clone(), trader_id);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let address = Address::from([0x12; 20]);
+    actor.subscribe_pool(address, None, None);
+
+    let topic = get_defi_pool_topic(address);
+
+    // Create a minimal pool using the existing pattern
+    use std::sync::Arc;
+
+    use nautilus_model::defi::{Dex, Pool, Token, chain::chains, dex::AmmType};
+
+    use crate::msgbus::switchboard::get_defi_pool_topic;
+
+    let chain = Arc::new(chains::ETHEREUM.clone());
+    let dex = Dex::new(
+        chains::ETHEREUM.clone(),
+        "Uniswap V3",
+        "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        AmmType::CLAMM,
+        "PoolCreated",
+        "Swap",
+        "Mint",
+        "Burn",
+    );
+    let token0 = Token::new(
+        chain.clone(),
+        Address::from([0x11; 20]),
+        "USDC".to_string(),
+        "USDC".to_string(),
+        6,
+    );
+    let token1 = Token::new(
+        chain.clone(),
+        Address::from([0x12; 20]),
+        "WETH".to_string(),
+        "WETH".to_string(),
+        18,
+    );
+    let pool = Pool::new(
+        chain.clone(),
+        dex,
+        Address::from([0x12; 20]),
+        1000000,
+        token0,
+        token1,
+        3000,
+        60,
+        UnixNanos::from(1),
+    );
+
+    msgbus::publish(topic, &pool);
+
+    assert_eq!(actor.received_pools.len(), 1);
+    assert_eq!(actor.received_pools[0], pool);
 }
 
 #[cfg(feature = "defi")]

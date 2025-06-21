@@ -197,7 +197,7 @@ pub fn get_defi_liquidity_topic(address: Address) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_liquidity_topic(address)
+        .get_defi_pool_liquidity_topic(address)
 }
 
 /// Represents a switchboard of built-in messaging endpoint names.
@@ -227,7 +227,7 @@ pub struct MessagingSwitchboard {
     #[cfg(feature = "defi")]
     defi_pool_swap_topics: AHashMap<Address, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_liquidity_topics: AHashMap<Address, MStr<Topic>>,
+    defi_pool_liquidity_topics: AHashMap<Address, MStr<Topic>>,
 }
 
 impl Default for MessagingSwitchboard {
@@ -258,7 +258,7 @@ impl Default for MessagingSwitchboard {
             #[cfg(feature = "defi")]
             defi_pool_swap_topics: AHashMap::new(),
             #[cfg(feature = "defi")]
-            defi_liquidity_topics: AHashMap::new(),
+            defi_pool_liquidity_topics: AHashMap::new(),
         }
     }
 }
@@ -513,11 +513,11 @@ impl MessagingSwitchboard {
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_liquidity_topic(&mut self, address: Address) -> MStr<Topic> {
+    pub fn get_defi_pool_liquidity_topic(&mut self, address: Address) -> MStr<Topic> {
         *self
-            .defi_liquidity_topics
+            .defi_pool_liquidity_topics
             .entry(address)
-            .or_insert_with(|| format!("data.defi.liquidity.{address}").into())
+            .or_insert_with(|| format!("data.defi.pool_liquidity.{address}").into())
     }
 }
 
