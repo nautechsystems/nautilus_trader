@@ -35,9 +35,8 @@ pub mod stubs;
 use anyhow::ensure;
 use enum_dispatch::enum_dispatch;
 use nautilus_core::UnixNanos;
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy, prelude::*};
 use rust_decimal_macros::dec;
-use serde_json::{Value, json};
 use ustr::Ustr;
 
 // Re-exports
@@ -60,8 +59,7 @@ macro_rules! check_positive {
     };
 }
 
-#[allow(clippy::missing_errors_doc)]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::missing_errors_doc, clippy::too_many_arguments)]
 pub fn validate_instrument_common(
     price_precision: i32,
     size_precision: i32,
@@ -89,33 +87,42 @@ pub fn validate_instrument_common(
     ensure!(margin_init >= dec!(0), "margin_init negative");
     ensure!(margin_maint >= dec!(0), "margin_maint negative");
 
-    if let Some(pi) = price_increment {
-        check_positive!(pi.as_f64(), "price_increment not positive");
+    if let Some(increment) = price_increment {
+        check_positive!(increment.as_f64(), "price_increment not positive");
         ensure!(
-            pi.precision as i32 == price_precision,
+            increment.precision as i32 == price_precision,
             "price_precision != price_increment.precision"
         );
     }
-    if let Some(l) = lot_size {
-        check_positive!(l.as_f64(), "lot_size not positive");
+    if let Some(lot) = lot_size {
+        check_positive!(lot.as_f64(), "lot_size not positive");
     }
-    if let Some(q) = max_quantity {
-        check_positive!(q.as_f64(), "max_quantity not positive");
+    if let Some(quantity) = max_quantity {
+        check_positive!(quantity.as_f64(), "max_quantity not positive");
     }
-    if let Some(q) = min_quantity {
-        ensure!(q.as_f64() >= 0.0, "min_quantity negative");
+    if let Some(quantity) = min_quantity {
+        ensure!(quantity.as_f64() >= 0.0, "min_quantity negative");
     }
-    if let Some(n) = max_notional {
-        check_positive!(n.as_f64(), "max_notional not positive");
+    if let Some(notional) = max_notional {
+        check_positive!(notional.as_f64(), "max_notional not positive");
     }
-    if let Some(n) = min_notional {
-        ensure!(n.as_f64() >= 0.0, "min_notional negative");
+    if let Some(notional) = min_notional {
+        ensure!(notional.as_f64() >= 0.0, "min_notional negative");
     }
-    if let Some(p) = max_price {
-        check_positive!(p.as_f64(), "max_price not positive");
+    if let Some(price) = max_price {
+        ensure!(
+            price.precision as i32 == price_precision,
+            "price_precision != max_price.precision"
+        );
     }
-    if let Some(p) = min_price {
-        ensure!(p.as_f64() >= 0.0, "min_price negative");
+    if let Some(price) = min_price {
+        ensure!(
+            price.precision as i32 == price_precision,
+            "price_precision != min_price.precision"
+        );
+    }
+    if let (Some(min), Some(max)) = (min_price, max_price) {
+        ensure!(min.as_f64() <= max.as_f64(), "min_price exceeds max_price");
     }
     Ok(())
 }
@@ -200,7 +207,7 @@ pub trait Instrument: 'static + Send {
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
         self.base_currency()
-            .map(|c| c != self.settlement_currency())
+            .map(|currency| currency != self.settlement_currency())
             .unwrap_or(false)
     }
 
@@ -243,27 +250,20 @@ pub trait Instrument: 'static + Send {
 
     /// Creates a new [`Quantity`] from the given `value` with the correct size precision for the instrument.
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
-        let inc = 10f64.powi(-(self.size_precision() as i32));
-        let rounded = if round_down.unwrap_or(false) {
-            (value / inc).floor() * inc
+        let precision_u8 = self.size_precision();
+        let precision = precision_u8 as u32;
+        let decimal_value = Decimal::from_f64_retain(value).expect("non-finite");
+        let rounded_decimal = if round_down.unwrap_or(false) {
+            decimal_value.round_dp_with_strategy(precision, RoundingStrategy::ToZero)
         } else {
-            let factor = 10f64.powi(self.size_precision() as i32);
-            let tmp = value * factor;
-            let floored = tmp.floor();
-            let rem = tmp - floored;
-            let half_even = if rem > 0.5 {
-                floored + 1.0
-            } else if rem < 0.5 || (rem == 0.5 && (floored as u64) % 2 == 0) {
-                floored
-            } else {
-                floored + 1.0
-            };
-            half_even / factor
+            decimal_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven)
         };
-        if value > 0.0 && rounded < inc * 0.1 {
+        let rounded = rounded_decimal.to_f64().expect("out of range");
+        let increment = 10f64.powi(-(precision_u8 as i32));
+        if value > 0.0 && rounded < increment * 0.1 {
             panic!("value rounded to zero for quantity");
         }
-        Quantity::new(rounded, self.size_precision())
+        Quantity::new(rounded, precision_u8)
     }
 
     /// Calculates the notional value from the given parameters.
@@ -283,15 +283,16 @@ pub trait Instrument: 'static + Send {
             if use_quote {
                 Money::new(quantity.as_f64(), self.quote_currency())
             } else {
-                let amt = quantity.as_f64() * self.multiplier().as_f64() * (1.0 / price.as_f64());
-                let ccy = self
+                let amount =
+                    quantity.as_f64() * self.multiplier().as_f64() * (1.0 / price.as_f64());
+                let currency = self
                     .base_currency()
                     .expect("inverse instrument without base currency");
-                Money::new(amt, ccy)
+                Money::new(amount, currency)
             }
         } else {
-            let amt = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
-            Money::new(amt, self.quote_currency())
+            let amount = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
+            Money::new(amount, self.quote_currency())
         }
     }
 
@@ -301,41 +302,41 @@ pub trait Instrument: 'static + Send {
     }
 
     fn next_bid_price(&self, value: f64, n: i32) -> Option<Price> {
-        let px = if let Some(scheme) = self.tick_scheme() {
+        let price = if let Some(scheme) = self.tick_scheme() {
             scheme.next_bid_price(value, n, self.price_precision())?
         } else {
-            let inc = self.price_increment().as_f64();
-            if inc <= 0.0 {
+            let increment = self.price_increment().as_f64().abs();
+            if increment == 0.0 {
                 return None;
             }
-            let base = (value / inc).floor() * inc;
-            Price::new(base - (n as f64) * inc, self.price_precision())
+            let base = (value / increment).floor() * increment;
+            Price::new(base - (n as f64) * increment, self.price_precision())
         };
-        if self.min_price().is_some_and(|min| px < min)
-            || self.max_price().is_some_and(|max| px > max)
+        if self.min_price().is_some_and(|min| price < min)
+            || self.max_price().is_some_and(|max| price > max)
         {
             return None;
         }
-        Some(px)
+        Some(price)
     }
 
     fn next_ask_price(&self, value: f64, n: i32) -> Option<Price> {
-        let px = if let Some(scheme) = self.tick_scheme() {
+        let price = if let Some(scheme) = self.tick_scheme() {
             scheme.next_ask_price(value, n, self.price_precision())?
         } else {
-            let inc = self.price_increment().as_f64();
-            if inc <= 0.0 {
+            let increment = self.price_increment().as_f64().abs();
+            if increment == 0.0 {
                 return None;
             }
-            let base = (value / inc).ceil() * inc;
-            Price::new(base + (n as f64) * inc, self.price_precision())
+            let base = (value / increment).ceil() * increment;
+            Price::new(base + (n as f64) * increment, self.price_precision())
         };
-        if self.min_price().is_some_and(|min| px < min)
-            || self.max_price().is_some_and(|max| px > max)
+        if self.min_price().is_some_and(|min| price < min)
+            || self.max_price().is_some_and(|max| price > max)
         {
             return None;
         }
-        Some(px)
+        Some(price)
     }
 
     fn next_bid_prices(&self, value: f64, n: usize) -> Vec<Price> {
@@ -348,18 +349,6 @@ pub trait Instrument: 'static + Send {
         (0..n)
             .filter_map(|i| self.next_ask_price(value, i as i32))
             .collect()
-    }
-
-    fn to_dict(&self) -> Value {
-        json!({
-            "id": self.id().to_string(),
-            "raw_symbol": self.raw_symbol().to_string(),
-            "venue": self.venue().to_string(),
-            "asset_class": self.asset_class() as u8,
-            "instrument_class": self.instrument_class() as u8,
-            "price_precision": self.price_precision(),
-            "size_precision": self.size_precision(),
-        })
     }
 }
 
@@ -378,48 +367,66 @@ mod tests {
     use crate::{instruments::stubs::*, types::Money};
 
     #[rstest]
-    fn make_qty_rounding(currency_pair_btcusdt: CurrencyPair) {
+    #[case(1.5, "1.500000")]
+    #[case(2.5, "2.500000")]
+    #[case(1.2345678, "1.234568")]
+    #[case(0.000123, "0.000123")]
+    #[case(99999.999999, "99999.999999")]
+    fn make_qty_rounding(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: f64,
+        #[case] expected: &str,
+    ) {
         assert_eq!(
-            currency_pair_btcusdt.make_qty(1.5, None).to_string(),
-            "1.500000"
-        );
-        assert_eq!(
-            currency_pair_btcusdt.make_qty(2.5, None).to_string(),
-            "2.500000"
-        );
-        assert_eq!(
-            currency_pair_btcusdt.make_qty(1.2345678, None).to_string(),
-            "1.234568"
-        );
-    }
-
-    #[rstest]
-    fn make_qty_round_down(currency_pair_btcusdt: CurrencyPair) {
-        assert_eq!(
-            currency_pair_btcusdt
-                .make_qty(1.2345678, Some(true))
-                .to_string(),
-            "1.234567"
-        );
-        assert_eq!(
-            currency_pair_btcusdt
-                .make_qty(1.9999999, Some(true))
-                .to_string(),
-            "1.999999"
+            currency_pair_btcusdt.make_qty(input, None).to_string(),
+            expected
         );
     }
 
     #[rstest]
-    fn make_qty_precision(currency_pair_ethusdt: CurrencyPair) {
+    #[case(1.2345678, "1.234567")]
+    #[case(1.9999999, "1.999999")]
+    #[case(0.00012345, "0.000123")]
+    #[case(10.9999999, "10.999999")]
+    fn make_qty_round_down(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: f64,
+        #[case] expected: &str,
+    ) {
         assert_eq!(
-            currency_pair_ethusdt.make_qty(1.2345678, None).to_string(),
-            "1.23457"
-        );
-        assert_eq!(
-            currency_pair_ethusdt
-                .make_qty(1.2345678, Some(true))
+            currency_pair_btcusdt
+                .make_qty(input, Some(true))
                 .to_string(),
-            "1.23456"
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(1.2345678, "1.23457")]
+    #[case(2.3456781, "2.34568")]
+    #[case(0.00001, "0.00001")]
+    fn make_qty_precision(
+        currency_pair_ethusdt: CurrencyPair,
+        #[case] input: f64,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            currency_pair_ethusdt.make_qty(input, None).to_string(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(1.2345675, "1.234568")]
+    #[case(1.2345665, "1.234566")]
+    fn make_qty_half_even(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: f64,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(
+            currency_pair_btcusdt.make_qty(input, None).to_string(),
+            expected
         );
     }
 
@@ -431,9 +438,9 @@ mod tests {
 
     #[rstest]
     fn notional_linear(currency_pair_btcusdt: CurrencyPair) {
-        let qty = currency_pair_btcusdt.make_qty(2.0, None);
-        let px = currency_pair_btcusdt.make_price(10_000.0);
-        let notional = currency_pair_btcusdt.calculate_notional_value(qty, px, None);
+        let quantity = currency_pair_btcusdt.make_qty(2.0, None);
+        let price = currency_pair_btcusdt.make_price(10_000.0);
+        let notional = currency_pair_btcusdt.calculate_notional_value(quantity, price, None);
         let expected = Money::new(20_000.0, currency_pair_btcusdt.quote_currency());
         assert_eq!(notional, expected);
     }
@@ -441,25 +448,18 @@ mod tests {
     #[rstest]
     fn tick_navigation(currency_pair_btcusdt: CurrencyPair) {
         let start = 10_000.1234;
-        let bid0 = currency_pair_btcusdt.next_bid_price(start, 0).unwrap();
-        let bid1 = currency_pair_btcusdt.next_bid_price(start, 1).unwrap();
-        assert!(bid1 < bid0);
+        let bid_0 = currency_pair_btcusdt.next_bid_price(start, 0).unwrap();
+        let bid_1 = currency_pair_btcusdt.next_bid_price(start, 1).unwrap();
+        assert!(bid_1 < bid_0);
         let asks = currency_pair_btcusdt.next_ask_prices(start, 3);
         assert_eq!(asks.len(), 3);
-        assert!(asks[0] > bid0);
-    }
-
-    #[rstest]
-    fn json_roundtrip(currency_pair_btcusdt: CurrencyPair) {
-        let dict = currency_pair_btcusdt.to_dict();
-        let id_in_json = dict.get("id").unwrap().as_str().unwrap();
-        assert_eq!(id_in_json, currency_pair_btcusdt.id().to_string());
+        assert!(asks[0] > bid_0);
     }
 
     #[rstest]
     #[should_panic]
     fn validate_negative_max_qty() {
-        let qty = Quantity::new(0.0, 0);
+        let quantity = Quantity::new(0.0, 0);
         validate_instrument_common(
             2,
             2,
@@ -469,12 +469,118 @@ mod tests {
             dec!(0),
             None,
             None,
-            Some(&qty),
+            Some(&quantity),
             None,
             None,
             None,
             None,
             None,
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    fn make_price_negative_rounding(currency_pair_ethusdt: CurrencyPair) {
+        let price = currency_pair_ethusdt.make_price(-123.456_789);
+        assert!(price.as_f64() < 0.0);
+    }
+
+    #[rstest]
+    fn base_quantity_linear(currency_pair_btcusdt: CurrencyPair) {
+        let quantity = currency_pair_btcusdt.make_qty(2.0, None);
+        let price = currency_pair_btcusdt.make_price(10_000.0);
+        let base = currency_pair_btcusdt.calculate_base_quantity(quantity, price);
+        assert_eq!(base.to_string(), "0.000200");
+    }
+
+    #[rstest]
+    fn fixed_tick_scheme_prices() {
+        let scheme = FixedTickScheme::new(0.5).unwrap();
+        let bid = scheme.next_bid_price(10.3, 0, 2).unwrap();
+        let ask = scheme.next_ask_price(10.3, 0, 2).unwrap();
+        assert!(bid < ask);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn fixed_tick_negative() {
+        FixedTickScheme::new(-0.01).unwrap();
+    }
+
+    #[rstest]
+    fn next_bid_prices_sequence(currency_pair_btcusdt: CurrencyPair) {
+        let start = 10_000.0;
+        let bids = currency_pair_btcusdt.next_bid_prices(start, 5);
+        assert_eq!(bids.len(), 5);
+        for i in 1..bids.len() {
+            assert!(bids[i] < bids[i - 1]);
+        }
+    }
+
+    #[rstest]
+    fn next_ask_prices_sequence(currency_pair_btcusdt: CurrencyPair) {
+        let start = 10_000.0;
+        let asks = currency_pair_btcusdt.next_ask_prices(start, 5);
+        assert_eq!(asks.len(), 5);
+        for i in 1..asks.len() {
+            assert!(asks[i] > asks[i - 1]);
+        }
+    }
+
+    #[rstest]
+    fn fixed_tick_boundary() {
+        let scheme = FixedTickScheme::new(0.5).unwrap();
+        let price = scheme.next_bid_price(10.5, 0, 2).unwrap();
+        assert_eq!(price, Price::new(10.5, 2));
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn validate_price_increment_precision_mismatch() {
+        let size_increment = Quantity::new(0.01, 2);
+        let multiplier = Quantity::new(1.0, 0);
+        let price_increment = Price::new(0.001, 3);
+        validate_instrument_common(
+            2,
+            2,
+            &size_increment,
+            &multiplier,
+            dec!(0),
+            dec!(0),
+            Some(&price_increment),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn validate_min_price_exceeds_max_price() {
+        let size_increment = Quantity::new(0.01, 2);
+        let multiplier = Quantity::new(1.0, 0);
+        let min_price = Price::new(10.0, 2);
+        let max_price = Price::new(5.0, 2);
+        validate_instrument_common(
+            2,
+            2,
+            &size_increment,
+            &multiplier,
+            dec!(0),
+            dec!(0),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&max_price),
+            Some(&min_price),
         )
         .unwrap();
     }
