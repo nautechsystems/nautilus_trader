@@ -517,19 +517,27 @@ impl<T: Into<QuantityRaw>> MulAssign<T> for Quantity {
 
 impl Debug for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({:.*})",
-            stringify!(Quantity),
-            self.precision as usize,
-            self.as_f64(),
-        )
+        if self.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{}({})", stringify!(Quantity), self.raw)
+        } else {
+            write!(
+                f,
+                "{}({:.*})",
+                stringify!(Quantity),
+                self.precision as usize,
+                self.as_f64(),
+            )
+        }
     }
 }
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.*}", self.precision as usize, self.as_f64())
+        if self.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{}", self.raw)
+        } else {
+            write!(f, "{:.*}", self.precision as usize, self.as_f64(),)
+        }
     }
 }
 
@@ -904,6 +912,35 @@ mod tests {
         let quantity = Quantity::from_str("44.12").unwrap();
         let result = format!("{quantity}");
         assert_eq!(result, "44.12");
+    }
+
+    #[rstest]
+    #[case(44.12, 2, "Quantity(44.12)", "44.12")] // Normal precision
+    #[case(1234.567, 8, "Quantity(1234.56700000)", "1234.56700000")] // At max normal precision
+    #[cfg_attr(
+        feature = "defi",
+        case(
+            1_000_000_000_000_000_000.0,
+            18,
+            "Quantity(1000000000000000000)",
+            "1000000000000000000"
+        )
+    )] // High precision
+    fn test_debug_display_precision_handling(
+        #[case] value: f64,
+        #[case] precision: u8,
+        #[case] expected_debug: &str,
+        #[case] expected_display: &str,
+    ) {
+        let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            // For high precision, use from_raw to avoid f64 conversion issues
+            Quantity::from_raw(value as u128, precision)
+        } else {
+            Quantity::new(value, precision)
+        };
+
+        assert_eq!(format!("{quantity:?}"), expected_debug);
+        assert_eq!(format!("{quantity}"), expected_display);
     }
 
     #[rstest]
