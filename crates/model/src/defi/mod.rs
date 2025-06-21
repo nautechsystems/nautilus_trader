@@ -21,10 +21,8 @@
 //! • `chain`    – Blockchain networks supported by Nautilus (Ethereum, Arbitrum, …).
 //! • `token`    – ERC-20 and other fungible token metadata.
 //! • `dex`      – DEX protocol definitions (Uniswap V3, PancakeSwap, …).
-//! • `data`     – Domain events & state snapshots that flow through the system (Block, Swap,
-//!                PoolLiquidityUpdate, …).
+//! • `data`     – Domain events & state snapshots that flow through the system (Block, PoolSwap).
 //! • `types`    – Numeric value types (Money, Quantity, Price) shared across the DeFi layer.
-//! • `messages` – Internal bus / wire-format messages (left empty for now but reserved).
 //! • `rpc`      – Lightweight JSON-RPC helpers used by on-chain adapters.
 
 pub mod amm;
@@ -32,7 +30,6 @@ pub mod chain;
 pub mod data;
 pub mod dex;
 pub mod hex;
-pub mod messages;
 pub mod rpc;
 pub mod token;
 pub mod types;
@@ -44,7 +41,7 @@ pub use data::{
     DefiData,
     block::Block,
     liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
-    swap::Swap,
+    swap::PoolSwap,
     transaction::Transaction,
 };
 pub use dex::{AmmType, Dex, SharedDex};

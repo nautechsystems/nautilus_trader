@@ -4544,6 +4544,7 @@ name = "nautilus-data"
 version = "0.49.0"
 dependencies = [
  "ahash 0.8.12",
+ "alloy-primitives",
  "anyhow",
  "async-trait",
  "chrono",

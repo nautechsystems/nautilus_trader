@@ -40,7 +40,11 @@ python = [
   "nautilus-persistence/python",
 ]
 high-precision = ["nautilus-model/high-precision"]
-defi = ["nautilus-model/defi"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-model/defi",
+  "alloy-primitives",
+]
 
 [package.metadata.docs.rs]
 all-features = true
@@ -53,6 +57,7 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-persistence = { workspace = true }
 
 ahash = { workspace = true }
+alloy-primitives = { workspace = true, optional = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }

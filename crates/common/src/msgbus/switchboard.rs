@@ -184,11 +184,11 @@ pub fn get_defi_pool_topic(address: Address) -> MStr<Topic> {
 
 #[cfg(feature = "defi")]
 #[must_use]
-pub fn get_defi_swaps_topic(address: Address) -> MStr<Topic> {
+pub fn get_defi_pool_swaps_topic(address: Address) -> MStr<Topic> {
     get_message_bus()
         .borrow_mut()
         .switchboard
-        .get_defi_swaps_topic(address)
+        .get_defi_pool_swaps_topic(address)
 }
 
 #[cfg(feature = "defi")]
@@ -225,7 +225,7 @@ pub struct MessagingSwitchboard {
     #[cfg(feature = "defi")]
     defi_pool_topics: AHashMap<Address, MStr<Topic>>,
     #[cfg(feature = "defi")]
-    defi_swap_topics: AHashMap<Address, MStr<Topic>>,
+    defi_pool_swap_topics: AHashMap<Address, MStr<Topic>>,
     #[cfg(feature = "defi")]
     defi_liquidity_topics: AHashMap<Address, MStr<Topic>>,
 }
@@ -256,7 +256,7 @@ impl Default for MessagingSwitchboard {
             #[cfg(feature = "defi")]
             defi_pool_topics: AHashMap::new(),
             #[cfg(feature = "defi")]
-            defi_swap_topics: AHashMap::new(),
+            defi_pool_swap_topics: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi_liquidity_topics: AHashMap::new(),
         }
@@ -504,11 +504,11 @@ impl MessagingSwitchboard {
 
     #[cfg(feature = "defi")]
     #[must_use]
-    pub fn get_defi_swaps_topic(&mut self, address: Address) -> MStr<Topic> {
+    pub fn get_defi_pool_swaps_topic(&mut self, address: Address) -> MStr<Topic> {
         *self
-            .defi_swap_topics
+            .defi_pool_swap_topics
             .entry(address)
-            .or_insert_with(|| format!("data.defi.swaps.{address}").into())
+            .or_insert_with(|| format!("data.defi.pool_swaps.{address}").into())
     }
 
     #[cfg(feature = "defi")]

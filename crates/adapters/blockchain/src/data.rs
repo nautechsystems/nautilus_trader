@@ -17,13 +17,19 @@ use std::{cmp::max, sync::Arc};
 
 use alloy::primitives::U256;
 use futures_util::StreamExt;
-use nautilus_common::{messages::DataEvent, runner::get_data_event_sender};
+use nautilus_common::{
+    messages::{
+        DataEvent,
+        defi::{SubscribeBlocks, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePoolSwaps},
+    },
+    runner::get_data_event_sender,
+};
 use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{
         Block, Blockchain, DefiData, Dex, Pool, PoolLiquidityUpdate, PoolLiquidityUpdateType,
-        SharedChain, SharedPool, Swap, Token,
+        PoolSwap, SharedChain, SharedPool, Token,
     },
     identifiers::{ClientId, Venue},
 };
@@ -175,7 +181,7 @@ impl BlockchainDataClient {
                         }
                     }
                     BlockchainMessage::Swap(swap) => {
-                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::Swap(swap))) {
+                        if let Err(e) = sender.send(DataEvent::DeFi(DefiData::PoolSwap(swap))) {
                             tracing::error!("Failed to send swap: {e}");
                         }
                     }
@@ -264,7 +270,7 @@ impl BlockchainDataClient {
                 .convert_to_trade_data(&pool.token0, &pool.token1, &swap_event)
                 .expect("Failed to convert swap event to trade data");
 
-            let swap = Swap::new(
+            let swap = PoolSwap::new(
                 self.chain.clone(),
                 dex_extended.dex.clone(),
                 pool.clone(),
@@ -279,7 +285,7 @@ impl BlockchainDataClient {
                 price,
             );
 
-            self.cache.add_swap(&swap).await?;
+            self.cache.add_pool_swap(&swap).await?;
 
             self.send_swap(swap);
         }
@@ -581,7 +587,7 @@ impl BlockchainDataClient {
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
-    pub async fn subscribe_blocks(&mut self) -> anyhow::Result<()> {
+    pub async fn subscribe_blocks_async(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_blocks().await?;
         } else {
@@ -592,21 +598,22 @@ impl BlockchainDataClient {
     }
 
     /// Subscribes to new blockchain blocks from the available data source.
-    pub async fn subscribe_swaps(&mut self) -> anyhow::Result<()> {
+    pub async fn subscribe_pool_swaps_async(&mut self) -> anyhow::Result<()> {
         if let Some(rpc_client) = self.rpc_client.as_mut() {
             rpc_client.subscribe_swaps().await?;
         } else {
             todo!("Not implemented")
-            // self.hypersync_client.subscribe_blocks();
+            // self.hypersync_client.subscribe_swaps();
         }
 
         Ok(())
     }
 
     /// Unsubscribes from block events.
-    pub async fn unsubscribe_blocks(&mut self) -> anyhow::Result<()> {
-        if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.unsubscribe_blocks().await?;
+    pub async fn unsubscribe_blocks_async(&mut self) -> anyhow::Result<()> {
+        if let Some(_rpc_client) = self.rpc_client.as_mut() {
+            todo!("Not implemented");
+            // rpc_client.unsubscribe_blocks().await?;
         } else {
             self.hypersync_client.unsubscribe_blocks();
         }
@@ -615,9 +622,10 @@ impl BlockchainDataClient {
     }
 
     /// Unsubscribes from swap events.
-    pub async fn unsubscribe_swaps(&mut self) -> anyhow::Result<()> {
-        if let Some(rpc_client) = self.rpc_client.as_mut() {
-            rpc_client.unsubscribe_blocks().await?;
+    pub async fn unsubscribe_pool_swaps_async(&mut self) -> anyhow::Result<()> {
+        if let Some(_rpc_client) = self.rpc_client.as_mut() {
+            todo!("Not implemented");
+            // rpc_client.unsubscribe_blocks().await?;
         } else {
             self.hypersync_client.unsubscribe_blocks();
         }
@@ -645,8 +653,8 @@ impl BlockchainDataClient {
         self.send_data(data);
     }
 
-    fn send_swap(&self, swap: Swap) {
-        let data = DataEvent::DeFi(DefiData::Swap(swap));
+    fn send_swap(&self, swap: PoolSwap) {
+        let data = DataEvent::DeFi(DefiData::PoolSwap(swap));
         self.send_data(data);
     }
 
@@ -710,7 +718,7 @@ impl DataClient for BlockchainDataClient {
         let from_block = self.config.from_block.unwrap_or(0);
         self.cache.connect(from_block).await?;
         self.sync_blocks(self.config.from_block).await?;
-        self.subscribe_blocks().await?;
+        // self.subscribe_blocks().await?;
 
         if self.process_task.is_none() {
             if self.config.use_hypersync_for_live_data {
@@ -750,5 +758,25 @@ impl DataClient for BlockchainDataClient {
 
     fn is_disconnected(&self) -> bool {
         !self.is_connected()
+    }
+
+    /// Subscribes to new blockchain blocks from the available data source.
+    fn subscribe_blocks(&mut self, _cmd: &SubscribeBlocks) -> anyhow::Result<()> {
+        todo!("Not implemented");
+    }
+
+    /// Subscribes to pool swap events for a specified address.
+    fn subscribe_pool_swaps(&mut self, _cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+        todo!("Not implemented");
+    }
+
+    /// Unsubscribes from new blockchain blocks.
+    fn unsubscribe_blocks(&mut self, _cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        todo!("Not implemented");
+    }
+
+    /// Unsubscribes from pool swap events for a specified address.
+    fn unsubscribe_pool_swaps(&mut self, _cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        todo!("Not implemented");
     }
 }

@@ -29,12 +29,12 @@ use crate::{
 
 /// Represents a token swap transaction on a decentralized exchange (DEX).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Swap {
-    /// The blockchain network where the swap occurred
+pub struct PoolSwap {
+    /// The blockchain network where the swap occurred.
     pub chain: SharedChain,
-    /// The decentralized exchange where the swap was executed
+    /// The decentralized exchange where the swap was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool
+    /// The DEX liquidity pool.
     pub pool: SharedPool,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
@@ -58,8 +58,8 @@ pub struct Swap {
     pub ts_init: UnixNanos,
 }
 
-impl Swap {
-    /// Creates a new [`Swap`] instance with the specified properties.
+impl PoolSwap {
+    /// Creates a new [`PoolSwap`] instance with the specified properties.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -100,17 +100,18 @@ impl Swap {
     }
 }
 
-impl HasTsInit for Swap {
+impl HasTsInit for PoolSwap {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl Display for Swap {
+impl Display for PoolSwap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Swap(chain={}, dex={}, pool={}, side={}, quantity={}, price={})",
+            "{}(chain={}, dex={}, pool={}, side={}, quantity={}, price={})",
+            stringify!(PoolSwap),
             self.chain.name,
             self.dex.name,
             self.pool.ticker(),

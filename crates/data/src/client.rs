@@ -25,6 +25,8 @@ use std::{
 };
 
 use ahash::AHashSet;
+#[cfg(feature = "defi")]
+use alloy_primitives::Address;
 use nautilus_common::messages::data::{
     RequestBars, RequestBookSnapshot, RequestCustomData, RequestInstrument, RequestInstruments,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
@@ -36,6 +38,13 @@ use nautilus_common::messages::data::{
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes,
     UnsubscribeTrades,
 };
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{
+    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePoolSwaps,
+    UnsubscribeBlocks, UnsubscribePoolSwaps,
+};
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Blockchain;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
@@ -231,6 +240,28 @@ pub trait DataClient: Any + Sync + Send {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Subscribes to blocks for a specified blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_blocks(&mut self, cmd: &SubscribeBlocks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Subscribes to pool swaps for a specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_pool_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Unsubscribes from custom data types according to the command.
     ///
     /// # Errors
@@ -367,6 +398,28 @@ pub trait DataClient: Any + Sync + Send {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from blocks for a specified blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from swaps for a specified AMM pool.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Sends a custom data request to the provider.
     ///
     /// # Errors
@@ -458,6 +511,10 @@ pub struct DataClientAdapter {
     pub subscriptions_instrument_venue: AHashSet<Venue>,
     pub subscriptions_mark_prices: AHashSet<InstrumentId>,
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
+    #[cfg(feature = "defi")]
+    pub subscriptions_blocks: AHashSet<Blockchain>,
+    #[cfg(feature = "defi")]
+    pub subscriptions_pool_swaps: AHashSet<Address>,
 }
 
 impl Deref for DataClientAdapter {
@@ -528,6 +585,10 @@ impl DataClientAdapter {
             subscriptions_instrument_close: AHashSet::new(),
             subscriptions_instrument: AHashSet::new(),
             subscriptions_instrument_venue: AHashSet::new(),
+            #[cfg(feature = "defi")]
+            subscriptions_blocks: AHashSet::new(),
+            #[cfg(feature = "defi")]
+            subscriptions_pool_swaps: AHashSet::new(),
         }
     }
 
@@ -558,6 +619,17 @@ impl DataClientAdapter {
         }
     }
 
+    #[cfg(feature = "defi")]
+    #[inline]
+    pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) {
+        if let Err(e) = match cmd {
+            DefiSubscribeCommand::Blocks(cmd) => self.subscribe_blocks(cmd),
+            DefiSubscribeCommand::PoolSwaps(cmd) => self.subscribe_swaps(cmd),
+        } {
+            log_command_error(&cmd, &e);
+        }
+    }
+
     #[inline]
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) {
         if let Err(e) = match cmd {
@@ -574,6 +646,17 @@ impl DataClientAdapter {
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
+        } {
+            log_command_error(&cmd, &e);
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[inline]
+    pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) {
+        if let Err(e) = match cmd {
+            DefiUnsubscribeCommand::Blocks(cmd) => self.unsubscribe_blocks(cmd),
+            DefiUnsubscribeCommand::PoolSwaps(cmd) => self.unsubscribe_swaps(cmd),
         } {
             log_command_error(&cmd, &e);
         }
@@ -956,6 +1039,62 @@ impl DataClientAdapter {
             self.subscriptions_instrument_close
                 .remove(&cmd.instrument_id);
             self.client.unsubscribe_instrument_close(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Subscribes to block events for the specified blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_blocks(&mut self, cmd: &SubscribeBlocks) -> anyhow::Result<()> {
+        if !self.subscriptions_blocks.contains(&cmd.chain) {
+            self.subscriptions_blocks.insert(cmd.chain);
+            self.client.subscribe_blocks(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from block events for the specified blockchain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        if self.subscriptions_blocks.contains(&cmd.chain) {
+            self.subscriptions_blocks.remove(&cmd.chain);
+            self.client.unsubscribe_blocks(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Subscribes to block events for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+        if !self.subscriptions_pool_swaps.contains(&cmd.address) {
+            self.subscriptions_pool_swaps.insert(cmd.address);
+            self.client.subscribe_pool_swaps(cmd)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Unsubscribes from swap events for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        if self.subscriptions_pool_swaps.contains(&cmd.address) {
+            self.subscriptions_pool_swaps.remove(&cmd.address);
+            self.client.unsubscribe_pool_swaps(cmd)?;
         }
         Ok(())
     }

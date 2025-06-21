@@ -42,10 +42,14 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+#[cfg(feature = "defi")]
+use alloy_primitives::Address;
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -66,7 +70,9 @@ use nautilus_core::{
     datetime::millis_to_nanos,
 };
 #[cfg(feature = "defi")]
-use nautilus_model::defi::data::DefiData;
+use nautilus_model::defi::Blockchain;
+#[cfg(feature = "defi")]
+use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
         Bar, BarType, Data, DataType, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
@@ -449,6 +455,20 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all blockchains for which blocks subscriptions exist.
+    #[must_use]
+    pub fn subscribed_blocks(&self) -> Vec<Blockchain> {
+        self.collect_subscriptions(|client| &client.subscriptions_blocks)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all instrument IDs for which swaps subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_swaps(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_swaps)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -459,6 +479,10 @@ impl DataEngine {
             DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(c),
             DataCommand::Request(c) => self.execute_request(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(c),
         } {
             log::error!("{e}");
         }
@@ -501,6 +525,35 @@ impl DataEngine {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Handles a subscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
+    /// or if the underlying client operation fails.
+    pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to client
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_defi_subscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
     /// Handles an unsubscribe command, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -525,6 +578,34 @@ impl DataEngine {
         // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles an unsubscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client operation fails.
+    pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to the client
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_defi_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -618,8 +699,8 @@ impl DataEngine {
                 let topic = switchboard::get_defi_pool_topic(pool.address);
                 msgbus::publish(topic, &pool as &dyn Any);
             }
-            DefiData::Swap(swap) => {
-                let topic = switchboard::get_defi_swaps_topic(swap.pool.address);
+            DefiData::PoolSwap(swap) => {
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.pool.address);
                 msgbus::publish(topic, &swap as &dyn Any);
             }
             DefiData::PoolLiquidityUpdate(update) => {

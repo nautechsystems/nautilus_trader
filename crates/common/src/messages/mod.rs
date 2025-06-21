@@ -26,6 +26,9 @@ pub mod data;
 pub mod execution;
 pub mod system;
 
+#[cfg(feature = "defi")]
+pub mod defi;
+
 // Re-exports
 pub use data::{DataResponse, SubscribeCommand, UnsubscribeCommand};
 
