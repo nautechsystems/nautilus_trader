@@ -21,10 +21,14 @@ use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     defi::{Block, Blockchain, Chain, Dex, Pool, PoolSwap, hex::from_str_hex_to_u64},
     enums::OrderSide,
+    types::{Price, Quantity},
 };
 use ustr::Ustr;
 
-use crate::hypersync::helpers::*;
+use crate::{
+    decode::{u256_to_price, u256_to_quantity},
+    hypersync::helpers::*,
+};
 
 /// Converts a HyperSync block format to our internal [`Block`] type.
 pub fn transform_hypersync_block(
@@ -116,14 +120,11 @@ pub fn transform_hypersync_swap_log(
     block_timestamp: UnixNanos,
     log: &hypersync_client::simple_types::Log,
 ) -> Result<PoolSwap, anyhow::Error> {
-    // Extract log information using helper functions
     let block_number = extract_block_number(log)?;
     let transaction_hash = extract_transaction_hash(log)?;
     let transaction_index = extract_transaction_index(log)?;
     let log_index = extract_log_index(log)?;
 
-    // Parse swap event data from log
-    // For Uniswap V3: Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
     let sender = log
         .topics
         .get(1)
@@ -131,8 +132,6 @@ pub fn transform_hypersync_swap_log(
         .map(|t| Address::from_slice(&t[12..32]))
         .ok_or_else(|| anyhow::anyhow!("Missing sender address in swap log"))?;
 
-    // Parse swap event data from log
-    // Uniswap V3 Swap event data structure: (int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
     let data = log
         .data
         .as_ref()
@@ -143,7 +142,6 @@ pub fn transform_hypersync_swap_log(
         anyhow::bail!("Insufficient data length for Uniswap V3 swap event");
     }
 
-    // Decode the data field (each field is 32 bytes)
     let amount0_bytes = &data[0..32];
     let amount1_bytes = &data[32..64];
 
@@ -163,31 +161,54 @@ pub fn transform_hypersync_swap_log(
         U256::from(amount1_signed)
     };
 
-    // Determine trade side based on amount signs
-    // In Uniswap V3: negative amount0 means token0 is being sold (going out), positive means being bought (coming in)
+    tracing::debug!(
+        "Raw amounts: amount0_signed={}, amount1_signed={}, amount0={}, amount1={}",
+        amount0_signed,
+        amount1_signed,
+        amount0,
+        amount1
+    );
+
     let side = if amount0_signed.is_positive() {
         OrderSide::Buy // Buying token0
     } else {
         OrderSide::Sell // Selling token0
     };
 
-    // Convert amounts to quantity and price using proper decimal handling
-    let quantity = crate::decode::u256_to_quantity(amount0, pool.token0.decimals as u8)?;
-
-    let price = if !amount0.is_zero() {
-        // Calculate price as amount1/amount0, adjusting for decimal differences
-        // If tokens have different decimals, we need to normalize
-        let decimals_diff = pool.token1.decimals as i32 - pool.token0.decimals as i32;
-        let price_amount = if decimals_diff >= 0 {
-            // token1 has more or equal decimals
-            (amount1 * U256::from(10_u128.pow(decimals_diff as u32))) / amount0
-        } else {
-            // token0 has more decimals
-            amount1 / (amount0 * U256::from(10_u128.pow((-decimals_diff) as u32)))
-        };
-        crate::decode::u256_to_price(price_amount, pool.token1.decimals as u8)?
+    let quantity = if pool.token0.decimals == 18 {
+        Quantity::from_wei(amount0)
     } else {
-        anyhow::bail!("Invalid swap: amount0 is zero, cannot calculate price");
+        u256_to_quantity(amount0, pool.token0.decimals)?
+    };
+
+    let amount1_quantity = if pool.token1.decimals == 18 {
+        Quantity::from_wei(amount1)
+    } else {
+        u256_to_quantity(amount1, pool.token1.decimals)?
+    };
+
+    tracing::debug!(
+        "Converted amounts: amount0={} -> {} {}, amount1={} -> {} {}",
+        amount0,
+        quantity,
+        pool.token0.symbol,
+        amount1,
+        amount1_quantity,
+        pool.token1.symbol
+    );
+
+    let price = if !amount0.is_zero() && !amount1.is_zero() {
+        let price_precision = pool.token0.decimals.max(pool.token1.decimals);
+        let scaled_amount1 = amount1 * U256::from(10_u128.pow(price_precision as u32));
+        let price_raw = scaled_amount1 / amount0;
+
+        if price_precision == 18 {
+            Price::from_wei(price_raw)
+        } else {
+            u256_to_price(price_raw, price_precision)?
+        }
+    } else {
+        anyhow::bail!("Invalid swap: amount0 or amount1 is zero, cannot calculate price");
     };
 
     let swap = PoolSwap::new(

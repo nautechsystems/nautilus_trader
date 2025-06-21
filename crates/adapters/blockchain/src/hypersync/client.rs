@@ -311,21 +311,31 @@ impl HyperSyncClient {
                 // Process logs for swap events
                 for batch in response.data.logs {
                     for log in batch {
-                        if let Ok(swap) = transform_hypersync_swap_log(
+                        tracing::debug!(
+                            "Received swap log from pool {pool_address}: topics={:?}, data={:?}, block={:?}, tx_hash={:?}",
+                            log.topics,
+                            log.data,
+                            log.block_number,
+                            log.transaction_hash
+                        );
+                        match transform_hypersync_swap_log(
                             chain_ref.clone(),
                             dex.clone(),
                             pool.clone(),
                             UnixNanos::default(), // TODO: block timestamp placeholder
                             &log,
                         ) {
-                            let msg = crate::rpc::types::BlockchainMessage::Swap(swap);
-                            if let Err(e) = tx.send(msg) {
-                                tracing::error!("Error sending swap message: {e}");
+                            Ok(swap) => {
+                                let msg = crate::rpc::types::BlockchainMessage::Swap(swap);
+                                if let Err(e) = tx.send(msg) {
+                                    tracing::error!("Error sending swap message: {e}");
+                                }
                             }
-                        } else {
-                            tracing::warn!(
-                                "Failed to transform swap log from pool: {pool_address}"
-                            );
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to transform swap log from pool {pool_address}: {e}"
+                                );
+                            }
                         }
                     }
                 }
@@ -354,32 +364,43 @@ impl HyperSyncClient {
         from_block: u64,
         to_block: Option<u64>,
     ) -> Query {
-        use hypersync_client::net_types::{FieldSelection, LogSelection, Query};
+        // Uniswap V3 Swap event signature:
+        // Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
+        let swap_topic = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67";
 
-        Query {
-            from_block,
-            to_block,
-            logs: vec![LogSelection {
-                address: vec![pool_address.to_string().parse().unwrap()],
-                topics: Default::default(),
-                ..Default::default()
-            }],
-            field_selection: FieldSelection {
-                log: vec![
-                    "block_number".to_string(),
-                    "transaction_hash".to_string(),
-                    "transaction_index".to_string(),
-                    "log_index".to_string(),
-                    "address".to_string(),
-                    "data".to_string(),
-                    "topics".to_string(),
+        let mut query_value = serde_json::json!({
+            "from_block": from_block,
+            "logs": [{
+                "topics": [
+                    [swap_topic]
+                ],
+                "address": [
+                    pool_address.to_string(),
                 ]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            },
-            ..Default::default()
+            }],
+            "field_selection": {
+                "log": [
+                    "block_number",
+                    "transaction_hash",
+                    "transaction_index",
+                    "log_index",
+                    "address",
+                    "data",
+                    "topic0",
+                    "topic1",
+                    "topic2",
+                    "topic3",
+                ]
+            }
+        });
+
+        if let Some(to_block) = to_block {
+            if let Some(obj) = query_value.as_object_mut() {
+                obj.insert("to_block".to_string(), serde_json::json!(to_block));
+            }
         }
+
+        serde_json::from_value(query_value).unwrap()
     }
 
     /// Unsubscribes from swap events for a specific pool address.
