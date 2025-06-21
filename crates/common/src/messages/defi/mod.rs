@@ -32,6 +32,57 @@ pub use unsubscribe::{
 };
 
 #[derive(Clone, Debug)]
+pub enum DefiDataCommand {
+    Subscribe(DefiSubscribeCommand),
+    Unsubscribe(DefiUnsubscribeCommand),
+}
+
+impl PartialEq for DefiDataCommand {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Subscribe(cmd1), Self::Subscribe(cmd2)) => cmd1 == cmd2,
+            (Self::Unsubscribe(cmd1), Self::Unsubscribe(cmd2)) => cmd1 == cmd2,
+            _ => false,
+        }
+    }
+}
+
+impl DefiDataCommand {
+    /// Converts the command to a dyn Any trait object for messaging.
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn command_id(&self) -> UUID4 {
+        match self {
+            Self::Subscribe(cmd) => cmd.command_id(),
+            Self::Unsubscribe(cmd) => cmd.command_id(),
+        }
+    }
+
+    pub fn client_id(&self) -> Option<&ClientId> {
+        match self {
+            Self::Subscribe(cmd) => cmd.client_id(),
+            Self::Unsubscribe(cmd) => cmd.client_id(),
+        }
+    }
+
+    pub fn venue(&self) -> Option<&Venue> {
+        match self {
+            Self::Subscribe(cmd) => cmd.venue(),
+            Self::Unsubscribe(cmd) => cmd.venue(),
+        }
+    }
+
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Subscribe(cmd) => cmd.ts_init(),
+            Self::Unsubscribe(cmd) => cmd.ts_init(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum DefiSubscribeCommand {
     Blocks(SubscribeBlocks),
     Pool(SubscribePool),
