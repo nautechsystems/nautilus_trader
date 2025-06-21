@@ -503,19 +503,27 @@ impl Mul<f64> for Price {
 
 impl Debug for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({:.*})",
-            stringify!(Price),
-            self.precision as usize,
-            self.as_f64()
-        )
+        if self.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{}({})", stringify!(Price), self.raw)
+        } else {
+            write!(
+                f,
+                "{}({:.*})",
+                stringify!(Price),
+                self.precision as usize,
+                self.as_f64(),
+            )
+        }
     }
 }
 
 impl Display for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.*}", self.precision as usize, self.as_f64())
+        if self.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{}", self.raw)
+        } else {
+            write!(f, "{:.*}", self.precision as usize, self.as_f64(),)
+        }
     }
 }
 
@@ -759,6 +767,38 @@ mod tests {
             "Price(1234.5678)"
         );
         assert_eq!(Price::new(1234.5678, 4).to_formatted_string(), "1_234.5678");
+    }
+
+    #[rstest]
+    #[case(1234.5678, 4, "Price(1234.5678)", "1234.5678")] // Normal precision
+    #[case(123.456789012345, 8, "Price(123.45678901)", "123.45678901")] // At max normal precision
+    #[cfg_attr(
+        feature = "defi",
+        case(
+            2_000_000_000_000_000_000.0,
+            18,
+            "Price(2000000000000000000)",
+            "2000000000000000000"
+        )
+    )] // High precision
+    fn test_string_formatting_precision_handling(
+        #[case] value: f64,
+        #[case] precision: u8,
+        #[case] expected_debug: &str,
+        #[case] expected_display: &str,
+    ) {
+        let price = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
+            Price::from_raw(value as i128, precision)
+        } else {
+            Price::new(value, precision)
+        };
+
+        assert_eq!(format!("{price:?}"), expected_debug);
+        assert_eq!(format!("{price}"), expected_display);
+        assert_eq!(
+            price.to_formatted_string().replace("_", ""),
+            expected_display
+        );
     }
 
     #[rstest]

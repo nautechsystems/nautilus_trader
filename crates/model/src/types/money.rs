@@ -402,26 +402,34 @@ impl Div<f64> for Money {
 
 impl Debug for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({:.*}, {})",
-            stringify!(Money),
-            self.currency.precision as usize,
-            self.as_f64(),
-            self.currency,
-        )
+        if self.currency.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{}({}, {})", stringify!(Money), self.raw, self.currency)
+        } else {
+            write!(
+                f,
+                "{}({:.*}, {})",
+                stringify!(Money),
+                self.currency.precision as usize,
+                self.as_f64(),
+                self.currency
+            )
+        }
     }
 }
 
 impl Display for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:.*} {}",
-            self.currency.precision as usize,
-            self.as_f64(),
-            self.currency
-        )
+        if self.currency.precision > MAX_FLOAT_PRECISION {
+            write!(f, "{} {}", self.raw, self.currency)
+        } else {
+            write!(
+                f,
+                "{:.*} {}",
+                self.currency.precision as usize,
+                self.as_f64(),
+                self.currency
+            )
+        }
     }
 }
 
@@ -469,6 +477,67 @@ mod tests {
         let result = format!("{money}");
         let expected = "1010.12 USD";
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(1010.12, 2, "USD", "Money(1010.12, USD)", "1010.12 USD")] // Normal precision
+    #[case(123.456789, 8, "BTC", "Money(123.45678900, BTC)", "123.45678900 BTC")] // At max normal precision
+    fn test_formatting_normal_precision(
+        #[case] value: f64,
+        #[case] precision: u8,
+        #[case] currency_code: &str,
+        #[case] expected_debug: &str,
+        #[case] expected_display: &str,
+    ) {
+        use crate::enums::CurrencyType;
+        let currency = Currency::new(
+            currency_code,
+            precision,
+            0,
+            currency_code,
+            CurrencyType::Fiat,
+        );
+        let money = Money::new(value, currency);
+
+        assert_eq!(format!("{money:?}"), expected_debug);
+        assert_eq!(format!("{money}"), expected_display);
+    }
+
+    #[rstest]
+    #[cfg(feature = "defi")]
+    #[case(
+        1_000_000_000_000_000_000_i128,
+        18,
+        "WEI",
+        "Money(1000000000000000000, WEI)",
+        "1000000000000000000 WEI"
+    )] // High precision
+    #[case(
+        2_500_000_000_000_000_000_i128,
+        18,
+        "ETH",
+        "Money(2500000000000000000, ETH)",
+        "2500000000000000000 ETH"
+    )] // High precision
+    fn test_formatting_high_precision(
+        #[case] raw_value: i128,
+        #[case] precision: u8,
+        #[case] currency_code: &str,
+        #[case] expected_debug: &str,
+        #[case] expected_display: &str,
+    ) {
+        use crate::enums::CurrencyType;
+        let currency = Currency::new(
+            currency_code,
+            precision,
+            0,
+            currency_code,
+            CurrencyType::Crypto,
+        );
+        let money = Money::from_raw(raw_value, currency);
+
+        assert_eq!(format!("{money:?}"), expected_debug);
+        assert_eq!(format!("{money}"), expected_display);
     }
 
     #[rstest]
