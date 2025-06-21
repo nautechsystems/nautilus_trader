@@ -503,7 +503,7 @@ impl Mul<f64> for Price {
 
 impl Debug for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{}({})", stringify!(Price), self.raw)
         } else {
             write!(
@@ -519,7 +519,7 @@ impl Debug for Price {
 
 impl Display for Price {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.precision > MAX_FLOAT_PRECISION {
+        if self.precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             write!(f, "{}", self.raw)
         } else {
             write!(f, "{:.*}", self.precision as usize, self.as_f64(),)
