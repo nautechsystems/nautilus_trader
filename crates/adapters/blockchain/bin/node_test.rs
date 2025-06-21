@@ -15,6 +15,7 @@
 
 use std::{
     ops::{Deref, DerefMut},
+    str::FromStr,
     sync::Arc,
     time::Duration,
 };
@@ -25,7 +26,8 @@ use nautilus_blockchain::{
 };
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
-    enums::Environment,
+    enums::{Environment, LogColor},
+    logging::log_info,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_live::node::LiveNode;
@@ -77,8 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create and register a blockchain subscriber actor
     let client_id = ClientId::new(format!("BLOCKCHAIN-{}", chain.name));
     let pools = vec![
-        // Address::from("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443"), // WETH/USDC Arbitrum One
-        // Address::from(0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640),   // USDC/ETH 0.05% on Uniswap V3
+        Address::from_str("0xC31E54c7A869B9fCbECC14363CF510d1C41Fa443")?, // WETH/USDC Arbitrum One
     ];
 
     let actor_config = BlockchainSubscriberActorConfig::new(client_id, chain.name, pools);
@@ -120,7 +121,7 @@ impl BlockchainSubscriberActorConfig {
 /// A basic blockchain subscriber actor that monitors DeFi activities.
 ///
 /// This actor demonstrates how to use the `DataActor` trait to monitor blockchain data
-/// from DEXs, pools, and other DeFi protocols. It logs received swaps and liquidity updates
+/// from DEXs, pools, and other DeFi protocols. It logs received blocks and swaps
 /// to demonstrate the data flow.
 #[derive(Debug)]
 pub struct BlockchainSubscriberActor {
@@ -198,11 +199,15 @@ impl DataActor for BlockchainSubscriberActor {
     }
 
     fn on_block(&mut self, block: &Block) -> anyhow::Result<()> {
+        log_info!("Received {block}", color = LogColor::Cyan);
+
         self.received_blocks.push(block.clone());
         Ok(())
     }
 
     fn on_pool_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
+        log_info!("Received {swap}", color = LogColor::Cyan);
+
         self.received_pool_swaps.push(swap.clone());
         Ok(())
     }

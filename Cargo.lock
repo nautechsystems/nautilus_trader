@@ -4368,6 +4368,7 @@ dependencies = [
 name = "nautilus-blockchain"
 version = "0.49.0"
 dependencies = [
+ "ahash 0.8.12",
  "alloy",
  "anyhow",
  "async-stream",

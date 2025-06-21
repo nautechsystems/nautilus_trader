@@ -28,6 +28,7 @@ use nautilus_common::{
     },
     runner::get_data_event_sender,
 };
+use nautilus_core::UnixNanos;
 use nautilus_data::client::DataClient;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
@@ -302,10 +303,21 @@ impl BlockchainDataClient {
                 tracing::warn!("Pool subscriptions are handled at application level");
                 Ok(())
             }
-            DefiSubscribeCommand::PoolSwaps(_cmd) => {
-                tracing::info!("Processing subscribe pool swaps command");
-                tracing::warn!("Pool swaps subscription not yet implemented");
-                // TODO: Implement actual pool swaps subscription logic
+            DefiSubscribeCommand::PoolSwaps(cmd) => {
+                tracing::info!(
+                    "Processing subscribe pool swaps command for address: {}",
+                    cmd.address
+                );
+
+                if let Some(ref mut _rpc) = rpc_client {
+                    tracing::warn!(
+                        "RPC pool swaps subscription not yet implemented, using HyperSync"
+                    );
+                }
+
+                hypersync_client.subscribe_pool_swaps(cmd.address);
+                tracing::info!("Subscribed to pool swaps for address: {}", cmd.address);
+
                 Ok(())
             }
             DefiSubscribeCommand::PoolLiquidityUpdates(_cmd) => {
@@ -686,7 +698,7 @@ impl BlockchainDataClient {
             self.cache.get_token(&event.token1).cloned().unwrap(),
             event.fee,
             event.tick_spacing,
-            nautilus_core::UnixNanos::default(), // Use default timestamp for now
+            UnixNanos::default(), // TODO: Use default timestamp for now
         );
         self.cache.add_pool(pool.clone()).await?;
 

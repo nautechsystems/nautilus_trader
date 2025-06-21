@@ -24,7 +24,7 @@ pub fn extract_transaction_hash(
     log.transaction_hash
         .as_ref()
         .map(ToString::to_string)
-        .ok_or_else(|| anyhow::anyhow!("Missing transaction hash in the log"))
+        .ok_or_else(|| anyhow::anyhow!("Missing transaction hash in log"))
 }
 
 /// Extracts the transaction index from a log entry

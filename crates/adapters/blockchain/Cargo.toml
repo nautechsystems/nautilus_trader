@@ -43,6 +43,7 @@ nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-network = { workspace = true }
 nautilus-system = { workspace = true }
 
+ahash = { workspace = true }
 alloy = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
