@@ -92,7 +92,7 @@ repos:
       - id: cargo-doc
         name: cargo doc
         description: Check documentation builds without errors or warnings.
-        entry: bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --all-features --no-deps --workspace --quiet'
+        entry: bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
         language: system
         files: '\.(rs|toml)$'
         types: [file]
