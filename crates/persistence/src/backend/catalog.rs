@@ -1251,14 +1251,9 @@ impl ParquetDataCatalog {
         let start_u64 = start.map(|s| s.as_u64());
         let end_u64 = end.map(|e| e.as_u64());
 
-        let safe_ids = instrument_ids.as_ref().map(|ids| {
-            ids.iter()
-                .map(|id| urisafe_instrument_id(id))
-                .collect::<Vec<String>>()
-        });
-
         let base_dir = self.make_path(data_cls, None)?;
 
+        // Use recursive listing to match Python's glob behavior
         let list_result = self.execute_async(async {
             let prefix = ObjectPath::from(format!("{base_dir}/"));
             let mut stream = self.object_store.list(Some(&prefix));
@@ -1269,21 +1264,66 @@ impl ParquetDataCatalog {
             Ok::<Vec<_>, anyhow::Error>(objects)
         })?;
 
-        for object in list_result {
-            let path_str = object.location.to_string();
-            if path_str.ends_with(".parquet") {
-                if let Some(ids) = &safe_ids {
-                    let matches_any_id = ids.iter().any(|safe_id| path_str.contains(safe_id));
-                    if !matches_any_id {
-                        continue;
-                    }
+        let mut file_paths: Vec<String> = list_result
+            .into_iter()
+            .filter_map(|object| {
+                let path_str = object.location.to_string();
+                if path_str.ends_with(".parquet") {
+                    Some(path_str)
+                } else {
+                    None
                 }
+            })
+            .collect();
 
-                if query_intersects_filename(&path_str, start_u64, end_u64) {
-                    let full_uri = self.reconstruct_full_uri(&path_str);
-                    files.push(full_uri);
-                }
+        // Apply identifier filtering if provided
+        if let Some(identifiers) = instrument_ids {
+            let safe_identifiers: Vec<String> = identifiers
+                .iter()
+                .map(|id| urisafe_instrument_id(id))
+                .collect();
+
+            // Exact match by default for instrument_ids or bar_types
+            let exact_match_file_paths: Vec<String> = file_paths
+                .iter()
+                .filter(|file_path| {
+                    // Extract the directory name (second to last path component)
+                    let path_parts: Vec<&str> = file_path.split('/').collect();
+                    if path_parts.len() >= 2 {
+                        let dir_name = path_parts[path_parts.len() - 2];
+                        safe_identifiers.iter().any(|safe_id| safe_id == dir_name)
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect();
+
+            if exact_match_file_paths.is_empty() && data_cls == "bars" {
+                // Partial match of instrument_ids in bar_types for bars
+                file_paths.retain(|file_path| {
+                    let path_parts: Vec<&str> = file_path.split('/').collect();
+                    if path_parts.len() >= 2 {
+                        let dir_name = path_parts[path_parts.len() - 2];
+                        safe_identifiers
+                            .iter()
+                            .any(|safe_id| dir_name.starts_with(&format!("{}-", safe_id)))
+                    } else {
+                        false
+                    }
+                });
+            } else {
+                file_paths = exact_match_file_paths;
             }
+        }
+
+        // Apply timestamp filtering
+        file_paths.retain(|file_path| query_intersects_filename(file_path, start_u64, end_u64));
+
+        // Convert to full URIs
+        for file_path in file_paths {
+            let full_uri = self.reconstruct_full_uri(&file_path);
+            files.push(full_uri);
         }
 
         Ok(files)

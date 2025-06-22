@@ -1195,7 +1195,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             An additional SQL WHERE clause to filter the data (used in Rust queries).
         files : list[str], optional
             A specific list of files to query from. If provided, these files are used
-            instead of discovering files through the normal process. Forces PyArrow backend.
+            instead of discovering files through the normal process.
         **kwargs : Any
             Additional keyword arguments passed to the underlying query implementation.
 
@@ -1233,6 +1233,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 start=start,
                 end=end,
                 where=where,
+                files=files,
                 **kwargs,
             )
         else:
@@ -1270,6 +1271,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
+        files: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         query_data_cls = OrderBookDelta if data_cls == OrderBookDeltas else data_cls
@@ -1279,6 +1281,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             start=start,
             end=end,
             where=where,
+            file=files,
             **kwargs,
         )
         result = session.to_query_result()
@@ -1304,6 +1307,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: TimestampLike | None = None,
         where: str | None = None,
         session: DataBackendSession | None = None,
+        files: list[str] | None = None,
         **kwargs: Any,
     ) -> DataBackendSession:
         """
@@ -1327,6 +1331,9 @@ class ParquetDataCatalog(BaseDataCatalog):
             An additional SQL WHERE clause to filter the data.
         session : DataBackendSession, optional
             An existing session to update. If None, a new session is created.
+        files : list[str], optional
+            A specific list of files to query from. If provided, these files are used
+            instead of discovering files through the normal process.
         **kwargs : Any
             Additional keyword arguments.
 
@@ -1351,7 +1358,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         """
         data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
-        files = self._query_files(data_cls, identifiers, start, end)
+        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
         file_prefix = class_to_filename(data_cls)
 
         if session is None:
@@ -1361,7 +1368,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if self.fs_protocol != "file":
             self._register_object_store_with_session(session)
 
-        for idx, file in enumerate(files):
+        for idx, file in enumerate(file_list):
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
@@ -1492,10 +1499,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> list[Data]:
         # Load dataset - use provided files or query for them
-        if files is not None:
-            file_list = files
-        else:
-            file_list = self._query_files(data_cls, identifiers, start, end)
+        file_list = files if files else self._query_files(data_cls, identifiers, start, end)
 
         if not file_list:
             return []
@@ -1536,32 +1540,50 @@ class ParquetDataCatalog(BaseDataCatalog):
         file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
         glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
-        file_names: list[str] = self.fs.glob(glob_path)
+        file_paths: list[str] = self.fs.glob(glob_path)
 
         if identifiers:
             if not isinstance(identifiers, list):
                 identifiers = [identifiers]
 
             safe_identifiers = [urisafe_identifier(identifier) for identifier in identifiers]
-            file_names = [
-                file_name
-                for file_name in file_names
-                if any(safe_identifier in file_name for safe_identifier in safe_identifiers)
+
+            # Exact match by default for instrument_ids or bar_types
+            exact_match_file_paths = [
+                file_path
+                for file_path in file_paths
+                if any(
+                    safe_identifier == file_path.split("/")[-2]
+                    for safe_identifier in safe_identifiers
+                )
             ]
+
+            if not exact_match_file_paths and data_cls in [Bar, *Bar.__subclasses__()]:
+                # Partial match of instrument_ids in bar_types for bars
+                file_paths = [
+                    file_path
+                    for file_path in file_paths
+                    if any(
+                        file_path.split("/")[-2].startswith(f"{safe_identifier}-")
+                        for safe_identifier in safe_identifiers
+                    )
+                ]
+            else:
+                file_paths = exact_match_file_paths
 
         used_start: pd.Timestamp | None = time_object_to_dt(start)
         used_end: pd.Timestamp | None = time_object_to_dt(end)
-        file_names = [
-            file_name
-            for file_name in file_names
-            if _query_intersects_filename(file_name, used_start, used_end)
+        file_paths = [
+            file_path
+            for file_path in file_paths
+            if _query_intersects_filename(file_path, used_start, used_end)
         ]
 
         if self.show_query_paths:
-            for file_name in file_names:
-                print(file_name)
+            for file_path in file_paths:
+                print(file_path)
 
-        return file_names
+        return file_paths
 
     @staticmethod
     def _handle_table_nautilus(
