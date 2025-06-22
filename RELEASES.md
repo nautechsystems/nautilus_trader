@@ -36,6 +36,8 @@ Released on TBD (UTC).
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
+- Improved handling of negative balances in backtests (#2730), thanks @ms32035
+- Improved implementation, validations and testing for Rust instruments (#2723), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
@@ -69,6 +71,7 @@ Released on TBD (UTC).
 - Fixed registration of encoder and decoder for `BinanceBar`, thanks for reporting @miller-moore
 - Fixed spot and futures sandbox for Binance (#2687), thanks @petioptrv
 - Fixed `clean` and `distclean` make targets entering `.venv` and corrupting the Python virtual env, thanks @faysou
+- Fixed catalog identifier matching to exact match (#2732), thanks @faysou
 - Fixed last value updating for RSI indicator (#2703), thanks @bartlaw
 - Fixed gateway/TWS reconnect process for IBKR (#2710), thanks @bartlaw
 - Fixed Interactive Brokers options chain issue (#2711), thanks @FGU1
@@ -79,7 +82,7 @@ Released on TBD (UTC).
 - Restore task error logs for IBKR (#2716), thanks @bartlaw
 
 ### Documentation Updates
-None
+- Updated IB adapter documentation (#2729), thanks @faysou
 
 ### Deprecations
 - Deprecated `Portfolio.set_specific_venue(...)`, to be removed in a future release; use `Cache.set_specific_venue(...)` instead
