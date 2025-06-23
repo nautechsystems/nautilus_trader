@@ -788,7 +788,7 @@ mod tests {
         #[case] expected_display: &str,
     ) {
         let price = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
-            Price::from_raw(value as i128, precision)
+            Price::from_raw(value as PriceRaw, precision)
         } else {
             Price::new(value, precision)
         };
