@@ -37,7 +37,7 @@ Released on TBD (UTC).
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
-- Improved implementation, validations and testing for Rust instruments (#2723), thanks @nicolad
+- Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
 - Improved unsubscribe cleanup(s) for Bybit adapter
 - Refactored IB adapter (#2647), thanks @faysou
