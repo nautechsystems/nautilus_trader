@@ -355,7 +355,6 @@ fn order_filled(
     )
 }
 
-// Tests
 #[rstest]
 fn test_bypass_config_risk_engine() {
     let risk_engine = get_risk_engine(
