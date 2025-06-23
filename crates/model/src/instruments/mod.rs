@@ -32,13 +32,14 @@ pub mod synthetic;
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
-use std::{fmt, str::FromStr};
+use std::{fmt::Display, str::FromStr};
 
 use anyhow::{anyhow, bail};
 use enum_dispatch::enum_dispatch;
-use nautilus_core::UnixNanos;
-#[allow(unused_imports)]
-use nautilus_core::correctness::{check_positive_u64, check_predicate_true, check_valid_string};
+use nautilus_core::{
+    UnixNanos,
+    correctness::{check_equal_u8, check_positive_i128, check_predicate_true},
+};
 use rust_decimal::{Decimal, RoundingStrategy, prelude::*};
 use rust_decimal_macros::dec;
 use ustr::Ustr;
@@ -53,120 +54,99 @@ pub use crate::instruments::{
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
-    types::{Currency, Money, Price, Quantity},
+    types::{
+        Currency, Money, Price, Quantity, price::check_positive_price,
+        quantity::check_positive_quantity,
+    },
 };
-
-pub fn default_price_increment(price_precision: u8) -> Price {
-    let step = 10f64.powi(-(price_precision as i32));
-    Price::new(step, price_precision)
-}
-
-macro_rules! check_positive {
-    ($val:expr, $msg:expr) => {
-        check_predicate_true($val > 0.0, $msg)?;
-    };
-}
 
 #[allow(clippy::missing_errors_doc, clippy::too_many_arguments)]
 pub fn validate_instrument_common(
-    price_precision: i32,
-    size_precision: i32,
-    size_increment: &Quantity,
-    multiplier: &Quantity,
+    price_precision: u8,
+    size_precision: u8,
+    size_increment: Quantity,
+    multiplier: Quantity,
     margin_init: Decimal,
     margin_maint: Decimal,
-    price_increment: Option<&Price>,
-    lot_size: Option<&Quantity>,
-    max_quantity: Option<&Quantity>,
-    min_quantity: Option<&Quantity>,
-    max_notional: Option<&Money>,
-    min_notional: Option<&Money>,
-    max_price: Option<&Price>,
-    min_price: Option<&Price>,
+    price_increment: Option<Price>,
+    lot_size: Option<Quantity>,
+    max_quantity: Option<Quantity>,
+    min_quantity: Option<Quantity>,
+    max_notional: Option<Money>,
+    min_notional: Option<Money>,
+    max_price: Option<Price>,
+    min_price: Option<Price>,
 ) -> anyhow::Result<()> {
-    check_predicate_true(price_precision >= 0, "price_precision negative")?;
-    check_predicate_true(size_precision >= 0, "size_precision negative")?;
-    check_positive!(size_increment.as_f64(), "size_increment not positive");
-    check_predicate_true(
-        size_increment.precision as i32 == size_precision,
-        "size_precision != size_increment.precision",
+    check_positive_quantity(size_increment, "size_increment")?;
+    check_equal_u8(
+        size_increment.precision,
+        size_precision,
+        "size_increment.precision",
+        "size_precision",
     )?;
-    check_positive!(multiplier.as_f64(), "multiplier not positive");
+    check_positive_quantity(multiplier, "multiplier")?;
+    // TODO: check_positive_decimal
     check_predicate_true(margin_init >= dec!(0), "margin_init negative")?;
     check_predicate_true(margin_maint >= dec!(0), "margin_maint negative")?;
 
-    if let Some(increment) = price_increment {
-        check_positive!(increment.as_f64(), "price_increment not positive");
-        check_predicate_true(
-            increment.precision as i32 == price_precision,
-            "price_precision != price_increment.precision",
+    if let Some(price_increment) = price_increment {
+        check_positive_price(price_increment, "price_increment")?;
+        check_equal_u8(
+            price_increment.precision,
+            price_precision,
+            "price_increment.precision",
+            "price_precision",
         )?;
     }
+
     if let Some(lot) = lot_size {
-        check_positive!(lot.as_f64(), "lot_size not positive");
+        check_positive_quantity(lot, "lot_size")?;
     }
+
     if let Some(quantity) = max_quantity {
-        check_positive!(quantity.as_f64(), "max_quantity not positive");
+        check_positive_quantity(quantity, "max_quantity")?;
     }
+
     if let Some(quantity) = min_quantity {
-        check_predicate_true(quantity.as_f64() >= 0.0, "min_quantity negative")?;
+        check_positive_quantity(quantity, "max_quantity")?;
     }
+
     if let Some(notional) = max_notional {
-        check_positive!(notional.as_f64(), "max_notional not positive");
+        // TODO: check_positive_money
+        check_positive_i128(notional.raw, "notional")?;
     }
+
     if let Some(notional) = min_notional {
-        check_predicate_true(notional.as_f64() >= 0.0, "min_notional negative")?;
-    }
-    if let Some(price) = max_price {
-        check_positive!(price.as_f64(), "max_price not positive");
-        check_predicate_true(
-            price.precision as i32 == price_precision,
-            "price_precision != max_price.precision",
-        )?;
-    }
-    if let Some(price) = min_price {
-        check_predicate_true(
-            price.precision as i32 == price_precision,
-            "price_precision != min_price.precision",
-        )?;
+        check_positive_i128(notional.raw, "notional")?;
     }
 
-    check_predicate_true(
-        (min_price.is_none() && max_price.is_none())
-            || (min_price.is_some() && max_price.is_some()),
-        "min_price and max_price must be both set or neither",
-    )?;
-    check_predicate_true(
-        (min_notional.is_none() && max_notional.is_none())
-            || (min_notional.is_some() && max_notional.is_some()),
-        "min_notional and max_notional must be both set or neither",
-    )?;
-    check_predicate_true(
-        (min_quantity.is_none() && max_quantity.is_none())
-            || (min_quantity.is_some() && max_quantity.is_some()),
-        "min_quantity and max_quantity must be both set or neither",
-    )?;
-
-    if let (Some(increment), Some(price)) = (price_increment, min_price) {
-        check_predicate_true(
-            increment.precision == price.precision,
-            "price_increment.precision != min_price.precision",
+    if let Some(max_price) = max_price {
+        check_positive_price(max_price, "max_price")?;
+        check_equal_u8(
+            max_price.precision,
+            price_precision,
+            "max_price.precision",
+            "price_precision",
         )?;
     }
-    if let (Some(increment), Some(price)) = (price_increment, max_price) {
-        check_predicate_true(
-            increment.precision == price.precision,
-            "price_increment.precision != max_price.precision",
+    if let Some(min_price) = min_price {
+        check_positive_price(min_price, "min_price")?;
+        check_equal_u8(
+            min_price.precision,
+            price_precision,
+            "min_price.precision",
+            "price_precision",
         )?;
     }
 
     if let (Some(min), Some(max)) = (min_price, max_price) {
-        check_predicate_true(min.as_f64() <= max.as_f64(), "min_price exceeds max_price")?;
+        check_predicate_true(min.raw <= max.raw, "min_price exceeds max_price")?;
     }
+
     Ok(())
 }
 
-pub trait TickSchemeRule: fmt::Display {
+pub trait TickSchemeRule: Display {
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price>;
 }
@@ -205,8 +185,8 @@ impl TickSchemeRule for FixedTickScheme {
     }
 }
 
-impl fmt::Display for FixedTickScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for FixedTickScheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "FIXED")
     }
 }
@@ -214,7 +194,7 @@ impl fmt::Display for FixedTickScheme {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TickScheme {
     Fixed(FixedTickScheme),
-    Crypto0_01,
+    Crypto,
 }
 
 impl TickSchemeRule for TickScheme {
@@ -222,7 +202,7 @@ impl TickSchemeRule for TickScheme {
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
             TickScheme::Fixed(scheme) => scheme.next_bid_price(value, n, precision),
-            TickScheme::Crypto0_01 => {
+            TickScheme::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).floor() * increment;
                 Some(Price::new(base - (n as f64) * increment, precision))
@@ -234,7 +214,7 @@ impl TickSchemeRule for TickScheme {
     fn next_ask_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
         match self {
             TickScheme::Fixed(scheme) => scheme.next_ask_price(value, n, precision),
-            TickScheme::Crypto0_01 => {
+            TickScheme::Crypto => {
                 let increment: f64 = 0.01;
                 let base = (value / increment).ceil() * increment;
                 Some(Price::new(base + (n as f64) * increment, precision))
@@ -243,11 +223,11 @@ impl TickSchemeRule for TickScheme {
     }
 }
 
-impl fmt::Display for TickScheme {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for TickScheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TickScheme::Fixed(_) => write!(f, "FIXED"),
-            TickScheme::Crypto0_01 => write!(f, "CRYPTO_0_01"),
+            TickScheme::Crypto => write!(f, "CRYPTO_0_01"),
         }
     }
 }
@@ -258,7 +238,7 @@ impl FromStr for TickScheme {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
             "FIXED" => Ok(TickScheme::Fixed(FixedTickScheme::new(1.0)?)),
-            "CRYPTO_0_01" => Ok(TickScheme::Crypto0_01),
+            "CRYPTO_0_01" => Ok(TickScheme::Crypto),
             _ => Err(anyhow!("unknown tick scheme {}", s)),
         }
     }
@@ -358,7 +338,7 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns `anyhow::Error` if the value is not finite or cannot be converted to a `Price`.
+    /// Returns an error if the value is not finite or cannot be converted to a `Price`.
     #[inline(always)]
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
         check_predicate_true(value.is_finite(), "non-finite value passed to make_price")?;
@@ -381,7 +361,7 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns `anyhow::Error` if the value is not finite or cannot be converted to a `Quantity`.
+    /// Returns an error if the value is not finite or cannot be converted to a `Quantity`.
     #[inline(always)]
     fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
         let precision_u8 = self.size_precision();
@@ -409,7 +389,7 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns `anyhow::Error` if the quantity or price is not finite or cannot be converted to a `Quantity`.
+    /// Returns an error if the quantity or price is not finite or cannot be converted to a `Quantity`.
     fn try_calculate_base_quantity(
         &self,
         quantity: Quantity,
@@ -540,16 +520,17 @@ pub trait Instrument: 'static + Send {
     }
 }
 
-impl fmt::Display for CurrencyPair {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for CurrencyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Instrument(symbol='{}', tick_scheme='{}', price_precision={}, size_precision={}, \
+            "{}(instrument_id='{}', tick_scheme='{}', price_precision={}, size_precision={}, \
 price_increment={}, size_increment={}, multiplier={}, margin_init={}, margin_maint={})",
-            self.symbol(),
+            stringify!(CurrencyPair),
+            self.id,
             self.tick_scheme()
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| "NONE".into()),
+                .unwrap_or_else(|| "None".into()),
             self.price_precision(),
             self.size_precision(),
             self.price_increment(),
@@ -568,6 +549,10 @@ pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
     InstrumentClass::OptionSpread,
 ];
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -578,6 +563,11 @@ mod tests {
 
     use super::*;
     use crate::{instruments::stubs::*, types::Money};
+
+    pub fn default_price_increment(precision: u8) -> Price {
+        let step = 10f64.powi(-(precision as i32));
+        Price::new(step, precision)
+    }
 
     #[rstest]
     fn default_increment_precision() {
@@ -682,13 +672,13 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &Quantity::new(0.01, 2),
-            &Quantity::new(1.0, 0),
+            Quantity::new(0.01, 2),
+            Quantity::new(1.0, 0),
             dec!(0),
             dec!(0),
             None,
             None,
-            Some(&quantity),
+            Some(quantity),
             None,
             None,
             None,
@@ -762,11 +752,11 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
-            Some(&price_increment),
+            Some(price_increment),
             None,
             None,
             None,
@@ -788,8 +778,8 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
             None,
@@ -798,8 +788,8 @@ mod tests {
             None,
             None,
             None,
-            Some(&max_price),
-            Some(&min_price),
+            Some(max_price),
+            Some(min_price),
         )
         .unwrap();
     }
@@ -809,11 +799,11 @@ mod tests {
         let res = validate_instrument_common(
             2,
             4,
-            &Quantity::new(0.0001, 4),
-            &Quantity::new(1.0, 0),
+            Quantity::new(0.0001, 4),
+            Quantity::new(1.0, 0),
             dec!(0.02),
             dec!(0.01),
-            Some(&Price::new(0.01, 2)),
+            Some(Price::new(0.01, 2)),
             None,
             None,
             None,
@@ -831,8 +821,8 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &Quantity::new(-0.01, 2),
-            &Quantity::new(0.0, 0),
+            Quantity::new(-0.01, 2),
+            Quantity::new(0.0, 0),
             dec!(0),
             dec!(0),
             None,
@@ -952,8 +942,8 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
             None,
@@ -962,7 +952,7 @@ mod tests {
             None,
             None,
             None,
-            Some(&max_price),
+            Some(max_price),
             None,
         )
         .unwrap();
@@ -977,43 +967,18 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
             None,
             None,
             None,
             None,
-            Some(&max_notional),
+            Some(max_notional),
             None,
             None,
             None,
-        )
-        .unwrap();
-    }
-
-    #[rstest]
-    #[should_panic]
-    fn validate_missing_max_price_pair() {
-        let size_increment = Quantity::new(0.01, 2);
-        let multiplier = Quantity::new(1.0, 0);
-        let min_price = Price::new(1.0, 2);
-        validate_instrument_common(
-            2,
-            2,
-            &size_increment,
-            &multiplier,
-            dec!(0),
-            dec!(0),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(&min_price),
         )
         .unwrap();
     }
@@ -1028,18 +993,18 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
-            Some(&price_increment),
+            Some(price_increment),
             None,
             None,
             None,
             None,
             None,
             None,
-            Some(&min_price),
+            Some(min_price),
         )
         .unwrap();
     }
@@ -1054,16 +1019,16 @@ mod tests {
         validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
             None,
             None,
             None,
             None,
-            Some(&max_notional),
-            Some(&min_notional),
+            Some(max_notional),
+            Some(min_notional),
             None,
             None,
         )
@@ -1197,17 +1162,17 @@ mod tests {
         let res = validate_instrument_common(
             2,
             2,
-            &size_increment,
-            &multiplier,
+            size_increment,
+            multiplier,
             dec!(0),
             dec!(0),
-            Some(&price_increment),
+            Some(price_increment),
             None,
             None,
             None,
             None,
             None,
-            Some(&max_price),
+            Some(max_price),
             None,
         );
         assert!(res.is_err());
