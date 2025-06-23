@@ -934,7 +934,7 @@ mod tests {
     ) {
         let quantity = if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
             // For high precision, use from_raw to avoid f64 conversion issues
-            Quantity::from_raw(value as u128, precision)
+            Quantity::from_raw(value as QuantityRaw, precision)
         } else {
             Quantity::new(value, precision)
         };
