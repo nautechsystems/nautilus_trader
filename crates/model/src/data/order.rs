@@ -195,7 +195,7 @@ mod tests {
         let order = BookOrder::new(side, price, size, order_id);
         let exposure = order.exposure();
 
-        assert_eq!(exposure, price.as_f64() * size.as_f64());
+        assert_eq!(exposure, 100.00 * 10.0);
     }
 
     #[rstest]
@@ -206,11 +206,11 @@ mod tests {
 
         let order_buy = BookOrder::new(OrderSide::Buy, price, size, order_id);
         let signed_size_buy = order_buy.signed_size();
-        assert_eq!(signed_size_buy, size.as_f64());
+        assert_eq!(signed_size_buy, 10.0);
 
         let order_sell = BookOrder::new(OrderSide::Sell, price, size, order_id);
         let signed_size_sell = order_sell.signed_size();
-        assert_eq!(signed_size_sell, -(size.as_f64()));
+        assert_eq!(signed_size_sell, -10.0);
     }
 
     #[rstest]

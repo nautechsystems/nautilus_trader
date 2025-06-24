@@ -87,11 +87,22 @@ pub fn get_message_bus() -> Rc<RefCell<MessageBus>> {
 }
 
 /// Sends the `message` to the `endpoint`.
-pub fn send(endpoint: MStr<Endpoint>, message: &dyn Any) {
-    // TODO: This should return a Result (in case endpoint doesn't exist)
+pub fn send_any(endpoint: MStr<Endpoint>, message: &dyn Any) {
     let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
     if let Some(handler) = handler {
         handler.0.handle(message);
+    } else {
+        log::error!("send_any: no registered endpoint '{endpoint}'")
+    }
+}
+
+/// Sends the `message` to the `endpoint`.
+pub fn send<T: 'static>(endpoint: MStr<Endpoint>, message: T) {
+    let handler = get_message_bus().borrow().get_endpoint(endpoint).cloned();
+    if let Some(handler) = handler {
+        handler.0.handle(&message);
+    } else {
+        log::error!("send: no registered endpoint '{endpoint}'")
     }
 }
 
@@ -104,6 +115,8 @@ pub fn send_response(correlation_id: &UUID4, message: &DataResponse) {
 
     if let Some(handler) = handler {
         handler.0.handle(message);
+    } else {
+        log::error!("send_response: handler not found for correlation_id '{correlation_id}'")
     }
 }
 
@@ -125,9 +138,7 @@ pub fn response(correlation_id: &UUID4, message: &dyn Any) {
     if let Some(handler) = handler {
         handler.0.handle(message);
     } else {
-        log::error!(
-            "Failed to handle response: handler not found for correlation_id {correlation_id}"
-        )
+        log::error!("response: handler not found for correlation_id '{correlation_id}'")
     }
 }
 

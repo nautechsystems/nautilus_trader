@@ -121,12 +121,9 @@ pub unsafe extern "C" fn logging_init(
         None
     };
 
-    let directory =
-        unsafe { optional_cstr_to_str(directory_ptr).map(std::string::ToString::to_string) };
-    let file_name =
-        unsafe { optional_cstr_to_str(file_name_ptr).map(std::string::ToString::to_string) };
-    let file_format =
-        unsafe { optional_cstr_to_str(file_format_ptr).map(std::string::ToString::to_string) };
+    let directory = unsafe { optional_cstr_to_str(directory_ptr).map(ToString::to_string) };
+    let file_name = unsafe { optional_cstr_to_str(file_name_ptr).map(ToString::to_string) };
+    let file_format = unsafe { optional_cstr_to_str(file_format_ptr).map(ToString::to_string) };
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
 

@@ -1,6 +1,6 @@
 # Logging
 
-The platform provides logging for both backtesting and live trading using a high-performance logging system implemented in Rust
+The platform provides logging for both backtesting and live trading using a high-performance logging subsystem implemented in Rust
 with a standardized facade from the `log` crate.
 
 The core logger operates in a separate thread and uses a multi-producer single-consumer (MPSC) channel to receive log messages.
@@ -168,13 +168,13 @@ See the `init_logging` [API Reference](../api_reference/common) for further deta
 :::
 
 :::warning
-Only one logging system can be initialized per process with an `init_logging` call, and the `LogGuard` which is returned must be kept alive for the lifetime of the program.
+Only one logging subsystem can be initialized per process with an `init_logging` call, and the `LogGuard` which is returned must be kept alive for the lifetime of the program.
 :::
 
 ## LogGuard: Managing log lifecycle
 
-The `LogGuard` ensures that the logging system remains active and operational throughout the lifecycle of a process.
-It prevents premature shutdown of the logging system when running multiple engines in the same process.
+The `LogGuard` ensures that the logging subsystem remains active and operational throughout the lifecycle of a process.
+It prevents premature shutdown of the logging subsystem when running multiple engines in the same process.
 
 ### Why use LogGuard?
 
@@ -184,11 +184,11 @@ Without a `LogGuard`, any attempt to run sequential engines in the same process 
 Error sending log event: [INFO] ...
 ```
 
-This occurs because the logging system's underlying channel and Rust `Logger` are closed when the first engine is disposed.
-As a result, subsequent engines lose access to the logging system, leading to these errors.
+This occurs because the logging subsystem's underlying channel and Rust `Logger` are closed when the first engine is disposed.
+As a result, subsequent engines lose access to the logging subsystem, leading to these errors.
 
 By leveraging a `LogGuard`, you can ensure robust logging behavior across multiple backtests or engine runs in the same process.
-The `LogGuard` retains the resources of the logging system and ensures that logs continue to function correctly,
+The `LogGuard` retains the resources of the logging subsystem and ensures that logs continue to function correctly,
 even as engines are disposed and initialized.
 
 :::note
@@ -218,12 +218,12 @@ for i in range(number_of_backtests):
 
 ### Steps
 
-- **Initialize LogGuard once**: The `LogGuard` is obtained from the first engine (`engine.get_log_guard()`) and is retained throughout the process. This ensures that the logging system remains active.
-- **Dispose engines safely**: Each engine is safely disposed of after its backtest completes, without affecting the logging system.
-- **Reuse LogGuard**: The same `LogGuard` instance is reused for subsequent engines, preventing the logging system from shutting down prematurely.
+- **Initialize LogGuard once**: The `LogGuard` is obtained from the first engine (`engine.get_log_guard()`) and is retained throughout the process. This ensures that the logging subsystem remains active.
+- **Dispose engines safely**: Each engine is safely disposed of after its backtest completes, without affecting the logging subsystem.
+- **Reuse LogGuard**: The same `LogGuard` instance is reused for subsequent engines, preventing the logging subsystem from shutting down prematurely.
 
 ### Considerations
 
 - **Single LogGuard per process**: Only one `LogGuard` can be used per process.
-- **Thread safety**: The logging system, including `LogGuard`, is thread-safe, ensuring consistent behavior even in multi-threaded environments.
+- **Thread safety**: The logging subsystem, including `LogGuard`, is thread-safe, ensuring consistent behavior even in multi-threaded environments.
 - **Flush logs on termination**: Always ensure that logs are properly flushed when the process terminates. The `LogGuard` automatically handles this as it goes out of scope.

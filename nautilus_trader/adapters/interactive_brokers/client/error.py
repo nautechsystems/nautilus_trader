@@ -62,7 +62,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             Indicates whether the message is a warning or an error.
 
         """
-        msg = f"{error_string} (code: {error_code}, {req_id=})."
+        msg = f"{error_string} (code: {error_code}, {req_id=})"
 
         if error_code in self.SUPPRESS_ERROR_LOGGING_CODES:
             self._log.debug(msg)
@@ -110,14 +110,14 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
             if self._is_ib_connected.is_set():
                 self._log.debug(
-                    f"`_is_ib_connected` unset by code {error_code} in `_process_error`.",
+                    f"`_is_ib_connected` unset by code {error_code} in `_process_error`",
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.clear()
         elif error_code in self.CONNECTIVITY_RESTORED_CODES:
             if not self._is_ib_connected.is_set():
                 self._log.debug(
-                    f"`_is_ib_connected` set by code {error_code} in `_process_error`.",
+                    f"`_is_ib_connected` set by code {error_code} in `_process_error`",
                     LogColor.BLUE,
                 )
                 self._is_ib_connected.set()
@@ -163,7 +163,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
 
             if self._is_ib_connected.is_set():
                 self._log.info(
-                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`.",
+                    f"`_is_ib_connected` unset by {subscription.name} in `_handle_subscription_error`",
                 )
                 self._is_ib_connected.clear()
         else:

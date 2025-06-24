@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::Display;
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 
 use crate::indicator::Indicator;
+
+const MAX_PERIOD: usize = 1_024;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -35,10 +35,10 @@ pub struct Stochastics {
     pub value_d: f64,
     pub initialized: bool,
     has_inputs: bool,
-    highs: VecDeque<f64>,
-    lows: VecDeque<f64>,
-    c_sub_1: VecDeque<f64>,
-    h_sub_l: VecDeque<f64>,
+    highs: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    lows: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    c_sub_1: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
+    h_sub_l: ArrayDeque<f64, MAX_PERIOD, Wrapping>,
 }
 
 impl Display for Stochastics {
@@ -78,8 +78,22 @@ impl Indicator for Stochastics {
 
 impl Stochastics {
     /// Creates a new [`Stochastics`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period_k` or `period_d` is less than 1 or greater than `MAX_PERIOD`.
     #[must_use]
     pub fn new(period_k: usize, period_d: usize) -> Self {
+        assert!(
+            period_k > 0 && period_k <= MAX_PERIOD,
+            "Stochastics: period_k {period_k} exceeds bounds (1..={MAX_PERIOD})"
+        );
+        assert!(
+            period_d > 0 && period_d <= MAX_PERIOD,
+            "Stochastics: period_d {period_d} exceeds bounds (1..={MAX_PERIOD})"
+        );
+
         Self {
             period_k,
             period_d,
@@ -87,10 +101,10 @@ impl Stochastics {
             initialized: false,
             value_k: 0.0,
             value_d: 0.0,
-            highs: VecDeque::with_capacity(period_k),
-            lows: VecDeque::with_capacity(period_k),
-            h_sub_l: VecDeque::with_capacity(period_d),
-            c_sub_1: VecDeque::with_capacity(period_d),
+            highs: ArrayDeque::new(),
+            lows: ArrayDeque::new(),
+            h_sub_l: ArrayDeque::new(),
+            c_sub_1: ArrayDeque::new(),
         }
     }
 
@@ -99,10 +113,13 @@ impl Stochastics {
             self.has_inputs = true;
         }
 
-        self.highs.push_back(high);
-        self.lows.push_back(low);
+        if self.highs.len() == self.period_k {
+            self.highs.pop_front();
+            self.lows.pop_front();
+        }
+        let _ = self.highs.push_back(high);
+        let _ = self.lows.push_back(low);
 
-        // Initialization logic
         if !self.initialized
             && self.highs.len() == self.period_k
             && self.lows.len() == self.period_k
@@ -113,8 +130,12 @@ impl Stochastics {
         let k_max_high = self.highs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let k_min_low = self.lows.iter().copied().fold(f64::INFINITY, f64::min);
 
-        self.c_sub_1.push_back(close - k_min_low);
-        self.h_sub_l.push_back(k_max_high - k_min_low);
+        if self.c_sub_1.len() == self.period_d {
+            self.c_sub_1.pop_front();
+            self.h_sub_l.pop_front();
+        }
+        let _ = self.c_sub_1.push_back(close - k_min_low);
+        let _ = self.h_sub_l.push_back(k_max_high - k_min_low);
 
         if k_max_high == k_min_low {
             return;

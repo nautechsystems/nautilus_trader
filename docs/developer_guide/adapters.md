@@ -159,6 +159,18 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 - `_subscribe_order_book_deltas`: Subscribes to order book delta updates
 - `_unsubscribe_order_book_deltas`: Unsubscribes from order book delta updates
 
+---
+
+## REST‐API field-mapping guideline
+
+When translating a venue’s REST payload into our domain model **avoid renaming** the upstream
+fields unless there is a compelling reason (e.g. a clash with reserved keywords). The only
+transformation we apply by default is **camelCase → snake_case**.
+
+Keeping the external names intact makes it trivial to debug payloads, compare captures against the
+Rust structs, and speeds up onboarding for new contributors who have the venue’s API reference
+open side-by-side.
+
 ### ExecutionClient
 
 The `ExecutionClient` is responsible for order management, including submission, modification, and

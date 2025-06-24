@@ -13,15 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::VecDeque,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
+use arraydeque::{ArrayDeque, Wrapping};
 use nautilus_model::data::Bar;
 use strum::Display;
 
-use crate::{indicator::Indicator, momentum::bb::fast_std_with_mean};
+use crate::indicator::Indicator;
 
 #[repr(C)]
 #[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
@@ -111,7 +109,6 @@ impl Display for FuzzyCandle {
 }
 
 impl FuzzyCandle {
-    /// Creates a new [`FuzzyCandle`] instance.
     #[must_use]
     pub const fn new(
         direction: CandleDirection,
@@ -130,6 +127,8 @@ impl FuzzyCandle {
     }
 }
 
+const MAX_CAPACITY: usize = 1024;
+
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -146,10 +145,10 @@ pub struct FuzzyCandlesticks {
     pub value: FuzzyCandle,
     pub initialized: bool,
     has_inputs: bool,
-    lengths: VecDeque<f64>,
-    body_percents: VecDeque<f64>,
-    upper_wick_percents: VecDeque<f64>,
-    lower_wick_percents: VecDeque<f64>,
+    lengths: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
+    body_percents: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
+    upper_wick_percents: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
+    lower_wick_percents: ArrayDeque<f64, MAX_CAPACITY, Wrapping>,
     last_open: f64,
     last_high: f64,
     last_low: f64,
@@ -209,8 +208,13 @@ impl Indicator for FuzzyCandlesticks {
 
 impl FuzzyCandlesticks {
     /// Creates a new [`FuzzyCandle`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - `period` is greater than `MAX_CAPACITY`.
     /// - Period: usize : The rolling window period for the indicator (> 0).
-    /// - Threshold1: f64 : The membership function x threshold1 (>= 0).
+    /// - Threshold1: f64 : The membership function x threshold1 (> 0).
     /// - Threshold2: f64 : The membership function x threshold2 (> threshold1).
     /// - Threshold3: f64 : The membership function x threshold3 (> threshold2).
     /// - Threshold4: f64 : The membership function x threshold4 (> threshold3).
@@ -222,6 +226,7 @@ impl FuzzyCandlesticks {
         threshold3: f64,
         threshold4: f64,
     ) -> Self {
+        assert!(period <= MAX_CAPACITY);
         Self {
             period,
             threshold1,
@@ -238,10 +243,10 @@ impl FuzzyCandlesticks {
             ),
             has_inputs: false,
             initialized: false,
-            lengths: VecDeque::with_capacity(period),
-            body_percents: VecDeque::with_capacity(period),
-            upper_wick_percents: VecDeque::with_capacity(period),
-            lower_wick_percents: VecDeque::with_capacity(period),
+            lengths: ArrayDeque::new(),
+            body_percents: ArrayDeque::new(),
+            upper_wick_percents: ArrayDeque::new(),
+            lower_wick_percents: ArrayDeque::new(),
             last_open: 0.0,
             last_high: 0.0,
             last_low: 0.0,
@@ -250,7 +255,6 @@ impl FuzzyCandlesticks {
     }
 
     pub fn update_raw(&mut self, open: f64, high: f64, low: f64, close: f64) {
-        //check if this is the first input
         if !self.has_inputs {
             self.last_close = close;
             self.last_open = open;
@@ -258,29 +262,29 @@ impl FuzzyCandlesticks {
             self.last_low = low;
         }
 
-        // Update last prices
         self.last_close = close;
         self.last_open = open;
         self.last_high = high;
         self.last_low = low;
 
-        // Update measurements
-        self.lengths.push_back((high - low).abs());
+        let _ = self.lengths.push_back((high - low).abs());
 
         if self.lengths[0] == 0.0 {
-            self.body_percents.push_back(0.0);
-            self.upper_wick_percents.push_back(0.0);
-            self.lower_wick_percents.push_back(0.0);
+            let _ = self.body_percents.push_back(0.0);
+            let _ = self.upper_wick_percents.push_back(0.0);
+            let _ = self.lower_wick_percents.push_back(0.0);
         } else {
-            self.body_percents
+            let _ = self
+                .body_percents
                 .push_back((open - low / self.lengths[0]).abs());
-            self.upper_wick_percents
+            let _ = self
+                .upper_wick_percents
                 .push_back(high - f64::max(open, close) / self.lengths[0]);
-            self.lower_wick_percents
+            let _ = self
+                .lower_wick_percents
                 .push_back(f64::max(open, close) - low / self.lengths[0]);
         }
 
-        // Calculate statistics for bars
         let mean_length = self.lengths.iter().sum::<f64>() / self.period as f64;
         let mean_body_percent = self.body_percents.iter().sum::<f64>() / self.period as f64;
         let mean_upper_wick_percent =
@@ -288,14 +292,13 @@ impl FuzzyCandlesticks {
         let mean_lower_wick_percent =
             self.lower_wick_percents.iter().sum::<f64>() / self.period as f64;
 
-        let sd_lengths = fast_std_with_mean(self.lengths.clone(), mean_length);
-        let sd_body_percent = fast_std_with_mean(self.body_percents.clone(), mean_body_percent);
+        let sd_lengths = Self::std_dev(&self.lengths, mean_length);
+        let sd_body_percent = Self::std_dev(&self.body_percents, mean_body_percent);
         let sd_upper_wick_percent =
-            fast_std_with_mean(self.upper_wick_percents.clone(), mean_upper_wick_percent);
+            Self::std_dev(&self.upper_wick_percents, mean_upper_wick_percent);
         let sd_lower_wick_percent =
-            fast_std_with_mean(self.lower_wick_percents.clone(), mean_lower_wick_percent);
+            Self::std_dev(&self.lower_wick_percents, mean_lower_wick_percent);
 
-        // Create fuzzy candle
         self.value = FuzzyCandle::new(
             self.fuzzify_direction(open, close),
             self.fuzzify_size(self.lengths[0], mean_length, sd_lengths),
@@ -353,40 +356,32 @@ impl FuzzyCandlesticks {
     }
 
     fn fuzzify_size(&self, length: f64, mean_length: f64, sd_lengths: f64) -> CandleSize {
-        // Fuzzify the candle size from the given inputs
         if length == 0.0 {
             return CandleSize::None;
         }
 
         let mut x;
 
-        // Determine CandleSize fuzzy membership
-        // -------------------------------------
-        // CandleSize::VerySmall
         x = sd_lengths.mul_add(-self.threshold2, mean_length);
         if length <= x {
             return CandleSize::VerySmall;
         }
 
-        // CandleSize::Small
         x = sd_lengths.mul_add(self.threshold1, mean_length);
         if length <= x {
             return CandleSize::Small;
         }
 
-        // CandleSize::Medium
         x = sd_lengths * self.threshold2;
         if length <= x {
             return CandleSize::Medium;
         }
 
-        // CandleSize.Large
         x = sd_lengths.mul_add(self.threshold3, mean_length);
         if length <= x {
             return CandleSize::Large;
         }
 
-        // CandleSize::VeryLarge
         x = sd_lengths.mul_add(self.threshold4, mean_length);
         if length <= x {
             return CandleSize::VeryLarge;
@@ -401,28 +396,22 @@ impl FuzzyCandlesticks {
         mean_body_percent: f64,
         sd_body_percent: f64,
     ) -> CandleBodySize {
-        // Fuzzify the candle body size from the given inputs
         if body_percent == 0.0 {
             return CandleBodySize::None;
         }
 
         let mut x;
 
-        // Determine CandleBodySize fuzzy membership
-        // -------------------------------------
-        // CandleBodySize::Small
         x = sd_body_percent.mul_add(-self.threshold1, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Small;
         }
 
-        // CandleBodySize::Medium
         x = sd_body_percent.mul_add(self.threshold1, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Medium;
         }
 
-        // CandleBodySize::Large
         x = sd_body_percent.mul_add(self.threshold2, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Large;
@@ -437,28 +426,38 @@ impl FuzzyCandlesticks {
         mean_wick_percent: f64,
         sd_wick_percents: f64,
     ) -> CandleWickSize {
-        // Fuzzify the candle wick size from the given inputs
         if wick_percent == 0.0 {
             return CandleWickSize::None;
         }
 
         let mut x;
 
-        // Determine CandleWickSize fuzzy membership
-        // -------------------------------------
-        // CandleWickSize::Small
         x = sd_wick_percents.mul_add(-self.threshold1, mean_wick_percent);
         if wick_percent <= x {
             return CandleWickSize::Small;
         }
 
-        // CandleWickSize::Medium
         x = sd_wick_percents.mul_add(self.threshold2, mean_wick_percent);
         if wick_percent <= x {
             return CandleWickSize::Medium;
         }
 
         CandleWickSize::Large
+    }
+
+    fn std_dev<const CAP: usize>(buffer: &ArrayDeque<f64, CAP, Wrapping>, mean: f64) -> f64 {
+        if buffer.is_empty() {
+            return 0.0;
+        }
+        let variance = buffer
+            .iter()
+            .map(|v| {
+                let d = v - mean;
+                d * d
+            })
+            .sum::<f64>()
+            / buffer.len() as f64;
+        variance.sqrt()
     }
 }
 

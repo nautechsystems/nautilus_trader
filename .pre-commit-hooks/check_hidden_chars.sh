@@ -38,7 +38,7 @@ fi
 # Always check for hidden Unicode - these should never appear in legitimate source
 control_chars=""
 if [ ${#files_to_check[@]} -gt 0 ]; then
-    control_chars=$(grep --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]|‍|‌|​|‏|‎|⁠|⁡|⁢|⁣|⁤|⁥|⁦|⁧|⁨|⁩|￿" "${files_to_check[@]}" 2>/dev/null || true)
+    control_chars=$(grep --binary-files=without-match -nP "[\x01-\x08\x0E-\x1F]|\u200D|\u200C|\u200B|\u200F|\u200E|\u2060|\u2061|\u2062|\u2063|\u2064|\u2065|\u2066|\u2067|\u2068|\u2069|\uFEFF" "${files_to_check[@]}" 2>/dev/null || true)
 fi
 
 # Check for suspicious long base64/hex strings, with very specific exclusions
@@ -46,7 +46,7 @@ fi
 suspicious_strings=""
 if [ ${#files_to_check[@]} -gt 0 ]; then
     suspicious_strings=$(grep --binary-files=without-match -nP "[A-Za-z0-9+/]{500,}={0,2}" "${files_to_check[@]}" 2>/dev/null | \
-        grep -v 'crates/model/src/defi/block.rs:.*"logsBloom":' | \
+        grep -v 'crates/model/src/defi/data/block.rs:.*"logsBloom":' | \
         grep -v '#.*SECURITY_EXCLUSION:' | \
         grep -v '//.*SECURITY_EXCLUSION:' || true)
 fi

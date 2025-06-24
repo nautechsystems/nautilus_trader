@@ -95,6 +95,18 @@ impl DataBackendSession {
         let query_result = slf.get_query_result();
         DataQueryResult::new(query_result, slf.chunk_size)
     }
+
+    /// Register an object store with the session context from a URI with optional storage options
+    #[pyo3(name = "register_object_store_from_uri")]
+    #[pyo3(signature = (uri, storage_options=None))]
+    fn register_object_store_from_uri_py(
+        mut slf: PyRefMut<'_, Self>,
+        uri: &str,
+        storage_options: Option<std::collections::HashMap<String, String>>,
+    ) -> PyResult<()> {
+        slf.register_object_store_from_uri(uri, storage_options)
+            .map_err(to_pyruntime_err)
+    }
 }
 
 #[pymethods]

@@ -55,6 +55,7 @@ pub fn get_nautilus_test_data_file_path(filename: &str) -> String {
     path.join(filename).to_str().unwrap().to_string()
 }
 
+/// Returns the path to the checksums file for large test data files.
 #[must_use]
 pub fn get_test_data_large_checksums_filepath() -> PathBuf {
     get_test_data_path().join("large").join("checksums.json")
@@ -73,6 +74,7 @@ pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     filepath
 }
 
+/// Ensures the Tardis Deribit incremental book L2 test data exists and returns its path.
 #[must_use]
 pub fn ensure_data_exists_tardis_deribit_book_l2() -> PathBuf {
     let filename = "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz";
@@ -81,6 +83,7 @@ pub fn ensure_data_exists_tardis_deribit_book_l2() -> PathBuf {
     ensure_test_data_exists(filename, &url)
 }
 
+/// Ensures the Tardis Binance Futures book snapshot (depth 5) test data exists and returns its path.
 #[must_use]
 pub fn ensure_data_exists_tardis_binance_snapshot5() -> PathBuf {
     let filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz";
@@ -89,6 +92,7 @@ pub fn ensure_data_exists_tardis_binance_snapshot5() -> PathBuf {
     ensure_test_data_exists(filename, &url)
 }
 
+/// Ensures the Tardis Binance Futures book snapshot (depth 25) test data exists and returns its path.
 #[must_use]
 pub fn ensure_data_exists_tardis_binance_snapshot25() -> PathBuf {
     let filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz";

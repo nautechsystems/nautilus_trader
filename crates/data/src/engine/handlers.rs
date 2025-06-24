@@ -21,7 +21,11 @@ use ustr::Ustr;
 
 use crate::aggregation::BarAggregator;
 
-// Quote ticks -> bar aggregator
+/// Message handler for processing quote ticks through bar aggregators.
+///
+/// This handler receives quote tick messages and forwards them to the underlying
+/// bar aggregator for processing. It's used as part of the data engine's message
+/// routing infrastructure to build bars from incoming quote data.
 #[derive(Debug)]
 pub struct BarQuoteHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
@@ -53,7 +57,11 @@ impl MessageHandler for BarQuoteHandler {
     }
 }
 
-// Trade ticks -> bar aggregator
+/// Message handler for processing trade ticks through bar aggregators.
+///
+/// This handler receives trade tick messages and forwards them to the underlying
+/// bar aggregator for processing. It's used as part of the data engine's message
+/// routing infrastructure to build bars from incoming trade data.
 #[derive(Debug)]
 pub struct BarTradeHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,
@@ -85,7 +93,12 @@ impl MessageHandler for BarTradeHandler {
     }
 }
 
-// Composite bars -> bar aggregator
+/// Message handler for processing bars through composite bar aggregators.
+///
+/// This handler receives bar messages and forwards them to the underlying
+/// bar aggregator for further processing. It's used for building composite
+/// bars from existing bars, such as creating higher timeframe bars from
+/// lower timeframe bars.
 #[derive(Debug)]
 pub struct BarBarHandler {
     aggregator: Rc<RefCell<Box<dyn BarAggregator>>>,

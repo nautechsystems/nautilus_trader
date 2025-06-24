@@ -16,7 +16,6 @@
 Define the schemas for the GetAssetPositions endpoint.
 """
 
-# ruff: noqa: N815
 
 import msgspec
 

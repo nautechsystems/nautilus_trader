@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use aws_lc_rs::hmac;
 use base64::prelude::*;
-use ring::hmac;
 use ustr::Ustr;
 
 /// Coinbase International API credentials for signing requests.
@@ -24,7 +24,7 @@ use ustr::Ustr;
 pub struct Credential {
     pub api_key: Ustr,
     pub api_passphrase: Ustr,
-    hmac_key: hmac::Key,
+    api_secret: Vec<u8>,
 }
 
 impl Credential {
@@ -42,11 +42,15 @@ impl Credential {
         Self {
             api_key: api_key.into(),
             api_passphrase: api_passphrase.into(),
-            hmac_key: hmac::Key::new(hmac::HMAC_SHA256, &decoded_secret),
+            api_secret: decoded_secret,
         }
     }
 
     /// Signs a request message according to the Coinbase authentication scheme.
+    ///
+    /// # Panics
+    ///
+    /// Panics if signature generation fails due to key or cryptographic errors.
     pub fn sign(&self, timestamp: &str, method: &str, endpoint: &str, body: &str) -> String {
         // Extract the path without query parameters
         let request_path = match endpoint.find('?') {
@@ -56,15 +60,24 @@ impl Credential {
 
         let message = format!("{timestamp}{method}{request_path}{body}");
         tracing::trace!("Signing message: {message}");
-        let signature = hmac::sign(&self.hmac_key, message.as_bytes());
-        BASE64_STANDARD.encode(signature)
+
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        BASE64_STANDARD.encode(tag.as_ref())
     }
 
+    /// Signs a WebSocket authentication message.
+    ///
+    /// # Panics
+    ///
+    /// Panics if signature generation fails due to key or cryptographic errors.
     pub fn sign_ws(&self, timestamp: &str) -> String {
         let message = format!("{timestamp}{}CBINTLMD{}", self.api_key, self.api_passphrase);
         tracing::trace!("Signing message: {message}");
-        let signature = hmac::sign(&self.hmac_key, message.as_bytes());
-        BASE64_STANDARD.encode(signature)
+
+        let key = hmac::Key::new(hmac::HMAC_SHA256, &self.api_secret);
+        let tag = hmac::sign(&key, message.as_bytes());
+        BASE64_STANDARD.encode(tag.as_ref())
     }
 }
 

@@ -20,7 +20,7 @@ pub mod base;
 pub mod cash;
 pub mod margin;
 
-#[cfg(feature = "stubs")]
+#[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
 use std::collections::HashMap;

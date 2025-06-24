@@ -13,6 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Base traits and common types shared by all account implementations.
+//!
+//! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
+//! in this file.
+
 use std::collections::HashMap;
 
 use nautilus_core::{UnixNanos, datetime::secs_to_nanos};
@@ -342,11 +347,10 @@ impl BaseAccount {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "stubs"))]
 mod tests {
     use super::*;
 
-    #[cfg(feature = "stubs")]
     #[test]
     fn test_base_purge_account_events_retains_latest_when_all_purged() {
         use crate::{

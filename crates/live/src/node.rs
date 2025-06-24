@@ -84,9 +84,9 @@ impl LiveNode {
             }
         }
 
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        let runner = AsyncRunner::new();
+        let clock = Rc::new(RefCell::new(LiveClock::default()));
         let kernel = NautilusKernel::new(name, config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
 
         log::info!("LiveNode built successfully with kernel config");
 
@@ -158,9 +158,7 @@ impl LiveNode {
                 match result {
                     Ok(()) => {
                         log::info!("Received SIGINT, shutting down");
-                        if let Err(e) = self.runner.get_signal_sender().send(()) {
-                            log::error!("Failed to send shutdown signal: {e}");
-                        }
+                        self.runner.stop();
                         // Give the AsyncRunner a moment to process the shutdown signal
                         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     }
@@ -412,9 +410,9 @@ impl LiveNodeBuilder {
             self.data_client_factories.len()
         );
 
-        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        let runner = AsyncRunner::new();
+        let clock = Rc::new(RefCell::new(LiveClock::default()));
         let kernel = NautilusKernel::new("LiveNode".to_string(), self.config.clone())?;
-        let runner = AsyncRunner::new(clock.clone());
 
         // Create and register data clients
         for (name, factory) in self.data_client_factories {

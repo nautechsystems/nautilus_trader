@@ -117,7 +117,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The Polymarket API only returns active orders and trades.
         This feature is experimental and is not currently recommended (leave set to False).
     log_raw_ws_messages : bool, default False
-        If raw websocket messages should be logged with debug level.
+        If raw websocket messages should be logged with INFO level.
         Note: there will be a performance penalty parsing the JSON without an efficient msgspec decoder.
 
     """

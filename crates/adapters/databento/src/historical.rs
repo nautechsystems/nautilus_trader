@@ -25,7 +25,7 @@ use std::{
 
 use ahash::AHashMap;
 use databento::{
-    dbn::{self},
+    dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
 };
 use indexmap::IndexMap;

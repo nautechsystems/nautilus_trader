@@ -109,6 +109,7 @@ class TestLiveDataEngine:
         )
 
         subscribe = SubscribeData(
+            instrument_id=None,
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),
@@ -257,6 +258,7 @@ class TestLiveDataEngine:
         self.engine.start()
 
         subscribe = SubscribeData(
+            instrument_id=None,
             client_id=None,
             venue=BINANCE,
             data_type=DataType(QuoteTick),

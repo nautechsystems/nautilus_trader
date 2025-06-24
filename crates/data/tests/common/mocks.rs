@@ -22,6 +22,12 @@
 
 use std::{cell::RefCell, rc::Rc};
 
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{
+    DefiSubscribeCommand, DefiUnsubscribeCommand, SubscribeBlocks, SubscribePool,
+    SubscribePoolLiquidityUpdates, SubscribePoolSwaps, UnsubscribeBlocks, UnsubscribePool,
+    UnsubscribePoolLiquidityUpdates, UnsubscribePoolSwaps,
+};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -97,27 +103,27 @@ impl DataClient for MockDataClient {
         self.venue
     }
 
-    fn start(&self) -> anyhow::Result<()> {
+    fn start(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn stop(&self) -> anyhow::Result<()> {
+    fn stop(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn reset(&self) -> anyhow::Result<()> {
+    fn reset(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn dispose(&self) -> anyhow::Result<()> {
+    fn dispose(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn connect(&self) -> anyhow::Result<()> {
+    async fn connect(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -260,6 +266,52 @@ impl DataClient for MockDataClient {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    fn subscribe_blocks(&mut self, cmd: &SubscribeBlocks) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::Blocks(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool(&mut self, cmd: &SubscribePool) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::Pool(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_swaps(&mut self, cmd: &SubscribePoolSwaps) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiSubscribe(DefiSubscribeCommand::PoolSwaps(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn subscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: &SubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiSubscribe(
+                DefiSubscribeCommand::PoolLiquidityUpdates(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
@@ -389,6 +441,50 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut().push(DataCommand::Unsubscribe(
                 UnsubscribeCommand::InstrumentClose(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::Blocks(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::DefiUnsubscribe(DefiUnsubscribeCommand::Pool(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolSwaps(cmd.clone()),
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn unsubscribe_pool_liquidity_updates(
+        &mut self,
+        cmd: &UnsubscribePoolLiquidityUpdates,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::DefiUnsubscribe(
+                DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd.clone()),
             ));
         }
         Ok(())

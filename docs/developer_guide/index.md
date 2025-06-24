@@ -36,4 +36,5 @@ types and how these map to their corresponding `PyObject` types.
 - [Docs](docs.md)
 - [Testing](testing.md)
 - [Adapters](adapters.md)
+- [Benchmarking](benchmarking.md)
 - [Packaged Data](packaged_data.md)

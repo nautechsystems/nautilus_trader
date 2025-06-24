@@ -13,14 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use alloy::primitives::U256;
 use nautilus_model::defi::{
-    amm::Pool,
-    block::Block,
-    chain::{Chain, SharedChain},
-    dex::Dex,
-    liquidity::PoolLiquidityUpdate,
-    swap::Swap,
-    token::Token,
+    Block, Chain, Dex, Pool, PoolLiquidityUpdate, PoolSwap, SharedChain, Token,
 };
 use sqlx::{PgPool, postgres::PgConnectOptions};
 
@@ -66,8 +61,12 @@ impl BlockchainCacheDatabase {
         sqlx::query(
             r"
             INSERT INTO block (
-                chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp,
+                base_fee_per_gas, blob_gas_used, excess_blob_gas,
+                l1_gas_price, l1_gas_used, l1_fee_scalar
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+            )
             ON CONFLICT (chain_id, number)
             DO UPDATE
             SET
@@ -76,7 +75,13 @@ impl BlockchainCacheDatabase {
                 miner = $5,
                 gas_limit = $6,
                 gas_used = $7,
-                timestamp = $8
+                timestamp = $8,
+                base_fee_per_gas = $9,
+                blob_gas_used = $10,
+                excess_blob_gas = $11,
+                l1_gas_price = $12,
+                l1_gas_used = $13,
+                l1_fee_scalar = $14
         ",
         )
         .bind(chain_id as i32)
@@ -87,6 +92,12 @@ impl BlockchainCacheDatabase {
         .bind(block.gas_limit as i64)
         .bind(block.gas_used as i64)
         .bind(block.timestamp.to_string())
+        .bind(block.base_fee_per_gas.as_ref().map(U256::to_string))
+        .bind(block.blob_gas_used.as_ref().map(U256::to_string))
+        .bind(block.excess_blob_gas.as_ref().map(U256::to_string))
+        .bind(block.l1_gas_price.as_ref().map(U256::to_string))
+        .bind(block.l1_gas_used.map(|v| v as i64))
+        .bind(block.l1_fee_scalar.map(|v| v as i64))
         .execute(&self.pool)
         .await
         .map(|_| ())
@@ -203,13 +214,13 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into token table: {e}"))
     }
 
-    /// Persists a token swap transaction event to the pool_swap table.
-    pub async fn add_swap(&self, chain_id: u32, swap: &Swap) -> anyhow::Result<()> {
+    /// Persists a token swap transaction event to the `pool_swap` table.
+    pub async fn add_swap(&self, chain_id: u32, swap: &PoolSwap) -> anyhow::Result<()> {
         sqlx::query(
             r"
             INSERT INTO pool_swap (
                 chain_id, pool_address, block, transaction_hash, transaction_index,
-                log_index, sender, side, quantity, price
+                log_index, sender, side, size, price
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (chain_id, transaction_hash, log_index)
             DO NOTHING
@@ -223,7 +234,7 @@ impl BlockchainCacheDatabase {
         .bind(swap.log_index as i32)
         .bind(swap.sender.to_string())
         .bind(swap.side.to_string())
-        .bind(swap.quantity.to_string())
+        .bind(swap.size.to_string())
         .bind(swap.price.to_string())
         .execute(&self.pool)
         .await
@@ -231,7 +242,7 @@ impl BlockchainCacheDatabase {
         .map_err(|e| anyhow::anyhow!("Failed to insert into pool_swap table: {e}"))
     }
 
-    /// Persists a liquidity position change (mint/burn) event to the pool_liquidity table.
+    /// Persists a liquidity position change (mint/burn) event to the `pool_liquidity` table.
     pub async fn add_pool_liquidity_update(
         &self,
         chain_id: u32,

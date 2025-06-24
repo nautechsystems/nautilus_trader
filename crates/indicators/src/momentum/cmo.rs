@@ -59,13 +59,9 @@ impl Indicator for ChandeMomentumOscillator {
         self.initialized
     }
 
-    fn handle_quote(&mut self, _quote: &QuoteTick) {
-        // Function body intentionally left blank.
-    }
+    fn handle_quote(&mut self, _quote: &QuoteTick) {}
 
-    fn handle_trade(&mut self, _trade: &TradeTick) {
-        // Function body intentionally left blank.
-    }
+    fn handle_trade(&mut self, _trade: &TradeTick) {}
 
     fn handle_bar(&mut self, bar: &Bar) {
         self.update_raw((&bar.close).into());
@@ -77,18 +73,26 @@ impl Indicator for ChandeMomentumOscillator {
         self.has_inputs = false;
         self.initialized = false;
         self.previous_close = 0.0;
+        self.average_gain.reset();
+        self.average_loss.reset();
     }
 }
 
 impl ChandeMomentumOscillator {
     /// Creates a new [`ChandeMomentumOscillator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(period > 0, "ChandeMomentumOscillator: period must be > 0");
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Wilder);
         Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Wilder),
-            average_gain: MovingAverageFactory::create(MovingAverageType::Wilder, period),
-            average_loss: MovingAverageFactory::create(MovingAverageType::Wilder, period),
+            ma_type,
+            average_gain: MovingAverageFactory::create(ma_type, period),
+            average_loss: MovingAverageFactory::create(ma_type, period),
             previous_close: 0.0,
             value: 0.0,
             count: 0,
@@ -98,6 +102,7 @@ impl ChandeMomentumOscillator {
     }
 
     pub fn update_raw(&mut self, close: f64) {
+        self.count += 1;
         if !self.has_inputs {
             self.previous_close = close;
             self.has_inputs = true;
@@ -139,7 +144,10 @@ mod tests {
     use nautilus_model::data::{Bar, QuoteTick};
     use rstest::rstest;
 
-    use crate::{indicator::Indicator, momentum::cmo::ChandeMomentumOscillator, stubs::*};
+    use crate::{
+        average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandeMomentumOscillator,
+        stubs::*,
+    };
 
     #[rstest]
     fn test_cmo_initialized(cmo_10: ChandeMomentumOscillator) {
@@ -210,7 +218,80 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut cmo_10: ChandeMomentumOscillator, bar_ethusdt_binance_minute_bid: Bar) {
         cmo_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(cmo_10.count, 0);
+        assert_eq!(cmo_10.count, 1);
         assert_eq!(cmo_10.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_ma_type_affects_value() {
+        let mut cmo_sma = ChandeMomentumOscillator::new(3, Some(MovingAverageType::Simple));
+        let mut cmo_wilder = ChandeMomentumOscillator::new(3, Some(MovingAverageType::Wilder));
+        let prices = [1.0, 2.0, 3.0, 2.5, 3.5];
+        for price in prices {
+            cmo_sma.update_raw(price);
+            cmo_wilder.update_raw(price);
+        }
+        assert_ne!(cmo_sma.value, cmo_wilder.value);
+    }
+
+    #[rstest]
+    fn test_count_increments(mut cmo_10: ChandeMomentumOscillator) {
+        for i in 0..5 {
+            cmo_10.update_raw(f64::from(i));
+        }
+        assert_eq!(cmo_10.count, 5);
+    }
+
+    #[rstest]
+    fn test_reset_resets_inner_mas() {
+        let mut cmo = ChandeMomentumOscillator::new(3, None);
+        for price in [1.0, 2.0, 3.0] {
+            cmo.update_raw(price);
+        }
+        assert!(cmo.average_gain.initialized());
+        assert!(cmo.average_loss.initialized());
+        assert_ne!(cmo.average_gain.value(), 0.0);
+        cmo.reset();
+        assert!(!cmo.average_gain.initialized());
+        assert!(!cmo.average_loss.initialized());
+        assert_eq!(cmo.average_gain.value(), 0.0);
+        assert_eq!(cmo.average_loss.value(), 0.0);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_invalid_period_panics() {
+        let _ = ChandeMomentumOscillator::new(0, None);
+    }
+
+    #[rstest]
+    fn test_ma_type_propagation() {
+        let cmo = ChandeMomentumOscillator::new(5, Some(MovingAverageType::Simple));
+        assert_eq!(cmo.ma_type, MovingAverageType::Simple);
+    }
+
+    #[rstest]
+    fn test_zero_divisor_returns_zero() {
+        let mut cmo = ChandeMomentumOscillator::new(3, None);
+        for _ in 0..5 {
+            cmo.update_raw(100.0);
+        }
+        assert!(cmo.initialized);
+        assert_eq!(cmo.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_random_walk_values_within_bounds() {
+        let prices = [
+            100.0, 100.5, 99.8, 100.3, 101.0, 100.7, 101.5, 101.2, 100.6, 101.1, 100.9, 101.4,
+            100.8, 101.2, 100.6, 100.9, 101.3, 101.0, 100.5, 101.1, 100.7, 101.4, 100.9, 100.8,
+            101.2, 100.6, 100.9, 101.3, 101.0, 100.5,
+        ];
+        let mut cmo = ChandeMomentumOscillator::new(10, None);
+        for price in prices {
+            cmo.update_raw(price);
+        }
+        assert!(cmo.initialized);
+        assert!(cmo.value <= 100.0 && cmo.value >= -100.0);
     }
 }

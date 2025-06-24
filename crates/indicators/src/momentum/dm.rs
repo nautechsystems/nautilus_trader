@@ -78,23 +78,24 @@ impl Indicator for DirectionalMovement {
 
 impl DirectionalMovement {
     /// Creates a new [`DirectionalMovement`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is not positive (> 0).
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        assert!(period > 0, "DirectionalMovement: period must be > 0");
+        let ma_type = ma_type.unwrap_or(MovingAverageType::Exponential);
+
         Self {
             period,
-            ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
+            ma_type,
             pos: 0.0,
             neg: 0.0,
             previous_high: 0.0,
             previous_low: 0.0,
-            pos_ma: MovingAverageFactory::create(
-                ma_type.unwrap_or(MovingAverageType::Simple),
-                period,
-            ),
-            neg_ma: MovingAverageFactory::create(
-                ma_type.unwrap_or(MovingAverageType::Simple),
-                period,
-            ),
+            pos_ma: MovingAverageFactory::create(ma_type, period),
+            neg_ma: MovingAverageFactory::create(ma_type, period),
             has_inputs: false,
             initialized: false,
         }
@@ -119,7 +120,6 @@ impl DirectionalMovement {
         self.previous_high = high;
         self.previous_low = low;
 
-        // Initialization logic
         if !self.initialized {
             self.has_inputs = true;
             if self.neg_ma.initialized() {
@@ -190,5 +190,30 @@ mod tests {
         assert_eq!(dm_10.neg, 0.0);
         assert_eq!(dm_10.previous_high, 0.0);
         assert_eq!(dm_10.previous_low, 0.0);
+    }
+
+    #[rstest]
+    fn test_has_inputs_returns_true_after_first_update(mut dm_10: DirectionalMovement) {
+        assert!(!dm_10.has_inputs());
+        dm_10.update_raw(1.0, 0.9);
+        assert!(dm_10.has_inputs());
+    }
+
+    #[rstest]
+    fn test_value_with_all_lower_inputs_returns_expected_value(mut dm_10: DirectionalMovement) {
+        let high_values = [
+            15.0, 14.0, 13.0, 12.0, 11.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0,
+        ];
+        let low_values = [
+            14.9, 13.9, 12.9, 11.9, 10.9, 9.9, 8.9, 7.9, 6.9, 5.9, 4.9, 3.9, 2.9, 1.9, 0.9,
+        ];
+
+        for i in 0..15 {
+            dm_10.update_raw(high_values[i], low_values[i]);
+        }
+
+        assert!(dm_10.initialized());
+        assert_eq!(dm_10.pos, 0.0);
+        assert_eq!(dm_10.neg, 1.0);
     }
 }

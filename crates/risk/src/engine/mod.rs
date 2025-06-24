@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic `ExecutionEngine` for all environments.
+//! Risk management engine implementation.
 
 pub mod config;
 
@@ -48,6 +48,12 @@ use ustr::Ustr;
 type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
+/// Central risk management engine that validates and controls trading operations.
+///
+/// The `RiskEngine` provides comprehensive pre-trade risk checks including order validation,
+/// balance verification, position sizing limits, and trading state management. It acts as
+/// a gateway between strategy orders and execution, ensuring all trades comply with
+/// defined risk parameters and regulatory constraints.
 #[allow(dead_code)]
 pub struct RiskEngine {
     clock: Rc<RefCell<dyn Clock>>,
@@ -67,6 +73,7 @@ impl Debug for RiskEngine {
 }
 
 impl RiskEngine {
+    /// Creates a new [`RiskEngine`] instance.
     pub fn new(
         config: RiskEngineConfig,
         portfolio: Portfolio,
@@ -98,7 +105,7 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             Box::new(move |submit_order: SubmitOrder| {
-                msgbus::send(
+                msgbus::send_any(
                     "ExecEngine.execute".into(),
                     &TradingCommand::SubmitOrder(submit_order),
                 );
@@ -120,7 +127,7 @@ impl RiskEngine {
 
                 let denied = Self::create_order_denied(&submit_order, reason, &clock);
 
-                msgbus::send("ExecEngine.process".into(), &denied);
+                msgbus::send_any("ExecEngine.process".into(), &denied);
             }) as Box<dyn Fn(SubmitOrder)>
         };
 
@@ -142,7 +149,7 @@ impl RiskEngine {
     ) -> Throttler<ModifyOrder, ModifyOrderFn> {
         let success_handler = {
             Box::new(move |order: ModifyOrder| {
-                msgbus::send(
+                msgbus::send_any(
                     "ExecEngine.execute".into(),
                     &TradingCommand::ModifyOrder(order),
                 );
@@ -167,7 +174,7 @@ impl RiskEngine {
 
                 let rejected = Self::create_modify_rejected(&order, reason, &clock);
 
-                msgbus::send("ExecEngine.process".into(), &rejected);
+                msgbus::send_any("ExecEngine.process".into(), &rejected);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -248,16 +255,19 @@ impl RiskEngine {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    /// Executes a trading command through the risk management pipeline.
     pub fn execute(&mut self, command: TradingCommand) {
         // This will extend to other commands such as `RiskCommand`
         self.handle_command(command);
     }
 
+    /// Processes an order event for risk monitoring and state updates.
     pub fn process(&mut self, event: OrderEventAny) {
         // This will extend to other events such as `RiskEvent`
         self.handle_event(event);
     }
 
+    /// Sets the trading state for risk control enforcement.
     pub fn set_trading_state(&mut self, state: TradingState) {
         if state == self.trading_state {
             log::warn!("No change to trading state: already set to {state:?}");
@@ -276,6 +286,7 @@ impl RiskEngine {
         log::info!("Trading state set to {state:?}");
     }
 
+    /// Sets the maximum notional value per order for the specified instrument.
     pub fn set_max_notional_per_order(&mut self, instrument_id: InstrumentId, new_value: Decimal) {
         self.max_notional_per_order.insert(instrument_id, new_value);
 
@@ -944,7 +955,7 @@ impl RiskEngine {
             self.clock.borrow().timestamp_ns(),
         ));
 
-        msgbus::send("ExecEngine.process".into(), &denied);
+        msgbus::send_any("ExecEngine.process".into(), &denied);
     }
 
     fn deny_order_list(&self, order_list: OrderList, reason: &str) {
@@ -971,7 +982,7 @@ impl RiskEngine {
             order.account_id(),
         ));
 
-        msgbus::send("ExecEngine.process".into(), &denied);
+        msgbus::send_any("ExecEngine.process".into(), &denied);
     }
 
     // -- EGRESS ----------------------------------------------------------------------------------
@@ -1048,7 +1059,7 @@ impl RiskEngine {
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
-        msgbus::send("ExecEngine.execute".into(), &command);
+        msgbus::send_any("ExecEngine.execute".into(), &command);
     }
 
     fn handle_event(&mut self, event: OrderEventAny) {

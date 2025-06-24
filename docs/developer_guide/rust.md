@@ -34,6 +34,29 @@ All Rust files must include the standardized copyright header:
 Import formatting is automatically handled by rustfmt when running `make format`.
 The tool organizes imports into groups (standard library, external crates, local imports) and sorts them alphabetically within each group.
 
+#### Function spacing
+
+- Leave **one blank line between functions** (including tests) – this improves readability and
+mirrors the default behavior of `rustfmt`.
+- Leave **one blank line above every doc comment** (`///` or `//!`) so that the comment is clearly
+  detached from the previous code block.
+
+#### PyO3 naming convention
+
+When exposing Rust functions to Python **via PyO3**:
+
+1. The Rust symbol **must** be prefixed with `py_*` to make its purpose explicit inside the Rust
+   codebase.
+2. Use the `#[pyo3(name = "…")]` attribute to publish the *Python* name **without** the `py_`
+   prefix so the Python API remains clean.
+
+```rust
+#[pyo3(name = "do_something")]
+pub fn py_do_something() -> PyResult<()> {
+    // …
+}
+```
+
 ### Error Handling
 
 Use structured error handling patterns consistently:
@@ -413,7 +436,7 @@ The definition for what the Rust language designers consider undefined behavior 
 
 To maintain correctness, any use of `unsafe` Rust must follow our policy:
 
-- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`
+- If a function is `unsafe` to call, there *must* be a `Safety` section in the documentation explaining why the function is `unsafe`.
 and covering the invariants which the function expects the callers to uphold, and how to meet their obligations in that contract.
 - Document why each function is `unsafe` in its doc comment's Safety section, and cover all `unsafe` blocks with unit tests.
 - Always include a `SAFETY:` comment explaining why the unsafe operation is valid:
@@ -428,13 +451,13 @@ unsafe impl Send for MessageBus {}
 
 The project uses several tools for code quality:
 
-- **rustfmt**: Automatic code formatting (see `rustfmt.toml`)
-- **clippy**: Linting and best practices (see `clippy.toml`)
-- **cbindgen**: C header generation for FFI
+- **rustfmt**: Automatic code formatting (see `rustfmt.toml`).
+- **clippy**: Linting and best practices (see `clippy.toml`).
+- **cbindgen**: C header generation for FFI.
 
 ## Resources
 
-- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) - The Dark Arts of Unsafe Rust
-- [The Rust Reference - Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html)
-- [Safe Bindings in Rust - Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust)
-- [Google - Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/)
+- [The Rustonomicon](https://doc.rust-lang.org/nomicon/) – The Dark Arts of Unsafe Rust.
+- [The Rust Reference – Unsafety](https://doc.rust-lang.org/stable/reference/unsafety.html).
+- [Safe Bindings in Rust – Russell Johnston](https://www.abubalay.com/blog/2020/08/22/safe-bindings-in-rust).
+- [Google – Rust and C interoperability](https://www.chromium.org/Home/chromium-security/memory-safety/rust-and-c-interoperability/).

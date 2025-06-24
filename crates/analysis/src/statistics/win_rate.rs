@@ -15,6 +15,12 @@
 
 use crate::statistic::PortfolioStatistic;
 
+/// Calculates the win rate of a trading strategy based on realized PnLs.
+///
+/// Win rate is the percentage of profitable trades out of total trades:
+/// Number of Winning Trades / Total Number of Trades
+///
+/// Returns a value between 0.0 and 1.0, where 1.0 represents 100% winning trades.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

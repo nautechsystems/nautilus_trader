@@ -84,12 +84,12 @@ impl OrderEmulatorAdapter {
     }
 
     #[must_use]
-    pub fn get_emulator(&self) -> Ref<OrderEmulator> {
+    pub fn get_emulator(&self) -> Ref<'_, OrderEmulator> {
         self.emulator.borrow()
     }
 
     #[must_use]
-    pub fn get_emulator_mut(&self) -> RefMut<OrderEmulator> {
+    pub fn get_emulator_mut(&self) -> RefMut<'_, OrderEmulator> {
         self.emulator.borrow_mut()
     }
 }

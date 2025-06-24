@@ -104,12 +104,12 @@ impl OrderEngineAdapter {
     }
 
     #[must_use]
-    pub fn get_engine(&self) -> Ref<OrderMatchingEngine> {
+    pub fn get_engine(&self) -> Ref<'_, OrderMatchingEngine> {
         self.engine.borrow()
     }
 
     #[must_use]
-    pub fn get_engine_mut(&self) -> RefMut<OrderMatchingEngine> {
+    pub fn get_engine_mut(&self) -> RefMut<'_, OrderMatchingEngine> {
         self.engine.borrow_mut()
     }
 }

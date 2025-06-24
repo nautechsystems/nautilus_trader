@@ -101,6 +101,7 @@ cdef class RelativeStrengthIndex(Indicator):
 
         if self._average_loss.value == 0:
             self.value = self._rsi_max
+            self._last_value = value
             return
 
         cdef double rs = self._average_gain.value / self._average_loss.value

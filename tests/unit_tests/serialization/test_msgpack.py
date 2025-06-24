@@ -31,8 +31,10 @@ from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -63,13 +65,19 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.instruments.commodity import Commodity
+from nautilus_trader.model.instruments.crypto_option import CryptoOption
+from nautilus_trader.model.instruments.index import IndexInstrument
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -139,6 +147,86 @@ class TestMsgSpecSerializer:
 
         # Assert
         assert deserialized == BTCUSDT_220325
+        print(b64encode(serialized))
+        print(deserialized)
+
+    def test_serialize_and_deserialize_index_instrument(self):
+        # Arrange
+        instrument = IndexInstrument(
+            instrument_id=InstrumentId.from_str("SPX.CBOE"),
+            raw_symbol=Symbol("SPX"),
+            currency=Currency.from_str("USD"),
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=1640995200000000000,
+            ts_init=1640995200000000000,
+            info={"description": "S&P 500 Index"},
+        )
+
+        # Act
+        serialized = self.serializer.serialize(instrument)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == instrument
+        print(b64encode(serialized))
+        print(deserialized)
+
+    def test_serialize_and_deserialize_commodity_instrument(self):
+        # Arrange
+        instrument = Commodity(
+            instrument_id=InstrumentId.from_str("CL.NYMEX"),
+            raw_symbol=Symbol("CL"),
+            asset_class=AssetClass.COMMODITY,
+            quote_currency=Currency.from_str("USD"),
+            price_precision=2,
+            size_precision=0,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("1"),
+            ts_event=1640995200000000000,
+            ts_init=1640995200000000000,
+            info={"description": "Crude Oil"},
+        )
+
+        # Act
+        serialized = self.serializer.serialize(instrument)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == instrument
+        print(b64encode(serialized))
+        print(deserialized)
+
+    def test_serialize_and_deserialize_crypto_option_instrument(self):
+        # Arrange
+        instrument = CryptoOption(
+            instrument_id=InstrumentId.from_str("BTC-25DEC21-50000-C.DERIBIT"),
+            raw_symbol=Symbol("BTC-25DEC21-50000-C"),
+            underlying=Currency.from_str("BTC"),
+            quote_currency=Currency.from_str("USD"),
+            settlement_currency=Currency.from_str("BTC"),
+            is_inverse=False,
+            option_kind=OptionKind.CALL,
+            strike_price=Price.from_str("50000.0"),
+            activation_ns=1640995200000000000,
+            expiration_ns=1640995200000000000,
+            price_precision=2,
+            size_precision=8,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.00000001"),
+            ts_event=1640995200000000000,
+            ts_init=1640995200000000000,
+            info={"description": "Bitcoin Call Option"},
+        )
+
+        # Act
+        serialized = self.serializer.serialize(instrument)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == instrument
         print(b64encode(serialized))
         print(deserialized)
 

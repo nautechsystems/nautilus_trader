@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Domain model representing a *Bet* used by betting-market integrations (e.g. prediction markets).
+
 use std::fmt::Display;
 
 use rust_decimal::Decimal;

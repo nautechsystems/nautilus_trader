@@ -52,8 +52,10 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 nautilus-serialization = { workspace = true, features = ["python"] }
 
 anyhow = { workspace = true }
+arrow = { workspace = true }
 binary-heap-plus = { workspace = true }
 compare = { workspace = true }
+chrono = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 heck = { workspace = true }
@@ -65,7 +67,8 @@ pyo3 = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-walkdir = { workspace = true }
+unbounded-interval-tree = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 nautilus-testkit = { workspace = true }

@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common components and infrastructure for [NautilusTrader](http://nautilustrader.io).
+//! Common componentry for [NautilusTrader](http://nautilustrader.io).
 //!
-//! The *common* crate provides shared infrastructure components and utilities that form
-//! the system foundation for NautilusTrader applications. This includes the actor system,
-//! message bus, caching layer, and other essential runtime services.
+//! The *common* crate provides shared components and utilities that form the system foundation for
+//! NautilusTrader applications. This includes the actor system, message bus, caching layer, and other
+//! essential services.
 //!
 //! # Platform
 //!
@@ -25,6 +25,9 @@
 //! algorithmic trading platform, providing quantitative traders with the ability to backtest
 //! portfolios of automated trading strategies on historical data with an event-driven engine,
 //! and also deploy those same strategies live, with no code changes.
+//!
+//! NautilusTrader's design, architecture, and implementation philosophy prioritizes software correctness and safety at the
+//! highest level, with the aim of supporting mission-critical, trading system backtesting and live deployment workloads.
 //!
 //! # Feature flags
 //!

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Python bindings from [PyO3](https://pyo3.rs).
+
 pub mod sessions;
 
 use pyo3::{prelude::*, pymodule};

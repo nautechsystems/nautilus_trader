@@ -41,7 +41,7 @@ pub struct ShutdownSystem {
     pub reason: Option<String>,
     /// The command ID.
     pub command_id: UUID4,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 

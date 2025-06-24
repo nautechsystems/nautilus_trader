@@ -41,15 +41,10 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
-# World Series Champion 2025
-# https://polymarket.com/event/world-series-champion-2025/will-the-new-york-mets-win-the-2025-world-series
-# condition_id = "0xf4472853ab134236dbfe4cd5f83fcbc60f62767b2a474a1c0b0ed3190d813084"
-# token_id = "25143473975747606484038304917293813549571262015788668262095587119656373441253"
-
-# will-the-new-york-knicks-win-the-2025-nba-finals
+# will-the-indiana-pacers-win-the-2025-nba-finals
 # https://polymarket.com/event/will-the-new-york-knicks-win-the-2025-nba-finals
-condition_id = "0xb3af306795f672a0bcaf4bd529ffa8343e88949bc74b098ccd2a0238ce676cd3"
-token_id = "3642309182816755995211647069086230404892359515361325090555875625429003317932"
+condition_id = "0xf2a89afeddff5315e37211b0b0e4e93ed167fba2694cd35c252672d0aca73711"
+token_id = "5044658213116494392261893544497225363846217319105609804585534197935770239191"
 
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id),

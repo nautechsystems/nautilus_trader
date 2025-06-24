@@ -13,75 +13,47 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! DeFi (Decentralized Finance) data models and types.
+//! DeFi (Decentralized Finance) domain model.
 //!
-//! This module provides core data structures for working with decentralized finance protocols,
-//! including blockchain networks, tokens, liquidity pools, swaps, and other DeFi primitives.
-
-use nautilus_core::UnixNanos;
-use serde::{Deserialize, Serialize};
-
-use crate::{data::GetTsInit, identifiers::InstrumentId};
+//! This module gathers all constructs required to model on-chain markets and decentralised
+//! exchange (DEX) activity.
+//!
+//! • `chain`    – Blockchain networks supported by Nautilus (Ethereum, Arbitrum, …).
+//! • `token`    – ERC-20 and other fungible token metadata.
+//! • `dex`      – DEX protocol definitions (Uniswap V3, PancakeSwap, …).
+//! • `data`     – Domain events & state snapshots that flow through the system (Block, PoolSwap).
+//! • `types`    – Numeric value types (Money, Quantity, Price) shared across the DeFi layer.
+//! • `rpc`      – Lightweight JSON-RPC helpers used by on-chain adapters.
 
 pub mod amm;
-pub mod block;
 pub mod chain;
+pub mod data;
 pub mod dex;
 pub mod hex;
-pub mod liquidity;
 pub mod rpc;
-pub mod swap;
 pub mod token;
-pub mod transaction;
+pub mod types;
 
-/// Represents DeFi-specific data events in a decentralized exchange ecosystem.
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum DefiData {
-    /// A token swap transaction on a decentralized exchange.
-    Swap(swap::Swap),
-    /// A liquidity update event (mint/burn) in a DEX pool.
-    PoolLiquidityUpdate(liquidity::PoolLiquidityUpdate),
-    /// A DEX liquidity pool definition or update.
-    Pool(amm::Pool),
-}
+// Re-exports
+pub use amm::{Pool, SharedPool};
+pub use chain::{Blockchain, Chain, SharedChain};
+pub use data::{
+    DefiData,
+    block::Block,
+    liquidity::{PoolLiquidityUpdate, PoolLiquidityUpdateType},
+    swap::PoolSwap,
+    transaction::Transaction,
+};
+pub use dex::{AmmType, Dex, SharedDex};
+pub use token::{SharedToken, Token};
 
-impl DefiData {
-    /// Returns the instrument ID associated with this DeFi data.
-    #[must_use]
-    pub fn instrument_id(&self) -> InstrumentId {
-        match self {
-            Self::Swap(swap) => swap.instrument_id(),
-            Self::PoolLiquidityUpdate(update) => update.instrument_id(),
-            Self::Pool(pool) => pool.instrument_id(),
-        }
-    }
-}
-
-impl GetTsInit for DefiData {
-    fn ts_init(&self) -> UnixNanos {
-        match self {
-            Self::Swap(swap) => swap.ts_init,
-            Self::PoolLiquidityUpdate(update) => update.ts_init,
-            Self::Pool(pool) => pool.ts_init,
-        }
-    }
-}
-
-impl From<swap::Swap> for DefiData {
-    fn from(value: swap::Swap) -> Self {
-        Self::Swap(value)
-    }
-}
-
-impl From<liquidity::PoolLiquidityUpdate> for DefiData {
-    fn from(value: liquidity::PoolLiquidityUpdate) -> Self {
-        Self::PoolLiquidityUpdate(value)
-    }
-}
-
-impl From<amm::Pool> for DefiData {
-    fn from(value: amm::Pool) -> Self {
-        Self::Pool(value)
-    }
-}
+/// Number of decimal places used by the native Ether denomination.
+///
+/// On the EVM all ERC-20 balances are expressed in **wei** – the
+/// smallest indivisible unit of Ether, named after cryptographer
+/// Wei Dai. One ether equals `10^18` wei, so using 18 decimal
+/// places is sufficient to represent any value expressible on-chain.
+///
+/// Tokens that choose a smaller precision (e.g. USDC’s 6, WBTC’s 8)
+/// still fall below this upper bound.
+pub static WEI_PRECISION: u8 = 18;

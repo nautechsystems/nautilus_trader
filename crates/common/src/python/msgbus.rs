@@ -21,7 +21,7 @@ use pyo3::{PyObject, PyResult, pyfunction, pymethods};
 use super::handler::PythonMessageHandler;
 use crate::msgbus::{
     BusMessage, MStr, Topic, core::Endpoint, deregister, get_message_bus,
-    handler::ShareableMessageHandler, publish, register, send, subscribe, unsubscribe,
+    handler::ShareableMessageHandler, publish, register, send_any, subscribe, unsubscribe,
 };
 
 #[pymethods]
@@ -56,7 +56,7 @@ impl BusMessage {
 #[pyo3(name = "msgbus_send")]
 pub fn py_msgbus_send(endpoint: &str, message: PyObject) -> PyResult<()> {
     let endpoint = MStr::<Endpoint>::endpoint(endpoint).map_err(to_pyvalue_err)?;
-    send(endpoint, &message);
+    send_any(endpoint, &message);
     Ok(())
 }
 

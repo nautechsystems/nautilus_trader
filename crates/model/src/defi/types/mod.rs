@@ -13,42 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+//! DeFi (Decentralized Finance) value type extensions.
 
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumIter, EnumString, FromRepr};
-
-/// The parquet write mode.
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    FromRepr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        eq,
-        eq_int,
-        module = "nautilus_trader.core.nautilus_pyo3.serialization.enums"
-    )
-)]
-pub enum ParquetWriteMode {
-    Append = 0,
-    Prepend = 1,
-    Overwrite = 2,
-    NewFile = 3,
-}
+pub mod money;
+pub mod price;
+pub mod quantity;

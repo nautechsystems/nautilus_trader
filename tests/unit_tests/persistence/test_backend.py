@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
@@ -141,3 +142,57 @@ def test_backend_session_multiple_types() -> None:
     assert len(ticks) == 9_600
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending
+
+
+def test_backend_session_register_object_store_from_uri_local_file() -> None:
+    """
+    Test registering object store from local file URI.
+    """
+    # Arrange
+    if HIGH_PRECISION:
+        data_path = TEST_DATA_DIR / "nautilus" / "128-bit" / "trades.parquet"
+    else:
+        data_path = TEST_DATA_DIR / "nautilus" / "64-bit" / "trades.parquet"
+
+    session = DataBackendSession()
+
+    # Act - register object store from local file URI
+    file_uri = f"file://{data_path.parent}"
+    session.register_object_store_from_uri(file_uri)
+
+    # Add file using the registered object store
+    session.add_file(NautilusDataType.TradeTick, "trade_ticks", str(data_path))
+    result = session.to_query_result()
+
+    ticks = []
+    for chunk in result:
+        ticks.extend(capsule_to_list(chunk))
+
+    # Assert
+    assert len(ticks) == 100
+    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert is_ascending
+
+
+def test_backend_session_register_object_store_from_uri_invalid_uri() -> None:
+    """
+    Test registering object store from invalid URI raises appropriate error.
+    """
+    # Arrange
+    session = DataBackendSession()
+
+    # Act & Assert - invalid URI should raise an error
+    with pytest.raises(Exception):  # The specific exception type may vary
+        session.register_object_store_from_uri("invalid://not-a-real-uri")
+
+
+def test_backend_session_register_object_store_from_uri_nonexistent_path() -> None:
+    """
+    Test registering object store from non-existent path URI.
+    """
+    # Arrange
+    session = DataBackendSession()
+
+    # Act & Assert - non-existent path should raise an error
+    with pytest.raises(Exception):  # The specific exception type may vary
+        session.register_object_store_from_uri("file:///nonexistent/path")

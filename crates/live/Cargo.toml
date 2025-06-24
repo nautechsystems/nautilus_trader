@@ -44,7 +44,6 @@ python = [
   "nautilus-portfolio/python",
   "nautilus-risk/python",
 ]
-clock_v2 = ["nautilus-common/clock_v2"]
 defi = ["nautilus-common/defi"]
 
 [package.metadata.docs.rs]

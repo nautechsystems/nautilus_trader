@@ -45,7 +45,7 @@ class TestCurrency:
         with pytest.raises(ValueError):
             Currency(
                 code="AUD",
-                precision=FIXED_PRECISION + 1,
+                precision=FIXED_PRECISION + 20,
                 iso4217=36,
                 name="Australian dollar",
                 currency_type=CurrencyType.FIAT,

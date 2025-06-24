@@ -16,7 +16,6 @@
 Define the instrument info endpoint.
 """
 
-# ruff: noqa: N815
 
 from decimal import Decimal
 

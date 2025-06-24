@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! (De)serialization utilities bridging Rust ↔︎ Python types.
+
 use pyo3::{prelude::*, types::PyDict};
 use serde::{Serialize, de::DeserializeOwned};
 

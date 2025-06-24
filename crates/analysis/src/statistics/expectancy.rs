@@ -16,6 +16,11 @@
 use super::{loser_avg::AvgLoser, winner_avg::AvgWinner};
 use crate::statistic::PortfolioStatistic;
 
+/// Calculates the expectancy of a trading strategy based on realized PnLs.
+///
+/// Expectancy is defined as: (Average Win × Win Rate) - (Average Loss × Loss Rate)
+/// This metric provides insight into the expected profitability per trade and helps
+/// evaluate the overall edge of a trading strategy.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

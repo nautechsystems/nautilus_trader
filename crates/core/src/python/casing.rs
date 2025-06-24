@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! String-case conversion helpers (`CamelCase` ⇄ `snake_case`).
+
 use heck::ToSnakeCase;
 use pyo3::prelude::*;
 

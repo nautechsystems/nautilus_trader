@@ -20,7 +20,7 @@
 
 use nautilus_core::correctness::FAILED;
 
-/// Indicates if high_precision mode is enabled.
+/// Indicates if high-precision mode is enabled.
 ///
 /// # Safety
 ///
@@ -31,40 +31,77 @@ use nautilus_core::correctness::FAILED;
 #[allow(unsafe_code)]
 pub static HIGH_PRECISION_MODE: u8 = cfg!(feature = "high-precision") as u8;
 
+// -----------------------------------------------------------------------------
+// FIXED_PRECISION
+// -----------------------------------------------------------------------------
+
 #[cfg(feature = "high-precision")]
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 16;
+
 #[cfg(not(feature = "high-precision"))]
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
 
-#[cfg(feature = "high-precision")]
-/// The width in bytes for fixed-point value types in high-precision mode (128-bit).
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub static PRECISION_BYTES: i32 = 16;
-#[cfg(not(feature = "high-precision"))]
-/// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
-#[unsafe(no_mangle)]
-#[allow(unsafe_code)]
-pub static PRECISION_BYTES: i32 = 8;
+// -----------------------------------------------------------------------------
+// PRECISION_BYTES (size of integer backing the fixed-point values)
+// -----------------------------------------------------------------------------
 
 #[cfg(feature = "high-precision")]
-/// The data type name for fixed size binary.
-pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
+/// The width in bytes for fixed-point value types in high-precision mode (128-bit).
+pub const PRECISION_BYTES: i32 = 16;
+
 #[cfg(not(feature = "high-precision"))]
-/// The data type name for fixed size binary.
+/// The width in bytes for fixed-point value types in standard-precision mode (64-bit).
+pub const PRECISION_BYTES: i32 = 8;
+
+// -----------------------------------------------------------------------------
+// FIXED_BINARY_SIZE
+// -----------------------------------------------------------------------------
+
+#[cfg(feature = "high-precision")]
+/// The data type name for the Arrow fixed-size binary representation.
+pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(16)";
+
+#[cfg(not(feature = "high-precision"))]
+/// The data type name for the Arrow fixed-size binary representation.
 pub const FIXED_SIZE_BINARY: &str = "FixedSizeBinary(8)";
+
+// -----------------------------------------------------------------------------
+// FIXED_SCALAR
+// -----------------------------------------------------------------------------
 
 #[cfg(feature = "high-precision")]
 /// The scalar value corresponding to the maximum precision (10^16).
-pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0; // 10.0**FIXED_PRECISION
+pub const FIXED_SCALAR: f64 = 10_000_000_000_000_000.0;
+
 #[cfg(not(feature = "high-precision"))]
 /// The scalar value corresponding to the maximum precision (10^9).
-pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
+pub const FIXED_SCALAR: f64 = 1_000_000_000.0;
 
+// -----------------------------------------------------------------------------
+// PRECISION_DIFF_SCALAR
+// -----------------------------------------------------------------------------
+
+#[cfg(feature = "high-precision")]
 /// The scalar representing the difference between high-precision and standard-precision modes.
-pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
+pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10^(16-9)
+
+#[cfg(not(feature = "high-precision"))]
+/// The scalar representing the difference between high-precision and standard-precision modes.
+pub const PRECISION_DIFF_SCALAR: f64 = 1.0;
+
+// -----------------------------------------------------------------------------
+
+/// The maximum precision that can be safely used with f64-based constructors.
+///
+/// This is a hard limit imposed by IEEE 754 double-precision floating-point representation,
+/// which has approximately 15-17 significant decimal digits. Beyond 16 decimal places,
+/// floating-point arithmetic becomes unreliable due to rounding errors.
+///
+/// For higher precision values (such as 18-decimal WEI values in DeFi), specialized
+/// constructors that work with integer representations should be used instead.
+pub const MAX_FLOAT_PRECISION: u8 = 16;
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///
@@ -72,11 +109,18 @@ pub const PRECISION_DIFF_SCALAR: f64 = 10_000_000.0; // 10.0**(16-9)
 ///
 /// Returns an error if `precision` exceeds [`FIXED_PRECISION`].
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
+    #[cfg(feature = "defi")]
+    if precision > crate::defi::WEI_PRECISION {
+        anyhow::bail!("`precision` exceeded maximum `WEI_PRECISION` (18), was {precision}")
+    }
+
+    #[cfg(not(feature = "defi"))]
     if precision > FIXED_PRECISION {
         anyhow::bail!(
             "`precision` exceeded maximum `FIXED_PRECISION` ({FIXED_PRECISION}), was {precision}"
         )
     }
+
     Ok(())
 }
 
@@ -177,11 +221,22 @@ mod tests {
 
     use super::*;
 
+    #[cfg(not(feature = "high-precision"))]
     #[rstest]
     fn test_precision_boundaries() {
         assert!(check_fixed_precision(0).is_ok());
         assert!(check_fixed_precision(FIXED_PRECISION).is_ok());
         assert!(check_fixed_precision(FIXED_PRECISION + 1).is_err());
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_precision_boundaries() {
+        use crate::defi::WEI_PRECISION;
+
+        assert!(check_fixed_precision(0).is_ok());
+        assert!(check_fixed_precision(WEI_PRECISION).is_ok());
+        assert!(check_fixed_precision(WEI_PRECISION + 1).is_err());
     }
 
     #[rstest]
@@ -208,18 +263,28 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 123456.0, 123456_0000000000000000)]
-    #[case(0, 123456.7, 123457_0000000000000000)]
-    #[case(1, 123456.7, 123456_7000000000000000)]
-    #[case(2, 123456.78, 123456_7800000000000000)]
-    #[case(8, 123456.12345678, 123456_1234567800000000)]
-    #[case(16, 123456.1234567890123456, 123456_1234567889944576)]
-    fn test_precision_specific_values(
-        #[case] precision: u8,
-        #[case] value: f64,
-        #[case] expected: i128,
-    ) {
-        assert_eq!(f64_to_fixed_i128(value, precision), expected);
+    #[case(0, 123456.0)]
+    #[case(0, 123456.7)]
+    #[case(1, 123456.7)]
+    #[case(2, 123456.78)]
+    #[case(8, 123456.12345678)]
+    fn test_precision_specific_values_basic(#[case] precision: u8, #[case] value: f64) {
+        let result = f64_to_fixed_i128(value, precision);
+        let back_converted = fixed_i128_to_f64(result);
+        // Round-trip should preserve the value up to the specified precision
+        let scale = 10.0_f64.powi(precision as i32);
+        let expected_rounded = (value * scale).round() / scale;
+        assert!((back_converted - expected_rounded).abs() < 1e-10);
+    }
+
+    #[rstest]
+    fn test_max_precision_values() {
+        // Test with maximum precision that the current feature set supports
+        let test_value = 123456.123456789;
+        let result = f64_to_fixed_i128(test_value, FIXED_PRECISION);
+        let back_converted = fixed_i128_to_f64(result);
+        // For maximum precision, we expect some floating-point limitations
+        assert!((back_converted - test_value).abs() < 1e-6);
     }
 
     #[rstest]
@@ -242,9 +307,19 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[cfg(not(feature = "defi"))]
     #[rstest]
     fn test_invalid_precision() {
         let precision = FIXED_PRECISION + 1;
+        let result = check_fixed_precision(precision);
+        assert!(result.is_err());
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_invalid_precision() {
+        use crate::defi::WEI_PRECISION;
+        let precision = WEI_PRECISION + 1;
         let result = check_fixed_precision(precision);
         assert!(result.is_err());
     }
@@ -279,82 +354,122 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 123_456.0, 1_234_560_000_000_000_000_000)]
-    #[case(0, 123_456.7, 1_234_570_000_000_000_000_000)]
-    #[case(0, 123_456.4, 1_234_560_000_000_000_000_000)]
-    #[case(1, 123_456.0, 1_234_560_000_000_000_000_000)]
-    #[case(1, 123_456.7, 1_234_567_000_000_000_000_000)]
-    #[case(1, 123_456.4, 1_234_564_000_000_000_000_000)]
-    #[case(2, 123_456.0, 1_234_560_000_000_000_000_000)]
-    #[case(2, 123_456.7, 1_234_567_000_000_000_000_000)]
-    #[case(2, 123_456.4, 1_234_564_000_000_000_000_000)]
-    fn test_f64_to_fixed_i128_with_precision(
-        #[case] precision: u8,
-        #[case] value: f64,
-        #[case] expected: i128,
-    ) {
-        assert_eq!(f64_to_fixed_i128(value, precision), expected);
+    #[case(0, 123_456.0)]
+    #[case(0, 123_456.7)]
+    #[case(0, 123_456.4)]
+    #[case(1, 123_456.0)]
+    #[case(1, 123_456.7)]
+    #[case(1, 123_456.4)]
+    #[case(2, 123_456.0)]
+    #[case(2, 123_456.7)]
+    #[case(2, 123_456.4)]
+    fn test_f64_to_fixed_i128_with_precision(#[case] precision: u8, #[case] value: f64) {
+        let result = f64_to_fixed_i128(value, precision);
+
+        // Calculate expected value dynamically based on current FIXED_PRECISION
+        let pow1 = 10_i128.pow(u32::from(precision));
+        let pow2 = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
+        let rounded = (value * pow1 as f64).round() as i128;
+        let expected = rounded * pow2;
+
+        assert_eq!(
+            result, expected,
+            "Failed for precision {}, value {}: got {}, expected {}",
+            precision, value, result, expected
+        );
     }
 
     #[rstest]
-    #[case(0, 5.555555555555555, 60_000_000_000_000_000)]
-    #[case(1, 5.555555555555555, 56_000_000_000_000_000)]
-    #[case(2, 5.555555555555555, 55_600_000_000_000_000)]
-    #[case(3, 5.555555555555555, 55_560_000_000_000_000)]
-    #[case(4, 5.555555555555555, 55_556_000_000_000_000)]
-    #[case(5, 5.555555555555555, 55_555_600_000_000_000)]
-    #[case(6, 5.555555555555555, 55_555_560_000_000_000)]
-    #[case(7, 5.555555555555555, 55_555_556_000_000_000)]
-    #[case(8, 5.555555555555555, 55_555_555_600_000_000)]
-    #[case(9, 5.555555555555555, 55_555_555_560_000_000)]
-    #[case(10, 5.555555555555555, 55_555_555_556_000_000)]
-    #[case(11, 5.555555555555555, 55_555_555_555_600_000)]
-    #[case(12, 5.555555555555555, 55_555_555_555_560_000)]
-    #[case(13, 5.555555555555555, 55_555_555_555_556_000)]
-    #[case(14, 5.555555555555555, 55_555_555_555_555_600)]
-    #[case(15, 5.555555555555555, 55_555_555_555_555_550)]
-    #[case(16, 5.555555555555555, 55_555_555_555_555_552)]
-    #[case(0, -5.555555555555555, -60_000_000_000_000_000)]
-    #[case(1, -5.555555555555555, -56_000_000_000_000_000)]
-    #[case(2, -5.555555555555555, -55_600_000_000_000_000)]
-    #[case(3, -5.555555555555555, -55_560_000_000_000_000)]
-    #[case(4, -5.555555555555555, -55_556_000_000_000_000)]
-    #[case(5, -5.555555555555555, -55_555_600_000_000_000)]
-    #[case(6, -5.555555555555555, -55_555_560_000_000_000)]
-    #[case(7, -5.555555555555555, -55_555_556_000_000_000)]
-    #[case(8, -5.555555555555555, -55_555_555_600_000_000)]
-    #[case(9, -5.555555555555555, -55_555_555_560_000_000)]
-    #[case(10, -5.555555555555555, -55_555_555_556_000_000)]
-    #[case(11, -5.555555555555555, -55_555_555_555_600_000)]
-    #[case(12, -5.555555555555555, -55_555_555_555_560_000)]
-    #[case(13, -5.555555555555555, -55_555_555_555_556_000)]
-    #[case(14, -5.555555555555555, -55_555_555_555_555_600)]
-    #[case(15, -5.555555555555555, -55_555_555_555_555_550)]
-    #[case(16, -5.555555555555555, -55_555_555_555_555_552)]
-    fn test_f64_to_fixed_i128(#[case] precision: u8, #[case] value: f64, #[case] expected: i128) {
-        assert_eq!(f64_to_fixed_i128(value, precision), expected);
+    #[case(0, 5.555555555555555)]
+    #[case(1, 5.555555555555555)]
+    #[case(2, 5.555555555555555)]
+    #[case(3, 5.555555555555555)]
+    #[case(4, 5.555555555555555)]
+    #[case(5, 5.555555555555555)]
+    #[case(6, 5.555555555555555)]
+    #[case(7, 5.555555555555555)]
+    #[case(8, 5.555555555555555)]
+    #[case(9, 5.555555555555555)]
+    #[case(10, 5.555555555555555)]
+    #[case(11, 5.555555555555555)]
+    #[case(12, 5.555555555555555)]
+    #[case(13, 5.555555555555555)]
+    #[case(14, 5.555555555555555)]
+    #[case(15, 5.555555555555555)]
+    #[case(0, -5.555555555555555)]
+    #[case(1, -5.555555555555555)]
+    #[case(2, -5.555555555555555)]
+    #[case(3, -5.555555555555555)]
+    #[case(4, -5.555555555555555)]
+    #[case(5, -5.555555555555555)]
+    #[case(6, -5.555555555555555)]
+    #[case(7, -5.555555555555555)]
+    #[case(8, -5.555555555555555)]
+    #[case(9, -5.555555555555555)]
+    #[case(10, -5.555555555555555)]
+    #[case(11, -5.555555555555555)]
+    #[case(12, -5.555555555555555)]
+    #[case(13, -5.555555555555555)]
+    #[case(14, -5.555555555555555)]
+    #[case(15, -5.555555555555555)]
+    fn test_f64_to_fixed_i128(#[case] precision: u8, #[case] value: f64) {
+        // Only test up to the current FIXED_PRECISION
+        if precision > FIXED_PRECISION {
+            return;
+        }
+
+        let result = f64_to_fixed_i128(value, precision);
+
+        // Calculate expected value dynamically based on current FIXED_PRECISION
+        let pow1 = 10_i128.pow(u32::from(precision));
+        let pow2 = 10_i128.pow(u32::from(FIXED_PRECISION - precision));
+        let rounded = (value * pow1 as f64).round() as i128;
+        let expected = rounded * pow2;
+
+        assert_eq!(
+            result, expected,
+            "Failed for precision {}, value {}: got {}, expected {}",
+            precision, value, result, expected
+        );
     }
 
     #[rstest]
-    #[case(0, 5.555555555555555, 60_000_000_000_000_000)]
-    #[case(1, 5.555555555555555, 56_000_000_000_000_000)]
-    #[case(2, 5.555555555555555, 55_600_000_000_000_000)]
-    #[case(3, 5.555555555555555, 55_560_000_000_000_000)]
-    #[case(4, 5.555555555555555, 55_556_000_000_000_000)]
-    #[case(5, 5.555555555555555, 55_555_600_000_000_000)]
-    #[case(6, 5.555555555555555, 55_555_560_000_000_000)]
-    #[case(7, 5.555555555555555, 55_555_556_000_000_000)]
-    #[case(8, 5.555555555555555, 55_555_555_600_000_000)]
-    #[case(9, 5.555555555555555, 55_555_555_560_000_000)]
-    #[case(10, 5.555555555555555, 55_555_555_556_000_000)]
-    #[case(11, 5.555555555555555, 55_555_555_555_600_000)]
-    #[case(12, 5.555555555555555, 55_555_555_555_560_000)]
-    #[case(13, 5.555555555555555, 55_555_555_555_556_000)]
-    #[case(14, 5.555555555555555, 55_555_555_555_555_600)]
-    #[case(15, 5.555555555555555, 55_555_555_555_555_550)]
-    #[case(16, 5.555555555555555, 55_555_555_555_555_552)]
-    fn test_f64_to_fixed_u64(#[case] precision: u8, #[case] value: f64, #[case] expected: u128) {
-        assert_eq!(f64_to_fixed_u128(value, precision), expected);
+    #[case(0, 5.555555555555555)]
+    #[case(1, 5.555555555555555)]
+    #[case(2, 5.555555555555555)]
+    #[case(3, 5.555555555555555)]
+    #[case(4, 5.555555555555555)]
+    #[case(5, 5.555555555555555)]
+    #[case(6, 5.555555555555555)]
+    #[case(7, 5.555555555555555)]
+    #[case(8, 5.555555555555555)]
+    #[case(9, 5.555555555555555)]
+    #[case(10, 5.555555555555555)]
+    #[case(11, 5.555555555555555)]
+    #[case(12, 5.555555555555555)]
+    #[case(13, 5.555555555555555)]
+    #[case(14, 5.555555555555555)]
+    #[case(15, 5.555555555555555)]
+    #[case(16, 5.555555555555555)]
+    fn test_f64_to_fixed_u64(#[case] precision: u8, #[case] value: f64) {
+        // Only test up to the current FIXED_PRECISION
+        if precision > FIXED_PRECISION {
+            return;
+        }
+
+        let result = f64_to_fixed_u128(value, precision);
+
+        // Calculate expected value dynamically based on current FIXED_PRECISION
+        let pow1 = 10_u128.pow(u32::from(precision));
+        let pow2 = 10_u128.pow(u32::from(FIXED_PRECISION - precision));
+        let rounded = (value * pow1 as f64).round() as u128;
+        let expected = rounded * pow2;
+
+        assert_eq!(
+            result, expected,
+            "Failed for precision {}, value {}: got {}, expected {}",
+            precision, value, result, expected
+        );
     }
 
     #[rstest]

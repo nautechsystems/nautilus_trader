@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Domain types representing *price* data (bid/ask, mid-price, mark-price, etc.).
+
 use std::{collections::HashMap, fmt::Display};
 
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     identifiers::InstrumentId,
     types::{Price, fixed::FIXED_SIZE_BINARY},
@@ -40,7 +42,7 @@ pub struct MarkPriceUpdate {
     pub value: Price,
     /// UNIX timestamp (nanoseconds) when the price event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -96,7 +98,7 @@ impl Display for MarkPriceUpdate {
 
 impl Serializable for MarkPriceUpdate {}
 
-impl GetTsInit for MarkPriceUpdate {
+impl HasTsInit for MarkPriceUpdate {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -117,7 +119,7 @@ pub struct IndexPriceUpdate {
     pub value: Price,
     /// UNIX timestamp (nanoseconds) when the price event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -173,7 +175,7 @@ impl Display for IndexPriceUpdate {
 
 impl Serializable for IndexPriceUpdate {}
 
-impl GetTsInit for IndexPriceUpdate {
+impl HasTsInit for IndexPriceUpdate {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

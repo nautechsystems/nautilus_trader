@@ -46,6 +46,18 @@ use crate::{
     execution_client::BacktestExecutionClient, modules::SimulationModule,
 };
 
+/// Core backtesting engine for running event-driven strategy backtests on historical data.
+///
+/// The `BacktestEngine` provides a high-fidelity simulation environment that processes
+/// historical market data chronologically through an event-driven architecture. It maintains
+/// simulated exchanges with realistic order matching and execution, allowing strategies
+/// to be tested exactly as they would run in live trading:
+///
+/// - Event-driven data replay with configurable latency models.
+/// - Multi-venue and multi-asset support.
+/// - Realistic order matching and execution simulation.
+/// - Strategy and portfolio performance analysis.
+/// - Seamless transition from backtesting to live trading.
 pub struct BacktestEngine {
     instance_id: UUID4,
     config: BacktestEngineConfig,

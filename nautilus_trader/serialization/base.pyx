@@ -55,12 +55,15 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.binary_option cimport BinaryOption
 from nautilus_trader.model.instruments.cfd cimport Cfd
+from nautilus_trader.model.instruments.commodity cimport Commodity
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_option cimport CryptoOption
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
+from nautilus_trader.model.instruments.index cimport IndexInstrument
 from nautilus_trader.model.instruments.option_contract cimport OptionContract
 from nautilus_trader.model.instruments.option_spread cimport OptionSpread
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
@@ -99,15 +102,18 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     SyntheticInstrument.__name__: SyntheticInstrument.to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
     BinaryOption.__name__: BinaryOption.to_dict_c,
+    Cfd.__name__: Cfd.to_dict_c,
+    Commodity.__name__: Commodity.to_dict_c,
+    CryptoFuture.__name__: CryptoFuture.to_dict_c,
+    CryptoOption.__name__: CryptoOption.to_dict_c,
+    CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
+    CurrencyPair.__name__: CurrencyPair.to_dict_c,
     Equity.__name__: Equity.to_dict_c,
     FuturesContract.__name__: FuturesContract.to_dict_c,
     FuturesSpread.__name__: FuturesSpread.to_dict_c,
+    IndexInstrument.__name__: IndexInstrument.to_dict_c,
     OptionContract.__name__: OptionContract.to_dict_c,
     OptionSpread.__name__: OptionSpread.to_dict_c,
-    Cfd.__name__: Cfd.to_dict_c,
-    CurrencyPair.__name__: CurrencyPair.to_dict_c,
-    CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
-    CryptoFuture.__name__: CryptoFuture.to_dict_c,
     OrderBookDelta.__name__: OrderBookDelta.to_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -151,15 +157,18 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     SyntheticInstrument.__name__: SyntheticInstrument.from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
     BinaryOption.__name__: BinaryOption.from_dict_c,
+    Cfd.__name__: Cfd.from_dict_c,
+    Commodity.__name__: Commodity.from_dict_c,
+    CryptoFuture.__name__: CryptoFuture.from_dict_c,
+    CryptoOption.__name__: CryptoOption.from_dict_c,
+    CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
+    CurrencyPair.__name__: CurrencyPair.from_dict_c,
     Equity.__name__: Equity.from_dict_c,
     FuturesContract.__name__: FuturesContract.from_dict_c,
     FuturesSpread.__name__: FuturesSpread.from_dict_c,
+    IndexInstrument.__name__: IndexInstrument.from_dict_c,
     OptionContract.__name__: OptionContract.from_dict_c,
     OptionSpread.__name__: OptionSpread.from_dict_c,
-    Cfd.__name__: Cfd.from_dict_c,
-    CurrencyPair.__name__: CurrencyPair.from_dict_c,
-    CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
-    CryptoFuture.__name__: CryptoFuture.from_dict_c,
     OrderBookDelta.__name__: OrderBookDelta.from_dict_c,
     OrderBookDeltas.__name__: OrderBookDeltas.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
@@ -206,12 +215,18 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     SyntheticInstrument,
     BettingInstrument,
     BinaryOption,
+    Cfd,
+    Commodity,
+    CryptoFuture,
+    CryptoOption,
+    CryptoPerpetual,
+    CurrencyPair,
     Equity,
     FuturesContract,
+    FuturesSpread,
+    IndexInstrument,
     OptionContract,
-    CurrencyPair,
-    CryptoPerpetual,
-    CryptoFuture,
+    OptionSpread,
     OrderBookDelta,
     OrderBookDeltas,
     TradeTick,

@@ -1080,7 +1080,26 @@ class LiveExecutionEngine(ExecutionEngine):
         instrument: Instrument,
     ) -> bool:
         if report.trade_id in order.trade_ids:
-            return True  # Fill already applied (assumes consistent trades)
+            # Fill already applied; check if data is consistent.
+            # An existing fill may be sourced from the cache on start,
+            # or may exist in-memory when a reconciliation is triggered.
+            existing_fill = self._get_existing_fill_for_trade_id(order, report.trade_id)
+
+            if existing_fill:
+                if not self._fill_reports_equal(existing_fill, report):
+                    self._log.warning(
+                        f"Fill report data differs from existing data for trade_id {report.trade_id}. "
+                        f"Existing: qty={existing_fill.last_qty}, px={existing_fill.last_px}, "
+                        f"commission={existing_fill.commission}, liquidity={existing_fill.liquidity_side}, "
+                        f"ts_event={existing_fill.ts_event}. "
+                        f"Broker: qty={report.last_qty}, px={report.last_px}, "
+                        f"commission={report.commission}, liquidity={report.liquidity_side}, "
+                        f"ts_event={report.ts_event}. "
+                        f"Continuing reconciliation with existing data to avoid state corruption",
+                    )
+
+            return True  # Fill already applied, continue with existing data
+
         try:
             self._generate_order_filled(order, report, instrument)
         except InvalidStateTrigger as e:
@@ -1093,6 +1112,26 @@ class LiveExecutionEngine(ExecutionEngine):
                 f"OrderFilled applied out of chronological order from {report}",
             )
         return True
+
+    def _get_existing_fill_for_trade_id(
+        self,
+        order: Order,
+        trade_id: TradeId,
+    ) -> OrderFilled | None:
+        for event in order.events:
+            if isinstance(event, OrderFilled) and event.trade_id == trade_id:
+                return event
+
+        return None
+
+    def _fill_reports_equal(self, cached_fill: OrderFilled, report: FillReport) -> bool:
+        return (
+            cached_fill.last_qty == report.last_qty
+            and cached_fill.last_px == report.last_px
+            and cached_fill.commission == report.commission
+            and cached_fill.liquidity_side == report.liquidity_side
+            and cached_fill.ts_event == report.ts_event
+        )
 
     def _reconcile_position_report(self, report: PositionStatusReport) -> bool:
         if report.venue_position_id is not None:

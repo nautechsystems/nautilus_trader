@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Trading performance statistics and portfolio metrics.
+
 pub mod expectancy;
 pub mod long_ratio;
 pub mod loser_avg;

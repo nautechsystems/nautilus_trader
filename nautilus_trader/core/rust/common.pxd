@@ -163,7 +163,7 @@ cdef extern from "../includes/common.h":
         UUID4_t event_id;
         # UNIX timestamp (nanoseconds) when the event occurred.
         uint64_t ts_event;
-        # UNIX timestamp (nanoseconds) when the instance was initialized.
+        # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
 
     # Legacy time event handler for Cython/FFI inter-operatbility

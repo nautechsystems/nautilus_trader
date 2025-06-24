@@ -13,6 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Build script for the `nautilus-backtest` crate.
+//!
+//! This script is responsible for generating the C and Cython bindings that allow the back-testing
+//! engine to be consumed from C/C++ and Python when the `ffi` feature flag is enabled.
+//! It also instructs Cargo when it must be re-run and gracefully exits when executed inside the
+//! docs.rs environment.
+
 #[cfg(feature = "ffi")]
 use std::env;
 

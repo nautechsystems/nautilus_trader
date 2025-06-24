@@ -27,7 +27,7 @@ use nautilus_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::{GetTsInit, OrderBookDelta};
+use super::{HasTsInit, OrderBookDelta};
 use crate::identifiers::InstrumentId;
 
 /// Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
@@ -49,7 +49,7 @@ pub struct OrderBookDeltas {
     pub sequence: u64,
     /// UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -136,7 +136,7 @@ impl Display for OrderBookDeltas {
     }
 }
 
-impl GetTsInit for OrderBookDeltas {
+impl HasTsInit for OrderBookDeltas {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

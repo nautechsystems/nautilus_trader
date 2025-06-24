@@ -470,8 +470,15 @@ cdef class AccountsManager:
             return False
 
         # Calculate new balance
+        cdef Money new_total = balance.total.add(pnl)
+        if new_total._mem.raw < 0:
+            raise AccountBalanceNegative(
+                balance=new_total.as_decimal(),
+                currency=pnl.currency,
+            )
+
         cdef AccountBalance new_balance = AccountBalance(
-            total=balance.total.add(pnl),
+            total=new_total,
             locked=balance.locked,
             free=balance.free.add(pnl),
         )

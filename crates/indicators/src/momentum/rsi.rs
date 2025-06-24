@@ -82,6 +82,8 @@ impl Indicator for RelativeStrengthIndex {
         self.count = 0;
         self.has_inputs = false;
         self.initialized = false;
+        self.average_gain.reset();
+        self.average_loss.reset();
     }
 }
 
@@ -95,7 +97,6 @@ impl RelativeStrengthIndex {
             value: 0.0,
             last_value: 0.0,
             count: 0,
-            // inputs: Vec::new(),
             has_inputs: false,
             average_gain: MovingAverageFactory::create(MovingAverageType::Exponential, period),
             average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
@@ -120,7 +121,6 @@ impl RelativeStrengthIndex {
             self.average_loss.update_raw(0.0);
             self.average_gain.update_raw(0.0);
         }
-        // init count from average gain MA
         self.count = self.average_gain.count();
         if !self.initialized && self.average_loss.initialized() && self.average_gain.initialized() {
             self.initialized = true;
@@ -225,6 +225,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_reset_resets_inner_mas(mut rsi_10: RelativeStrengthIndex) {
+        rsi_10.update_raw(1.0);
+        rsi_10.update_raw(2.0);
+        rsi_10.reset();
+        assert_eq!(rsi_10.average_gain.count(), 0);
+        assert_eq!(rsi_10.average_loss.count(), 0);
+    }
+
+    #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, stub_quote: QuoteTick) {
         rsi_10.handle_quote(&stub_quote);
         assert_eq!(rsi_10.count, 1);
@@ -243,5 +252,22 @@ mod tests {
         rsi_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(rsi_10.count, 1);
         assert_eq!(rsi_10.value, 1.0);
+    }
+
+    #[rstest]
+    fn test_constant_inputs_initializes_and_value_max(mut rsi_10: RelativeStrengthIndex) {
+        for _ in 0..12 {
+            rsi_10.update_raw(5.0);
+        }
+        assert!(rsi_10.initialized);
+        assert_eq!(rsi_10.value, 1.0);
+    }
+
+    #[rstest]
+    fn test_reset_resets_has_inputs_and_value(mut rsi_10: RelativeStrengthIndex) {
+        rsi_10.update_raw(1.0);
+        rsi_10.reset();
+        assert!(!rsi_10.has_inputs());
+        assert_eq!(rsi_10.value, 0.0);
     }
 }

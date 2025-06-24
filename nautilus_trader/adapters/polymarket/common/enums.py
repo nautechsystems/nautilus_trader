@@ -41,6 +41,7 @@ class PolymarketLiquiditySide(Enum):
 @unique
 class PolymarketOrderType(Enum):
     FOK = "FOK"
+    FAK = "FAK"  # IOC
     GTC = "GTC"
     GTD = "GTD"
 

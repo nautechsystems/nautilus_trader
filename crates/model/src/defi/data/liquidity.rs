@@ -13,13 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use alloy_primitives::Address;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use crate::{
-    data::GetTsInit,
+    data::HasTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     identifiers::InstrumentId,
     types::Quantity,
@@ -40,6 +42,7 @@ use crate::{
     Deserialize,
 )]
 /// Represents the type of liquidity update operation in a DEX pool.
+#[non_exhaustive]
 pub enum PoolLiquidityUpdateType {
     /// Liquidity is being added to the pool
     Mint,
@@ -82,7 +85,7 @@ pub struct PoolLiquidityUpdate {
     pub tick_upper: i32,
     /// The timestamp of the liquidity update in Unix nanoseconds.
     pub timestamp: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -136,7 +139,21 @@ impl PoolLiquidityUpdate {
     }
 }
 
-impl GetTsInit for PoolLiquidityUpdate {
+impl Display for PoolLiquidityUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "PoolLiquidityUpdate(kind={}, pool={}, amount0={}, amount1={}, liquidity={})",
+            self.kind,
+            self.pool.ticker(),
+            self.amount0,
+            self.amount1,
+            self.position_liquidity
+        )
+    }
+}
+
+impl HasTsInit for PoolLiquidityUpdate {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

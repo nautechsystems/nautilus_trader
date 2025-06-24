@@ -393,7 +393,7 @@ mod tests {
             BookPrice::new(Price::from("3.0"), OrderSideSpecified::Buy),
         ];
         bid_prices.sort();
-        assert_eq!(bid_prices[0].value.as_f64(), 4.0);
+        assert_eq!(bid_prices[0].value, Price::from("4.0"));
     }
 
     #[rstest]
@@ -406,7 +406,7 @@ mod tests {
         ];
 
         ask_prices.sort();
-        assert_eq!(ask_prices[0].value.as_f64(), 1.0);
+        assert_eq!(ask_prices[0].value, Price::from("1.0"));
     }
 
     #[rstest]
@@ -418,7 +418,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("10.0"));
     }
 
     #[rstest]
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("10.0"));
     }
 
     #[rstest]
@@ -453,7 +453,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]
@@ -506,7 +506,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.1"));
     }
 
     #[rstest]
@@ -522,7 +522,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.1"));
     }
 
     #[rstest]
@@ -538,7 +538,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]
@@ -554,7 +554,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0);
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("11.0"));
     }
 
     #[rstest]

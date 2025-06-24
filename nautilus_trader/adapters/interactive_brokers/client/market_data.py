@@ -672,7 +672,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             return
 
         if not isinstance(subscription.handle, functools.partial):
-            raise TypeError(f"Expecting partial type subscription method. {subscription=}")
+            raise TypeError(f"Expecting partial type subscription method: {subscription=}")
 
         if bar := await self._process_bar_data(
             bar_type_str=str(subscription.name),

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! JSON / string parsing helpers for Python inputs.
+
 use pyo3::{
     exceptions::PyKeyError,
     prelude::*,

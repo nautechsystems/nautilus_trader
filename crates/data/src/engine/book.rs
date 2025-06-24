@@ -43,6 +43,11 @@ pub struct BookSnapshotInfo {
     pub interval_ms: NonZeroUsize,
 }
 
+/// Handles order book updates and delta processing for a specific instrument.
+///
+/// The `BookUpdater` processes incoming order book deltas and maintains
+/// the current state of an order book. It can handle both incremental
+/// updates and full snapshots for the instrument it's assigned to.
 #[derive(Debug)]
 pub struct BookUpdater {
     pub id: Ustr,
@@ -89,6 +94,11 @@ impl MessageHandler for BookUpdater {
     }
 }
 
+/// Creates periodic snapshots of order books at configured intervals.
+///
+/// The `BookSnapshotter` generates order book snapshots on timer events,
+/// publishing them as market data. This is useful for providing periodic
+/// full order book state updates in addition to incremental delta updates.
 #[derive(Debug)]
 pub struct BookSnapshotter {
     pub id: Ustr,

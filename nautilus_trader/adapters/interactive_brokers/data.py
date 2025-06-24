@@ -293,8 +293,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 f"Requesting instrument {request.instrument_id} with specified `end` which has no effect",
             )
 
-        force_reload = request.params.get("force_reload", False)
-        await self.instrument_provider.load_async(request.instrument_id, force_reload=force_reload)
+        force_instrument_update = request.params.get("force_instrument_update", False)
+        await self.instrument_provider.load_async(
+            request.instrument_id,
+            force_instrument_update=force_instrument_update,
+        )
 
         if instrument := self.instrument_provider.find(request.instrument_id):
             self._handle_data(instrument)
@@ -308,8 +311,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         # We ensure existing instruments in the cache have their IB representations loaded as well in the adapter
         instruments = self._cache.instruments()
         instrument_ids = [instrument.id for instrument in instruments]
-        force_reload = request.params.get("force_reload", False)
-        await self.instrument_provider.load_ids_async(instrument_ids, force_reload=force_reload)
+        force_instrument_update = request.params.get("force_instrument_update", False)
+        await self.instrument_provider.load_ids_async(
+            instrument_ids,
+            force_instrument_update=force_instrument_update,
+        )
 
     async def _request_quote_ticks(self, request: RequestQuoteTicks) -> None:
         if not (instrument := self._cache.instrument(request.instrument_id)):

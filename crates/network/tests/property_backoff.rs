@@ -246,7 +246,7 @@ proptest! {
 
         // Calculate expected iterations to reach max
         let growth_ratio = max.as_millis() as f64 / initial.as_millis() as f64;
-        let expected_iterations = (growth_ratio.ln() / factor.ln()).ceil() as usize + 5;
+        let expected_iterations = growth_ratio.log(factor).ceil() as usize + 5;
 
         // Run enough iterations to definitely reach max
         for _ in 0..expected_iterations {

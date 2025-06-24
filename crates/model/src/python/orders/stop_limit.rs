@@ -571,11 +571,9 @@ impl StopLimitOrder {
         )?;
         dict.set_item(
             "linked_order_ids",
-            self.linked_order_ids.as_ref().map(|x| {
-                x.iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<String>>()
-            }),
+            self.linked_order_ids
+                .as_ref()
+                .map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()),
         )?;
         self.parent_order_id.map_or_else(
             || dict.set_item("parent_order_id", py.None()),

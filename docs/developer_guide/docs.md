@@ -54,7 +54,8 @@ This guide outlines the style conventions and best practices for writing documen
 
 ## Lists
 
-- Use bullet points for unordered lists.
+- Use hyphens (`-`) for unordered-list bullets; avoid `*` or `+` to keep the Markdown style
+   consistent across the project.
 - Use numbered lists only when order matters.
 - Maintain consistent indentation for nested lists.
 - End list items with periods when they are complete sentences.

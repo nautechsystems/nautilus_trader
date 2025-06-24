@@ -13,7 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from [PyO3](https://pyo3.rs).
+//! Python bindings and interoperability helpers built on top of
+//! [`PyO3`](https://pyo3.rs).
+//!
+//! This sub-module groups together the Rust code that is *only* required when compiling the
+//! `python` feature flag. It provides thin adapters so that NautilusTrader functionality can be
+//! consumed from the `nautilus_trader` Python package without sacrificing type-safety or
+//! performance.
 
 pub mod casing;
 pub mod datetime;
@@ -42,6 +48,12 @@ use crate::{
 
 /// Extend `IntoPyObjectExt` helper trait to unwrap `PyObject` after conversion.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
+    /// Convert `self` into a [`PyObject`] while *panicking* if the conversion fails.
+    ///
+    /// This is a convenience wrapper around [`IntoPyObjectExt::into_py_any`] that avoids the
+    /// cumbersome `Result` handling when we are certain that the conversion cannot fail (for
+    /// instance when we are converting primitives or other types that already implement the
+    /// necessary PyO3 traits).
     #[inline]
     fn into_py_any_unwrap(self, py: Python<'py>) -> PyObject {
         self.into_py_any(py)

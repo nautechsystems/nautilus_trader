@@ -400,10 +400,10 @@ fn test_book_apply_depth(stub_depth10: OrderBookDepth10) {
 
     book.apply_depth(&depth);
 
-    assert_eq!(book.best_bid_price().unwrap().as_f64(), 99.00);
-    assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);
-    assert_eq!(book.best_bid_size().unwrap().as_f64(), 100.0);
-    assert_eq!(book.best_ask_size().unwrap().as_f64(), 100.0);
+    assert_eq!(book.best_bid_price().unwrap(), Price::from("99.00"));
+    assert_eq!(book.best_ask_price().unwrap(), Price::from("100.00"));
+    assert_eq!(book.best_bid_size().unwrap(), Quantity::from("100.0"));
+    assert_eq!(book.best_ask_size().unwrap(), Quantity::from("100.0"));
 }
 
 #[rstest]
@@ -532,16 +532,18 @@ fn test_book_pprint() {
 
     let pprint_output = book.pprint(3);
 
-    let expected_output = "╭───────┬───────┬───────╮\n\
-                               │ bids  │ price │ asks  │\n\
-                               ├───────┼───────┼───────┤\n\
-                               │       │ 5.000 │ [8.0] │\n\
-                               │       │ 4.000 │ [4.0] │\n\
-                               │       │ 3.000 │ [3.0] │\n\
-                               │ [3.0] │ 2.000 │       │\n\
-                               │ [2.0] │ 1.500 │       │\n\
-                               │ [1.0] │ 1.000 │       │\n\
-                               ╰───────┴───────┴───────╯";
+    let expected_output = "bid_levels: 3\n\
+ask_levels: 3\n\
+╭───────┬───────┬───────╮\n\
+│ bids  │ price │ asks  │\n\
+├───────┼───────┼───────┤\n\
+│       │ 5.000 │ [8.0] │\n\
+│       │ 4.000 │ [4.0] │\n\
+│       │ 3.000 │ [3.0] │\n\
+│ [3.0] │ 2.000 │       │\n\
+│ [2.0] │ 1.500 │       │\n\
+│ [1.0] │ 1.000 │       │\n\
+╰───────┴───────┴───────╯";
 
     println!("{pprint_output}");
     assert_eq!(pprint_output, expected_output);

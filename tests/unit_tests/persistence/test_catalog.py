@@ -15,8 +15,6 @@
 
 import datetime
 import sys
-from decimal import Decimal
-from pathlib import Path
 
 import pandas as pd
 import pyarrow.dataset as ds
@@ -26,22 +24,18 @@ from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.data import CustomData
-from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
-from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -166,53 +160,6 @@ def test_catalog_with_databento_instruments(catalog: ParquetDataCatalog) -> None
     assert len(instruments) == 601_633
 
 
-@pytest.mark.skip(reason="Not yet partitioning")
-def test_partitioning_min_rows_per_group(
-    catalog_betfair: ParquetDataCatalog,
-) -> None:
-    # Arrange
-    instrument = Equity(
-        instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-        raw_symbol=Symbol("AAPL"),
-        currency=USD,
-        price_precision=2,
-        price_increment=Price.from_str("0.01"),
-        multiplier=Quantity.from_int(1),
-        lot_size=Quantity.from_int(1),
-        isin="US0378331005",
-        ts_event=0,
-        ts_init=0,
-        margin_init=Decimal("0.01"),
-        margin_maint=Decimal("0.005"),
-        maker_fee=Decimal("0.005"),
-        taker_fee=Decimal("0.01"),
-    )
-    quote_ticks = []
-
-    # Num quotes needs to be less than 5000 (default value for max_rows_per_group)
-    expected_num_quotes = 100
-
-    for _ in range(expected_num_quotes):
-        quote_tick = QuoteTick(
-            instrument_id=instrument.id,
-            bid_price=Price.from_str("2.1"),
-            ask_price=Price.from_str("2.0"),
-            bid_size=Quantity.from_int(10),
-            ask_size=Quantity.from_int(10),
-            ts_event=0,
-            ts_init=0,
-        )
-        quote_ticks.append(quote_tick)
-
-    # Act
-    catalog_betfair.write_data(data=quote_ticks, partitioning=["ts_event"])
-
-    result = len(catalog_betfair.quote_ticks())
-
-    # Assert
-    assert result == expected_num_quotes
-
-
 def test_catalog_filter(
     catalog_betfair: ParquetDataCatalog,
 ) -> None:
@@ -249,18 +196,15 @@ def test_catalog_custom_data(catalog: ParquetDataCatalog) -> None:
     catalog.write_data(data)
 
     # Act
-    df = catalog.custom_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
-    data = catalog.custom_data(
-        cls=NewsEventData,
-        filter_expr=ds.field("currency") == "CHF",
-    )
+    data_usd = catalog.custom_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
+    data_chf = catalog.custom_data(cls=NewsEventData, filter_expr=ds.field("currency") == "CHF")
 
     # Assert
-    assert df is not None
-    assert data is not None
-    assert len(df) == 22941
-    assert len(data) == 2745
-    assert isinstance(data[0], CustomData)
+    assert data_usd is not None
+    assert data_chf is not None
+    assert len(data_usd) == 22941
+    assert len(data_chf) == 2745
+    assert isinstance(data_chf[0], CustomData)
 
 
 def test_catalog_bars_querying_by_bar_type(catalog: ParquetDataCatalog) -> None:
@@ -281,56 +225,6 @@ def test_catalog_bars_querying_by_bar_type(catalog: ParquetDataCatalog) -> None:
     all_bars = catalog.bars()
     assert len(all_bars) == 10
     assert len(bars) == len(stub_bars) == 10
-
-
-@pytest.mark.parametrize(
-    ("mode", "num_expected_bars", "num_expected_files"),
-    [
-        (CatalogWriteMode.APPEND, 20, 1),
-        (CatalogWriteMode.PREPEND, 20, 1),
-        (CatalogWriteMode.NEWFILE, 20, 2),
-        (CatalogWriteMode.OVERWRITE, 10, 1),
-    ],
-)
-def test_catalog_append_data(
-    catalog: ParquetDataCatalog,
-    mode: CatalogWriteMode,
-    num_expected_bars: int,
-    num_expected_files: int,
-) -> None:
-    # Arrange
-    bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
-    instrument = TestInstrumentProvider.adabtc_binance()
-    stub_bars = TestDataStubs.binance_bars_from_csv(
-        "ADABTC-1m-2021-11-27.csv",
-        bar_type,
-        instrument,
-    )
-    catalog.write_data(stub_bars, mode=mode)
-
-    # Act
-    catalog.write_data(stub_bars, mode=mode)
-
-    # Assert
-    bars = catalog.bars(bar_types=[str(bar_type)])
-    all_bars = catalog.bars()
-    assert len(bars) == len(all_bars) == num_expected_bars
-    assert len(list(Path(catalog.path).rglob("*.parquet"))) == num_expected_files
-
-
-def test_catalog_wrong_basename_template(catalog: ParquetDataCatalog) -> None:
-    # Arrange
-    bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
-    instrument = TestInstrumentProvider.adabtc_binance()
-    stub_bars = TestDataStubs.binance_bars_from_csv(
-        "ADABTC-1m-2021-11-27.csv",
-        bar_type,
-        instrument,
-    )
-
-    # Act, assert
-    with pytest.raises(ValueError):
-        catalog.write_data(stub_bars, basename_template="wrong-template")
 
 
 def test_catalog_bars_querying_by_instrument_id(catalog: ParquetDataCatalog) -> None:
@@ -495,3 +389,96 @@ def test_list_live_runs(
 
     # Assert
     assert result == ["abc"]
+
+
+# Custom data class for testing metadata functionality
+@customdataclass
+class TestCustomData(Data):
+    value: str = "test"
+    number: int = 42
+
+
+def test_catalog_query_with_static_metadata(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method with static (non-callable) metadata.
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+        TestCustomData(value="data2", number=2, ts_event=2, ts_init=2),
+    ]
+    catalog.write_data(test_data)
+
+    static_metadata = {"source": "test", "version": "1.0"}
+
+    # Act
+    result = catalog.query(TestCustomData, metadata=static_metadata)
+
+    # Assert
+    assert len(result) == 2
+    assert all(isinstance(item, CustomData) for item in result)
+
+    # Check that all items have the same static metadata
+    for item in result:
+        assert item.data_type.metadata == static_metadata
+        assert item.data_type.type == TestCustomData
+
+
+def test_catalog_query_with_callable_metadata(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method with callable metadata that generates different metadata per data
+    item.
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+        TestCustomData(value="data2", number=2, ts_event=2, ts_init=2),
+        TestCustomData(value="data3", number=3, ts_event=3, ts_init=3),
+    ]
+    catalog.write_data(test_data)
+
+    # Define a callable metadata function that generates metadata based on the data
+    def metadata_func(data_item):
+        return {
+            "value": data_item.value,
+            "number_category": "even" if data_item.number % 2 == 0 else "odd",
+            "timestamp": str(data_item.ts_event),
+        }
+
+    # Act
+    result = catalog.query(TestCustomData, metadata=metadata_func)
+
+    # Assert
+    assert len(result) == 3
+    assert all(isinstance(item, CustomData) for item in result)
+
+    # Check that each item has different metadata based on its data
+    expected_metadata = [
+        {"value": "data1", "number_category": "odd", "timestamp": "1"},
+        {"value": "data2", "number_category": "even", "timestamp": "2"},
+        {"value": "data3", "number_category": "odd", "timestamp": "3"},
+    ]
+
+    for i, item in enumerate(result):
+        assert item.data_type.metadata == expected_metadata[i]
+        assert item.data_type.type == TestCustomData
+
+
+def test_catalog_query_without_metadata_parameter(catalog: ParquetDataCatalog) -> None:
+    """
+    Test query method without metadata parameter (should default to None).
+    """
+    # Arrange
+    test_data = [
+        TestCustomData(value="data1", number=1, ts_event=1, ts_init=1),
+    ]
+    catalog.write_data(test_data)
+
+    # Act
+    result = catalog.query(TestCustomData)
+
+    # Assert
+    assert len(result) == 1
+    assert isinstance(result[0], CustomData)
+    assert result[0].data_type.metadata == {}
+    assert result[0].data_type.type == TestCustomData

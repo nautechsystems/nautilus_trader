@@ -16,12 +16,16 @@
 import pickle
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -327,3 +331,71 @@ def test_binance_mark_price_pickling():
         "ts_event": 1650000000000000001,
         "ts_init": 1650000000000000000,
     }
+
+
+@pytest.fixture(name="catalog")
+def fixture_catalog() -> ParquetDataCatalog:
+    return setup_catalog(protocol="memory")
+
+
+def test_binance_bar_data_catalog_serialization(catalog: ParquetDataCatalog):
+    """
+    Test that BinanceBar can be serialized to and deserialized from a data catalog.
+
+    Regression test for the BinanceBar serialization issue where Arrow registration was
+    incomplete (missing encoder/decoder).
+
+    """
+    # Arrange
+    bar = BinanceBar(
+        bar_type=BarType(
+            instrument_id=TestIdStubs.btcusdt_binance_id(),
+            bar_spec=TestDataStubs.bar_spec_1min_last(),
+        ),
+        open=Price.from_str("0.01634790"),
+        high=Price.from_str("0.01640000"),
+        low=Price.from_str("0.01575800"),
+        close=Price.from_str("0.01577100"),
+        volume=Quantity.from_str("148976.11427815"),
+        quote_volume=Decimal("2434.19055334"),
+        count=100,
+        taker_buy_base_volume=Decimal("1756.87402397"),
+        taker_buy_quote_volume=Decimal("28.46694368"),
+        ts_event=1650000000000000000,
+        ts_init=1650000000000000000,
+    )
+
+    # Act
+    catalog.write_data([bar])
+    binance_bars = catalog.custom_data(cls=BinanceBar)
+
+    assert len(binance_bars) == 1
+    retrieved_bar = binance_bars[0]
+
+    # Verify all standard bar fields
+    assert retrieved_bar.bar_type == bar.bar_type
+    assert retrieved_bar.open == bar.open
+    assert retrieved_bar.high == bar.high
+    assert retrieved_bar.low == bar.low
+    assert retrieved_bar.close == bar.close
+    assert retrieved_bar.volume == bar.volume
+    assert retrieved_bar.ts_event == bar.ts_event
+    assert retrieved_bar.ts_init == bar.ts_init
+
+    # Verify Binance-specific fields are preserved
+    assert hasattr(retrieved_bar, "quote_volume")
+    assert hasattr(retrieved_bar, "count")
+    assert hasattr(retrieved_bar, "taker_buy_base_volume")
+    assert hasattr(retrieved_bar, "taker_buy_quote_volume")
+    assert hasattr(retrieved_bar, "taker_sell_base_volume")
+    assert hasattr(retrieved_bar, "taker_sell_quote_volume")
+
+    assert retrieved_bar.quote_volume == bar.quote_volume
+    assert retrieved_bar.count == bar.count
+    assert retrieved_bar.taker_buy_base_volume == bar.taker_buy_base_volume
+    assert retrieved_bar.taker_buy_quote_volume == bar.taker_buy_quote_volume
+    assert retrieved_bar.taker_sell_base_volume == bar.taker_sell_base_volume
+    assert retrieved_bar.taker_sell_quote_volume == bar.taker_sell_quote_volume
+
+    # Verify object equality
+    assert retrieved_bar == bar

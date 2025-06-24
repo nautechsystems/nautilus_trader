@@ -26,14 +26,15 @@ use crate::{
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum AmmType {
     /// Constant Product Automated Market Maker.
     CPAMM,
     /// Concentrated Liquidity Automated Market Maker.
     CLAMM,
-    /// Enhanced CLAMM with Additional Features (Uniswap V4 with Hooks).
+    /// Concentrated liquidity AMM **with hooks** (e.g. upcoming Uniswap v4).
     CLAMEnhanced,
-    /// Specialized AMM for Stable Assets (Curve Style).
+    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style “StableSwap”).
     StableSwap,
     /// AMM with customizable token weights (e.g., Balancer style).
     WeightedPool,
@@ -54,9 +55,9 @@ pub struct Dex {
     pub pool_created_event: Cow<'static, str>,
     /// The event signature or identifier used to detect swap events.
     pub swap_created_event: Cow<'static, str>,
-    /// The event signature or identifier used to detect mint events
+    /// The event signature or identifier used to detect mint events.
     pub mint_created_event: Cow<'static, str>,
-    /// The event signature or identifier used to detect burn events
+    /// The event signature or identifier used to detect burn events.
     pub burn_created_event: Cow<'static, str>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
@@ -95,14 +96,12 @@ impl Dex {
         }
     }
 
-    /// Returns a unique identifier for this DEX, combining chain and name.
-    ///
-    /// Format: "{chain_id}:{name_snake_case}"
+    /// Returns a unique identifier for this DEX, combining chain and protocol name.
     pub fn id(&self) -> String {
         format!(
             "{}:{}",
             self.chain.name,
-            self.name.to_lowercase().replace(" ", "_")
+            self.name.to_lowercase().replace(' ', "_")
         )
     }
 }

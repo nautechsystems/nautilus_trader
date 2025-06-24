@@ -687,6 +687,60 @@ class TestModelEvents:
             == f"OrderFilled(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, trade_id=1, position_id=2, order_side=BUY, order_type=LIMIT, last_qty=0.561000, last_px=15_600.12445 USDT, commission=12.20000000 USDT, liquidity_side=MAKER, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
         )
 
+    def test_account_state_copies_balance_objects(self):
+        """
+        Test that AccountState properly copies AccountBalance objects to prevent
+        mutations from affecting previously stored events.
+
+        This addresses issue #2701 where mutable AccountBalance references caused
+        inconsistent account reporting.
+
+        """
+        # Arrange
+        original_balance = AccountBalance(
+            total=Money(1000, USD),
+            locked=Money(100, USD),
+            free=Money(900, USD),
+        )
+
+        # Create AccountState which should copy the balance
+        account_state = AccountState(
+            account_id=AccountId("SIM-000"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[original_balance],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act - Modify the original balance after AccountState creation
+        # This simulates what happens when the account balance gets updated
+        modified_balance = AccountBalance(
+            total=Money(2000, USD),  # Changed values
+            locked=Money(200, USD),
+            free=Money(1800, USD),
+        )
+
+        # Assert - The balance stored in AccountState should be independent
+        stored_balance = account_state.balances[0]
+
+        # The stored balance should NOT be the same object
+        assert stored_balance is not original_balance
+
+        # The stored balance should still have the original values
+        assert stored_balance.total == Money(1000, USD)
+        assert stored_balance.locked == Money(100, USD)
+        assert stored_balance.free == Money(900, USD)
+
+        # The stored balance should NOT have the modified values
+        assert stored_balance.total != modified_balance.total
+        assert stored_balance.locked != modified_balance.locked
+        assert stored_balance.free != modified_balance.free
+
 
 class TestPositionEvents:
     def setup(self):

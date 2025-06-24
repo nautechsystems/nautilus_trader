@@ -29,6 +29,10 @@ use nautilus_model::{
     types::{AccountBalance, Money},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+/// Manages account balance updates and calculations for portfolio management.
+///
+/// The accounts manager handles balance updates for different account types,
+/// including cash and margin accounts, based on order fills and position changes.
 pub struct AccountsManager {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -41,6 +45,7 @@ impl Debug for AccountsManager {
 }
 
 impl AccountsManager {
+    /// Creates a new [`AccountsManager`] instance.
     pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
         Self { clock, cache }
     }
@@ -98,6 +103,10 @@ impl AccountsManager {
         self.generate_account_state(account, fill.ts_event)
     }
 
+    /// Updates account balances based on open orders.
+    ///
+    /// For cash accounts, updates the balance locked by open orders.
+    /// For margin accounts, updates the initial margin requirements.
     #[must_use]
     pub fn update_orders(
         &self,

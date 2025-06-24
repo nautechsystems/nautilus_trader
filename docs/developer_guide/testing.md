@@ -67,6 +67,14 @@ unrecognized value, these should be left in place in case there is a change to t
 Other design-time exceptions may also be impossible to test for, and so 100% test coverage is not
 the ultimate goal.
 
+### Style guidance
+
+- **Group assertions** where possible – perform all setup/act steps first, then assert expectations together at
+  the end of the test to avoid the *act-assert-act* smell.
+- Using `unwrap`, `expect`, or direct `panic!`/`assert` calls inside **tests** is acceptable. The
+  clarity and conciseness of the test suite outweigh defensive error-handling that is required in
+  production code.
+
 ## Excluded code coverage
 
 The `pragma: no cover` comments found throughout the codebase [exclude code from test coverage](https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html).

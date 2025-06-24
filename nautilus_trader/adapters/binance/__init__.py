@@ -45,6 +45,8 @@ from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLo
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
+from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
+from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
@@ -80,7 +82,12 @@ BINANCE_BAR_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
 
 NAUTILUS_ARROW_SCHEMA[BinanceBar] = BINANCE_BAR_ARROW_SCHEMA
 
-register_arrow(BinanceBar, BINANCE_BAR_ARROW_SCHEMA)
+register_arrow(
+    BinanceBar,
+    BINANCE_BAR_ARROW_SCHEMA,
+    encoder=make_dict_serializer(BINANCE_BAR_ARROW_SCHEMA),
+    decoder=make_dict_deserializer(BinanceBar),
+)
 
 __all__ = [
     "BINANCE",

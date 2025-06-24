@@ -15,8 +15,8 @@
 
 use std::sync::Arc;
 
-use rustls::{self, ClientConfig};
-use rustls_platform_verifier::ConfigVerifierExt;
+use rustls::{self, ClientConfig, RootCertStore};
+use webpki_roots;
 
 /// Loads a TLS client configuration with certificates.
 ///
@@ -25,5 +25,13 @@ use rustls_platform_verifier::ConfigVerifierExt;
 /// Panics if the configuration fails to load.
 pub fn create_tls_config() -> Arc<ClientConfig> {
     tracing::debug!("Loading certificates");
-    Arc::new(ClientConfig::with_platform_verifier().expect("Failed to load TLS config"))
+
+    let mut root_store = RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    Arc::new(config)
 }

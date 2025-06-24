@@ -1186,7 +1186,7 @@ cpdef str log_level_to_str(LogLevel value):
 cdef class LogGuard:
     """
     Provides a `LogGuard` which serves as a token to signal the initialization
-    of the logging system. It also ensures that the global logger is flushed
+    of the logging subsystem. It also ensures that the global logger is flushed
     of any buffered records when the instance is destroyed.
     """
 
@@ -1212,9 +1212,9 @@ cpdef LogGuard init_logging(
     uint32_t max_backup_count = 5,
 ):
     """
-    Initialize the logging system.
+    Initialize the logging subsystem.
 
-    Provides an interface into the logging system implemented in Rust.
+    Provides an interface into the logging subsystem implemented in Rust.
 
     This function should only be called once per process, at the beginning of the application
     run. Subsequent calls will raise a `RuntimeError`, as there can only be one `LogGuard`
@@ -1247,7 +1247,7 @@ cpdef LogGuard init_logging(
     colors : bool, default True
         If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
-        If the output for the core logging system is bypassed (useful for logging tests).
+        If the output for the core logging subsystem is bypassed (useful for logging tests).
     print_config : bool, default False
         If the core logging configuration should be printed to stdout on initialization.
     max_file_size : uint64_t, default 0
@@ -1263,7 +1263,7 @@ cpdef LogGuard init_logging(
     Raises
     ------
     RuntimeError
-        If the logging system has already been initialized.
+        If the logging subsystem has already been initialized.
 
     """
     if trader_id is None:
@@ -1274,7 +1274,7 @@ cpdef LogGuard init_logging(
         instance_id = UUID4()
 
     if logging_is_initialized():
-        raise RuntimeError("Logging system already initialized")
+        raise RuntimeError("Logging subsystem already initialized")
 
     cdef LogGuard_API log_guard_api = logging_init(
         trader_id._mem,
@@ -1321,7 +1321,7 @@ cpdef void flush_logger():
 
 cdef class Logger:
     """
-    Provides a logger adapter into the logging system.
+    Provides a logger adapter into the logging subsystem.
 
     Parameters
     ----------

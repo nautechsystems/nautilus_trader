@@ -22,7 +22,7 @@ use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable}
 use serde::{Deserialize, Serialize};
 
 use super::{
-    GetTsInit,
+    HasTsInit,
     order::{BookOrder, NULL_ORDER},
 };
 use crate::{
@@ -52,7 +52,7 @@ pub struct OrderBookDelta {
     pub sequence: u64,
     /// UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -185,7 +185,7 @@ impl Display for OrderBookDelta {
 
 impl Serializable for OrderBookDelta {}
 
-impl GetTsInit for OrderBookDelta {
+impl HasTsInit for OrderBookDelta {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

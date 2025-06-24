@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::{GetTsInit, order::BookOrder};
+use super::{HasTsInit, order::BookOrder};
 use crate::{identifiers::InstrumentId, types::fixed::FIXED_SIZE_BINARY};
 
 pub const DEPTH10_LEN: usize = 10;
@@ -58,7 +58,7 @@ pub struct OrderBookDepth10 {
     pub sequence: u64,
     /// UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -189,7 +189,7 @@ impl Display for OrderBookDepth10 {
 
 impl Serializable for OrderBookDepth10 {}
 
-impl GetTsInit for OrderBookDepth10 {
+impl HasTsInit for OrderBookDepth10 {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -203,7 +203,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::data::stubs::*;
+    use crate::{data::stubs::*, types::Price};
 
     #[rstest]
     fn test_new(stub_depth10: OrderBookDepth10) {
@@ -217,10 +217,10 @@ mod tests {
         assert_eq!(depth.instrument_id, instrument_id);
         assert_eq!(depth.bids.len(), 10);
         assert_eq!(depth.asks.len(), 10);
-        assert_eq!(depth.asks[9].price.as_f64(), 109.0);
-        assert_eq!(depth.asks[0].price.as_f64(), 100.0);
-        assert_eq!(depth.bids[0].price.as_f64(), 99.0);
-        assert_eq!(depth.bids[9].price.as_f64(), 90.0);
+        assert_eq!(depth.asks[9].price, Price::from("109.0"));
+        assert_eq!(depth.asks[0].price, Price::from("100.0"));
+        assert_eq!(depth.bids[0].price, Price::from("99.0"));
+        assert_eq!(depth.bids[9].price, Price::from("90.0"));
         assert_eq!(depth.bid_counts.len(), 10);
         assert_eq!(depth.ask_counts.len(), 10);
         assert_eq!(depth.bid_counts[0], 1);

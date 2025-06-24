@@ -91,10 +91,9 @@ repos:
 
       - id: cargo-doc
         name: cargo doc
-        description: Check documentation builds without errors.
-        entry: cargo doc
+        description: Check documentation builds without errors or warnings.
+        entry: bash -c 'RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc --features "high-precision,ffi,python,extension-module" --no-deps --workspace --quiet'
         language: system
-        args: ["--features", "high-precision,ffi,python,extension-module", "--no-deps", "--workspace"]
         files: '\.(rs|toml)$'
         types: [file]
         pass_filenames: false
@@ -118,7 +117,7 @@ repos:
         args: ["--config", "pyproject.toml"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.13
+    rev: v0.12.0
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -147,7 +146,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.0
+    rev: v1.16.1
     hooks:
       - id: mypy
         args: [
@@ -164,7 +163,7 @@ repos:
         ]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.7.12  # uv version
+    rev: 0.7.13  # uv version
     hooks:
       - id: uv-lock
 

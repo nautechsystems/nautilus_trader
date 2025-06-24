@@ -26,7 +26,7 @@ use nautilus_core::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     enums::PriceType,
     identifiers::InstrumentId,
@@ -57,7 +57,7 @@ pub struct QuoteTick {
     pub ask_size: Quantity,
     /// UNIX timestamp (nanoseconds) when the quote event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -214,7 +214,7 @@ impl Display for QuoteTick {
 
 impl Serializable for QuoteTick {}
 
-impl GetTsInit for QuoteTick {
+impl HasTsInit for QuoteTick {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

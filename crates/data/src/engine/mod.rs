@@ -42,10 +42,14 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+#[cfg(feature = "defi")]
+use alloy_primitives::Address;
 use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use handlers::{BarBarHandler, BarQuoteHandler, BarTradeHandler};
 use indexmap::IndexMap;
+#[cfg(feature = "defi")]
+use nautilus_common::messages::defi::{DefiSubscribeCommand, DefiUnsubscribeCommand};
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
@@ -65,6 +69,8 @@ use nautilus_core::{
     },
     datetime::millis_to_nanos,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::Blockchain;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
@@ -246,8 +252,8 @@ impl DataEngine {
     }
 
     /// Starts all registered data clients.
-    pub fn start(&self) {
-        for client in self.get_clients() {
+    pub fn start(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.start() {
                 log::error!("{e}");
             }
@@ -255,8 +261,8 @@ impl DataEngine {
     }
 
     /// Stops all registered data clients.
-    pub fn stop(&self) {
-        for client in self.get_clients() {
+    pub fn stop(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.stop() {
                 log::error!("{e}");
             }
@@ -264,8 +270,8 @@ impl DataEngine {
     }
 
     /// Resets all registered data clients to their initial state.
-    pub fn reset(&self) {
-        for client in self.get_clients() {
+    pub fn reset(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.reset() {
                 log::error!("{e}");
             }
@@ -273,8 +279,8 @@ impl DataEngine {
     }
 
     /// Disposes the engine, stopping all clients and cancelling any timers.
-    pub fn dispose(&self) {
-        for client in self.get_clients() {
+    pub fn dispose(&mut self) {
+        for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {
                 log::error!("{e}");
             }
@@ -449,6 +455,34 @@ impl DataEngine {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 
+    #[cfg(feature = "defi")]
+    /// Returns all blockchains for which blocks subscriptions exist.
+    #[must_use]
+    pub fn subscribed_blocks(&self) -> Vec<Blockchain> {
+        self.collect_subscriptions(|client| &client.subscriptions_blocks)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all pool addresses for which pool subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pools(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pools)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all pool addresses for which swap subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_swaps(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_swaps)
+    }
+
+    #[cfg(feature = "defi")]
+    /// Returns all pool addresses for which liquidity update subscriptions exist.
+    #[must_use]
+    pub fn subscribed_pool_liquidity_updates(&self) -> Vec<Address> {
+        self.collect_subscriptions(|client| &client.subscriptions_pool_liquidity_updates)
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Executes a `DataCommand` by delegating to subscribe, unsubscribe, or request handlers.
@@ -459,6 +493,10 @@ impl DataEngine {
             DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(c),
             DataCommand::Request(c) => self.execute_request(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(c) => self.execute_defi_subscribe(c),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiUnsubscribe(c) => self.execute_defi_unsubscribe(c),
         } {
             log::error!("{e}");
         }
@@ -501,6 +539,35 @@ impl DataEngine {
         Ok(())
     }
 
+    #[cfg(feature = "defi")]
+    /// Handles a subscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription is invalid (e.g., synthetic instrument for book data),
+    /// or if the underlying client operation fails.
+    pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to client
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_defi_subscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
     /// Handles an unsubscribe command, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -525,6 +592,34 @@ impl DataEngine {
         // Forward command to the client
         if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
             client.execute_unsubscribe(cmd);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for client_id={:?}, venue={:?}",
+                cmd.client_id(),
+                cmd.venue(),
+            );
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    /// Handles an unsubscribe command, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client operation fails.
+    pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
+        // Check if client declared as external
+        if let Some(client_id) = cmd.client_id() {
+            if self.external_clients.contains(client_id) {
+                return Ok(());
+            }
+        }
+
+        // Forward command to the client
+        if let Some(client) = self.get_client(cmd.client_id(), cmd.venue()) {
+            client.execute_defi_unsubscribe(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for client_id={:?}, venue={:?}",
@@ -608,38 +703,25 @@ impl DataEngine {
 
     /// Processes DeFi-specific data events.
     #[cfg(feature = "defi")]
-    pub fn process_defi_data(&mut self, _data: DefiData) {
-        todo!("Implement");
-        // match data {
-        //     DefiData::Swap(swap) => {
-        //         // TODO: Implement cache storage for swaps
-        //         log::info!("Processed DeFi swap: {}", swap.pool.ticker());
-        //
-        //         // Publish swap data to message bus for strategies
-        //         let topic = format!("data.defi.swap.{}", swap.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &swap as &dyn std::any::Any);
-        //     }
-        //     DefiData::PoolLiquidityUpdate(update) => {
-        //         // TODO: Implement cache storage for liquidity updates
-        //         log::info!(
-        //             "Processed DeFi liquidity update: {} {}",
-        //             update.pool.ticker(),
-        //             update.kind
-        //         );
-        //
-        //         // Publish liquidity update to message bus for strategies
-        //         let topic = format!("data.defi.liquidity.{}", update.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &update as &dyn std::any::Any);
-        //     }
-        //     DefiData::Pool(pool) => {
-        //         // TODO: Implement cache storage for pools
-        //         log::info!("Processed DeFi pool: {}", pool.ticker());
-        //
-        //         // Publish pool data to message bus for strategies
-        //         let topic = format!("data.defi.pool.{}", pool.instrument_id());
-        //         msgbus::publish(MStr::new(&topic), &pool as &dyn std::any::Any);
-        //     }
-        // }
+    pub fn process_defi_data(&mut self, data: DefiData) {
+        match data {
+            DefiData::Block(block) => {
+                let topic = switchboard::get_defi_blocks_topic(block.chain());
+                msgbus::publish(topic, &block as &dyn Any);
+            }
+            DefiData::Pool(pool) => {
+                let topic = switchboard::get_defi_pool_topic(pool.address);
+                msgbus::publish(topic, &pool as &dyn Any);
+            }
+            DefiData::PoolSwap(swap) => {
+                let topic = switchboard::get_defi_pool_swaps_topic(swap.pool.address);
+                msgbus::publish(topic, &swap as &dyn Any);
+            }
+            DefiData::PoolLiquidityUpdate(update) => {
+                let topic = switchboard::get_defi_liquidity_topic(update.pool.address);
+                msgbus::publish(topic, &update as &dyn Any);
+            }
+        }
     }
 
     /// Processes a `DataResponse`, handling and publishing the response message.
@@ -897,7 +979,7 @@ impl DataEngine {
                 .set_timer_ns(
                     &timer_name,
                     interval_ns,
-                    start_time_ns.into(),
+                    Some(start_time_ns.into()),
                     None,
                     Some(callback),
                     None,

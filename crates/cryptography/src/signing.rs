@@ -13,19 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use aws_lc_rs::{hmac, rand as lc_rand, rsa::KeyPair, signature as lc_signature};
 use base64::prelude::*;
+use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey};
 use hex;
-use ring::{
-    hmac,
-    rand::SystemRandom,
-    signature::{Ed25519KeyPair, RSA_PKCS1_SHA256, RsaKeyPair, Signature},
-};
 
-#[must_use]
-pub fn hmac_signature(secret: &str, data: &str) -> String {
+/// Generates an HMAC-SHA256 signature for the given data using the provided secret.
+///
+/// This function creates a cryptographic hash-based message authentication code (HMAC)
+/// using SHA-256 as the underlying hash function. The resulting signature is returned
+/// as a lowercase hexadecimal string.
+///
+/// # Errors
+///
+/// Returns an error if signature generation fails due to key or cryptographic errors.
+pub fn hmac_signature(secret: &str, data: &str) -> anyhow::Result<String> {
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
-    let signature = hmac::sign(&key, data.as_bytes());
-    hex::encode(signature.as_ref())
+    let tag = hmac::sign(&key, data.as_bytes());
+    Ok(hex::encode(tag.as_ref()))
 }
 
 /// Signs `data` using RSA PKCS#1 v1.5 SHA-256 with the provided private key in PEM format.
@@ -41,17 +46,33 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
         anyhow::bail!("Query string cannot be empty");
     }
 
-    let pem = pem::parse(private_key_pem)?;
-    let private_key =
-        RsaKeyPair::from_pkcs8(pem.contents()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    let mut signature = vec![0; private_key.public().modulus_len()];
-    let rng = SystemRandom::new();
+    // Remove PEM headings and decode to DER bytes using the `pem` crate
+    let pem = pem::parse(private_key_pem.trim())
+        .map_err(|e| anyhow::anyhow!("Failed to parse PEM: {e}"))?;
 
-    private_key
-        .sign(&RSA_PKCS1_SHA256, &rng, data.as_bytes(), &mut signature)
-        .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+    // Ensure this is a private key
+    if !pem.tag().ends_with("PRIVATE KEY") {
+        anyhow::bail!("PEM does not contain a private key");
+    }
 
-    Ok(BASE64_STANDARD.encode(&signature))
+    // Construct RSA key pair from PKCS#8 DER bytes
+    let key_pair = KeyPair::from_pkcs8(pem.contents())
+        .map_err(|_| anyhow::anyhow!("Failed to decode RSA private key"))?;
+
+    // Prepare RNG and output buffer (signature length = modulus length)
+    let rng = lc_rand::SystemRandom::new();
+    let mut signature = vec![0u8; key_pair.public_modulus_len()];
+
+    key_pair
+        .sign(
+            &lc_signature::RSA_PKCS1_SHA256,
+            &rng,
+            data.as_bytes(),
+            &mut signature,
+        )
+        .map_err(|_| anyhow::anyhow!("Failed to generate RSA signature"))?;
+
+    Ok(BASE64_STANDARD.encode(signature))
 }
 
 /// Signs `data` using Ed25519 with the provided private key seed.
@@ -60,10 +81,13 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
 ///
 /// Returns an error if the provided private key seed is invalid or signature creation fails.
 pub fn ed25519_signature(private_key: &[u8], data: &str) -> anyhow::Result<String> {
-    let key_pair =
-        Ed25519KeyPair::from_seed_unchecked(private_key).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-    let signature: Signature = key_pair.sign(data.as_bytes());
-    Ok(hex::encode(signature.as_ref()))
+    let signing_key = SigningKey::from_bytes(
+        private_key
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid Ed25519 private key length"))?,
+    );
+    let signature: Ed25519Signature = signing_key.sign(data.as_bytes());
+    Ok(hex::encode(signature.to_bytes()))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -106,7 +130,7 @@ mod tests {
         #[case] data: &str,
         #[case] expected_signature: &str,
     ) {
-        let result = hmac_signature(secret, data);
+        let result = hmac_signature(secret, data).unwrap();
         assert_eq!(
             result, expected_signature,
             "Expected signature did not match"

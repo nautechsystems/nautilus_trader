@@ -191,7 +191,7 @@ impl Quota {
             "Invalid GCRA parameters: tau/t results in zero burst capacity"
         );
         assert!(
-            (division_result <= u64::from(u32::MAX)),
+            u32::try_from(division_result).is_ok(),
             "Invalid GCRA parameters: tau/t exceeds u32::MAX"
         );
 

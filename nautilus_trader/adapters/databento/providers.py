@@ -131,7 +131,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
         pyo3_instruments = []
 
-        success_msg = "All instruments received and decoded"
+        success_msg = "instrument(s) received and decoded"
         timeout_secs = 2.0  # Inactivity timeout when receiving instruments
         check_interval_secs = 0.1  # Check for inactivity interval
         started_receiving = False
@@ -151,7 +151,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
             # Cancel task once all expected instruments received
             if not parent_symbols and not instrument_ids_to_decode:
-                raise asyncio.CancelledError(success_msg)
+                raise asyncio.CancelledError(f"{len(pyo3_instruments)} {success_msg}")
 
         live_client.subscribe(
             schema=DatabentoSchema.DEFINITION.value,
@@ -181,7 +181,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 if started_receiving and (
                     self._clock.timestamp() - last_received_time > timeout_secs
                 ):
-                    raise asyncio.CancelledError(success_msg)
+                    raise asyncio.CancelledError(f"{len(pyo3_instruments)} {success_msg}")
 
         try:
             await asyncio.gather(
@@ -192,7 +192,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             )
         except asyncio.CancelledError as e:
             if success_msg in str(e):
-                self._log.info(success_msg)
+                self._log.info(f"{len(pyo3_instruments)} {success_msg}")
             else:
                 self._log.warning(str(e))
         except Exception as e:

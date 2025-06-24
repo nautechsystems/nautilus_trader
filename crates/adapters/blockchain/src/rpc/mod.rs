@@ -41,10 +41,10 @@ pub mod utils;
 #[enum_dispatch(BlockchainRpcClient)]
 #[derive(Debug)]
 pub enum BlockchainRpcClientAny {
+    Arbitrum(ArbitrumRpcClient),
+    Base(BaseRpcClient),
     Ethereum(EthereumRpcClient),
     Polygon(PolygonRpcClient),
-    Base(BaseRpcClient),
-    Arbitrum(ArbitrumRpcClient),
 }
 
 #[async_trait::async_trait]
@@ -52,6 +52,12 @@ pub enum BlockchainRpcClientAny {
 pub trait BlockchainRpcClient {
     async fn connect(&mut self) -> anyhow::Result<()>;
     async fn subscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn subscribe_swaps(&mut self) -> Result<(), BlockchainRpcClientError> {
+        todo!("Not implemented")
+    }
     async fn unsubscribe_blocks(&mut self) -> Result<(), BlockchainRpcClientError>;
+    async fn unsubscribe_swaps(&mut self) -> Result<(), BlockchainRpcClientError> {
+        todo!("Not implemented")
+    }
     async fn next_rpc_message(&mut self) -> Result<BlockchainMessage, BlockchainRpcClientError>;
 }

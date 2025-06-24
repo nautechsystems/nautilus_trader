@@ -327,8 +327,19 @@ class TestOrderBook:
 
         # Assert
         assert (
-            repr(book)
-            == "OrderBook L2_MBP\ninstrument: AUD/USD.SIM\nsequence: 0\nts_last: 0\nupdate_count: 2\n╭──────┬───────┬──────╮\n│ bids │ price │ asks │\n├──────┼───────┼──────┤\n│      │ 11.0  │ [6]  │\n│ [5]  │ 10.0  │      │\n╰──────┴───────┴──────╯"  # noqa
+            repr(book) == "OrderBook L2_MBP\n"
+            "instrument: AUD/USD.SIM\n"
+            "sequence: 0\n"
+            "ts_last: 0\n"
+            "update_count: 2\n"
+            "bid_levels: 1\n"
+            "ask_levels: 1\n"
+            "╭──────┬───────┬──────╮\n"
+            "│ bids │ price │ asks │\n"
+            "├──────┼───────┼──────┤\n"
+            "│      │ 11.0  │ [6]  │\n"
+            "│ [5]  │ 10.0  │      │\n"
+            "╰──────┴───────┴──────╯"
         )  # <-- Calls pprint internally
 
     def test_pprint_when_no_orders(self):
@@ -342,7 +353,12 @@ class TestOrderBook:
         result = ob.pprint()
 
         # Assert
-        assert result == "╭──────┬───────┬──────╮\n│ bids │ price │ asks │\n├──────┼───────┼──────┤"
+        assert (
+            result == "bid_levels: 0\nask_levels: 0\n"
+            "╭──────┬───────┬──────╮\n"
+            "│ bids │ price │ asks │\n"
+            "├──────┼───────┼──────┤"
+        )
 
     def test_add(self):
         # Arrange, Act

@@ -19,8 +19,8 @@ use std::{
     path::Path,
 };
 
+use aws_lc_rs::digest::{self, Context};
 use reqwest::blocking::Client;
-use ring::digest;
 use serde_json::Value;
 
 /// Ensures that a file exists at the specified path by downloading it if necessary.
@@ -92,18 +92,18 @@ fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
 
 fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     let mut file = File::open(filepath)?;
-    let mut context = digest::Context::new(&digest::SHA256);
-    let mut buffer = [0; 4096];
+    let mut ctx = Context::new(&digest::SHA256);
+    let mut buffer = [0u8; 4096];
 
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
-        context.update(&buffer[..count]);
+        ctx.update(&buffer[..count]);
     }
 
-    let digest = context.finish();
+    let digest = ctx.finish();
     Ok(hex::encode(digest.as_ref()))
 }
 

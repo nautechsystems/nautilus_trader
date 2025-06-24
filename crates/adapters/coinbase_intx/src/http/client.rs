@@ -689,7 +689,7 @@ impl CoinbaseIntxHttpClient {
             .lock()
             .unwrap()
             .keys()
-            .map(std::string::ToString::to_string)
+            .map(ToString::to_string)
             .collect()
     }
 

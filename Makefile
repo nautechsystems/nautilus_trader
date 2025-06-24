@@ -6,11 +6,11 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 .PHONY: install
 install:
-	BUILD_MODE=release uv sync --active --all-groups --all-extras
+	BUILD_MODE=release uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-debug
 install-debug:
-	BUILD_MODE=debug uv sync --active --all-groups --all-extras
+	BUILD_MODE=debug uv sync --active --all-groups --all-extras --verbose
 
 .PHONY: install-just-deps
 install-just-deps:
@@ -37,17 +37,32 @@ build-dry-run:
 	DRY_RUN=true uv run --active --no-sync build.py
 
 .PHONY: clean
-clean:
+clean: clean-build-artifacts clean-caches clean-builds
+
+.PHONY: clean-builds
+clean-builds:
+		rm -rf dist target 2>/dev/null || true
+
+.PHONY: clean-build-artifacts
+clean-build-artifacts:
+	@echo "Cleaning build artifacts..."
+	# Clean Rust build artifacts (keep final libraries)
+	find target -name "*.rlib" -delete 2>/dev/null || true
+	find target -name "*.rmeta" -delete 2>/dev/null || true
+	rm -rf target/*/build target/*/deps 2>/dev/null || true
+	# Clean Python build artifacts
+	rm -rf build/ 2>/dev/null || true
 	find . -type d -name "__pycache__" -not -path "./.venv*" -print0 | xargs -0 rm -rf
+	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
 	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -print0 | xargs -0 rm -f
-	rm -rf \
-		.benchmarks/ \
-		.mypy_cache/ \
-		.pytest_cache/ \
-		.ruff_cache/ \
-		build/ \
-		dist/ \
-		target/
+	# Clean test artifacts
+	rm -rf .coverage .benchmarks 2>/dev/null || true
+
+.PHONY: clean-caches
+clean-caches:
+	rm -rf .pytest_cache .mypy_cache .ruff_cache 2>/dev/null || true
+	-uv cache prune
+	-cargo clean
 
 .PHONY: distclean
 distclean: clean
@@ -89,7 +104,7 @@ docs-rust:
 
 .PHONY: docsrs-check
 docsrs-check:
-	RUSTDOCFLAGS="--cfg docsrs" cargo hack --workspace doc --no-deps --all-features
+	RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo hack --workspace doc --no-deps --all-features
 
 .PHONY: clippy
 clippy:
@@ -125,28 +140,35 @@ cargo-test: RUST_BACKTRACE=1
 cargo-test: HIGH_PRECISION=true
 cargo-test: check-nextest
 cargo-test:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast --cargo-profile nextest
+
+.PHONY: cargo-test-lib
+cargo-test: RUST_BACKTRACE=1
+cargo-test: HIGH_PRECISION=true
+cargo-test-lib: check-nextest
+cargo-test-lib:
+	cargo nextest run --lib --workspace --no-default-features --features "ffi,python,high-precision,defi,stubs" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: RUST_BACKTRACE=1
 cargo-test-standard-precision: HIGH_PRECISION=false
 cargo-test-standard-precision: check-nextest
 cargo-test-standard-precision:
-	cargo nextest run --workspace --features "python,ffi,defi" --cargo-profile nextest
+	cargo nextest run --workspace --features "ffi,python" --no-fail-fast --cargo-profile nextest
 
 .PHONY: cargo-test-debug
 cargo-test-debug: RUST_BACKTRACE=1
 cargo-test-debug: HIGH_PRECISION=true
 cargo-test-debug: check-nextest
 cargo-test-debug:
-	cargo nextest run --workspace --features "python,ffi,high-precision,defi"
+	cargo nextest run --workspace --features "ffi,python,high-precision,defi" --no-fail-fast
 
 .PHONY: cargo-test-standard-precision-debug
 cargo-test-standard-precision-debug: RUST_BACKTRACE=1
 cargo-test-standard-precision-debug: HIGH_PRECISION=false
 cargo-test-standard-precision-debug: check-nextest
 cargo-test-standard-precision-debug:
-	cargo nextest run --workspace --features "python,ffi"
+	cargo nextest run --workspace --features "ffi,python"
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage: check-nextest
@@ -156,6 +178,25 @@ cargo-test-coverage:
 		exit 1; \
 	fi
 	cargo llvm-cov nextest run --workspace
+
+# -----------------------------------------------------------------------------
+# Library tests for a single crate
+# -----------------------------------------------------------------------------
+# Invoke as:
+#   make cargo-test-crate-<crate_name>
+# Example:
+#   make cargo-test-crate-nautilus_macro
+#
+# This reuses the same flags as `cargo-test-lib` but targets only the specified
+# crate by replacing `--workspace` with `-p <crate>`.
+# -----------------------------------------------------------------------------
+
+.PHONY: cargo-test-crate-%
+cargo-test-crate-%: RUST_BACKTRACE=1
+cargo-test-crate-%: HIGH_PRECISION=true
+cargo-test-crate-%: check-nextest
+cargo-test-crate-%:
+	cargo nextest run --lib --no-default-features --all-features --no-fail-fast --cargo-profile nextest -p $*
 
 .PHONY: cargo-bench
 cargo-bench:

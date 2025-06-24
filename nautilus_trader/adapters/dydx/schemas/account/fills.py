@@ -16,7 +16,6 @@
 Define the schemas for the GetFills endpoint.
 """
 
-# ruff: noqa: N815
 
 import datetime
 from decimal import Decimal

@@ -16,11 +16,13 @@
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
+    time::Duration,
 };
 
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     enums::Environment,
+    timer::TimeEvent,
 };
 use nautilus_core::env::get_env_var;
 use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
@@ -34,10 +36,6 @@ use nautilus_model::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // TODO: Initialize Python interpreter only if python feature is enabled
-    // #[cfg(feature = "python")]
-    pyo3::prepare_freethreaded_python();
-
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
@@ -145,11 +143,6 @@ impl DerefMut for DatabentoSubscriberActor {
 
 impl DataActor for DatabentoSubscriberActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        log::info!(
-            "Starting Databento subscriber actor for {} instruments",
-            self.config.instrument_ids.len()
-        );
-
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
@@ -162,16 +155,30 @@ impl DataActor for DatabentoSubscriberActor {
             self.subscribe_trades(instrument_id, Some(client_id), None);
         }
 
-        log::info!("Databento subscriber actor started successfully");
+        self.clock().set_timer(
+            "TEST-TIMER-1-SECOND",
+            Duration::from_secs(1),
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
+
+        self.clock().set_timer(
+            "TEST-TIMER-2-SECOND",
+            Duration::from_secs(2),
+            None,
+            None,
+            None,
+            Some(true),
+            Some(false),
+        )?;
+
         Ok(())
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        log::info!(
-            "Stopping Databento subscriber actor for {} instruments",
-            self.config.instrument_ids.len()
-        );
-
         let instrument_ids = self.config.instrument_ids.clone();
         let client_id = self.config.client_id;
 
@@ -184,7 +191,11 @@ impl DataActor for DatabentoSubscriberActor {
             self.unsubscribe_trades(instrument_id, Some(client_id), None);
         }
 
-        log::info!("Databento subscriber actor stopped successfully");
+        Ok(())
+    }
+
+    fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()> {
+        log::info!("Received time event: {event:?}");
         Ok(())
     }
 

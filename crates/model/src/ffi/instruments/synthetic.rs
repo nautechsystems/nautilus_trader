@@ -134,7 +134,7 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     let components_vec = synth
         .components
         .iter()
-        .map(std::string::ToString::to_string)
+        .map(ToString::to_string)
         .collect::<Vec<String>>();
 
     string_vec_to_bytes(&components_vec)

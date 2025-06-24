@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
@@ -50,7 +50,7 @@ pub struct TradeTick {
     pub trade_id: TradeId,
     /// UNIX timestamp (nanoseconds) when the trade event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -158,7 +158,7 @@ impl Display for TradeTick {
 
 impl Serializable for TradeTick {}
 
-impl GetTsInit for TradeTick {
+impl HasTsInit for TradeTick {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
@@ -170,7 +170,6 @@ impl GetTsInit for TradeTick {
 #[cfg(test)]
 mod tests {
     use nautilus_core::{UnixNanos, serialization::Serializable};
-    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
@@ -254,18 +253,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
-        pyo3::prepare_freethreaded_python();
-        let trade = stub_trade_ethusdt_buyer;
-
-        Python::with_gil(|py| {
-            let tick_pyobject = trade.into_py_any(py).unwrap();
-            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, trade);
-        });
-    }
-
-    #[rstest]
     fn test_json_serialization(stub_trade_ethusdt_buyer: TradeTick) {
         let trade = stub_trade_ethusdt_buyer;
         let serialized = trade.to_json_bytes().unwrap();
@@ -279,5 +266,20 @@ mod tests {
         let serialized = trade.to_msgpack_bytes().unwrap();
         let deserialized = TradeTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
+    }
+
+    #[cfg(feature = "python")]
+    #[rstest]
+    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
+        use pyo3::{IntoPyObjectExt, Python};
+
+        pyo3::prepare_freethreaded_python();
+        let trade = stub_trade_ethusdt_buyer;
+
+        Python::with_gil(|py| {
+            let tick_pyobject = trade.into_py_any(py).unwrap();
+            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
+            assert_eq!(parsed_tick, trade);
+        });
     }
 }

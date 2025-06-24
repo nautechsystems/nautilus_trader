@@ -40,6 +40,7 @@ use nautilus_model::{
 };
 use rstest::{fixture, rstest};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
+use rust_decimal_macros::dec;
 
 use crate::portfolio::Portfolio;
 
@@ -536,8 +537,15 @@ fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_excep
 
     // Assert
     assert_eq!(
-        account.balances().iter().next().unwrap().1.total.as_f64(),
-        1525000.00
+        account
+            .balances()
+            .iter()
+            .next()
+            .unwrap()
+            .1
+            .total
+            .as_decimal(),
+        dec!(1525000.00)
     );
 }
 
@@ -577,8 +585,8 @@ fn test_update_orders_open_cash_account(
             .balances_locked(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        25000.0
+            .as_decimal(),
+        dec!(25000.0)
     );
 }
 
@@ -649,8 +657,8 @@ fn test_update_orders_open_margin_account(
             .margins_init(&Venue::from("BINANCE"))
             .get(&instrument_btcusdt.id())
             .unwrap()
-            .as_f64(),
-        3.5
+            .as_decimal(),
+        dec!(3.5)
     );
 }
 
@@ -701,8 +709,8 @@ fn test_order_accept_updates_margin_init(
             .margins_init(&Venue::from("BINANCE"))
             .get(&instrument_btcusdt.id())
             .unwrap()
-            .as_f64(),
-        0.5
+            .as_decimal(),
+        dec!(0.5)
     );
 }
 
@@ -830,45 +838,43 @@ fn test_opening_one_long_position_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        10510.0
+            .as_decimal(),
+        dec!(10510.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -6445.89
+            .as_decimal(),
+        dec!(-6445.89)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        10510.0
+            .as_decimal(),
+        dec!(10510.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -6445.89
+            .as_decimal(),
+        dec!(-6445.89)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
@@ -921,45 +927,43 @@ fn test_opening_one_long_position_updates_portfolio_with_bar(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        10510.0
+            .as_decimal(),
+        dec!(10510.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -6445.89
+            .as_decimal(),
+        dec!(-6445.89)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        10510.0
+            .as_decimal(),
+        dec!(10510.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -6445.89
+            .as_decimal(),
+        dec!(-6445.89)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
@@ -1033,45 +1037,45 @@ fn test_opening_one_short_position_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        31020.0
+            .as_decimal(),
+        dec!(31020.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -31000.0
+            .as_decimal(),
+        dec!(-31000.0)
     );
     assert_eq!(
         portfolio
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        31020.0
+            .as_decimal(),
+        dec!(31020.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -31000.0
+            .as_decimal(),
+        dec!(-31000.0)
     );
     assert_eq!(
         portfolio
             .realized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
@@ -1149,32 +1153,30 @@ fn test_opening_positions_with_multi_asset_account(
             .unwrap()
             .get(&Currency::ETH())
             .unwrap()
-            .as_f64(),
-        26.59574468
+            .as_decimal(),
+        dec!(26.59574468)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .unrealized_pnls(&Venue::from("BITMEX"))
             .get(&Currency::ETH())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero()
     );
     // TODO: fix
-    // assert_eq!(
+    // assert!(
     //     portfolio
     //         .margins_maint(&Venue::from("SIM"))
     //         .get(&instrument_audusd.id())
     //         .unwrap()
-    //         .as_f64(),
-    //     0.0
+    //         .is_zero(),
     // );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_ethusdt.id())
             .unwrap()
-            .as_f64(),
-        26.59574468
+            .as_decimal(),
+        dec!(26.59574468)
     );
 }
 
@@ -1241,8 +1243,8 @@ fn test_market_value_when_insufficient_data_for_xrate_returns_none(
             .unwrap()
             .get(&Currency::ETH())
             .unwrap()
-            .as_f64(),
-        0.26595745
+            .as_decimal(),
+        dec!(0.26595745)
     );
 }
 
@@ -1360,8 +1362,8 @@ fn test_opening_several_positions_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        100000.0
+            .as_decimal(),
+        dec!(100000.00)
     );
 
     assert_eq!(
@@ -1369,8 +1371,8 @@ fn test_opening_several_positions_updates_portfolio(
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -37500000.0
+            .as_decimal(),
+        dec!(-37500000.0)
     );
 
     assert_eq!(
@@ -1378,8 +1380,8 @@ fn test_opening_several_positions_updates_portfolio(
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     // FIX: TODO: should not be empty
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
@@ -1387,43 +1389,41 @@ fn test_opening_several_positions_updates_portfolio(
         portfolio
             .net_exposure(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        100000.0
+            .as_decimal(),
+        dec!(100000.0)
     );
     assert_eq!(
         portfolio
             .net_exposure(&instrument_gbpusd.id())
             .unwrap()
-            .as_f64(),
-        100000.0
+            .as_decimal(),
+        dec!(100000.0)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .unrealized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio
             .unrealized_pnl(&instrument_gbpusd.id())
             .unwrap()
-            .as_f64(),
-        -37500000.0
+            .as_decimal(),
+        dec!(-37500000.0)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     assert_eq!(
         portfolio
             .realized_pnl(&instrument_gbpusd.id())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
@@ -1530,8 +1530,8 @@ fn test_modifying_position_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        100000.0
+            .as_decimal(),
+        dec!(100000.0)
     );
 
     assert_eq!(
@@ -1539,8 +1539,8 @@ fn test_modifying_position_updates_portfolio(
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -37500000.0
+            .as_decimal(),
+        dec!(-37500000.0)
     );
 
     assert_eq!(
@@ -1548,8 +1548,8 @@ fn test_modifying_position_updates_portfolio(
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     // FIX: TODO: should not be empty
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
@@ -1557,22 +1557,22 @@ fn test_modifying_position_updates_portfolio(
         portfolio
             .net_exposure(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        100000.0
+            .as_decimal(),
+        dec!(100000.0)
     );
     assert_eq!(
         portfolio
             .unrealized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -37500000.0
+            .as_decimal(),
+        dec!(-37500000.0)
     );
     assert_eq!(
         portfolio
             .realized_pnl(&instrument_audusd.id())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     assert_eq!(
         portfolio.net_position(&instrument_audusd.id()),
@@ -1689,24 +1689,24 @@ fn test_closing_position_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        100000.00
+            .as_decimal(),
+        dec!(100000.00)
     );
     assert_eq!(
         portfolio
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -37500000.00
+            .as_decimal(),
+        dec!(-37500000.00)
     );
     assert_eq!(
         portfolio
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        -12.2
+            .as_decimal(),
+        dec!(-12.2)
     );
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
 }
@@ -1879,24 +1879,22 @@ fn test_several_positions_with_different_instruments_updates_portfolio(
             .unwrap()
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        200000.00
+            .as_decimal(),
+        dec!(200000.00)
     );
-    assert_eq!(
+    assert!(
         portfolio
             .unrealized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
-    assert_eq!(
+    assert!(
         portfolio
             .realized_pnls(&Venue::from("SIM"))
             .get(&Currency::USD())
             .unwrap()
-            .as_f64(),
-        0.0
+            .is_zero(),
     );
     // FIX: TODO: should not be empty
     assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());

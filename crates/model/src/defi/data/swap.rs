@@ -20,7 +20,7 @@ use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    data::GetTsInit,
+    data::HasTsInit,
     defi::{amm::SharedPool, chain::SharedChain, dex::SharedDex},
     enums::OrderSide,
     identifiers::InstrumentId,
@@ -29,12 +29,12 @@ use crate::{
 
 /// Represents a token swap transaction on a decentralized exchange (DEX).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Swap {
-    /// The blockchain network where the swap occurred
+pub struct PoolSwap {
+    /// The blockchain network where the swap occurred.
     pub chain: SharedChain,
-    /// The decentralized exchange where the swap was executed
+    /// The decentralized exchange where the swap was executed.
     pub dex: SharedDex,
-    /// The DEX liquidity pool
+    /// The DEX liquidity pool.
     pub pool: SharedPool,
     /// The blockchain block number at which the swap was executed.
     pub block: u64,
@@ -48,18 +48,18 @@ pub struct Swap {
     pub sender: Address,
     /// The direction of the swap from the perspective of the base token.
     pub side: OrderSide,
-    /// The amount of tokens being swapped
-    pub quantity: Quantity,
+    /// The amount of tokens swapped.
+    pub size: Quantity,
     /// The exchange rate at which the swap occurred.
     pub price: Price,
-    /// The timestamp of the swap in Unix nanoseconds.
+    /// UNIX timestamp (nanoseconds) when the swap occurred.
     pub timestamp: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
 }
 
-impl Swap {
-    /// Creates a new [`Swap`] instance with the specified properties.
+impl PoolSwap {
+    /// Creates a new [`PoolSwap`] instance with the specified properties.
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -73,7 +73,7 @@ impl Swap {
         timestamp: UnixNanos,
         sender: Address,
         side: OrderSide,
-        quantity: Quantity,
+        size: Quantity,
         price: Price,
     ) -> Self {
         Self {
@@ -87,7 +87,7 @@ impl Swap {
             timestamp,
             sender,
             side,
-            quantity,
+            size,
             price,
             ts_init: timestamp, // TODO: Use swap timestamp as init timestamp for now
         }
@@ -100,22 +100,23 @@ impl Swap {
     }
 }
 
-impl GetTsInit for Swap {
+impl HasTsInit for PoolSwap {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }
 }
 
-impl Display for Swap {
+impl Display for PoolSwap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Swap(chain={}, dex={}, pool={}, side={}, quantity={}, price={})",
+            "{}(chain={}, dex={}, pool={}, side={}, quantity={}, price={})",
+            stringify!(PoolSwap),
             self.chain.name,
             self.dex.name,
             self.pool.ticker(),
             self.side,
-            self.quantity,
+            self.size,
             self.price,
         )
     }

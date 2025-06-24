@@ -61,8 +61,20 @@ typedef struct UUID4_t {
     uint8_t value[37];
 } UUID4_t;
 
+/**
+ * Free the heap allocation represented by `cvec`.
+ *
+ * # Safety
+ *
+ * The pointer **must** either originate from the Rust side through the `From<Vec<T>>`
+ * implementation or be the return value of one of the exported functions in this module.  It is
+ * undefined behaviour to pass an arbitrary or already-freed pointer.
+ */
 void cvec_drop(struct CVec cvec);
 
+/**
+ * Construct a new *empty* [`CVec`] value for use as initialiser/sentinel in foreign code.
+ */
 struct CVec cvec_new(void);
 
 /**
@@ -150,6 +162,9 @@ uint8_t min_increment_precision_from_cstr(const char *ptr);
  */
 void cstr_drop(const char *ptr);
 
+/**
+ * Generate a new random (version-4) UUID and return it by value.
+ */
 struct UUID4_t uuid4_new(void);
 
 /**
@@ -165,8 +180,20 @@ struct UUID4_t uuid4_new(void);
  */
 struct UUID4_t uuid4_from_cstr(const char *ptr);
 
+/**
+ * Return a borrowed *null-terminated* UTF-8 C string representing `uuid`.
+ *
+ * The pointer remains valid for as long as the input `UUID4` reference lives – callers **must
+ * not** attempt to free it.
+ */
 const char *uuid4_to_cstr(const struct UUID4_t *uuid);
 
+/**
+ * Compare two UUID values, returning `1` when they are equal and `0` otherwise.
+ */
 uint8_t uuid4_eq(const struct UUID4_t *lhs, const struct UUID4_t *rhs);
 
+/**
+ * Compute the stable [`u64`] hash of `uuid` using Rust’s default hasher.
+ */
 uint64_t uuid4_hash(const struct UUID4_t *uuid);

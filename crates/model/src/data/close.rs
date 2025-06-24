@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
-use super::GetTsInit;
+use super::HasTsInit;
 use crate::{
     enums::InstrumentCloseType,
     identifiers::InstrumentId,
@@ -45,7 +45,7 @@ pub struct InstrumentClose {
     pub close_type: InstrumentCloseType,
     /// UNIX timestamp (nanoseconds) when the close price event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
 }
 
@@ -103,7 +103,7 @@ impl Display for InstrumentClose {
 
 impl Serializable for InstrumentClose {}
 
-impl GetTsInit for InstrumentClose {
+impl HasTsInit for InstrumentClose {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
     }

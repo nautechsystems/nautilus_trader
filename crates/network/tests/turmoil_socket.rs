@@ -47,7 +47,7 @@ struct TestSocketClient<C: TcpConnector> {
 }
 
 impl<C: TcpConnector> TestSocketClient<C> {
-    fn new(config: SocketConfig, connector: C) -> Self {
+    const fn new(config: SocketConfig, connector: C) -> Self {
         Self { config, connector }
     }
 
@@ -76,21 +76,17 @@ impl<C: TcpConnector> TestSocketClient<C> {
         max_attempts: usize,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         for _attempt in 0..max_attempts {
-            match self.connect().await {
-                Ok(stream) => match self.send_data(stream, data).await {
-                    Ok(response) => {
-                        backoff.reset();
-                        return Ok(response);
-                    }
-                    Err(_) => {
-                        let delay = backoff.next_duration();
-                        tokio::time::sleep(delay).await;
-                    }
-                },
-                Err(_) => {
+            if let Ok(stream) = self.connect().await {
+                if let Ok(response) = self.send_data(stream, data).await {
+                    backoff.reset();
+                    return Ok(response);
+                } else {
                     let delay = backoff.next_duration();
                     tokio::time::sleep(delay).await;
                 }
+            } else {
+                let delay = backoff.next_duration();
+                tokio::time::sleep(delay).await;
             }
         }
         Err("Max attempts reached".into())
@@ -121,7 +117,7 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
 fn test_turmoil_socket_with_dependency_injection() {
     let mut sim = Builder::new().build();
 
-    sim.host("server", || echo_server());
+    sim.host("server", echo_server);
 
     sim.client("client", async {
         let config = SocketConfig {
@@ -162,7 +158,7 @@ fn test_turmoil_socket_with_dependency_injection() {
 fn test_turmoil_socket_network_partition() {
     let mut sim = Builder::new().build();
 
-    sim.host("server", || echo_server());
+    sim.host("server", echo_server);
 
     sim.client("client", async {
         let config = SocketConfig {
@@ -228,7 +224,7 @@ fn test_turmoil_socket_network_partition() {
 fn test_exponential_backoff_under_network_instability() {
     let mut sim = Builder::new().build();
 
-    sim.host("server", || echo_server());
+    sim.host("server", echo_server);
 
     sim.client("client", async {
         let config = SocketConfig {
@@ -292,11 +288,11 @@ fn test_exponential_backoff_under_network_instability() {
 fn test_multiple_clients_concurrent() {
     let mut sim = Builder::new().build();
 
-    sim.host("server", || echo_server());
+    sim.host("server", echo_server);
 
     // Test multiple clients concurrently
     for client_id in 0..3_u32 {
-        sim.client(format!("client_{}", client_id), async move {
+        sim.client(format!("client_{client_id}"), async move {
             let config = SocketConfig {
                 url: "server:8080".to_string(),
                 mode: Mode::Plain,
@@ -316,7 +312,7 @@ fn test_multiple_clients_concurrent() {
 
             // Each client sends multiple requests
             for req_id in 0..3 {
-                let message = format!("client_{}_req_{}", client_id, req_id);
+                let message = format!("client_{client_id}_req_{req_id}");
                 let stream = client.connect().await.expect("Should connect");
                 let response = client
                     .send_data(stream, message.as_bytes())

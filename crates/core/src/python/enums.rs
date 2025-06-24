@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Macro-generated enum utilities for PyO3.
+
 use ::pyo3::exceptions::PyValueError;
 use ::strum::{IntoEnumIterator, ParseError};
 use pyo3::PyResult;

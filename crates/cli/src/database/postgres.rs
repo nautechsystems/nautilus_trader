@@ -19,6 +19,18 @@ use nautilus_infrastructure::sql::pg::{
 
 use crate::opt::{DatabaseCommand, DatabaseOpt};
 
+/// Executes database management commands for PostgreSQL operations.
+///
+/// This function handles database initialization, schema setup, and database
+/// dropping operations based on the provided command options.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Database connection fails
+/// - Schema initialization fails
+/// - Database dropping operation fails
+/// - Any PostgreSQL operation encounters an error
 pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
     let command = opt.command.clone();
 

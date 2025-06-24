@@ -19,7 +19,6 @@ from datetime import timedelta
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.types import CatalogWriteMode
 
 
 # Note: when using the functions below, change the variable below to a folder path
@@ -122,8 +121,7 @@ def databento_data(
     dataset="GLBX.MDP3",
     to_catalog=True,
     base_path=None,
-    write_data_mode: CatalogWriteMode = CatalogWriteMode.OVERWRITE,
-    use_exchange_as_venue=False,
+    use_exchange_as_venue=True,
     load_databento_files_if_exist=False,
     **kwargs,
 ):
@@ -151,8 +149,6 @@ def databento_data(
         Whether to save the data to a catalog, defaults to True.
     base_path : str, optional
         The base path to use for the data folder, defaults to None.
-    write_data_mode : enum, optional
-        How to add or overwrite data to an existing catalog, defaults to CatalogWriteMode.OVERWRITE.
     use_exchange_as_venue : bool, optional
         Whether to use actual exchanges for instrument ids or GLBX, defaults to False.
     load_databento_files_if_exist : bool, optional
@@ -178,7 +174,7 @@ def databento_data(
     definition_file = used_path / definition_file_name
 
     if not definition_file.exists():
-        definition = client.timeseries.get_range(  # type: ignore[union-attr]
+        definition = client.timeseries.get_range(
             schema="definition",
             dataset=dataset,
             symbols=symbols,
@@ -196,7 +192,7 @@ def databento_data(
 
     if schema != "definition":
         if not data_file.exists():
-            data = client.timeseries.get_range(  # type: ignore[union-attr]
+            data = client.timeseries.get_range(
                 schema=schema,
                 dataset=dataset,
                 symbols=symbols,
@@ -209,6 +205,7 @@ def databento_data(
             data = load_databento_data(data_file) if load_databento_files_if_exist else None
     else:
         data = None
+        data_file = None
 
     result = {
         "symbols": symbols,
@@ -226,13 +223,12 @@ def databento_data(
         del result["databento_data_file"]
         del result["databento_data"]
 
-    if to_catalog and schema != "definition":
+    if to_catalog:
         catalog_data = save_data_to_catalog(
             *folders,
             definition_file=definition_file,
             data_file=data_file,
             base_path=base_path,
-            write_data_mode=write_data_mode,
             use_exchange_as_venue=use_exchange_as_venue,
         )
         result.update(catalog_data)
@@ -245,8 +241,7 @@ def save_data_to_catalog(
     definition_file=None,
     data_file=None,
     base_path=None,
-    write_data_mode=CatalogWriteMode.OVERWRITE,
-    use_exchange_as_venue=False,
+    use_exchange_as_venue=True,
 ):
     """
     Save Databento data to a catalog.
@@ -264,8 +259,6 @@ def save_data_to_catalog(
         The path to the Databento data file.
     base_path : str or Path, optional
         The base path for the catalog.
-    write_data_mode : CatalogWriteMode, default 'OVERWRITE'
-        The mode for writing data to the catalog.
     use_exchange_as_venue : bool, default False
         Whether to use actual exchanges for instrument IDs or GLBX.
 
@@ -300,7 +293,7 @@ def save_data_to_catalog(
 
     if data_file is not None:
         nautilus_data = loader.from_dbn_file(data_file, as_legacy_cython=False)
-        catalog.write_data(nautilus_data, mode=write_data_mode)
+        catalog.write_data(nautilus_data)
     else:
         nautilus_data = None
 
