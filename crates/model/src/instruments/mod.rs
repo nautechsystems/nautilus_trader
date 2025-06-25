@@ -86,8 +86,7 @@ pub fn validate_instrument_common(
     )?;
     check_positive_quantity(multiplier, "multiplier")?;
     check_positive_decimal(margin_init, "margin_init")?;
-    check_predicate_true(margin_init >= dec!(0), "margin_init negative")?;
-    check_predicate_true(margin_maint >= dec!(0), "margin_maint negative")?;
+    check_positive_decimal(margin_maint, "margin_maint")?;
 
     if let Some(price_increment) = price_increment {
         check_positive_price(price_increment, "price_increment")?;
@@ -676,8 +675,33 @@ mod tests {
             2,              // size_precision
             size_increment, // size_increment
             multiplier,     // multiplier
-            dec!(-0.01),    // margin_init  ❌
-            dec!(0),        // margin_maint
+            dec!(-0.01),    // margin_init
+            dec!(0.01),     // margin_maint
+            None,           // price_increment
+            None,           // lot_size
+            None,           // max_quantity
+            None,           // min_quantity
+            None,           // max_notional
+            None,           // min_notional
+            None,           // max_price
+            None,           // min_price
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn validate_negative_margin_maint() {
+        let size_increment = Quantity::new(0.01, 2);
+        let multiplier = Quantity::new(1.0, 0);
+
+        validate_instrument_common(
+            2,
+            2,              // size_precision
+            size_increment, // size_increment
+            multiplier,     // multiplier
+            dec!(0.01),     // margin_init
+            dec!(-0.01),    // margin_maint
             None,           // price_increment
             None,           // lot_size
             None,           // max_quantity
