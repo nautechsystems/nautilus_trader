@@ -4512,6 +4512,7 @@ dependencies = [
  "rand 0.9.1",
  "rmp-serde",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "strum",
