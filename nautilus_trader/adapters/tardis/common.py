@@ -102,6 +102,13 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "okex-futures"
             elif isinstance(instrument, CryptoOption):
                 return "okex-options"
+        case "COINBASE_INTX":
+            return "coinbase-international"
+        case "BITGET":
+            if isinstance(instrument, CurrencyPair):
+                return "bitget"
+            else:
+                return "bitget-futures"
 
     return venue.lower().replace("_", "-")
 

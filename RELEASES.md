@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Consolidated on `aws-lc-rs` cryptography for FIPS compliance
 - Confirmed parity between Cython and Rust indicators (#2700, #2710, #2713), thanks @nicolad
 - Implemented `From<Pool>` -> `CurrencyPair` & `InstrumentAny` (#2693), thanks @nicolad
+- Updated Tardis exchange mappings
 - Improved handling of negative balances in backtests (#2730), thanks @ms32035
 - Improved implementation, validations and testing for Rust instruments (#2723, #2733), thanks @nicolad
 - Improved `Currency` equality to use `strcmp` to avoid C pointer comparison issues with `ustr` string interning
