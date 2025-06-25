@@ -174,20 +174,18 @@ impl BlockchainDataClient {
     /// Spawns a unified task that handles both commands and data from the same client instances.
     /// This replaces both the command processor and hypersync forwarder with a single unified handler.
     fn spawn_process_task(&mut self) {
-        let command_rx = match self.command_rx.take() {
-            Some(r) => r,
-            None => {
-                tracing::error!("Command receiver already taken, not spawning handler");
-                return;
-            }
+        let command_rx = if let Some(r) = self.command_rx.take() {
+            r
+        } else {
+            tracing::error!("Command receiver already taken, not spawning handler");
+            return;
         };
 
-        let hypersync_rx = match self.hypersync_rx.take() {
-            Some(r) => r,
-            None => {
-                tracing::error!("HyperSync receiver already taken, not spawning handler");
-                return;
-            }
+        let hypersync_rx = if let Some(r) = self.hypersync_rx.take() {
+            r
+        } else {
+            tracing::error!("HyperSync receiver already taken, not spawning handler");
+            return;
         };
 
         let mut hypersync_client = std::mem::replace(
@@ -206,43 +204,37 @@ impl BlockchainDataClient {
             loop {
                 tokio::select! {
                     command = command_rx.recv() => {
-                        match command {
-                            Some(cmd) => {
-                                if let Err(e) = Self::process_command(
-                                    cmd,
-                                    &mut hypersync_client,
-                                    rpc_client.as_mut()
-                                ).await {
-                                    tracing::error!("Error processing command: {e}");
-                                }
+                        if let Some(cmd) = command {
+                            if let Err(e) = Self::process_command(
+                                cmd,
+                                &mut hypersync_client,
+                                rpc_client.as_mut()
+                            ).await {
+                                tracing::error!("Error processing command: {e}");
                             }
-                            None => {
-                                tracing::debug!("Command channel closed");
-                                break;
-                            }
+                        } else {
+                            tracing::debug!("Command channel closed");
+                            break;
                         }
                     }
                     data = hypersync_rx.recv() => {
-                        match data {
-                            Some(msg) => {
-                                let data_event = match msg {
-                                    BlockchainMessage::Block(block) => {
-                                        DataEvent::DeFi(DefiData::Block(block))
-                                    }
-                                    BlockchainMessage::Swap(swap) => {
-                                        DataEvent::DeFi(DefiData::PoolSwap(swap))
-                                    }
-                                };
-
-                                if let Err(e) = data_sender.send(data_event) {
-                                    tracing::error!("Failed to send data event: {e}");
-                                    break;
+                        if let Some(msg) = data {
+                            let data_event = match msg {
+                                BlockchainMessage::Block(block) => {
+                                    DataEvent::DeFi(DefiData::Block(block))
                                 }
-                            }
-                            None => {
-                                tracing::debug!("HyperSync data channel closed");
+                                BlockchainMessage::Swap(swap) => {
+                                    DataEvent::DeFi(DefiData::PoolSwap(swap))
+                                }
+                            };
+
+                            if let Err(e) = data_sender.send(data_event) {
+                                tracing::error!("Failed to send data event: {e}");
                                 break;
                             }
+                        } else {
+                            tracing::debug!("HyperSync data channel closed");
+                            break;
                         }
                     }
                 }
@@ -717,12 +709,11 @@ impl BlockchainDataClient {
     pub async fn process_hypersync_messages(&mut self) {
         tracing::info!("Starting task 'process_hypersync_messages'");
 
-        let mut rx = match self.hypersync_rx.take() {
-            Some(r) => r,
-            None => {
-                tracing::warn!("HyperSync receiver already taken, not spawning forwarder");
-                return;
-            }
+        let mut rx = if let Some(r) = self.hypersync_rx.take() {
+            r
+        } else {
+            tracing::warn!("HyperSync receiver already taken, not spawning forwarder");
+            return;
         };
 
         while let Some(msg) = rx.recv().await {
