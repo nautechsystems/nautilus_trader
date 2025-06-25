@@ -1307,7 +1307,7 @@ impl ParquetDataCatalog {
                         let dir_name = path_parts[path_parts.len() - 2];
                         safe_identifiers
                             .iter()
-                            .any(|safe_id| dir_name.starts_with(&format!("{}-", safe_id)))
+                            .any(|safe_id| dir_name.starts_with(&format!("{safe_id}-")))
                     } else {
                         false
                     }

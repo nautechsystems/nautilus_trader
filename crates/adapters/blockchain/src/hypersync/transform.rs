@@ -27,7 +27,10 @@ use ustr::Ustr;
 
 use crate::{
     decode::{u256_to_price, u256_to_quantity},
-    hypersync::helpers::*,
+    hypersync::helpers::{
+        extract_block_number, extract_log_index, extract_transaction_hash,
+        extract_transaction_index,
+    },
 };
 
 /// Converts a HyperSync block format to our internal [`Block`] type.
@@ -199,7 +202,7 @@ pub fn transform_hypersync_swap_log(
 
     let price = if !amount0.is_zero() && !amount1.is_zero() {
         let price_precision = pool.token0.decimals.max(pool.token1.decimals);
-        let scaled_amount1 = amount1 * U256::from(10_u128.pow(price_precision as u32));
+        let scaled_amount1 = amount1 * U256::from(10_u128.pow(u32::from(price_precision)));
         let price_raw = scaled_amount1 / amount0;
 
         if price_precision == 18 {
