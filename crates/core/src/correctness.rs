@@ -23,6 +23,7 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
+use rust_decimal::Decimal;
 use std::fmt::{Debug, Display};
 
 use crate::collections::{MapLike, SetLike};
@@ -507,6 +508,19 @@ where
     Ok(())
 }
 
+/// Checks the `Decimal` value is positive (> 0).
+///
+/// # Errors
+///
+/// Returns an error if the validation check fails.
+#[inline(always)]
+pub fn check_positive_decimal(value: Decimal, param: &str) -> anyhow::Result<()> {
+    if value <= Decimal::ZERO {
+        anyhow::bail!("invalid Decimal for '{param}' not positive, was {value}")
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -518,6 +532,8 @@ mod tests {
     };
 
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -904,6 +920,19 @@ mod tests {
         #[case] expected: bool,
     ) {
         let result = check_member_in_set(&member, set, member_name, set_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case("1", true)] // simple positive integer
+    #[case("0.0000000000000000000000000001", true)] // smallest positive (1 × 10⁻²⁸)
+    #[case("79228162514264337593543950335", true)] // very large positive (≈ Decimal::MAX)
+    #[case("0", false)] // zero should fail
+    #[case("-0.0000000000000000000000000001", false)] // tiny negative
+    #[case("-1", false)] // simple negative integer
+    fn test_check_positive_decimal(#[case] raw: &str, #[case] expected: bool) {
+        let value = Decimal::from_str(raw).expect("valid decimal literal");
+        let result = super::check_positive_decimal(value, "param").is_ok();
         assert_eq!(result, expected);
     }
 }
