@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -207,6 +207,18 @@ impl Money {
             .separate_with_underscores();
         format!("{} {}", amount_str, self.currency.code)
     }
+}
+
+/// Ensures that the provided [`Money`] value is strictly positive (> 0).
+///
+/// # Errors
+///
+/// Returns an error if `value` is zero or negative.
+#[allow(clippy::missing_errors_doc)]
+#[inline(always)]
+pub fn check_positive_money(value: Money, arg_name: &str) -> anyhow::Result<()> {
+    // Positivity can be decided directly on the fixed-point representation.
+    check_predicate_true(value.raw > 0, &format!("{arg_name} must be positive"))
 }
 
 impl FromStr for Money {
@@ -1005,6 +1017,32 @@ mod tests {
                 let expected_sub = original_f64 - factor;
                 prop_assert!((sub_result - expected_sub).abs() < 0.01,
                     "Subtraction with f64 should be accurate");
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(42.0, true, "positive value")]
+    #[case(0.0, false, "zero value")]
+    #[case( -13.5,  false, "negative value")]
+    fn test_check_positive_money(
+        #[case] amount: f64,
+        #[case] should_succeed: bool,
+        #[case] _case_name: &str,
+    ) {
+        let money = Money::new(amount, Currency::USD());
+
+        let res = check_positive_money(money, "money");
+
+        match should_succeed {
+            true => assert!(res.is_ok(), "expected Ok(..) for {amount}"),
+            false => {
+                assert!(res.is_err(), "expected Err(..) for {amount}");
+                let msg = res.unwrap_err().to_string();
+                assert!(
+                    msg.contains("must be positive"),
+                    "error message should mention positivity; got: {msg:?}"
+                );
             }
         }
     }
