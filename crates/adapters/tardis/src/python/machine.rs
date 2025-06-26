@@ -252,13 +252,13 @@ async fn handle_python_stream<S>(
                         .and_then(|map| determine_instrument_info(&msg, map))
                 });
 
-                if let Some(info) = info {
-                    if let Some(data) = parse_tardis_ws_message(msg, info) {
-                        Python::with_gil(|py| {
-                            let py_obj = data_to_pycapsule(py, data);
-                            call_python(py, &callback, py_obj);
-                        });
-                    }
+                if let Some(info) = info
+                    && let Some(data) = parse_tardis_ws_message(msg, info)
+                {
+                    Python::with_gil(|py| {
+                        let py_obj = data_to_pycapsule(py, data);
+                        call_python(py, &callback, py_obj);
+                    });
                 }
             }
             Err(e) => {

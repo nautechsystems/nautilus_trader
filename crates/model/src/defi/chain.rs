@@ -146,7 +146,7 @@ impl Chain {
         Self {
             chain_id,
             name,
-            hypersync_url: format!("https://{}.hypersync.xyz", chain_id),
+            hypersync_url: format!("https://{chain_id}.hypersync.xyz"),
             rpc_url: None,
             native_currency_decimals: 18, // Default to 18 for EVM chains
         }

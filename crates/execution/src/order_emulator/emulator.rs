@@ -219,16 +219,12 @@ impl OrderEmulator {
 
         self.manager.handle_event(event.clone());
 
-        if let Some(order) = self.cache.borrow().order(&event.client_order_id()) {
-            if order.is_closed() {
-                if let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id()) {
-                    if let Err(e) =
-                        matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
-                    {
-                        log::error!("Error deleting order: {e}");
-                    }
-                }
-            }
+        if let Some(order) = self.cache.borrow().order(&event.client_order_id())
+            && order.is_closed()
+            && let Some(matching_core) = self.matching_cores.get_mut(&order.instrument_id())
+            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+        {
+            log::error!("Error deleting order: {e}");
         }
         // else: Order not in cache yet
     }
@@ -719,10 +715,10 @@ impl OrderEmulator {
             .trigger_instrument_id()
             .unwrap_or(order.instrument_id());
 
-        if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id) {
-            if let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone())) {
-                log::error!("Cannot delete order: {e:?}");
-            }
+        if let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
+            && let Err(e) = matching_core.delete_order(&PassiveOrderAny::from(order.clone()))
+        {
+            log::error!("Cannot delete order: {e:?}");
         }
 
         self.cache
@@ -762,10 +758,10 @@ impl OrderEmulator {
             }
         }
 
-        if let Some(position_id) = position_id {
-            if !self.monitored_positions.contains(&position_id) {
-                self.monitored_positions.insert(position_id);
-            }
+        if let Some(position_id) = position_id
+            && !self.monitored_positions.contains(&position_id)
+        {
+            self.monitored_positions.insert(position_id);
         }
     }
 

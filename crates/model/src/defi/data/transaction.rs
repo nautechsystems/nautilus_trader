@@ -92,7 +92,7 @@ where
 
     Chain::from_chain_id(chain_id)
         .cloned()
-        .ok_or_else(|| serde::de::Error::custom(format!("Unknown chain ID: {}", chain_id)))
+        .ok_or_else(|| serde::de::Error::custom(format!("Unknown chain ID: {chain_id}")))
 }
 
 #[cfg(test)]

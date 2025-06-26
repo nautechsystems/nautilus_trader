@@ -117,10 +117,10 @@ impl HyperSyncClient {
             }
         });
 
-        if let Some(to_block) = to_block {
-            if let Some(obj) = query_value.as_object_mut() {
-                obj.insert("to_block".to_string(), serde_json::json!(to_block));
-            }
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
         }
 
         let query = serde_json::from_value(query_value).unwrap();
@@ -209,14 +209,14 @@ impl HyperSyncClient {
                     }
                 }
 
-                if let Some(archive_block_height) = response.archive_height {
-                    if archive_block_height < response.next_block {
-                        while client.get_height().await.unwrap() < response.next_block {
-                            tokio::time::sleep(std::time::Duration::from_millis(
-                                BLOCK_POLLING_INTERVAL_MS,
-                            ))
-                            .await;
-                        }
+                if let Some(archive_block_height) = response.archive_height
+                    && archive_block_height < response.next_block
+                {
+                    while client.get_height().await.unwrap() < response.next_block {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BLOCK_POLLING_INTERVAL_MS,
+                        ))
+                        .await;
                     }
                 }
 
@@ -340,14 +340,14 @@ impl HyperSyncClient {
                     }
                 }
 
-                if let Some(archive_block_height) = response.archive_height {
-                    if archive_block_height < response.next_block {
-                        while client.get_height().await.unwrap() < response.next_block {
-                            tokio::time::sleep(std::time::Duration::from_millis(
-                                BLOCK_POLLING_INTERVAL_MS,
-                            ))
-                            .await;
-                        }
+                if let Some(archive_block_height) = response.archive_height
+                    && archive_block_height < response.next_block
+                {
+                    while client.get_height().await.unwrap() < response.next_block {
+                        tokio::time::sleep(std::time::Duration::from_millis(
+                            BLOCK_POLLING_INTERVAL_MS,
+                        ))
+                        .await;
                     }
                 }
 
@@ -394,10 +394,10 @@ impl HyperSyncClient {
             }
         });
 
-        if let Some(to_block) = to_block {
-            if let Some(obj) = query_value.as_object_mut() {
-                obj.insert("to_block".to_string(), serde_json::json!(to_block));
-            }
+        if let Some(to_block) = to_block
+            && let Some(obj) = query_value.as_object_mut()
+        {
+            obj.insert("to_block".to_string(), serde_json::json!(to_block));
         }
 
         serde_json::from_value(query_value).unwrap()

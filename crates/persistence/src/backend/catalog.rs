@@ -745,10 +745,10 @@ impl ParquetDataCatalog {
         // Check if this is a remote URI scheme that needs reconstruction
         if self.is_remote_uri() {
             // Extract the base URL (scheme + host) from the original URI
-            if let Ok(url) = url::Url::parse(&self.original_uri) {
-                if let Some(host) = url.host_str() {
-                    return format!("{}://{}/{}", url.scheme(), host, path_str);
-                }
+            if let Ok(url) = url::Url::parse(&self.original_uri)
+                && let Some(host) = url.host_str()
+            {
+                return format!("{}://{}/{}", url.scheme(), host, path_str);
             }
         }
 
@@ -1502,10 +1502,10 @@ impl ParquetDataCatalog {
             match result {
                 Ok(object) => {
                     let path_str = object.location.to_string();
-                    if path_str.ends_with(".parquet") {
-                        if let Some(interval) = parse_filename_timestamps(&path_str) {
-                            intervals.push(interval);
-                        }
+                    if path_str.ends_with(".parquet")
+                        && let Some(interval) = parse_filename_timestamps(&path_str)
+                    {
+                        intervals.push(interval);
                     }
                 }
                 Err(_) => {

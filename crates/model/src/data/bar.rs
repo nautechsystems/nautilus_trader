@@ -713,7 +713,7 @@ impl Display for BarType {
                 spec,
                 aggregation_source,
             } => {
-                write!(f, "{}-{}-{}", instrument_id, spec, aggregation_source)
+                write!(f, "{instrument_id}-{spec}-{aggregation_source}")
             }
             BarType::Composite {
                 instrument_id,

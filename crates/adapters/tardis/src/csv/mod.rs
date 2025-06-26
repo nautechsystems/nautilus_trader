@@ -239,11 +239,11 @@ pub fn load_deltas<P: AsRef<Path>>(
         let ts_init = parse_timestamp(record.local_timestamp);
 
         // Check if timestamp is different from last timestamp
-        if last_ts_event != ts_event {
-            if let Some(last_delta) = deltas.last_mut() {
-                // Set previous delta flags as F_LAST
-                last_delta.flags = RecordFlag::F_LAST.value();
-            }
+        if last_ts_event != ts_event
+            && let Some(last_delta) = deltas.last_mut()
+        {
+            // Set previous delta flags as F_LAST
+            last_delta.flags = RecordFlag::F_LAST.value();
         }
 
         assert!(
@@ -265,10 +265,10 @@ pub fn load_deltas<P: AsRef<Path>>(
 
         deltas.push(delta);
 
-        if let Some(limit) = limit {
-            if deltas.len() >= limit {
-                break;
-            }
+        if let Some(limit) = limit
+            && deltas.len() >= limit
+        {
+            break;
         }
     }
 
@@ -332,16 +332,16 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
             while reader.read_record(&mut record)? {
                 let parsed: TardisOrderBookSnapshot5Record = record.deserialize(None)?;
 
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bids_0_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
+                if price_precision.is_none()
+                    && let Some(bid_price) = parsed.bids_0_price
+                {
+                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
                 }
 
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bids_0_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
+                if size_precision.is_none()
+                    && let Some(bid_amount) = parsed.bids_0_amount
+                {
+                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
                 }
 
                 if let Some(limit) = limit {
@@ -451,10 +451,10 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
 
         depths.push(depth);
 
-        if let Some(limit) = limit {
-            if depths.len() >= limit {
-                break;
-            }
+        if let Some(limit) = limit
+            && depths.len() >= limit
+        {
+            break;
         }
     }
 
@@ -492,16 +492,16 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
             while reader.read_record(&mut record)? {
                 let parsed: TardisOrderBookSnapshot25Record = record.deserialize(None)?;
 
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bids_0_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
+                if price_precision.is_none()
+                    && let Some(bid_price) = parsed.bids_0_price
+                {
+                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
                 }
 
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bids_0_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
+                if size_precision.is_none()
+                    && let Some(bid_amount) = parsed.bids_0_amount
+                {
+                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
                 }
 
                 if let Some(limit) = limit {
@@ -633,10 +633,10 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
 
         depths.push(depth);
 
-        if let Some(limit) = limit {
-            if depths.len() >= limit {
-                break;
-            }
+        if let Some(limit) = limit
+            && depths.len() >= limit
+        {
+            break;
         }
     }
 
@@ -674,16 +674,16 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
             while reader.read_record(&mut record)? {
                 let parsed: TardisQuoteRecord = record.deserialize(None)?;
 
-                if price_precision.is_none() {
-                    if let Some(bid_price) = parsed.bid_price {
-                        max_price_precision = infer_precision(bid_price).max(max_price_precision);
-                    }
+                if price_precision.is_none()
+                    && let Some(bid_price) = parsed.bid_price
+                {
+                    max_price_precision = infer_precision(bid_price).max(max_price_precision);
                 }
 
-                if size_precision.is_none() {
-                    if let Some(bid_amount) = parsed.bid_amount {
-                        max_size_precision = infer_precision(bid_amount).max(max_size_precision);
-                    }
+                if size_precision.is_none()
+                    && let Some(bid_amount) = parsed.bid_amount
+                {
+                    max_size_precision = infer_precision(bid_amount).max(max_size_precision);
                 }
 
                 if let Some(limit) = limit {
@@ -736,10 +736,10 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
 
         quotes.push(quote);
 
-        if let Some(limit) = limit {
-            if quotes.len() >= limit {
-                break;
-            }
+        if let Some(limit) = limit
+            && quotes.len() >= limit
+        {
+            break;
         }
     }
 
@@ -836,10 +836,10 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 
         trades.push(trade);
 
-        if let Some(limit) = limit {
-            if trades.len() >= limit {
-                break;
-            }
+        if let Some(limit) = limit
+            && trades.len() >= limit
+        {
+            break;
         }
     }
 

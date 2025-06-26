@@ -214,10 +214,10 @@ impl PortfolioAnalyzer {
             .or_else(|| self.account_balances.keys().next())
             .ok_or("Currency not specified for multi-currency portfolio")?;
 
-        if let Some(unrealized_pnl) = unrealized_pnl {
-            if unrealized_pnl.currency != *currency {
-                return Err("Unrealized PnL currency does not match specified currency");
-            }
+        if let Some(unrealized_pnl) = unrealized_pnl
+            && unrealized_pnl.currency != *currency
+        {
+            return Err("Unrealized PnL currency does not match specified currency");
         }
 
         let account_balance = self
@@ -256,10 +256,10 @@ impl PortfolioAnalyzer {
             .or_else(|| self.account_balances.keys().next())
             .ok_or("Currency not specified for multi-currency portfolio")?;
 
-        if let Some(unrealized_pnl) = unrealized_pnl {
-            if unrealized_pnl.currency != *currency {
-                return Err("Unrealized PnL currency does not match specified currency");
-            }
+        if let Some(unrealized_pnl) = unrealized_pnl
+            && unrealized_pnl.currency != *currency
+        {
+            return Err("Unrealized PnL currency does not match specified currency");
         }
 
         let account_balance = self

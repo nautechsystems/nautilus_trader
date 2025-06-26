@@ -244,13 +244,13 @@ impl CoinbaseIntxHttpInnerClient {
                 });
             }
 
-            if let Ok(parsed_error) = serde_json::from_slice::<ErrorBody>(&resp.body) {
-                if let (Some(title), Some(error)) = (parsed_error.title, parsed_error.error) {
-                    return Err(CoinbaseIntxHttpError::CoinbaseError {
-                        error_code: error,
-                        message: title,
-                    });
-                }
+            if let Ok(parsed_error) = serde_json::from_slice::<ErrorBody>(&resp.body)
+                && let (Some(title), Some(error)) = (parsed_error.title, parsed_error.error)
+            {
+                return Err(CoinbaseIntxHttpError::CoinbaseError {
+                    error_code: error,
+                    message: title,
+                });
             }
 
             Err(CoinbaseIntxHttpError::UnexpectedStatus {

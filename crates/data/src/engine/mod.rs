@@ -364,10 +364,10 @@ impl DataEngine {
             }
 
             // Then check if it matches the default client
-            if let Some(default) = self.default_client.as_mut() {
-                if default.client_id() == *client_id {
-                    return Some(default);
-                }
+            if let Some(default) = self.default_client.as_mut()
+                && default.client_id() == *client_id
+            {
+                return Some(default);
             }
 
             // Unknown explicit client
@@ -519,10 +519,10 @@ impl DataEngine {
         }
 
         // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
-            }
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            return Ok(());
         }
 
         // Forward command to client
@@ -548,10 +548,10 @@ impl DataEngine {
     /// or if the underlying client operation fails.
     pub fn execute_defi_subscribe(&mut self, cmd: &DefiSubscribeCommand) -> anyhow::Result<()> {
         // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
-            }
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            return Ok(());
         }
 
         // Forward command to client
@@ -583,10 +583,10 @@ impl DataEngine {
         }
 
         // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
-            }
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            return Ok(());
         }
 
         // Forward command to the client
@@ -611,10 +611,10 @@ impl DataEngine {
     /// Returns an error if the underlying client operation fails.
     pub fn execute_defi_unsubscribe(&mut self, cmd: &DefiUnsubscribeCommand) -> anyhow::Result<()> {
         // Check if client declared as external
-        if let Some(client_id) = cmd.client_id() {
-            if self.external_clients.contains(client_id) {
-                return Ok(());
-            }
+        if let Some(client_id) = cmd.client_id()
+            && self.external_clients.contains(client_id)
+        {
+            return Ok(());
         }
 
         // Forward command to the client
@@ -639,10 +639,10 @@ impl DataEngine {
     /// or if the client fails to process the request.
     pub fn execute_request(&mut self, req: &RequestCommand) -> anyhow::Result<()> {
         // Skip requests for external clients
-        if let Some(cid) = req.client_id() {
-            if self.external_clients.contains(cid) {
-                return Ok(());
-            }
+        if let Some(cid) = req.client_id()
+            && self.external_clients.contains(cid)
+        {
+            return Ok(());
         }
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {
             match req {
@@ -847,24 +847,24 @@ impl DataEngine {
 
     fn handle_bar(&mut self, bar: Bar) {
         // TODO: Handle additional bar logic
-        if self.config.validate_data_sequence {
-            if let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type) {
-                if bar.ts_event < last_bar.ts_event {
-                    log::warn!(
-                        "Bar {bar} was prior to last bar `ts_event` {}",
-                        last_bar.ts_event
-                    );
-                    return; // Bar is out of sequence
-                }
-                if bar.ts_init < last_bar.ts_init {
-                    log::warn!(
-                        "Bar {bar} was prior to last bar `ts_init` {}",
-                        last_bar.ts_init
-                    );
-                    return; // Bar is out of sequence
-                }
-                // TODO: Implement `bar.is_revision` logic
+        if self.config.validate_data_sequence
+            && let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type)
+        {
+            if bar.ts_event < last_bar.ts_event {
+                log::warn!(
+                    "Bar {bar} was prior to last bar `ts_event` {}",
+                    last_bar.ts_event
+                );
+                return; // Bar is out of sequence
             }
+            if bar.ts_init < last_bar.ts_init {
+                log::warn!(
+                    "Bar {bar} was prior to last bar `ts_init` {}",
+                    last_bar.ts_init
+                );
+                return; // Bar is out of sequence
+            }
+            // TODO: Implement `bar.is_revision` logic
         }
 
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {

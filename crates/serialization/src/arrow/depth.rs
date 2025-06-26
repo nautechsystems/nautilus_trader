@@ -62,11 +62,7 @@ impl ArrowSchemaProvider for OrderBookDepth10 {
         // bid_price_0, bid_price_1, ..., bid_price_9, ask_price_0, ask_price_1
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
-                fields.push(Field::new(
-                    format!("{}_{i}", name),
-                    data_type.clone(),
-                    false,
-                ));
+                fields.push(Field::new(format!("{name}_{i}"), data_type.clone(), false));
             }
         }
 
@@ -406,7 +402,7 @@ mod tests {
                 let field = schema.field(i + group_count * DEPTH10_LEN).clone();
                 assert_eq!(
                     field,
-                    Field::new(format!("{}_{i}", name), data_type.clone(), false)
+                    Field::new(format!("{name}_{i}"), data_type.clone(), false)
                 );
             }
 
@@ -443,7 +439,7 @@ mod tests {
         let field_data = get_field_data();
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
-                let field = schema_map.get(&format!("{}_{i}", name)).map(String::as_str);
+                let field = schema_map.get(&format!("{name}_{i}")).map(String::as_str);
                 assert_eq!(field, Some(format!("{data_type:?}").as_str()));
             }
         }

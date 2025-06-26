@@ -248,22 +248,22 @@ impl OrderMatchingCore {
     }
 
     pub fn match_limit_order(&mut self, order: &LimitOrderAny) {
-        if self.is_limit_matched(order.order_side_specified(), order.limit_px()) {
-            if let Some(handler) = &mut self.fill_limit_order {
-                handler
-                    .0
-                    .fill_limit_order(&mut OrderAny::from(order.clone()));
-            }
+        if self.is_limit_matched(order.order_side_specified(), order.limit_px())
+            && let Some(handler) = &mut self.fill_limit_order
+        {
+            handler
+                .0
+                .fill_limit_order(&mut OrderAny::from(order.clone()));
         }
     }
 
     pub fn match_stop_order(&mut self, order: &StopOrderAny) {
-        if self.is_stop_matched(order.order_side_specified(), order.stop_px()) {
-            if let Some(handler) = &mut self.trigger_stop_order {
-                handler
-                    .0
-                    .trigger_stop_order(&mut OrderAny::from(order.clone()));
-            }
+        if self.is_stop_matched(order.order_side_specified(), order.stop_px())
+            && let Some(handler) = &mut self.trigger_stop_order
+        {
+            handler
+                .0
+                .trigger_stop_order(&mut OrderAny::from(order.clone()));
         }
     }
 

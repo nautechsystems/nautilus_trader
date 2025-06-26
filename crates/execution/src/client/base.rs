@@ -270,12 +270,12 @@ impl BaseExecutionClient {
         if !venue_order_id_modified {
             let cache = self.cache.as_ref().borrow();
             let existing_order_result = cache.venue_order_id(&client_order_id);
-            if let Some(existing_order) = existing_order_result {
-                if *existing_order != venue_order_id {
-                    log::error!(
-                        "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
-                    );
-                }
+            if let Some(existing_order) = existing_order_result
+                && *existing_order != venue_order_id
+            {
+                log::error!(
+                    "Existing venue order id {existing_order} does not match provided venue order id {venue_order_id}"
+                );
             }
         }
 

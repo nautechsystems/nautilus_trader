@@ -500,11 +500,11 @@ impl ExecutionEngine {
             log::debug!("Creating order state snapshot for {order}");
         }
 
-        if self.cache.borrow().has_backing() {
-            if let Err(e) = self.cache.borrow().snapshot_order_state(order) {
-                log::error!("Failed to snapshot order state: {e}");
-                return;
-            }
+        if self.cache.borrow().has_backing()
+            && let Err(e) = self.cache.borrow().snapshot_order_state(order)
+        {
+            log::error!("Failed to snapshot order state: {e}");
+            return;
         }
 
         if get_message_bus().borrow().has_backing {
@@ -607,10 +607,10 @@ impl ExecutionEngine {
         }
 
         // Use native venue OMS
-        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
-            if let Some(client) = self.clients.get(client_id) {
-                return client.oms_type();
-            }
+        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue)
+            && let Some(client) = self.clients.get(client_id)
+        {
+            return client.oms_type();
         }
 
         if let Some(client) = &self.default_client {
@@ -743,18 +743,18 @@ impl ExecutionEngine {
             for client_order_id in order.linked_order_ids().unwrap_or_default() {
                 let mut cache = self.cache.borrow_mut();
                 let contingent_order = cache.mut_order(client_order_id);
-                if let Some(contingent_order) = contingent_order {
-                    if contingent_order.position_id().is_none() {
-                        contingent_order.set_position_id(Some(position_id));
+                if let Some(contingent_order) = contingent_order
+                    && contingent_order.position_id().is_none()
+                {
+                    contingent_order.set_position_id(Some(position_id));
 
-                        if let Err(e) = self.cache.borrow_mut().add_position_id(
-                            &position_id,
-                            &contingent_order.instrument_id().venue,
-                            &contingent_order.client_order_id(),
-                            &contingent_order.strategy_id(),
-                        ) {
-                            log::error!("Failed to add position ID: {e}");
-                        }
+                    if let Err(e) = self.cache.borrow_mut().add_position_id(
+                        &position_id,
+                        &contingent_order.instrument_id().venue,
+                        &contingent_order.client_order_id(),
+                        &contingent_order.strategy_id(),
+                    ) {
+                        log::error!("Failed to add position ID: {e}");
                     }
                 }
             }
@@ -925,13 +925,12 @@ impl ExecutionEngine {
             commission2,
         );
 
-        if oms_type == OmsType::Hedging {
-            if let Some(position_id) = fill.position_id {
-                if position_id.is_virtual() {
-                    log::warn!("Closing position {fill_split1:?}");
-                    log::warn!("Flipping position {fill_split2:?}");
-                }
-            }
+        if oms_type == OmsType::Hedging
+            && let Some(position_id) = fill.position_id
+            && position_id.is_virtual()
+        {
+            log::warn!("Closing position {fill_split1:?}");
+            log::warn!("Flipping position {fill_split2:?}");
         }
 
         // Open flipped position

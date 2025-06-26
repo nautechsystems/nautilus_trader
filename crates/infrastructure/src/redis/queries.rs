@@ -741,15 +741,12 @@ fn convert_timestamps(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::Number(n) = v {
-                        if let Some(n) = n.as_u64() {
-                            let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
-                            *v = Value::String(
-                                dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::Number(n) = v
+                    && let Some(n) = n.as_u64()
+                {
+                    let dt = DateTime::<Utc>::from_timestamp_nanos(n as i64);
+                    *v = Value::String(dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
                 }
                 convert_timestamps(v);
             }
@@ -767,18 +764,16 @@ fn convert_timestamp_strings(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, v) in map {
-                if is_timestamp_field(key) {
-                    if let Value::String(s) = v {
-                        if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-                            *v = Value::Number(
-                                (dt.with_timezone(&Utc)
-                                    .timestamp_nanos_opt()
-                                    .expect("Invalid DateTime")
-                                    as u64)
-                                    .into(),
-                            );
-                        }
-                    }
+                if is_timestamp_field(key)
+                    && let Value::String(s) = v
+                    && let Ok(dt) = DateTime::parse_from_rfc3339(s)
+                {
+                    *v = Value::Number(
+                        (dt.with_timezone(&Utc)
+                            .timestamp_nanos_opt()
+                            .expect("Invalid DateTime") as u64)
+                            .into(),
+                    );
                 }
                 convert_timestamp_strings(v);
             }
