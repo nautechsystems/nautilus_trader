@@ -4,6 +4,7 @@
 [![Documentation](https://img.shields.io/docsrs/nautilus-cli)](https://docs.rs/nautilus-cli/latest/nautilus-cli/)
 [![crates.io version](https://img.shields.io/crates/v/nautilus-cli.svg)](https://crates.io/crates/nautilus-cli)
 ![license](https://img.shields.io/github/license/nautechsystems/nautilus_trader?color=blue)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/NautilusTrader)
 
 Command-line interface and tools for [NautilusTrader](http://nautilustrader.io).
 
