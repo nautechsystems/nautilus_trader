@@ -1006,7 +1006,6 @@ mod tests {
         .unwrap();
     }
 
-    #[ignore = "WIP: needs check_positive_money"]
     #[rstest]
     #[should_panic]
     fn validate_non_positive_max_notional(currency_pair_btcusdt: CurrencyPair) {
@@ -1058,7 +1057,6 @@ mod tests {
         .unwrap();
     }
 
-    #[ignore = "WIP: needs check_positive_money"]
     #[rstest]
     #[should_panic]
     fn validate_negative_min_notional(currency_pair_btcusdt: CurrencyPair) {

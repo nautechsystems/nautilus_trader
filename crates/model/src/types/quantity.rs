@@ -561,11 +561,11 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
-/// Checks if the given quantity is positive.
+/// Checks if the quantity `value` is positive.
 ///
 /// # Errors
 ///
-/// Returns an error if the quantity is not positive.
+/// Returns an error if `value` is not positive.
 pub fn check_positive_quantity(value: Quantity, param: &str) -> anyhow::Result<()> {
     if !value.is_positive() {
         anyhow::bail!("invalid `Quantity` for '{param}' not positive, was {value}")

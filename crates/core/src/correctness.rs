@@ -23,8 +23,9 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use rust_decimal::Decimal;
 use std::fmt::{Debug, Display};
+
+use rust_decimal::Decimal;
 
 use crate::collections::{MapLike, SetLike};
 
@@ -529,11 +530,11 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         fmt::Display,
+        str::FromStr,
     };
 
     use rstest::rstest;
     use rust_decimal::Decimal;
-    use std::str::FromStr;
 
     use super::*;
 
