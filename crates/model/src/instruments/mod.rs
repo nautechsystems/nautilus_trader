@@ -55,7 +55,7 @@ use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
-        Currency, Money, Price, Quantity, price::check_positive_price,
+        Currency, Money, Price, Quantity, money::check_positive_money, price::check_positive_price,
         quantity::check_positive_quantity,
     },
 };
@@ -72,8 +72,8 @@ pub fn validate_instrument_common(
     lot_size: Option<Quantity>,
     max_quantity: Option<Quantity>,
     min_quantity: Option<Quantity>,
-    _max_notional: Option<Money>, // TODO: Needs `check_positive_money`
-    _min_notional: Option<Money>, // TODO: Needs `check_positive_money`
+    max_notional: Option<Money>,
+    min_notional: Option<Money>,
     max_price: Option<Price>,
     min_price: Option<Price>,
 ) -> anyhow::Result<()> {
@@ -110,14 +110,13 @@ pub fn validate_instrument_common(
         check_positive_quantity(quantity, "max_quantity")?;
     }
 
-    // TODO: check_positive_money
-    // if let Some(notional) = max_notional {
-    //     check_positive_i128(notional.raw, "notional")?;
-    // }
-    //
-    // if let Some(notional) = min_notional {
-    //     check_positive_i128(notional.raw, "notional")?;
-    // }
+    if let Some(notional) = max_notional {
+        check_positive_money(notional, "max_notional")?;
+    }
+
+    if let Some(notional) = min_notional {
+        check_positive_money(notional, "min_notional")?;
+    }
 
     if let Some(max_price) = max_price {
         check_positive_price(max_price, "max_price")?;
@@ -1257,5 +1256,25 @@ mod tests {
         let price = Price::new(px.to_f64().unwrap(), 8);
         let base = currency_pair_btcusdt.calculate_base_quantity(qty, price);
         assert!((base.as_f64() - expected).abs() < 1e-9);
+    }
+
+    #[rstest]
+    fn check_positive_money_ok(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(100.0, currency_pair_btcusdt.quote_currency());
+        assert!(check_positive_money(money, "money").is_ok());
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn check_positive_money_zero(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(0.0, currency_pair_btcusdt.quote_currency());
+        check_positive_money(money, "money").unwrap();
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn check_positive_money_negative(currency_pair_btcusdt: CurrencyPair) {
+        let money = Money::new(-0.01, currency_pair_btcusdt.quote_currency());
+        check_positive_money(money, "money").unwrap();
     }
 }
