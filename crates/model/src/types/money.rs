@@ -23,7 +23,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64, check_predicate_true};
+use nautilus_core::correctness::{FAILED, check_in_range_inclusive_f64};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -207,18 +207,6 @@ impl Money {
             .separate_with_underscores();
         format!("{} {}", amount_str, self.currency.code)
     }
-}
-
-/// Ensures that the provided [`Money`] value is strictly positive (> 0).
-///
-/// # Errors
-///
-/// Returns an error if `value` is zero or negative.
-#[allow(clippy::missing_errors_doc)]
-#[inline(always)]
-pub fn check_positive_money(value: Money, arg_name: &str) -> anyhow::Result<()> {
-    // Positivity can be decided directly on the fixed-point representation.
-    check_predicate_true(value.raw > 0, &format!("{arg_name} must be positive"))
 }
 
 impl FromStr for Money {
@@ -462,6 +450,19 @@ impl<'de> Deserialize<'de> for Money {
         let money_str: String = Deserialize::deserialize(deserializer)?;
         Ok(Money::from(money_str.as_str()))
     }
+}
+
+/// Checks if the money `value` is positive.
+///
+/// # Errors
+///
+/// Returns an error if `value` is not positive.
+#[inline(always)]
+pub fn check_positive_money(value: Money, param: &str) -> anyhow::Result<()> {
+    if value.raw <= 0 {
+        anyhow::bail!("invalid `Money` for '{param}' not positive, was {value}");
+    }
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1040,7 +1041,7 @@ mod tests {
                 assert!(res.is_err(), "expected Err(..) for {amount}");
                 let msg = res.unwrap_err().to_string();
                 assert!(
-                    msg.contains("must be positive"),
+                    msg.contains("not positive"),
                     "error message should mention positivity; got: {msg:?}"
                 );
             }

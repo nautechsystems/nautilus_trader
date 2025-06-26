@@ -547,11 +547,11 @@ impl<'de> Deserialize<'de> for Price {
     }
 }
 
-/// Checks the given `price` is positive.
+/// Checks the price `value` is positive.
 ///
 /// # Errors
 ///
-/// Returns an error if the validation check fails.
+/// Returns an error if `value` is `PRICE_UNDEF` or not positive.
 pub fn check_positive_price(value: Price, param: &str) -> anyhow::Result<()> {
     if value.raw == PRICE_UNDEF {
         anyhow::bail!("invalid `Price` for '{param}', was PRICE_UNDEF")
